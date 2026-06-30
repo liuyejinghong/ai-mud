@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+coverage/
+.turbo/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local databases and generated runtime state
+*.sqlite
+*.sqlite3
+*.db
+tmp/
+temp/
+
