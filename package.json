@@ -8,10 +8,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
-    "db:generate": "pnpm --filter @ai-mud/server db:generate",
-    "db:migrate": "pnpm --filter @ai-mud/server db:migrate",
-    "e2e": "pnpm --filter @ai-mud/web e2e"
+    "lint": "pnpm -r lint"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
