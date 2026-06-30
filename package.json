@@ -1,0 +1,22 @@
+{
+  "name": "ai-mud",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @ai-mud/server --filter @ai-mud/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "db:generate": "pnpm --filter @ai-mud/server db:generate",
+    "db:migrate": "pnpm --filter @ai-mud/server db:migrate",
+    "e2e": "pnpm --filter @ai-mud/web e2e"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
