@@ -19,7 +19,8 @@ import {
   mapInstances,
   sessions,
   worldActors,
-  worldResourceNodes
+  worldResourceNodes,
+  worldRuntimeState
 } from "./schema.js";
 
 function getDrizzleTableName(table: unknown) {
@@ -85,6 +86,14 @@ describe("foundation schema", () => {
     expect(marketTransactions.actorType.getSQLType()).toBe("text");
     expect(marketTransactions.actorId.getSQLType()).toBe("text");
     expect(marketTransactions.actorName.getSQLType()).toBe("text");
+  });
+
+  it("defines world runtime state for automatic settlement", () => {
+    expect(getDrizzleTableName(worldRuntimeState)).toBe("world_runtime_state");
+    expect(worldRuntimeState.key.getSQLType()).toBe("text");
+    expect(worldRuntimeState.lastSettledAt.getSQLType()).toBe("timestamp with time zone");
+    expect(worldRuntimeState.leaseOwner.getSQLType()).toBe("text");
+    expect(worldRuntimeState.leaseUntil.getSQLType()).toBe("timestamp with time zone");
   });
 
   it("stores audit metadata as structured jsonb", () => {

@@ -318,6 +318,20 @@ export const municipalTreasury = pgTable(
   })
 );
 
+export const worldRuntimeState = pgTable(
+  "world_runtime_state",
+  {
+    key: text("key").primaryKey(),
+    lastSettledAt: timestamp("last_settled_at", { withTimezone: true }),
+    leaseOwner: text("lease_owner"),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    leaseUntilIdx: index("world_runtime_state_lease_until_idx").on(table.leaseUntil)
+  })
+);
+
 export const characterActions = pgTable(
   "character_actions",
   {
