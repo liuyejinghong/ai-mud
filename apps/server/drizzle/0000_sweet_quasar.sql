@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS "audit_logs" (
 	"target_type" text NOT NULL,
 	"target_id" text,
 	"reason" text,
-	"metadata_json" text DEFAULT '{}' NOT NULL,
+	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint

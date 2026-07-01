@@ -12,4 +12,14 @@ describe("foundation schema", () => {
     expect(getDrizzleTableName(sessions)).toBe("sessions");
     expect(getDrizzleTableName(auditLogs)).toBe("audit_logs");
   });
+
+  it("stores audit metadata as structured jsonb", () => {
+    const auditTable = auditLogs as unknown as {
+      metadata: { getSQLType(): string };
+      metadataJson?: unknown;
+    };
+
+    expect(auditTable.metadata.getSQLType()).toBe("jsonb");
+    expect(auditTable.metadataJson).toBeUndefined();
+  });
 });

@@ -1,5 +1,5 @@
 {
-  "id": "2c104fd4-eac0-49a4-986d-13289feb3788",
+  "id": "e721c7fa-7577-4d78-8eee-60d6b02d879a",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -273,12 +273,12 @@
           "primaryKey": false,
           "notNull": false
         },
-        "metadata_json": {
-          "name": "metadata_json",
-          "type": "text",
+        "metadata": {
+          "name": "metadata",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true,
-          "default": "'{}'"
+          "default": "'{}'::jsonb"
         },
         "created_at": {
           "name": "created_at",

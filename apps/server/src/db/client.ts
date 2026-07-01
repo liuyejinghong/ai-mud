@@ -5,7 +5,14 @@ import * as schema from "./schema.js";
 
 export function createDb(databaseUrl = loadEnv().DATABASE_URL) {
   const pool = new pg.Pool({ connectionString: databaseUrl });
-  return drizzle(pool, { schema });
+  const db = drizzle(pool, { schema });
+
+  return {
+    db,
+    pool,
+    close: () => pool.end()
+  };
 }
 
-export type Db = ReturnType<typeof createDb>;
+export type DbConnection = ReturnType<typeof createDb>;
+export type Db = DbConnection["db"];

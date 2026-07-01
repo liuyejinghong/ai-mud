@@ -1,5 +1,6 @@
 import {
   index,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -77,7 +78,7 @@ export const auditLogs = pgTable(
     targetType: text("target_type").notNull(),
     targetId: text("target_id"),
     reason: text("reason"),
-    metadataJson: text("metadata_json").notNull().default("{}"),
+    metadata: jsonb("metadata").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
