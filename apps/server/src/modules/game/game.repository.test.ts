@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseActionPayload,
+  serializeEquipmentDurability,
   serializeActionPayload,
   serializeResourceCharges,
   type GatheringActionPayload
@@ -25,5 +26,16 @@ describe("game repository helpers", () => {
     };
 
     expect(parseActionPayload("gathering", serializeActionPayload(payload))).toEqual(payload);
+  });
+
+  it("serializes equipment durability with clamped integer values", () => {
+    expect(serializeEquipmentDurability({ currentDurability: 150, maxDurability: 100 })).toEqual({
+      currentDurability: 100,
+      maxDurability: 100
+    });
+    expect(serializeEquipmentDurability({ currentDurability: -5, maxDurability: 100 })).toEqual({
+      currentDurability: 0,
+      maxDurability: 100
+    });
   });
 });

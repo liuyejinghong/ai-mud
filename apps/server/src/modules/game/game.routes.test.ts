@@ -29,9 +29,28 @@ const baseState: GameStateDto = {
   locationDescription: "潮湿黑松围住木墙，哨塔上的火盆把灰雾照成暗红色。",
   map: null,
   inventory: [],
+  equipment: [
+    {
+      id: "equipment-1",
+      slot: "weapon",
+      itemKey: "training_sword",
+      name: "训练短剑",
+      itemLevel: 5,
+      attackBonus: 2,
+      defenseBonus: 0,
+      maxDurability: 100,
+      currentDurability: 60,
+      durabilityPct: 60,
+      effectiveStatRatio: 1,
+      repairQuote: {
+        copperCost: { gold: 0, silver: 0, copper: 50, totalCopper: 50 },
+        ironOreCost: 1
+      }
+    }
+  ],
   market: null,
   currentAction: null,
-  availableActions: ["enter_corrupt_forest", "open_market"],
+  availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment"],
   log: []
 };
 
@@ -89,6 +108,8 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
       copperCost: { gold: 0, silver: 1, copper: 50, totalCopper: 150 },
       ironOreCost: 1
     }),
+    repairEquipment: async () => baseState,
+    repairAllEquipment: async () => baseState,
     ...overrides
   };
   const app = Fastify();
@@ -358,18 +379,112 @@ describe("registerGameRoutes", () => {
   });
 
   it("returns a repair quote", async () => {
-    const app = buildGameRouteTestApp();
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      getRepairQuote: async (accountId, input) => {
+        calls.push({ accountId, input });
+        return {
+          copperCost: { gold: 0, silver: 1, copper: 50, totalCopper: 150 },
+          ironOreCost: 1
+        };
+      }
+    });
     const response = await app.inject({
       method: "POST",
       url: "/game/repair/quote",
+      headers: { "x-csrf-token": "csrf" },
+      payload: { equipmentId: "equipment-1" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(calls).toEqual([
+      { accountId: "account-1", input: { equipmentId: "equipment-1" } }
+    ]);
+    expect(response.json()).toEqual({
+      copperCost: { gold: 0, silver: 1, copper: 50, totalCopper: 150 },
+      ironOreCost: 1
+    });
+  });
+
+  it("repairs one equipment item through a CSRF-protected mutation", async () => {
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      repairEquipment: async (accountId, input) => {
+        calls.push({ accountId, input });
+        return {
+          ...baseState,
+          equipment: [
+            {
+              ...baseState.equipment[0]!,
+              currentDurability: 100,
+              durabilityPct: 100,
+              repairQuote: null
+            }
+          ]
+        };
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/repair",
+      headers: { "x-csrf-token": "csrf" },
+      payload: { equipmentId: "equipment-1" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(calls).toEqual([
+      { accountId: "account-1", input: { equipmentId: "equipment-1" } }
+    ]);
+    expect(response.json().equipment[0].currentDurability).toBe(100);
+  });
+
+  it("repairs all damaged equipment through a CSRF-protected mutation", async () => {
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      repairAllEquipment: async (accountId) => {
+        calls.push({ accountId });
+        return {
+          ...baseState,
+          equipment: [
+            {
+              ...baseState.equipment[0]!,
+              currentDurability: 100,
+              durabilityPct: 100,
+              repairQuote: null
+            }
+          ]
+        };
+      }
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/repair/all",
       headers: { "x-csrf-token": "csrf" },
       payload: {}
     });
 
     expect(response.statusCode).toBe(200);
+    expect(calls).toEqual([{ accountId: "account-1" }]);
+  });
+
+  it("surfaces repair validation errors", async () => {
+    const app = buildGameRouteTestApp({
+      repairEquipment: async () => {
+        throw new GameServiceError("VALIDATION_ERROR", "必须在黑松哨站修理装备。");
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/repair",
+      headers: { "x-csrf-token": "csrf" },
+      payload: { equipmentId: "equipment-1" }
+    });
+
+    expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({
-      copperCost: { gold: 0, silver: 1, copper: 50, totalCopper: 150 },
-      ironOreCost: 1
+      error: { code: "VALIDATION_ERROR", message: "必须在黑松哨站修理装备。" }
     });
   });
 });

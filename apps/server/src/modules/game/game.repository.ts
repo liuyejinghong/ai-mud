@@ -1,8 +1,16 @@
-import type { ActionStatus, ActionType, GameLocationId, GridPositionDto, ItemId } from "@ai-mud/shared";
+import type {
+  ActionStatus,
+  ActionType,
+  EquipmentSlot,
+  GameLocationId,
+  GridPositionDto,
+  ItemId
+} from "@ai-mud/shared";
 import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import {
   characterActions,
+  characterEquipment,
   characterItems,
   characters,
   gameEvents,
@@ -31,6 +39,19 @@ export interface CharacterRecord {
 export interface InventoryRecord {
   itemId: ItemId;
   quantity: number;
+}
+
+export interface EquipmentRecord {
+  id: string;
+  characterId: string;
+  slot: EquipmentSlot;
+  itemKey: string;
+  name: string;
+  itemLevel: number;
+  attackBonus: number;
+  defenseBonus: number;
+  maxDurability: number;
+  currentDurability: number;
 }
 
 export interface MapInstanceRecord {
@@ -102,6 +123,20 @@ export interface CharacterActionRecord {
 
 export function serializeResourceCharges(charges: Record<string, number>) {
   return { ...charges };
+}
+
+export function serializeEquipmentDurability(input: {
+  currentDurability: number;
+  maxDurability: number;
+}) {
+  const maxDurability = Math.max(1, Math.floor(input.maxDurability));
+  return {
+    currentDurability: Math.min(
+      maxDurability,
+      Math.max(0, Math.floor(input.currentDurability))
+    ),
+    maxDurability
+  };
 }
 
 export function serializeActionPayload(payload: CharacterActionPayload) {
@@ -375,6 +410,75 @@ export class GameRepository {
       itemId: input.itemId,
       quantity: nextQuantity
     });
+  }
+
+  async listEquipment(characterId: string): Promise<EquipmentRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(characterEquipment)
+      .where(eq(characterEquipment.characterId, characterId));
+
+    return rows.map((row) => ({
+      id: row.id,
+      characterId: row.characterId,
+      slot: row.slot as EquipmentSlot,
+      itemKey: row.itemKey,
+      name: row.name,
+      itemLevel: row.itemLevel,
+      attackBonus: row.attackBonus,
+      defenseBonus: row.defenseBonus,
+      maxDurability: row.maxDurability,
+      currentDurability: row.currentDurability
+    }));
+  }
+
+  async findEquipmentById(
+    characterId: string,
+    equipmentId: string
+  ): Promise<EquipmentRecord | null> {
+    const equipment = await this.listEquipment(characterId);
+    return equipment.find((item) => item.id === equipmentId) ?? null;
+  }
+
+  async createEquipment(input: {
+    characterId: string;
+    slot: EquipmentSlot;
+    itemKey: string;
+    name: string;
+    itemLevel: number;
+    attackBonus: number;
+    defenseBonus: number;
+    maxDurability: number;
+    currentDurability: number;
+  }): Promise<void> {
+    const durability = serializeEquipmentDurability(input);
+    await this.db.insert(characterEquipment).values({
+      characterId: input.characterId,
+      slot: input.slot,
+      itemKey: input.itemKey,
+      name: input.name,
+      itemLevel: input.itemLevel,
+      attackBonus: input.attackBonus,
+      defenseBonus: input.defenseBonus,
+      maxDurability: durability.maxDurability,
+      currentDurability: durability.currentDurability
+    });
+  }
+
+  async updateEquipmentDurability(input: {
+    equipmentId: string;
+    currentDurability: number;
+    maxDurability: number;
+  }): Promise<void> {
+    const durability = serializeEquipmentDurability(input);
+    await this.db
+      .update(characterEquipment)
+      .set({
+        currentDurability: durability.currentDurability,
+        maxDurability: durability.maxDurability,
+        updatedAt: new Date()
+      })
+      .where(eq(characterEquipment.id, input.equipmentId));
   }
 
   async listMarketInventory(settlementId: string): Promise<MarketInventoryRecord[]> {

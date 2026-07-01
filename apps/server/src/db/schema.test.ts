@@ -6,6 +6,7 @@ import {
   characterActions,
   characterActionStatus,
   characterActionType,
+  characterEquipment,
   characterItems,
   characters,
   gameEvents,
@@ -30,6 +31,7 @@ describe("foundation schema", () => {
   it("defines the first playable world state tables", () => {
     expect(getDrizzleTableName(characters)).toBe("characters");
     expect(getDrizzleTableName(characterItems)).toBe("character_items");
+    expect(getDrizzleTableName(characterEquipment)).toBe("character_equipment");
     expect(getDrizzleTableName(characterActions)).toBe("character_actions");
     expect(getDrizzleTableName(marketInventory)).toBe("market_inventory");
     expect(getDrizzleTableName(marketTransactions)).toBe("market_transactions");
@@ -39,6 +41,12 @@ describe("foundation schema", () => {
 
   it("stores character money as copper", () => {
     expect(characters.copperBalance.getSQLType()).toBe("integer");
+  });
+
+  it("stores equipment durability as per-character item instances", () => {
+    expect(characterEquipment.slot.getSQLType()).toBe("text");
+    expect(characterEquipment.currentDurability.getSQLType()).toBe("integer");
+    expect(characterEquipment.maxDurability.getSQLType()).toBe("integer");
   });
 
   it("defines active action enums", () => {

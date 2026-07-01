@@ -8,6 +8,7 @@ import {
   type GameStateDto,
   type MarketDto,
   type MarketTradeRequestDto,
+  type RepairEquipmentRequestDto,
   type RepairQuoteDto,
   type StartGatheringRequestDto
 } from "@ai-mud/shared";
@@ -39,6 +40,10 @@ const marketTradeSchema = z.object({
   quantity: z.number().int().min(1).max(999)
 });
 
+const repairEquipmentSchema = z.object({
+  equipmentId: z.string().min(1)
+});
+
 export interface GameRouteDependencies {
   getCurrentAccount(request: FastifyRequest): Promise<PublicAccountRecord | null>;
   verifyGameMutation(request: FastifyRequest): Promise<boolean>;
@@ -53,7 +58,9 @@ export interface GameRouteDependencies {
   getMarket(accountId: string): Promise<MarketDto>;
   buyMarketItem(accountId: string, input: MarketTradeRequestDto): Promise<GameStateDto>;
   sellMarketItem(accountId: string, input: MarketTradeRequestDto): Promise<GameStateDto>;
-  getRepairQuote(accountId: string): Promise<RepairQuoteDto>;
+  getRepairQuote(accountId: string, input: RepairEquipmentRequestDto): Promise<RepairQuoteDto>;
+  repairEquipment(accountId: string, input: RepairEquipmentRequestDto): Promise<GameStateDto>;
+  repairAllEquipment(accountId: string): Promise<GameStateDto>;
 }
 
 function sendError(reply: FastifyReply, statusCode: number, code: ErrorCode, message: string) {
@@ -100,7 +107,9 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
     getMarket: (accountId) => game.getMarket(accountId),
     buyMarketItem: (accountId, input) => game.buyMarketItem(accountId, input),
     sellMarketItem: (accountId, input) => game.sellMarketItem(accountId, input),
-    getRepairQuote: (accountId) => game.getRepairQuote(accountId)
+    getRepairQuote: (accountId, input) => game.getRepairQuote(accountId, input),
+    repairEquipment: (accountId, input) => game.repairEquipment(accountId, input),
+    repairAllEquipment: (accountId) => game.repairAllEquipment(accountId)
   };
 }
 
@@ -303,8 +312,42 @@ export async function registerGameRoutes(app: FastifyInstance, maybeDependencies
     if (!account) return reply;
     if (!(await requireMutationToken(deps, request, reply))) return reply;
 
+    const parsed = repairEquipmentSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid repair input");
+    }
+
     try {
-      return await deps.getRepairQuote(account.id);
+      return await deps.getRepairQuote(account.id, parsed.data);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/repair", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    const parsed = repairEquipmentSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid repair input");
+    }
+
+    try {
+      return await deps.repairEquipment(account.id, parsed.data);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/repair/all", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    try {
+      return await deps.repairAllEquipment(account.id);
     } catch (error) {
       return handleGameError(reply, error);
     }

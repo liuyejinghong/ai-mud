@@ -8,7 +8,11 @@ import {
 } from "@ai-mud/content";
 import {
   addInventoryItem,
+  applyCombatDurabilityLoss,
   buildMapCells,
+  calculateDurabilityPct,
+  calculateEffectiveStatRatio,
+  calculateEquipmentRepairQuote,
   calculateMarketQuote,
   calculateRepairQuote,
   calculateGatheringPlan,
@@ -24,6 +28,8 @@ import {
   type CreateCharacterRequestDto,
   type CurrentActionDto,
   type Direction,
+  type EquipmentItemDto,
+  type RepairEquipmentRequestDto,
   type GameStateDto,
   type GridPositionDto,
   type InventoryItemDto,
@@ -38,10 +44,42 @@ import {
   type CharacterActionRecord,
   type CharacterRecord,
   type CombatActionPayload,
+  type EquipmentRecord,
   type GatheringActionPayload
 } from "./game.repository.js";
 
 const BLACKPINE_MARKET_ID = "blackpine_outpost";
+const STARTER_EQUIPMENT: Array<{
+  slot: "weapon" | "chest";
+  itemKey: string;
+  name: string;
+  itemLevel: number;
+  attackBonus: number;
+  defenseBonus: number;
+  maxDurability: number;
+  currentDurability: number;
+}> = [
+  {
+    slot: "weapon",
+    itemKey: "training_sword",
+    name: "训练短剑",
+    itemLevel: 5,
+    attackBonus: 2,
+    defenseBonus: 0,
+    maxDurability: 100,
+    currentDurability: 100
+  },
+  {
+    slot: "chest",
+    itemKey: "patched_leather_vest",
+    name: "缝补皮甲",
+    itemLevel: 5,
+    attackBonus: 0,
+    defenseBonus: 2,
+    maxDurability: 100,
+    currentDurability: 100
+  }
+];
 
 export class GameServiceError extends Error {
   constructor(
@@ -140,6 +178,40 @@ function toInventoryDto(items: Array<{ itemId: InventoryItemDto["itemId"]; quant
   }));
 }
 
+function toEquipmentDto(equipment: EquipmentRecord): EquipmentItemDto {
+  const quote = calculateEquipmentRepairQuote(equipment);
+  return {
+    id: equipment.id,
+    slot: equipment.slot,
+    itemKey: equipment.itemKey,
+    name: equipment.name,
+    itemLevel: equipment.itemLevel,
+    attackBonus: equipment.attackBonus,
+    defenseBonus: equipment.defenseBonus,
+    maxDurability: equipment.maxDurability,
+    currentDurability: equipment.currentDurability,
+    durabilityPct: calculateDurabilityPct(equipment),
+    effectiveStatRatio: calculateEffectiveStatRatio(equipment),
+    repairQuote: quote
+      ? { copperCost: formatMoney(quote.copperCost), ironOreCost: quote.ironOreCost }
+      : null
+  };
+}
+
+function equipmentAttackBonus(equipment: EquipmentRecord[]) {
+  return equipment.reduce(
+    (sum, item) => sum + Math.floor(item.attackBonus * calculateEffectiveStatRatio(item)),
+    0
+  );
+}
+
+function equipmentDefenseBonus(equipment: EquipmentRecord[]) {
+  return equipment.reduce(
+    (sum, item) => sum + Math.floor(item.defenseBonus * calculateEffectiveStatRatio(item)),
+    0
+  );
+}
+
 export class GameService {
   constructor(private readonly db: Db) {}
 
@@ -171,6 +243,9 @@ export class GameService {
         hp: maxHp,
         maxHp
       });
+      for (const item of STARTER_EQUIPMENT) {
+        await repo.createEquipment({ characterId: character.id, ...item });
+      }
       await repo.writeEvent({
         characterId: character.id,
         eventType: "character.create",
@@ -311,8 +386,12 @@ export class GameService {
           name: character.name,
           hp: character.hp,
           maxHp: character.maxHp,
-          attack: classAttack(character.classId),
-          defense: classDefense(character.classId),
+          attack:
+            classAttack(character.classId) +
+            equipmentAttackBonus(await repo.listEquipment(character.id)),
+          defense:
+            classDefense(character.classId) +
+            equipmentDefenseBonus(await repo.listEquipment(character.id)),
           agility: classAgility(character.classId)
         },
         monsters: monsters.map((monster) => monster!)
@@ -535,15 +614,49 @@ export class GameService {
     });
   }
 
-  async getRepairQuote(accountId: string): Promise<RepairQuoteDto> {
+  async getRepairQuote(
+    accountId: string,
+    input: RepairEquipmentRequestDto
+  ): Promise<RepairQuoteDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
-      await this.requireCharacter(repo, accountId);
-      const quote = calculateRepairQuote({ itemLevel: 10, durabilityLossPct: 0.5 });
+      const character = await this.requireRepairContext(repo, accountId);
+      const equipment = await this.requireEquipment(repo, character.id, input.equipmentId);
+      const quote = calculateEquipmentRepairQuote(equipment);
+      if (!quote) {
+        throw new GameServiceError("VALIDATION_ERROR", "装备不需要修理。");
+      }
       return {
         copperCost: formatMoney(quote.copperCost),
         ironOreCost: quote.ironOreCost
       };
+    });
+  }
+
+  async repairEquipment(
+    accountId: string,
+    input: RepairEquipmentRequestDto
+  ): Promise<GameStateDto> {
+    return this.db.transaction(async (tx) => {
+      const repo = new GameRepository(tx);
+      const character = await this.requireRepairContext(repo, accountId);
+      const equipment = await this.requireEquipment(repo, character.id, input.equipmentId);
+      await this.repairEquipmentRecords(repo, character, [equipment]);
+      return this.buildState(repo, accountId, new Date());
+    });
+  }
+
+  async repairAllEquipment(accountId: string): Promise<GameStateDto> {
+    return this.db.transaction(async (tx) => {
+      const repo = new GameRepository(tx);
+      const character = await this.requireRepairContext(repo, accountId);
+      const equipment = await repo.listEquipment(character.id);
+      await this.repairEquipmentRecords(
+        repo,
+        character,
+        equipment.filter((item) => calculateEquipmentRepairQuote(item) !== null)
+      );
+      return this.buildState(repo, accountId, new Date());
     });
   }
 
@@ -636,6 +749,77 @@ export class GameService {
       throw new GameServiceError("VALIDATION_ERROR", "Character required");
     }
     return character;
+  }
+
+  private async requireRepairContext(repo: GameRepository, accountId: string) {
+    const character = await this.requireCharacter(repo, accountId);
+    if (character.currentLocation !== BLACKPINE_OUTPOST.id) {
+      throw new GameServiceError("VALIDATION_ERROR", "必须在黑松哨站修理装备。");
+    }
+    await this.requireNoActiveAction(repo, character.id);
+    return character;
+  }
+
+  private async requireEquipment(
+    repo: GameRepository,
+    characterId: string,
+    equipmentId: string
+  ) {
+    const equipment = await repo.findEquipmentById(characterId, equipmentId);
+    if (!equipment) {
+      throw new GameServiceError("VALIDATION_ERROR", "装备不存在。");
+    }
+    return equipment;
+  }
+
+  private async repairEquipmentRecords(
+    repo: GameRepository,
+    character: CharacterRecord,
+    equipment: EquipmentRecord[]
+  ) {
+    if (equipment.length === 0) {
+      throw new GameServiceError("VALIDATION_ERROR", "没有需要修理的装备。");
+    }
+
+    const quotes = equipment.map((item) => ({
+      item,
+      quote: calculateEquipmentRepairQuote(item)
+    }));
+    const totalCopper = quotes.reduce((sum, entry) => sum + (entry.quote?.copperCost ?? 0), 0);
+    const totalIronOre = quotes.reduce((sum, entry) => sum + (entry.quote?.ironOreCost ?? 0), 0);
+
+    if (character.copperBalance < totalCopper) {
+      throw new GameServiceError("VALIDATION_ERROR", "铜币不足。");
+    }
+
+    const inventory = await repo.listInventory(character.id);
+    const ironOre = inventory.find((item) => item.itemId === "iron_ore")?.quantity ?? 0;
+    if (ironOre < totalIronOre) {
+      throw new GameServiceError("VALIDATION_ERROR", "基础铁矿石不足。");
+    }
+
+    await repo.updateCharacterCopper({
+      characterId: character.id,
+      copperBalance: character.copperBalance - totalCopper
+    });
+    await repo.decrementInventoryItem({
+      characterId: character.id,
+      itemId: "iron_ore",
+      quantity: totalIronOre
+    });
+    for (const entry of quotes) {
+      await repo.updateEquipmentDurability({
+        equipmentId: entry.item.id,
+        currentDurability: entry.item.maxDurability,
+        maxDurability: entry.item.maxDurability
+      });
+    }
+    await repo.writeEvent({
+      characterId: character.id,
+      eventType: "equipment.repair",
+      message: `你修理了 ${equipment.length} 件装备，消耗 ${totalCopper} 铜和基础铁矿石 x${totalIronOre}。`,
+      metadata: { equipmentIds: equipment.map((item) => item.id), totalCopper, totalIronOre }
+    });
   }
 
   private async requireReadyCharacterInForest(
@@ -795,6 +979,18 @@ export class GameService {
       });
     }
 
+    const equipment = await repo.listEquipment(character.id);
+    const damagedEquipment = applyCombatDurabilityLoss(equipment);
+    for (const item of damagedEquipment) {
+      const previous = equipment.find((entry) => entry.id === item.id);
+      if (!previous || previous.currentDurability === item.currentDurability) continue;
+      await repo.updateEquipmentDurability({
+        equipmentId: item.id,
+        currentDurability: item.currentDurability,
+        maxDurability: item.maxDurability
+      });
+    }
+
     await repo.updateCharacterVitals({
       characterId: character.id,
       hp: nextHp,
@@ -886,6 +1082,7 @@ export class GameService {
         locationDescription: "你尚未创建角色。",
         map: null,
         inventory: [],
+        equipment: [],
         market: null,
         currentAction: null,
         availableActions: ["create_character"],
@@ -894,23 +1091,31 @@ export class GameService {
     }
 
     const inventory = await repo.listInventory(character.id);
+    const equipment = await repo.listEquipment(character.id);
     const log = await repo.listRecentEvents(character.id);
     const inventoryDto = toInventoryDto(inventory);
+    const equipmentDto = equipment.map(toEquipmentDto);
     const activeAction = await repo.findActiveActionByCharacterId(character.id);
     const currentAction = activeAction ? this.toCurrentActionDto(activeAction, now) : null;
 
     if (character.currentLocation !== CORRUPT_FOREST.id || !character.position) {
+      const availableActions: GameStateDto["availableActions"] = currentAction
+        ? ["cancel_action"]
+        : ["enter_corrupt_forest", "open_market"];
+      if (!currentAction && equipmentDto.some((item) => item.repairQuote !== null)) {
+        availableActions.push("repair_equipment");
+      }
+
       return {
         character: toCharacterDto(character),
         locationTitle: BLACKPINE_OUTPOST.title,
         locationDescription: BLACKPINE_OUTPOST.description,
         map: null,
         inventory: inventoryDto,
+        equipment: equipmentDto,
         market: null,
         currentAction,
-        availableActions: currentAction
-          ? ["cancel_action"]
-          : ["enter_corrupt_forest", "open_market"],
+        availableActions,
         log: log.map((entry) => ({
           id: entry.id,
           message: entry.message,
@@ -944,6 +1149,7 @@ export class GameService {
         cells: buildMapCells(CORRUPT_FOREST, character.position, resourceCharges)
       },
       inventory: inventoryDto,
+      equipment: equipmentDto,
       market: null,
       currentAction,
       availableActions,
