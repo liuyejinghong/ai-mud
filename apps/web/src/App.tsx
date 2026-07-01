@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ActivationCodeAdmin } from "./features/admin/ActivationCodeAdmin";
+import { EconomyAdmin } from "./features/admin/EconomyAdmin";
 import { AuthPage } from "./features/auth/AuthPage";
 import { getCurrentSession, type AuthSessionDto } from "./features/auth/authApi";
 import { GameShell } from "./features/game/GameShell";
@@ -32,7 +33,12 @@ export function App() {
   return (
     <>
       <GameShell csrfToken={session.csrfToken} />
-      {isAdmin ? <ActivationCodeAdmin csrfToken={session.csrfToken} /> : null}
+      {isAdmin ? (
+        <>
+          <ActivationCodeAdmin csrfToken={session.csrfToken} />
+          <EconomyAdmin />
+        </>
+      ) : null}
     </>
   );
 }

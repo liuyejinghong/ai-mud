@@ -93,6 +93,79 @@
   overflow-wrap: anywhere;
 }
 
+.economy-admin-body {
+  display: grid;
+  gap: 14px;
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.economy-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  color: #bde6c5;
+  font-size: 13px;
+}
+
+.economy-summary strong {
+  color: #f0d36b;
+}
+
+.admin-table {
+  display: grid;
+  border: 1px solid rgba(31, 208, 91, 0.32);
+  overflow-x: auto;
+}
+
+.admin-table-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.2fr) repeat(4, minmax(90px, 1fr));
+  min-width: 600px;
+  border-bottom: 1px solid rgba(31, 208, 91, 0.18);
+}
+
+.admin-table-row:last-child {
+  border-bottom: 0;
+}
+
+.admin-table-row span {
+  padding: 9px 10px;
+  color: #d7f8db;
+  font-size: 12px;
+}
+
+.admin-table-heading {
+  background: rgba(18, 69, 31, 0.72);
+}
+
+.admin-table-heading span {
+  color: #38e96f;
+}
+
+.economy-ledger {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.economy-ledger li {
+  color: #d7f8db;
+  line-height: 1.5;
+}
+
+.economy-ledger strong {
+  color: #f0d36b;
+}
+
+.economy-ledger span {
+  display: block;
+  color: #99d6a6;
+  font-size: 12px;
+}
+
 @media (max-width: 720px) {
   .admin-panel {
     padding: 18px 12px;
