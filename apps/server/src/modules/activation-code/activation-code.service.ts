@@ -39,7 +39,7 @@ export class ActivationCodeService {
     if (!record) return { ok: false, reason: "ACTIVATION_CODE_INVALID" };
     if (record.status === "used") return { ok: false, reason: "ACTIVATION_CODE_USED" };
     if (record.status === "revoked") return { ok: false, reason: "ACTIVATION_CODE_INVALID" };
-    if (record.expiresAt && record.expiresAt.getTime() <= Date.now()) {
+    if (record.status === "expired" || (record.expiresAt && record.expiresAt.getTime() <= Date.now())) {
       return { ok: false, reason: "ACTIVATION_CODE_EXPIRED" };
     }
 
