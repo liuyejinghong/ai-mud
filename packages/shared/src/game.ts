@@ -175,6 +175,56 @@ export interface WorldRuntimeStatusDto {
   leaseUntil: string | null;
 }
 
+export type AiCallStatus = "success" | "fallback" | "rejected" | "error";
+export type NpcDialogueSpeakerType = "player" | "npc" | "system";
+
+export interface NpcDialogueTargetDto {
+  npcActorId: string;
+  npcKey: string;
+  name: string;
+  profession: NpcProfession;
+  currentLocation: GameLocationId;
+  statusLine: string;
+}
+
+export interface NpcDialogueMessageDto {
+  id: string;
+  npcActorId: string;
+  speakerType: NpcDialogueSpeakerType;
+  message: string;
+  createdAt: string;
+}
+
+export interface NpcDialogueResponseDto {
+  target: NpcDialogueTargetDto;
+  messages: NpcDialogueMessageDto[];
+  ai: {
+    status: AiCallStatus;
+    provider: string;
+    model: string;
+    fallbackReason: string | null;
+  };
+}
+
+export interface AiCallLogDto {
+  id: string;
+  purpose: "npc_dialogue";
+  status: AiCallStatus;
+  provider: string;
+  model: string;
+  promptVersion: number;
+  accountId: string | null;
+  characterId: string | null;
+  npcActorId: string | null;
+  inputSummary: string;
+  outputSummary: string;
+  latencyMs: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  errorCode: string | null;
+  createdAt: string;
+}
+
 export interface CurrentActionDto {
   id: string;
   actionType: ActionType;

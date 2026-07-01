@@ -12,6 +12,10 @@ import {
   type GameStateDto,
   type MoneyDto,
   type NeedsDto,
+  type AiCallLogDto,
+  type NpcDialogueMessageDto,
+  type NpcDialogueResponseDto,
+  type NpcDialogueTargetDto,
   type NpcSimulationReportDto,
   type NpcSummaryDto,
   type WorldRuntimeStatusDto
@@ -30,13 +34,14 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.5.0 Living NPC compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.5.0");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(8);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(7);
+  it("exposes v0.6.0 AI dialogue compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.6.0");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(9);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(8);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(7);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(7);
+    expect(WORLD_COMPATIBILITY.promptVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
   });
 
@@ -301,5 +306,57 @@ describe("game contract", () => {
 
     expect(status.key).toBe("npc_world");
     expect(status.nextTickAt).toBe("2026-07-01T12:00:00.000Z");
+  });
+
+  it("describes NPC dialogue targets, messages, responses, and AI audit logs", () => {
+    const target: NpcDialogueTargetDto = {
+      npcActorId: "npc-blackpine-blacksmith-borin",
+      npcKey: "blackpine_blacksmith_borin",
+      name: "伯林",
+      profession: "blacksmith",
+      currentLocation: "blackpine_outpost",
+      statusLine: "正在盘点基础铁矿石库存。"
+    };
+    const message: NpcDialogueMessageDto = {
+      id: "msg-1",
+      npcActorId: target.npcActorId,
+      speakerType: "npc",
+      message: "炉火还没灭。你要修装备，先把矿石带来。",
+      createdAt: "2026-07-01T12:00:00.000Z"
+    };
+    const reply: NpcDialogueResponseDto = {
+      target,
+      messages: [message],
+      ai: {
+        status: "success",
+        provider: "deepseek",
+        model: "deepseek-v4-flash",
+        fallbackReason: null
+      }
+    };
+    const audit: AiCallLogDto = {
+      id: "ai-call-1",
+      purpose: "npc_dialogue",
+      status: "success",
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      promptVersion: 2,
+      accountId: "account-1",
+      characterId: "character-1",
+      npcActorId: target.npcActorId,
+      inputSummary: "玩家询问铁矿石是否短缺。",
+      outputSummary: "伯林要求玩家带来基础铁矿石。",
+      latencyMs: 320,
+      inputTokens: 220,
+      outputTokens: 80,
+      errorCode: null,
+      createdAt: "2026-07-01T12:00:01.000Z"
+    };
+
+    expect(reply.target.name).toBe("伯林");
+    expect(reply.messages[0]?.speakerType).toBe("npc");
+    expect(reply.ai.model).toBe("deepseek-v4-flash");
+    expect(audit.status).toBe("success");
+    expect(audit.promptVersion).toBe(2);
   });
 });
