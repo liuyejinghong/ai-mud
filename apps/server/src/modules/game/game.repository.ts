@@ -91,6 +91,20 @@ export interface MarketTransactionInput {
   netCopper: number;
 }
 
+export interface MarketTransactionRecord {
+  id: string;
+  settlementId: string;
+  characterId: string;
+  transactionType: "buy" | "sell";
+  itemId: ItemId;
+  quantity: number;
+  unitPriceCopper: number;
+  grossCopper: number;
+  taxCopper: number;
+  netCopper: number;
+  createdAt: Date;
+}
+
 export interface GatheringActionPayload {
   resourceId: string;
   itemId: ItemId;
@@ -147,6 +161,24 @@ export function serializeHunger(value: number) {
 
 export function serializeActionPayload(payload: CharacterActionPayload) {
   return { ...payload };
+}
+
+export function serializeMarketTransaction(
+  row: typeof marketTransactions.$inferSelect
+): MarketTransactionRecord {
+  return {
+    id: row.id,
+    settlementId: row.settlementId,
+    characterId: row.characterId,
+    transactionType: row.transactionType === "buy" ? "buy" : "sell",
+    itemId: row.itemId as ItemId,
+    quantity: row.quantity,
+    unitPriceCopper: row.unitPriceCopper,
+    grossCopper: row.grossCopper,
+    taxCopper: row.taxCopper,
+    netCopper: row.netCopper,
+    createdAt: row.createdAt
+  };
 }
 
 function parsePosition(value: unknown): GridPositionDto | null {
@@ -570,6 +602,30 @@ export class GameRepository {
 
   async createMarketTransaction(input: MarketTransactionInput): Promise<void> {
     await this.db.insert(marketTransactions).values(input);
+  }
+
+  async listMarketTransactions(input: {
+    settlementId: string;
+    limit: number;
+  }): Promise<MarketTransactionRecord[]> {
+    const limit = Math.min(100, Math.max(1, Math.floor(input.limit)));
+    const rows = await this.db
+      .select()
+      .from(marketTransactions)
+      .where(eq(marketTransactions.settlementId, input.settlementId))
+      .orderBy(desc(marketTransactions.createdAt))
+      .limit(limit);
+
+    return rows.map(serializeMarketTransaction);
+  }
+
+  async listAllMarketTransactions(settlementId: string): Promise<MarketTransactionRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(marketTransactions)
+      .where(eq(marketTransactions.settlementId, settlementId));
+
+    return rows.map(serializeMarketTransaction);
   }
 
   async findMapInstance(

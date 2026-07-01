@@ -4,6 +4,7 @@ import {
   serializeEquipmentDurability,
   serializeHunger,
   serializeActionPayload,
+  serializeMarketTransaction,
   serializeResourceCharges,
   type GatheringActionPayload
 } from "./game.repository.js";
@@ -44,5 +45,37 @@ describe("game repository helpers", () => {
     expect(serializeHunger(8)).toBe(5);
     expect(serializeHunger(-1)).toBe(0);
     expect(serializeHunger(2.8)).toBe(2);
+  });
+
+  it("serializes market transactions for economy visibility", () => {
+    const createdAt = new Date("2026-07-01T12:00:00.000Z");
+
+    expect(
+      serializeMarketTransaction({
+        id: "tx-1",
+        settlementId: "blackpine_outpost",
+        characterId: "character-1",
+        transactionType: "sell",
+        itemId: "wild_berry",
+        quantity: 3,
+        unitPriceCopper: 6,
+        grossCopper: 18,
+        taxCopper: 1,
+        netCopper: 17,
+        createdAt
+      })
+    ).toEqual({
+      id: "tx-1",
+      settlementId: "blackpine_outpost",
+      characterId: "character-1",
+      transactionType: "sell",
+      itemId: "wild_berry",
+      quantity: 3,
+      unitPriceCopper: 6,
+      grossCopper: 18,
+      taxCopper: 1,
+      netCopper: 17,
+      createdAt
+    });
   });
 });

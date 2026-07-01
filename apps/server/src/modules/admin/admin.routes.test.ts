@@ -1,10 +1,66 @@
 import Fastify from "fastify";
+import type { EconomySnapshotDto } from "@ai-mud/shared";
 import { describe, expect, it } from "vitest";
 import { registerAdminRoutes, type AdminRouteDependencies } from "./admin.routes.js";
 
-function buildAdminRouteTestApp(deps: AdminRouteDependencies) {
+const economySnapshot: EconomySnapshotDto = {
+  settlementId: "blackpine_outpost",
+  settlementName: "黑松哨站市政集市",
+  generatedAt: "2026-07-01T12:00:00.000Z",
+  taxSummary: {
+    transactionCount: 1,
+    grossCopper: 18,
+    taxCopper: 1,
+    buyTaxCopper: 0,
+    sellTaxCopper: 1,
+    netCopper: 17
+  },
+  marketItems: [
+    {
+      itemId: "wild_berry",
+      name: "野莓",
+      category: "food",
+      itemLevel: 1,
+      stockQuantity: 12,
+      targetQuantity: 20,
+      baseBuyPrice: { gold: 0, silver: 0, copper: 6, totalCopper: 6 },
+      baseSellPrice: { gold: 0, silver: 0, copper: 10, totalCopper: 10 }
+    }
+  ],
+  recentTransactions: [
+    {
+      id: "tx-1",
+      settlementId: "blackpine_outpost",
+      characterId: "character-1",
+      transactionType: "sell",
+      itemId: "wild_berry",
+      itemName: "野莓",
+      quantity: 3,
+      unitPrice: { gold: 0, silver: 0, copper: 6, totalCopper: 6 },
+      gross: { gold: 0, silver: 0, copper: 18, totalCopper: 18 },
+      tax: { gold: 0, silver: 0, copper: 1, totalCopper: 1 },
+      net: { gold: 0, silver: 0, copper: 17, totalCopper: 17 },
+      createdAt: "2026-07-01T12:00:00.000Z"
+    }
+  ]
+};
+
+function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
   const app = Fastify();
-  void registerAdminRoutes(app, deps);
+  const baseDeps: AdminRouteDependencies = {
+    getCurrentAdmin: async () => null,
+    verifyAdminMutation: async () => false,
+    listActivationCodes: async () => [],
+    createActivationCodeWithAudit: async () => {
+      throw new Error("not used");
+    },
+    writeAudit: async () => {
+      throw new Error("not used");
+    },
+    getEconomySnapshot: async () => economySnapshot,
+    now: () => new Date("2026-07-01T00:00:00.000Z")
+  };
+  void registerAdminRoutes(app, { ...baseDeps, ...deps });
   return app;
 }
 
@@ -280,5 +336,40 @@ describe("registerAdminRoutes", () => {
 
     expect(response.statusCode).toBe(500);
     expect(response.body).not.toContain("dry_run");
+  });
+
+  it("guards the economy snapshot behind an admin session", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => null
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/economy"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: { code: "UNAUTHENTICATED", message: "Admin session required" }
+    });
+  });
+
+  it("returns the economy snapshot for admins", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      getEconomySnapshot: async () => economySnapshot
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/economy"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(economySnapshot);
   });
 });
