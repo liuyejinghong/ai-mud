@@ -13,12 +13,16 @@ import {
   calculateDurabilityPct,
   calculateEffectiveStatRatio,
   calculateEquipmentRepairQuote,
+  calculateHungerCombatMultiplier,
+  calculateHungerStatus,
   calculateMarketQuote,
+  calculateNextMealAt,
   calculateRepairQuote,
   calculateGatheringPlan,
   calculateGatheringSettlement,
   formatMoney,
   movePosition,
+  settleHunger,
   simulateCombat
 } from "@ai-mud/game-rules";
 import {
@@ -28,6 +32,7 @@ import {
   type CreateCharacterRequestDto,
   type CurrentActionDto,
   type Direction,
+  type EatFoodRequestDto,
   type EquipmentItemDto,
   type RepairEquipmentRequestDto,
   type GameStateDto,
@@ -35,6 +40,7 @@ import {
   type InventoryItemDto,
   type MarketDto,
   type MarketTradeRequestDto,
+  type NeedsDto,
   type RepairQuoteDto,
   type StartGatheringRequestDto
 } from "@ai-mud/shared";
@@ -154,7 +160,18 @@ function progressPct(startedAt: Date, endsAt: Date, now: Date) {
   return Math.min(100, Math.round((elapsedMs / totalMs) * 100));
 }
 
-function toCharacterDto(character: CharacterRecord): CharacterDto {
+function toNeedsDto(character: CharacterRecord, now: Date): NeedsDto {
+  return {
+    hunger: {
+      current: character.hunger,
+      max: 5,
+      status: calculateHungerStatus(character.hunger),
+      nextMealAt: calculateNextMealAt(now).toISOString()
+    }
+  };
+}
+
+function toCharacterDto(character: CharacterRecord, now: Date): CharacterDto {
   return {
     id: character.id,
     name: character.name,
@@ -166,7 +183,8 @@ function toCharacterDto(character: CharacterRecord): CharacterDto {
     currentLocation: character.currentLocation,
     position: character.position,
     injuryUntil: character.injuryUntil?.toISOString() ?? null,
-    money: formatMoney(character.copperBalance)
+    money: formatMoney(character.copperBalance),
+    needs: toNeedsDto(character, now)
   };
 }
 
@@ -218,9 +236,12 @@ export class GameService {
   async getState(accountId: string): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
-      await this.settleDueAction(repo, accountId, new Date());
-      await this.healExpiredInjury(repo, accountId, new Date());
-      return this.buildState(repo, accountId, new Date());
+      const now = new Date();
+      await this.settleDueAction(repo, accountId, now);
+      await this.healExpiredInjury(repo, accountId, now);
+      const character = await repo.findCharacterByAccountId(accountId);
+      if (character) await this.settleHungerForCharacter(repo, character, now);
+      return this.buildState(repo, accountId, now);
     });
   }
 
@@ -259,8 +280,10 @@ export class GameService {
   async enterCorruptForest(accountId: string): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
-      const character = await this.requireCharacter(repo, accountId);
+      const now = new Date();
+      const character = await this.requireSettledCharacter(repo, accountId, now);
       await this.requireNoActiveAction(repo, character.id);
+      this.requireCanLeaveVillage(character);
       const existingMap = await repo.findMapInstance(character.id, CORRUPT_FOREST.id);
 
       if (!existingMap) {
@@ -282,7 +305,7 @@ export class GameService {
         message: "你穿过南侧木门，踏入腐林。"
       });
 
-      return this.buildState(repo, accountId, new Date());
+      return this.buildState(repo, accountId, now);
     });
   }
 
@@ -387,11 +410,17 @@ export class GameService {
           hp: character.hp,
           maxHp: character.maxHp,
           attack:
-            classAttack(character.classId) +
-            equipmentAttackBonus(await repo.listEquipment(character.id)),
+            Math.floor(
+              (classAttack(character.classId) +
+                equipmentAttackBonus(await repo.listEquipment(character.id))) *
+                calculateHungerCombatMultiplier(character.hunger)
+            ),
           defense:
-            classDefense(character.classId) +
-            equipmentDefenseBonus(await repo.listEquipment(character.id)),
+            Math.floor(
+              (classDefense(character.classId) +
+                equipmentDefenseBonus(await repo.listEquipment(character.id))) *
+                calculateHungerCombatMultiplier(character.hunger)
+            ),
           agility: classAgility(character.classId)
         },
         monsters: monsters.map((monster) => monster!)
@@ -430,7 +459,7 @@ export class GameService {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
       const now = new Date();
-      const character = await this.requireCharacter(repo, accountId);
+      const character = await this.requireSettledCharacter(repo, accountId, now);
       const action = await repo.findActiveActionByCharacterId(character.id);
       if (!action) {
         throw new GameServiceError("VALIDATION_ERROR", "当前没有进行中的行动。");
@@ -459,7 +488,7 @@ export class GameService {
   async returnToVillage(accountId: string): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
-      const character = await this.requireCharacter(repo, accountId);
+      const character = await this.requireSettledCharacter(repo, accountId, new Date());
       await this.requireNoActiveAction(repo, character.id);
 
       await repo.updateCharacterLocation({
@@ -484,7 +513,7 @@ export class GameService {
   async getMarket(accountId: string): Promise<MarketDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
-      const character = await this.requireCharacter(repo, accountId);
+      const character = await this.requireSettledCharacter(repo, accountId, new Date());
       return this.buildMarketDto(repo, character);
     });
   }
@@ -495,7 +524,7 @@ export class GameService {
   ): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
-      const character = await this.requireCharacter(repo, accountId);
+      const character = await this.requireSettledCharacter(repo, accountId, new Date());
       const quantity = this.requireTradeQuantity(input.quantity);
       const market = await this.requireMarketInventoryItem(repo, input.itemId);
       const item = getItemById(input.itemId);
@@ -560,7 +589,7 @@ export class GameService {
   ): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
-      const character = await this.requireCharacter(repo, accountId);
+      const character = await this.requireSettledCharacter(repo, accountId, new Date());
       const quantity = this.requireTradeQuantity(input.quantity);
       const market = await this.requireMarketInventoryItem(repo, input.itemId);
       const item = getItemById(input.itemId);
@@ -660,6 +689,48 @@ export class GameService {
     });
   }
 
+  async eatFood(accountId: string, input: EatFoodRequestDto): Promise<GameStateDto> {
+    return this.db.transaction(async (tx) => {
+      const repo = new GameRepository(tx);
+      const now = new Date();
+      const character = await this.requireSettledCharacter(repo, accountId, now);
+      await this.requireNoActiveAction(repo, character.id);
+
+      if (character.hunger >= 5) {
+        throw new GameServiceError("VALIDATION_ERROR", "你现在不饿。");
+      }
+
+      const item = getItemById(input.itemId);
+      if (!item || item.category !== "food" || !item.satietyRestore) {
+        throw new GameServiceError("VALIDATION_ERROR", "这个物品不能食用。");
+      }
+
+      const inventory = await repo.listInventory(character.id);
+      const stack = inventory.find((entry) => entry.itemId === input.itemId);
+      if (!stack || stack.quantity < 1) {
+        throw new GameServiceError("VALIDATION_ERROR", "背包里没有这种食物。");
+      }
+
+      await repo.decrementInventoryItem({
+        characterId: character.id,
+        itemId: input.itemId,
+        quantity: 1
+      });
+      await repo.updateCharacterNeeds({
+        characterId: character.id,
+        hunger: Math.min(5, character.hunger + item.satietyRestore),
+        lastHungerSettledAt: now
+      });
+      await repo.writeEvent({
+        characterId: character.id,
+        eventType: "character.eat",
+        message: `你吃下${item.name}，恢复了一些饱腹感。`
+      });
+
+      return this.buildState(repo, accountId, now);
+    });
+  }
+
   private requireTradeQuantity(quantity: number) {
     const normalized = Math.floor(quantity);
     if (!Number.isFinite(normalized) || normalized < 1) {
@@ -751,8 +822,109 @@ export class GameService {
     return character;
   }
 
-  private async requireRepairContext(repo: GameRepository, accountId: string) {
+  private async requireSettledCharacter(repo: GameRepository, accountId: string, now: Date) {
     const character = await this.requireCharacter(repo, accountId);
+    return this.settleHungerForCharacter(repo, character, now);
+  }
+
+  private foodDefinitions() {
+    return FIRST_ITEMS.filter((item) => item.category === "food" && item.satietyRestore).map(
+      (item) => ({
+        itemId: item.id,
+        itemLevel: item.itemLevel,
+        satietyRestore: item.satietyRestore ?? 0
+      })
+    );
+  }
+
+  private async settleHungerForCharacter(
+    repo: GameRepository,
+    character: CharacterRecord,
+    now: Date
+  ): Promise<CharacterRecord> {
+    const settlement = settleHunger({
+      currentHunger: character.hunger,
+      lastSettledAt: character.lastHungerSettledAt,
+      now,
+      inventory: await repo.listInventory(character.id),
+      foods: this.foodDefinitions()
+    });
+
+    if (settlement.missedMeals === 0) return character;
+
+    for (const consumed of settlement.consumed) {
+      await repo.decrementInventoryItem({
+        characterId: character.id,
+        itemId: consumed.itemId,
+        quantity: consumed.quantity
+      });
+    }
+
+    await repo.updateCharacterNeeds({
+      characterId: character.id,
+      hunger: settlement.hunger,
+      lastHungerSettledAt: now
+    });
+
+    if (settlement.consumed.length > 0) {
+      await repo.writeEvent({
+        characterId: character.id,
+        eventType: "character.hunger.auto_eat",
+        message: "到了饭点，你自动吃掉了背包里的普通食物。"
+      });
+    }
+
+    if (settlement.injured) {
+      const injuryUntil = new Date(now.getTime() + 30 * 60_000);
+      await repo.updateCharacterLocation({
+        characterId: character.id,
+        currentLocation: BLACKPINE_OUTPOST.id,
+        position: null
+      });
+      await repo.updateCharacterVitals({
+        characterId: character.id,
+        hp: 1,
+        injuryUntil
+      });
+      await repo.writeEvent({
+        characterId: character.id,
+        eventType: "character.hunger.injury",
+        message: "你因为饥饿倒下，被送回黑松哨站休养。"
+      });
+      return {
+        ...character,
+        hp: 1,
+        hunger: settlement.hunger,
+        lastHungerSettledAt: now,
+        currentLocation: BLACKPINE_OUTPOST.id,
+        position: null,
+        injuryUntil
+      };
+    }
+
+    if (settlement.hunger <= 2) {
+      await repo.writeEvent({
+        characterId: character.id,
+        eventType: "character.hunger.warning",
+        message: "你感到饥饿，继续外出前最好准备食物。"
+      });
+    }
+
+    return {
+      ...character,
+      hunger: settlement.hunger,
+      lastHungerSettledAt: now
+    };
+  }
+
+  private requireCanLeaveVillage(character: CharacterRecord) {
+    if (character.hunger <= 0) {
+      throw new GameServiceError("VALIDATION_ERROR", "你已经饿到虚弱，不能出城。");
+    }
+  }
+
+  private async requireRepairContext(repo: GameRepository, accountId: string) {
+    const character = await this.requireSettledCharacter(repo, accountId, new Date());
     if (character.currentLocation !== BLACKPINE_OUTPOST.id) {
       throw new GameServiceError("VALIDATION_ERROR", "必须在黑松哨站修理装备。");
     }
@@ -827,9 +999,12 @@ export class GameService {
     accountId: string,
     now: Date
   ) {
-    const character = await this.requireCharacter(repo, accountId);
+    const character = await this.requireSettledCharacter(repo, accountId, now);
     if (character.injuryUntil && character.injuryUntil.getTime() > now.getTime()) {
       throw new GameServiceError("VALIDATION_ERROR", "你正在养伤，暂时不能出城。");
+    }
+    if (character.hunger <= 0) {
+      throw new GameServiceError("VALIDATION_ERROR", "你已经饿到虚弱，不能出城。");
     }
     if (character.currentLocation !== CORRUPT_FOREST.id || !character.position) {
       throw new GameServiceError("VALIDATION_ERROR", "Character is not exploring");
@@ -1105,9 +1280,16 @@ export class GameService {
       if (!currentAction && equipmentDto.some((item) => item.repairQuote !== null)) {
         availableActions.push("repair_equipment");
       }
+      if (
+        !currentAction &&
+        character.hunger < 5 &&
+        inventory.some((item) => getItemById(item.itemId)?.category === "food")
+      ) {
+        availableActions.push("eat_food");
+      }
 
       return {
-        character: toCharacterDto(character),
+        character: toCharacterDto(character, now),
         locationTitle: BLACKPINE_OUTPOST.title,
         locationDescription: BLACKPINE_OUTPOST.description,
         map: null,
@@ -1139,7 +1321,7 @@ export class GameService {
     }
 
     return {
-      character: toCharacterDto(character),
+      character: toCharacterDto(character, now),
       locationTitle: CORRUPT_FOREST.title,
       locationDescription: CORRUPT_FOREST.description,
       map: {

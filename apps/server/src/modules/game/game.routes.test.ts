@@ -23,7 +23,15 @@ const baseState: GameStateDto = {
     currentLocation: "blackpine_outpost",
     position: null,
     injuryUntil: null,
-    money: { gold: 0, silver: 12, copper: 35, totalCopper: 1235 }
+    money: { gold: 0, silver: 12, copper: 35, totalCopper: 1235 },
+    needs: {
+      hunger: {
+        current: 4,
+        max: 5,
+        status: "fed",
+        nextMealAt: "2026-07-01T18:00:00.000Z"
+      }
+    }
   },
   locationTitle: "黑松哨站",
   locationDescription: "潮湿黑松围住木墙，哨塔上的火盆把灰雾照成暗红色。",
@@ -110,6 +118,19 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
     }),
     repairEquipment: async () => baseState,
     repairAllEquipment: async () => baseState,
+    eatFood: async () => ({
+      ...baseState,
+      character: {
+        ...baseState.character!,
+        needs: {
+          hunger: {
+            ...baseState.character!.needs.hunger,
+            current: 5
+          }
+        }
+      },
+      inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 1 }]
+    }),
     ...overrides
   };
   const app = Fastify();
@@ -146,6 +167,7 @@ describe("registerGameRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().locationTitle).toBe("黑松哨站");
+    expect(response.json().character.needs.hunger.current).toBe(4);
     expect(calls).toEqual([
       { accountId: "account-1", input: { name: "Zichen", classId: "ranger" } }
     ]);
@@ -466,6 +488,39 @@ describe("registerGameRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(calls).toEqual([{ accountId: "account-1" }]);
+  });
+
+  it("eats a food item through a CSRF-protected mutation", async () => {
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      eatFood: async (accountId, input) => {
+        calls.push({ accountId, input });
+        return {
+          ...baseState,
+          character: {
+            ...baseState.character!,
+            needs: {
+              hunger: {
+                ...baseState.character!.needs.hunger,
+                current: 5
+              }
+            }
+          }
+        };
+      }
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/eat",
+      headers: { "x-csrf-token": "csrf" },
+      payload: { itemId: "wild_berry" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(calls).toEqual([
+      { accountId: "account-1", input: { itemId: "wild_berry" } }
+    ]);
+    expect(response.json().character.needs.hunger.current).toBe(5);
   });
 
   it("surfaces repair validation errors", async () => {

@@ -109,6 +109,10 @@ export const characters = pgTable(
     hp: integer("hp").notNull(),
     maxHp: integer("max_hp").notNull(),
     copperBalance: integer("copper_balance").notNull().default(0),
+    hunger: integer("hunger").notNull().default(5),
+    lastHungerSettledAt: timestamp("last_hunger_settled_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     currentLocation: gameLocation("current_location").notNull().default("blackpine_outpost"),
     position: jsonb("position"),
     injuryUntil: timestamp("injury_until", { withTimezone: true }),

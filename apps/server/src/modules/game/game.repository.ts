@@ -31,6 +31,8 @@ export interface CharacterRecord {
   hp: number;
   maxHp: number;
   copperBalance: number;
+  hunger: number;
+  lastHungerSettledAt: Date;
   currentLocation: GameLocationId;
   position: GridPositionDto | null;
   injuryUntil: Date | null;
@@ -137,6 +139,10 @@ export function serializeEquipmentDurability(input: {
     ),
     maxDurability
   };
+}
+
+export function serializeHunger(value: number) {
+  return Math.min(5, Math.max(0, Math.floor(value)));
 }
 
 export function serializeActionPayload(payload: CharacterActionPayload) {
@@ -270,6 +276,8 @@ export class GameRepository {
       hp: row.hp,
       maxHp: row.maxHp,
       copperBalance: row.copperBalance,
+      hunger: serializeHunger(row.hunger),
+      lastHungerSettledAt: row.lastHungerSettledAt,
       currentLocation: row.currentLocation,
       position: parsePosition(row.position),
       injuryUntil: row.injuryUntil
@@ -306,6 +314,8 @@ export class GameRepository {
       hp: row.hp,
       maxHp: row.maxHp,
       copperBalance: row.copperBalance,
+      hunger: serializeHunger(row.hunger),
+      lastHungerSettledAt: row.lastHungerSettledAt,
       currentLocation: row.currentLocation,
       position: parsePosition(row.position),
       injuryUntil: row.injuryUntil
@@ -319,6 +329,20 @@ export class GameRepository {
     await this.db
       .update(characters)
       .set({ copperBalance: input.copperBalance })
+      .where(eq(characters.id, input.characterId));
+  }
+
+  async updateCharacterNeeds(input: {
+    characterId: string;
+    hunger: number;
+    lastHungerSettledAt: Date;
+  }): Promise<void> {
+    await this.db
+      .update(characters)
+      .set({
+        hunger: serializeHunger(input.hunger),
+        lastHungerSettledAt: input.lastHungerSettledAt
+      })
       .where(eq(characters.id, input.characterId));
   }
 

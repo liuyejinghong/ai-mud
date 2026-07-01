@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseActionPayload,
   serializeEquipmentDurability,
+  serializeHunger,
   serializeActionPayload,
   serializeResourceCharges,
   type GatheringActionPayload
@@ -37,5 +38,11 @@ describe("game repository helpers", () => {
       currentDurability: 0,
       maxDurability: 100
     });
+  });
+
+  it("serializes hunger with clamped integer values", () => {
+    expect(serializeHunger(8)).toBe(5);
+    expect(serializeHunger(-1)).toBe(0);
+    expect(serializeHunger(2.8)).toBe(2);
   });
 });

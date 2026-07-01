@@ -43,6 +43,11 @@ describe("foundation schema", () => {
     expect(characters.copperBalance.getSQLType()).toBe("integer");
   });
 
+  it("stores character hunger needs", () => {
+    expect(characters.hunger.getSQLType()).toBe("integer");
+    expect(characters.lastHungerSettledAt.getSQLType()).toBe("timestamp with time zone");
+  });
+
   it("stores equipment durability as per-character item instances", () => {
     expect(characterEquipment.slot.getSQLType()).toBe("text");
     expect(characterEquipment.currentDurability.getSQLType()).toBe("integer");

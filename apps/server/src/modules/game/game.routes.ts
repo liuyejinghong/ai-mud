@@ -4,6 +4,7 @@ import {
   ITEM_IDS,
   type CreateCharacterRequestDto,
   type Direction,
+  type EatFoodRequestDto,
   type ErrorCode,
   type GameStateDto,
   type MarketDto,
@@ -44,6 +45,10 @@ const repairEquipmentSchema = z.object({
   equipmentId: z.string().min(1)
 });
 
+const eatFoodSchema = z.object({
+  itemId: z.enum(ITEM_IDS)
+});
+
 export interface GameRouteDependencies {
   getCurrentAccount(request: FastifyRequest): Promise<PublicAccountRecord | null>;
   verifyGameMutation(request: FastifyRequest): Promise<boolean>;
@@ -61,6 +66,7 @@ export interface GameRouteDependencies {
   getRepairQuote(accountId: string, input: RepairEquipmentRequestDto): Promise<RepairQuoteDto>;
   repairEquipment(accountId: string, input: RepairEquipmentRequestDto): Promise<GameStateDto>;
   repairAllEquipment(accountId: string): Promise<GameStateDto>;
+  eatFood(accountId: string, input: EatFoodRequestDto): Promise<GameStateDto>;
 }
 
 function sendError(reply: FastifyReply, statusCode: number, code: ErrorCode, message: string) {
@@ -109,7 +115,8 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
     sellMarketItem: (accountId, input) => game.sellMarketItem(accountId, input),
     getRepairQuote: (accountId, input) => game.getRepairQuote(accountId, input),
     repairEquipment: (accountId, input) => game.repairEquipment(accountId, input),
-    repairAllEquipment: (accountId) => game.repairAllEquipment(accountId)
+    repairAllEquipment: (accountId) => game.repairAllEquipment(accountId),
+    eatFood: (accountId, input) => game.eatFood(accountId, input)
   };
 }
 
@@ -348,6 +355,23 @@ export async function registerGameRoutes(app: FastifyInstance, maybeDependencies
 
     try {
       return await deps.repairAllEquipment(account.id);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/eat", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    const parsed = eatFoodSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid food input");
+    }
+
+    try {
+      return await deps.eatFood(account.id, parsed.data);
     } catch (error) {
       return handleGameError(reply, error);
     }
