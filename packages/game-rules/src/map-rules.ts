@@ -41,9 +41,13 @@ export function buildMapCells(
           resource.position.y === y &&
           (resourceCharges[resource.id] ?? resource.charges) > 0
       );
+      const hasEncounter = zone.encounters.some(
+        (encounter) => encounter.position.x === x && encounter.position.y === y
+      );
 
       if (hasPlayer) markers.push("player");
       if (hasResource) markers.push("resource");
+      if (hasEncounter) markers.push("encounter");
       if (hasExit) markers.push("exit");
       if (markers.length === 0) markers.push("ordinary");
 
