@@ -4,8 +4,10 @@ import { z } from "zod";
 import { DrizzleActivationCodeRepository } from "../activation-code/activation-code.repository.js";
 import { ActivationCodeService } from "../activation-code/activation-code.service.js";
 import { DrizzleAuditWriter } from "../audit/audit.repository.js";
+import type { AuditWriter } from "../audit/audit.service.js";
 import { AuthRepository } from "../auth/auth.repository.js";
 import { AuthService } from "../auth/auth.service.js";
+import { WorldResetService } from "../world-reset/world-reset.service.js";
 
 export interface AdminAccount {
   id: string;
@@ -22,12 +24,18 @@ export interface AdminRouteDependencies {
     expiresAt: Date | null;
     metadata?: Record<string, unknown>;
   }): Promise<{ code: string; activationCode: ActivationCodeDto }>;
+  writeAudit(input: Parameters<AuditWriter["write"]>[0]): Promise<void>;
   now(): Date;
 }
 
 const createActivationCodeSchema = z.object({
   note: z.string().max(200).optional(),
   expiresAt: z.string().datetime().optional()
+});
+
+const softResetSchema = z.object({
+  confirmationText: z.string(),
+  reason: z.string().min(8)
 });
 
 function sendError(reply: FastifyReply, statusCode: number, code: ErrorCode, message: string) {
@@ -122,6 +130,10 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
 
         return { code: created.code, activationCode };
       }),
+    writeAudit: async (input) => {
+      const audit = new DrizzleAuditWriter(app.di.db);
+      await audit.write(input);
+    },
     now
   };
 }
@@ -160,6 +172,40 @@ export async function registerAdminRoutes(
       createdByAdminId: admin.id,
       expiresAt,
       metadata: { expiresAt: expiresAt?.toISOString() ?? null }
+    });
+
+    return result;
+  });
+
+  app.post("/admin/world-reset/soft", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+
+    const parsed = softResetSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid reset input");
+    }
+
+    const service = new WorldResetService();
+    const result = await service.requestSoftReset({
+      actorAccountId: admin.id,
+      confirmationText: parsed.data.confirmationText,
+      reason: parsed.data.reason
+    });
+
+    if (!result.ok) {
+      return sendError(reply, 400, "VALIDATION_ERROR", result.reason);
+    }
+
+    await deps.writeAudit({
+      actorAccountId: admin.id,
+      action: "world_reset.soft.request",
+      targetType: "world",
+      targetId: null,
+      reason: parsed.data.reason,
+      metadata: { mode: result.mode }
     });
 
     return result;
