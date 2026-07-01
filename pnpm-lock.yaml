@@ -20,6 +20,12 @@ importers:
 
   apps/server:
     dependencies:
+      '@ai-mud/content':
+        specifier: workspace:*
+        version: link:../../packages/content
+      '@ai-mud/game-rules':
+        specifier: workspace:*
+        version: link:../../packages/game-rules
       '@ai-mud/shared':
         specifier: workspace:*
         version: link:../../packages/shared

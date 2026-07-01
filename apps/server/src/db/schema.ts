@@ -1,10 +1,12 @@
 import {
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid
 } from "drizzle-orm/pg-core";
 
@@ -16,6 +18,8 @@ export const activationCodeStatus = pgEnum("activation_code_status", [
   "expired",
   "revoked"
 ]);
+export const characterClass = pgEnum("character_class", ["warrior", "ranger", "warlock"]);
+export const gameLocation = pgEnum("game_location", ["blackpine_outpost", "corrupt_forest"]);
 
 export const accounts = pgTable(
   "accounts",
@@ -84,5 +88,79 @@ export const auditLogs = pgTable(
   (table) => ({
     actionIdx: index("audit_logs_action_idx").on(table.action),
     createdAtIdx: index("audit_logs_created_at_idx").on(table.createdAt)
+  })
+);
+
+export const characters = pgTable(
+  "characters",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id").notNull().references(() => accounts.id).unique(),
+    name: text("name").notNull(),
+    classId: characterClass("class_id").notNull(),
+    level: integer("level").notNull().default(1),
+    xp: integer("xp").notNull().default(0),
+    hp: integer("hp").notNull(),
+    maxHp: integer("max_hp").notNull(),
+    currentLocation: gameLocation("current_location").notNull().default("blackpine_outpost"),
+    position: jsonb("position"),
+    injuryUntil: timestamp("injury_until", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    accountIdx: index("characters_account_id_idx").on(table.accountId)
+  })
+);
+
+export const characterItems = pgTable(
+  "character_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    characterId: uuid("character_id").notNull().references(() => characters.id),
+    itemId: text("item_id").notNull(),
+    quantity: integer("quantity").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    characterItemIdx: uniqueIndex("character_items_character_item_idx").on(
+      table.characterId,
+      table.itemId
+    )
+  })
+);
+
+export const mapInstances = pgTable(
+  "map_instances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    characterId: uuid("character_id").notNull().references(() => characters.id),
+    zoneId: gameLocation("zone_id").notNull(),
+    resourceCharges: jsonb("resource_charges").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    characterZoneIdx: uniqueIndex("map_instances_character_zone_idx").on(
+      table.characterId,
+      table.zoneId
+    )
+  })
+);
+
+export const gameEvents = pgTable(
+  "game_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    characterId: uuid("character_id").notNull().references(() => characters.id),
+    eventType: text("event_type").notNull(),
+    message: text("message").notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    characterCreatedAtIdx: index("game_events_character_created_at_idx").on(
+      table.characterId,
+      table.createdAt
+    )
   })
 );
