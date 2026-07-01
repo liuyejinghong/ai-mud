@@ -4,3 +4,4 @@ export * from "./equipment-rules.js";
 export * from "./gathering-rules.js";
 export * from "./inventory-rules.js";
 export * from "./map-rules.js";
+export * from "./needs-rules.js";

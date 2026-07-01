@@ -8,6 +8,7 @@ export interface ItemDefinition {
   baseBuyPriceCopper: number;
   baseSellPriceCopper: number;
   targetMarketQuantity: number;
+  satietyRestore?: number;
 }
 
 export interface ResourceDefinition {
@@ -63,7 +64,8 @@ export const FIRST_ITEMS: ItemDefinition[] = [
     itemLevel: 1,
     baseBuyPriceCopper: 5,
     baseSellPriceCopper: 8,
-    targetMarketQuantity: 100
+    targetMarketQuantity: 100,
+    satietyRestore: 1
   },
   {
     id: "beast_meat",
@@ -72,7 +74,8 @@ export const FIRST_ITEMS: ItemDefinition[] = [
     itemLevel: 1,
     baseBuyPriceCopper: 12,
     baseSellPriceCopper: 20,
-    targetMarketQuantity: 60
+    targetMarketQuantity: 60,
+    satietyRestore: 1
   },
   {
     id: "rough_hide",

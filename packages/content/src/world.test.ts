@@ -31,6 +31,16 @@ describe("first world content", () => {
     expect(getResourceById("discarded_hide_01")?.cycleSeconds).toBe(60);
     expect(getResourceById("abandoned_iron_vein_01")?.cycleSeconds).toBe(60);
     expect(getItemById("wild_berry")?.name).toBe("野莓");
+    expect(getItemById("wild_berry")).toMatchObject({
+      category: "food",
+      itemLevel: 1,
+      satietyRestore: 1
+    });
+    expect(getItemById("beast_meat")).toMatchObject({
+      category: "food",
+      itemLevel: 1,
+      satietyRestore: 1
+    });
     expect(getItemById("iron_ore")).toMatchObject({
       name: "基础铁矿石",
       category: "ore",

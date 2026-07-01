@@ -11,8 +11,13 @@ import {
   calculateEquipmentRepairQuote,
   calculateGatheringPlan,
   calculateGatheringSettlement,
+  calculateHungerCombatMultiplier,
+  calculateHungerStatus,
+  countUnsettledMeals,
   formatMoney,
   movePosition,
+  selectAutoEatFood,
+  settleHunger,
   simulateCombat
 } from "./engine.js";
 
@@ -188,5 +193,58 @@ describe("v0.3 engine rules", () => {
 
     expect(quote?.copperCost).toBeGreaterThan(0);
     expect(quote?.ironOreCost).toBeGreaterThan(0);
+  });
+
+  it("calculates hunger status and combat penalties", () => {
+    expect(calculateHungerStatus(5)).toBe("fed");
+    expect(calculateHungerStatus(2)).toBe("hungry");
+    expect(calculateHungerStatus(1)).toBe("starving");
+    expect(calculateHungerStatus(0)).toBe("starving");
+    expect(calculateHungerCombatMultiplier(5)).toBe(1);
+    expect(calculateHungerCombatMultiplier(1)).toBe(0.8);
+    expect(calculateHungerCombatMultiplier(0)).toBe(0.5);
+  });
+
+  it("counts unsettled meals with a cap", () => {
+    expect(
+      countUnsettledMeals(
+        new Date("2026-07-01T07:00:00.000Z"),
+        new Date("2026-07-01T19:00:00.000Z")
+      )
+    ).toBe(2);
+    expect(
+      countUnsettledMeals(
+        new Date("2026-07-01T07:00:00.000Z"),
+        new Date("2026-07-05T19:00:00.000Z")
+      )
+    ).toBe(6);
+  });
+
+  it("auto-eats lower item-level food before reducing hunger", () => {
+    const selected = selectAutoEatFood(
+      [
+        { itemId: "beast_meat", quantity: 1 },
+        { itemId: "wild_berry", quantity: 2 }
+      ],
+      [
+        { itemId: "beast_meat", itemLevel: 2, satietyRestore: 1 },
+        { itemId: "wild_berry", itemLevel: 1, satietyRestore: 1 }
+      ]
+    );
+
+    expect(selected).toBe("wild_berry");
+
+    const settlement = settleHunger({
+      currentHunger: 3,
+      lastSettledAt: new Date("2026-07-01T07:00:00.000Z"),
+      now: new Date("2026-07-01T19:00:00.000Z"),
+      inventory: [{ itemId: "wild_berry", quantity: 1 }],
+      foods: [{ itemId: "wild_berry", itemLevel: 1, satietyRestore: 1 }]
+    });
+
+    expect(settlement.hunger).toBe(2);
+    expect(settlement.consumed).toEqual([{ itemId: "wild_berry", quantity: 1 }]);
+    expect(settlement.missedMeals).toBe(2);
+    expect(settlement.injured).toBe(false);
   });
 });
