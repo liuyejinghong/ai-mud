@@ -3,10 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "build": "tsc -p tsconfig.json && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
+    "e2e": "playwright test -c playwright.config.ts",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -16,6 +17,7 @@
     "vite": "^5.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "^18.3.0",
