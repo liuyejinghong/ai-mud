@@ -66,6 +66,8 @@ export interface MoneyDto {
 }
 
 export type HungerStatus = "fed" | "hungry" | "starving";
+export type ActorType = "player" | "npc" | "municipal";
+export type NpcProfession = "farmer" | "miner" | "blacksmith" | "municipal_officer";
 
 export interface NeedsDto {
   hunger: {
@@ -122,6 +124,46 @@ export interface GameLogEntryDto {
   id: string;
   message: string;
   createdAt: string;
+}
+
+export interface NpcActionSummaryDto {
+  actionType: "travel" | "gathering" | "market_buy" | "market_sell" | "eat" | "wage";
+  description: string;
+}
+
+export interface NpcSummaryDto {
+  id: string;
+  actorType: "npc";
+  npcKey: string;
+  name: string;
+  profession: NpcProfession;
+  currentLocation: GameLocationId;
+  position: GridPositionDto | null;
+  money: MoneyDto;
+  hunger: NeedsDto["hunger"];
+  currentAction: NpcActionSummaryDto | null;
+  inventory: InventoryItemDto[];
+  recentEvents: GameLogEntryDto[];
+}
+
+export interface NpcSimulationReportDto {
+  startedAt: string;
+  endedAt: string;
+  days: number;
+  settlementId: "blackpine_outpost";
+  treasury: MoneyDto;
+  npcCount: number;
+  actionCount: number;
+  marketTransactionCount: number;
+  resourceSnapshots: Array<{
+    resourceId: string;
+    name: string;
+    remainingCharges: number;
+  }>;
+  health: {
+    ok: boolean;
+    issues: string[];
+  };
 }
 
 export interface CurrentActionDto {
@@ -182,7 +224,10 @@ export interface EconomyMarketItemDto {
 export interface EconomyLedgerEntryDto {
   id: string;
   settlementId: "blackpine_outpost";
-  characterId: string;
+  actorId: string;
+  actorType: ActorType;
+  actorName: string;
+  characterId: string | null;
   transactionType: "buy" | "sell";
   itemId: ItemId;
   itemName: string;

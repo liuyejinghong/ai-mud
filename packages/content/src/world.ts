@@ -1,4 +1,4 @@
-import type { GameLocationId, GridPositionDto, ItemId } from "@ai-mud/shared";
+import type { GameLocationId, GridPositionDto, ItemId, NpcProfession } from "@ai-mud/shared";
 
 export interface ItemDefinition {
   id: ItemId;
@@ -54,6 +54,20 @@ export interface ZoneDefinition {
   exits: Array<{ id: string; position: GridPositionDto; toLocation: GameLocationId }>;
   resources: ResourceDefinition[];
   encounters: EncounterDefinition[];
+}
+
+export interface NpcDefinition {
+  key: string;
+  name: string;
+  profession: NpcProfession;
+  homeLocation: GameLocationId;
+  homePosition: GridPositionDto | null;
+  startingCopper: number;
+  wageCopper: number;
+  workResourceId: string | null;
+  producesItemId: ItemId | null;
+  demandItemIds: ItemId[];
+  paysWages: boolean;
 }
 
 export const FIRST_ITEMS: ItemDefinition[] = [
@@ -128,6 +142,61 @@ export const BLACKPINE_OUTPOST = {
   description: "潮湿黑松围住木墙，哨塔上的火盆把灰雾照成暗红色。"
 };
 
+export const FIRST_NPCS: NpcDefinition[] = [
+  {
+    key: "blackpine_farmer_mara",
+    name: "玛拉",
+    profession: "farmer",
+    homeLocation: "blackpine_outpost",
+    homePosition: null,
+    startingCopper: 40,
+    wageCopper: 25,
+    workResourceId: "forest_berry_patch_01",
+    producesItemId: "wild_berry",
+    demandItemIds: ["wild_berry", "beast_meat"],
+    paysWages: false
+  },
+  {
+    key: "blackpine_miner_torin",
+    name: "托林",
+    profession: "miner",
+    homeLocation: "blackpine_outpost",
+    homePosition: null,
+    startingCopper: 35,
+    wageCopper: 30,
+    workResourceId: "abandoned_iron_vein_01",
+    producesItemId: "iron_ore",
+    demandItemIds: ["wild_berry", "beast_meat"],
+    paysWages: false
+  },
+  {
+    key: "blackpine_blacksmith_borin",
+    name: "伯林",
+    profession: "blacksmith",
+    homeLocation: "blackpine_outpost",
+    homePosition: null,
+    startingCopper: 120,
+    wageCopper: 35,
+    workResourceId: null,
+    producesItemId: null,
+    demandItemIds: ["iron_ore"],
+    paysWages: false
+  },
+  {
+    key: "blackpine_officer_elian",
+    name: "艾廉",
+    profession: "municipal_officer",
+    homeLocation: "blackpine_outpost",
+    homePosition: null,
+    startingCopper: 80,
+    wageCopper: 40,
+    workResourceId: null,
+    producesItemId: null,
+    demandItemIds: ["wild_berry", "beast_meat"],
+    paysWages: true
+  }
+];
+
 export const CORRUPT_FOREST: ZoneDefinition = {
   id: "corrupt_forest",
   title: "腐林",
@@ -187,4 +256,8 @@ export function getMonsterById(monsterId: string) {
 
 export function getEncounterById(encounterId: string) {
   return FIRST_ENCOUNTERS.find((encounter) => encounter.id === encounterId) ?? null;
+}
+
+export function getNpcByKey(npcKey: string) {
+  return FIRST_NPCS.find((npc) => npc.key === npcKey) ?? null;
 }

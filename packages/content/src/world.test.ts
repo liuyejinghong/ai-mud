@@ -5,9 +5,11 @@ import {
   FIRST_ENCOUNTERS,
   FIRST_ITEMS,
   FIRST_MONSTERS,
+  FIRST_NPCS,
   getEncounterById,
   getItemById,
   getMonsterById,
+  getNpcByKey,
   getResourceById
 } from "./world.js";
 
@@ -65,5 +67,36 @@ describe("first world content", () => {
       "corrupted_wolf"
     ]);
     expect(FIRST_ENCOUNTERS[0]?.position).toEqual({ x: 3, y: 3 });
+  });
+
+  it("defines the first persistent Living NPCs", () => {
+    expect(FIRST_NPCS.map((npc) => npc.key)).toEqual([
+      "blackpine_farmer_mara",
+      "blackpine_miner_torin",
+      "blackpine_blacksmith_borin",
+      "blackpine_officer_elian"
+    ]);
+    expect(getNpcByKey("blackpine_farmer_mara")).toMatchObject({
+      name: "玛拉",
+      profession: "farmer",
+      workResourceId: "forest_berry_patch_01",
+      producesItemId: "wild_berry"
+    });
+    expect(getNpcByKey("blackpine_miner_torin")).toMatchObject({
+      name: "托林",
+      profession: "miner",
+      workResourceId: "abandoned_iron_vein_01",
+      producesItemId: "iron_ore"
+    });
+    expect(getNpcByKey("blackpine_blacksmith_borin")).toMatchObject({
+      name: "伯林",
+      profession: "blacksmith",
+      demandItemIds: ["iron_ore"]
+    });
+    expect(getNpcByKey("blackpine_officer_elian")).toMatchObject({
+      name: "艾廉",
+      profession: "municipal_officer",
+      paysWages: true
+    });
   });
 });

@@ -11,7 +11,9 @@ import {
   type EquipmentItemDto,
   type GameStateDto,
   type MoneyDto,
-  type NeedsDto
+  type NeedsDto,
+  type NpcSimulationReportDto,
+  type NpcSummaryDto
 } from "./game.js";
 import { PRODUCT_VERSION, WORLD_COMPATIBILITY } from "./version.js";
 
@@ -27,13 +29,14 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.4.3 economy visibility compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.4.3");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(7);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(6);
+  it("exposes v0.5.0 Living NPC compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.5.0");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(8);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(7);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
-    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(6);
-    expect(WORLD_COMPATIBILITY.contentVersion).toBe(6);
+    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(7);
+    expect(WORLD_COMPATIBILITY.contentVersion).toBe(7);
+    expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
   });
 
   it("includes basic iron ore in the shared item catalog", () => {
@@ -198,7 +201,10 @@ describe("game contract", () => {
         {
           id: "tx-1",
           settlementId: "blackpine_outpost",
-          characterId: "character-1",
+          actorId: "actor-farmer",
+          actorType: "npc",
+          actorName: "玛拉",
+          characterId: null,
           transactionType: "sell",
           itemId: "wild_berry",
           itemName: "野莓",
@@ -215,5 +221,70 @@ describe("game contract", () => {
     expect(snapshot.taxSummary.taxCopper).toBe(9);
     expect(snapshot.marketItems[0]?.targetQuantity).toBe(20);
     expect(snapshot.recentTransactions[0]?.transactionType).toBe("sell");
+    expect(snapshot.recentTransactions[0]?.actorType).toBe("npc");
+    expect(snapshot.recentTransactions[0]?.characterId).toBeNull();
+  });
+
+  it("describes long-term NPC world actors", () => {
+    const npc: NpcSummaryDto = {
+      id: "actor-farmer",
+      actorType: "npc",
+      npcKey: "blackpine_farmer_mara",
+      name: "玛拉",
+      profession: "farmer",
+      currentLocation: "corrupt_forest",
+      position: { x: 1, y: 3 },
+      money: { gold: 0, silver: 1, copper: 25, totalCopper: 125 },
+      hunger: {
+        current: 4,
+        max: 5,
+        status: "fed",
+        nextMealAt: "2026-07-01T18:00:00.000Z"
+      },
+      currentAction: {
+        actionType: "gathering",
+        description: "正在采集野莓"
+      },
+      inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 3 }],
+      recentEvents: [
+        {
+          id: "event-1",
+          message: "玛拉开始采集野莓。",
+          createdAt: "2026-07-01T12:00:00.000Z"
+        }
+      ]
+    };
+
+    expect(npc.actorType).toBe("npc");
+    expect(npc.profession).toBe("farmer");
+    expect(npc.currentAction?.actionType).toBe("gathering");
+  });
+
+  it("describes NPC simulation reports from real world records", () => {
+    const report: NpcSimulationReportDto = {
+      startedAt: "2026-07-01T00:00:00.000Z",
+      endedAt: "2026-07-08T00:00:00.000Z",
+      days: 7,
+      settlementId: "blackpine_outpost",
+      treasury: { gold: 0, silver: 80, copper: 0, totalCopper: 8000 },
+      npcCount: 4,
+      actionCount: 96,
+      marketTransactionCount: 18,
+      resourceSnapshots: [
+        {
+          resourceId: "forest_berry_patch_01",
+          name: "野莓灌木",
+          remainingCharges: 72
+        }
+      ],
+      health: {
+        ok: true,
+        issues: []
+      }
+    };
+
+    expect(report.days).toBe(7);
+    expect(report.health.ok).toBe(true);
+    expect(report.resourceSnapshots[0]?.remainingCharges).toBeGreaterThan(0);
   });
 });
