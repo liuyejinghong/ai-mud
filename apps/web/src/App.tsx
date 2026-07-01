@@ -3,6 +3,7 @@ import { AiCallAdmin } from "./features/admin/AiCallAdmin";
 import { ActivationCodeAdmin } from "./features/admin/ActivationCodeAdmin";
 import { EconomyAdmin } from "./features/admin/EconomyAdmin";
 import { NpcAdmin } from "./features/admin/NpcAdmin";
+import { NpcMemoryAdmin } from "./features/admin/NpcMemoryAdmin";
 import { AuthPage } from "./features/auth/AuthPage";
 import { getCurrentSession, type AuthSessionDto } from "./features/auth/authApi";
 import { GameShell } from "./features/game/GameShell";
@@ -41,6 +42,7 @@ export function App() {
           <EconomyAdmin />
           <NpcAdmin csrfToken={session.csrfToken} />
           <AiCallAdmin />
+          <NpcMemoryAdmin />
         </>
       ) : null}
     </>

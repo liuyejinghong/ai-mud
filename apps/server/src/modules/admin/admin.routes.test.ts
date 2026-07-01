@@ -2,6 +2,8 @@ import Fastify from "fastify";
 import type {
   AiCallLogDto,
   EconomySnapshotDto,
+  NpcMemoryEntryDto,
+  NpcMemoryFragmentDto,
   NpcSimulationReportDto,
   NpcSummaryDto,
   WorldRuntimeStatusDto
@@ -131,6 +133,38 @@ const aiCallLogs: AiCallLogDto[] = [
   }
 ];
 
+const npcMemoryEntries: NpcMemoryEntryDto[] = [
+  {
+    id: "mem-1",
+    npcActorId: "npc-blacksmith",
+    characterId: "character-1",
+    sourceType: "dialogue",
+    memoryKind: "conversation",
+    evidenceLevel: "dialogue_claim",
+    sourceIds: ["msg-1", "msg-2"],
+    importance: 1,
+    summary: "Zichen 询问伯林最近缺什么。",
+    occurredAt: "2026-07-01T12:00:00.000Z",
+    compressedAt: null
+  }
+];
+
+const npcMemoryFragments: NpcMemoryFragmentDto[] = [
+  {
+    id: "frag-1",
+    npcActorId: "npc-blacksmith",
+    characterId: "character-1",
+    memoryKind: "conversation",
+    evidenceLevel: "dialogue_claim",
+    importance: 1,
+    summary: "Zichen 多次询问基础铁矿石。",
+    firstOccurredAt: "2026-07-01T12:00:00.000Z",
+    lastOccurredAt: "2026-07-02T12:00:00.000Z",
+    sourceEntryIds: ["mem-1"],
+    compressionLevel: 1
+  }
+];
+
 function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
   const app = Fastify();
   const baseDeps: AdminRouteDependencies = {
@@ -152,6 +186,10 @@ function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
     }),
     getWorldRuntimeStatus: async () => worldRuntimeStatus,
     listAiCallLogs: async () => aiCallLogs,
+    listNpcMemory: async () => ({
+      entries: npcMemoryEntries,
+      fragments: npcMemoryFragments
+    }),
     settleNpcWorld: async () => ({
       generatedAt: "2026-07-01T00:00:00.000Z",
       settlementId: "blackpine_outpost",
@@ -568,6 +606,49 @@ describe("registerAdminRoutes", () => {
     expect(response.json()).toEqual({
       generatedAt: "2026-07-01T12:05:00.000Z",
       aiCalls: aiCallLogs
+    });
+  });
+
+  it("guards NPC memory behind an admin session", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => null
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/npc-memory"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: { code: "UNAUTHENTICATED", message: "Admin session required" }
+    });
+  });
+
+  it("returns NPC memory entries and fragments for admins", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      listNpcMemory: async () => ({
+        entries: npcMemoryEntries,
+        fragments: npcMemoryFragments
+      }),
+      now: () => new Date("2026-07-01T12:05:00.000Z")
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/npc-memory"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      generatedAt: "2026-07-01T12:05:00.000Z",
+      entries: npcMemoryEntries,
+      fragments: npcMemoryFragments
     });
   });
 

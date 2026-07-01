@@ -6,6 +6,8 @@ import type {
   EconomySnapshotDto,
   ErrorCode,
   MoneyDto,
+  NpcMemoryEntryDto,
+  NpcMemoryFragmentDto,
   NpcSimulationReportDto,
   NpcSummaryDto,
   WorldRuntimeStatusDto
@@ -21,6 +23,8 @@ import { AuthService } from "../auth/auth.service.js";
 import { DialogueRepository } from "../dialogue/dialogue.repository.js";
 import { GameRepository } from "../game/game.repository.js";
 import { NpcRepository } from "../npc/npc.repository.js";
+import { NpcMemoryRepository } from "../npc-memory/npc-memory.repository.js";
+import { NpcMemoryService } from "../npc-memory/npc-memory.service.js";
 import { NpcService } from "../npc/npc.service.js";
 import { WorldRuntimeRepository } from "../world-runtime/world-runtime.repository.js";
 import {
@@ -50,6 +54,10 @@ export interface AdminRouteDependencies {
   getNpcSnapshot(): Promise<NpcSnapshotResponse>;
   getWorldRuntimeStatus(): Promise<WorldRuntimeStatusDto>;
   listAiCallLogs(): Promise<AiCallLogDto[]>;
+  listNpcMemory(): Promise<{
+    entries: NpcMemoryEntryDto[];
+    fragments: NpcMemoryFragmentDto[];
+  }>;
   settleNpcWorld(): Promise<NpcSnapshotResponse>;
   runNpcSimulation(input: {
     days: number;
@@ -272,6 +280,10 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
       const repo = new DialogueRepository(app.di.db);
       return repo.listAiCallLogs({ limit: 50 });
     },
+    listNpcMemory: async () => {
+      const memory = new NpcMemoryService(new NpcMemoryRepository(app.di.db));
+      return memory.listAdminMemory({ limit: 50 });
+    },
     settleNpcWorld: async () => {
       const repo = new NpcRepository(app.di.db);
       const service = new NpcService(repo);
@@ -377,6 +389,18 @@ export async function registerAdminRoutes(
     return {
       generatedAt: deps.now().toISOString(),
       aiCalls: await deps.listAiCallLogs()
+    };
+  });
+
+  app.get("/admin/npc-memory", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+
+    return {
+      generatedAt: deps.now().toISOString(),
+      ...(await deps.listNpcMemory())
     };
   });
 

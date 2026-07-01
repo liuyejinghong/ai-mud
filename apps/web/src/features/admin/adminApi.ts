@@ -3,6 +3,8 @@ import type {
   CreateActivationCodeResponseDto,
   EconomySnapshotDto,
   MoneyDto,
+  NpcMemoryEntryDto,
+  NpcMemoryFragmentDto,
   NpcSimulationReportDto,
   NpcSummaryDto,
   WorldRuntimeStatusDto
@@ -20,6 +22,12 @@ export interface NpcSnapshotResponse {
 export interface AiCallLogResponse {
   generatedAt: string;
   aiCalls: AiCallLogDto[];
+}
+
+export interface NpcMemoryResponse {
+  generatedAt: string;
+  entries: NpcMemoryEntryDto[];
+  fragments: NpcMemoryFragmentDto[];
 }
 
 export async function createActivationCode(
@@ -86,6 +94,18 @@ export async function getAiCallLogs(): Promise<AiCallLogResponse> {
   }
 
   return response.json() as Promise<AiCallLogResponse>;
+}
+
+export async function getNpcMemory(): Promise<NpcMemoryResponse> {
+  const response = await fetch(`${API_BASE}/admin/npc-memory`, {
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to load NPC memory");
+  }
+
+  return response.json() as Promise<NpcMemoryResponse>;
 }
 
 export async function settleNpcWorld(csrfToken: string): Promise<NpcSnapshotResponse> {
