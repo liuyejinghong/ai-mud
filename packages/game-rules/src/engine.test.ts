@@ -3,8 +3,12 @@ import { describe, expect, it } from "vitest";
 import { addInventoryItem } from "./inventory-rules.js";
 import {
   buildMapCells,
+  applyCombatDurabilityLoss,
   calculateMarketQuote,
   calculateRepairQuote,
+  calculateDurabilityPct,
+  calculateEffectiveStatRatio,
+  calculateEquipmentRepairQuote,
   calculateGatheringPlan,
   calculateGatheringSettlement,
   formatMoney,
@@ -146,5 +150,43 @@ describe("v0.3 engine rules", () => {
 
     expect(quote.copperCost).toBeGreaterThan(0);
     expect(quote.ironOreCost).toBeGreaterThan(0);
+  });
+
+  it("calculates equipment durability percentage and zero-durability stat fallback", () => {
+    expect(calculateDurabilityPct({ currentDurability: 100, maxDurability: 100 })).toBe(100);
+    expect(calculateDurabilityPct({ currentDurability: 0, maxDurability: 100 })).toBe(0);
+    expect(calculateEffectiveStatRatio({ currentDurability: 100, maxDurability: 100 })).toBe(1);
+    expect(calculateEffectiveStatRatio({ currentDurability: 0, maxDurability: 100 })).toBe(0.2);
+  });
+
+  it("applies combat durability loss to weapon and chest equipment", () => {
+    const next = applyCombatDurabilityLoss([
+      { slot: "weapon", currentDurability: 10, maxDurability: 100 },
+      { slot: "chest", currentDurability: 10, maxDurability: 100 }
+    ]);
+
+    expect(next).toEqual([
+      { slot: "weapon", currentDurability: 8, maxDurability: 100 },
+      { slot: "chest", currentDurability: 9, maxDurability: 100 }
+    ]);
+  });
+
+  it("quotes equipment repair only when durability is missing", () => {
+    expect(
+      calculateEquipmentRepairQuote({
+        itemLevel: 5,
+        currentDurability: 100,
+        maxDurability: 100
+      })
+    ).toBeNull();
+
+    const quote = calculateEquipmentRepairQuote({
+      itemLevel: 5,
+      currentDurability: 60,
+      maxDurability: 100
+    });
+
+    expect(quote?.copperCost).toBeGreaterThan(0);
+    expect(quote?.ironOreCost).toBeGreaterThan(0);
   });
 });
