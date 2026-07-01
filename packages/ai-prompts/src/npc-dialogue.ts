@@ -9,10 +9,11 @@ export interface NpcDialoguePromptContext {
   npc: {
     key: string;
     name: string;
-    profession: string;
-    personality: string;
-    currentState: string;
-  };
+      profession: string;
+      personality: string;
+      currentState: string;
+      memorySummary: string;
+    };
   player: {
     name: string;
     className: string;

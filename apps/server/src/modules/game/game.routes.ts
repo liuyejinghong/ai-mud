@@ -28,6 +28,8 @@ import { AuthService } from "../auth/auth.service.js";
 import { DialogueRepository } from "../dialogue/dialogue.repository.js";
 import { DialogueService, DialogueServiceError } from "../dialogue/dialogue.service.js";
 import { NpcRepository } from "../npc/npc.repository.js";
+import { NpcMemoryRepository } from "../npc-memory/npc-memory.repository.js";
+import { NpcMemoryService } from "../npc-memory/npc-memory.service.js";
 import { GameRepository } from "./game.repository.js";
 import { GameService, GameServiceError } from "./game.service.js";
 
@@ -172,6 +174,7 @@ function createDialogueService(app: FastifyInstance) {
     dialogueRepo: new DialogueRepository(app.di.db),
     gameRepo: new GameRepository(app.di.db),
     npcRepo: new NpcRepository(app.di.db),
+    memory: new NpcMemoryService(new NpcMemoryRepository(app.di.db)),
     ai: new AiOrchestrator({
       enabled: hasDeepSeekKey,
       providerName: hasDeepSeekKey ? "deepseek" : "template",

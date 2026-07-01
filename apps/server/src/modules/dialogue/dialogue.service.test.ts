@@ -72,6 +72,8 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
   const messages: DialogueMessageRecord[] = [];
   const aiLogs: CreateAiCallLogInput[] = [];
   const relationships: UpsertRelationshipInput[] = [];
+  const memoryEvents: string[] = [];
+  const aiContexts: unknown[] = [];
 
   const service = new DialogueService({
     dialogueRepo: {
@@ -127,22 +129,33 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
       ]
     },
     ai: {
-      replyToNpcDialogue: async () => ({
-        reply: "基础铁矿石快见底了。你若去旧矿脉，带些回来。",
-        status: "success",
-        provider: "deepseek",
-        model: "deepseek-v4-flash",
-        fallbackReason: null,
-        inputTokens: 100,
-        outputTokens: 40,
-        latencyMs: 30,
-        ...reply
-      })
+      replyToNpcDialogue: async (input) => {
+        aiContexts.push(input.npcContext);
+        return {
+          reply: "基础铁矿石快见底了。你若去旧矿脉，带些回来。",
+          status: "success",
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          fallbackReason: null,
+          inputTokens: 100,
+          outputTokens: 40,
+          latencyMs: 30,
+          ...reply
+        };
+      }
+    },
+    memory: {
+      recordDialogueExchange: async (input) => {
+        memoryEvents.push(
+          `${input.playerName}:${input.playerMessage}:${input.npcReply}:${input.sourceIds?.join(",") ?? ""}`
+        );
+      },
+      getDialogueMemoryContext: async () => "记忆碎片：Zichen 曾询问过基础铁矿石短缺。"
     },
     now: () => new Date("2026-07-01T12:00:00.000Z")
   });
 
-  return { service, messages, aiLogs, relationships };
+  return { service, messages, aiLogs, relationships, memoryEvents, aiContexts };
 }
 
 describe("DialogueService", () => {
@@ -172,7 +185,7 @@ describe("DialogueService", () => {
   });
 
   it("stores player and NPC messages and writes an AI audit log", async () => {
-    const { service, messages, aiLogs, relationships } = buildService();
+    const { service, messages, aiLogs, relationships, memoryEvents, aiContexts } = buildService();
 
     const response = await service.sendDialogueMessage("account-1", "npc-blacksmith", "最近缺什么？");
 
@@ -193,6 +206,15 @@ describe("DialogueService", () => {
         familiarityDelta: 1
       })
     ]);
+    expect(memoryEvents).toEqual([
+      expect.stringContaining("Zichen:最近缺什么？:基础铁矿石快见底了")
+    ]);
+    expect(memoryEvents[0]).toContain("msg-1,msg-2");
+    expect(aiContexts[0]).toMatchObject({
+      npc: expect.objectContaining({
+        memorySummary: "记忆碎片：Zichen 曾询问过基础铁矿石短缺。"
+      })
+    });
   });
 
   it("stores fallback replies without exposing unsafe provider output", async () => {

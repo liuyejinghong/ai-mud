@@ -83,11 +83,29 @@ export interface DialogueAiPort {
   }): Promise<AiDialogueReply>;
 }
 
+export interface DialogueMemoryPort {
+  recordDialogueExchange(input: {
+    npcActorId: string;
+    characterId: string;
+    playerName: string;
+    playerMessage: string;
+    npcReply: string;
+    occurredAt: Date;
+    sourceIds?: string[];
+  }): Promise<void>;
+  getDialogueMemoryContext(input: {
+    npcActorId: string;
+    characterId: string;
+    now?: Date;
+  }): Promise<string>;
+}
+
 export interface DialogueServiceOptions {
   dialogueRepo: DialogueRepositoryPort;
   gameRepo: DialogueGameRepositoryPort;
   npcRepo: DialogueNpcRepositoryPort;
   ai: DialogueAiPort;
+  memory: DialogueMemoryPort;
   now?: () => Date;
 }
 
@@ -151,7 +169,7 @@ export class DialogueService {
     const resolved = await this.resolveTarget(accountId, npcActorId);
     const now = this.now();
 
-    await this.options.dialogueRepo.createDialogueMessage({
+    const playerRecord = await this.options.dialogueRepo.createDialogueMessage({
       accountId,
       characterId: resolved.character.id,
       npcActorId: resolved.npc.id,
@@ -169,7 +187,7 @@ export class DialogueService {
       npcActorId: resolved.npc.id
     });
 
-    await this.options.dialogueRepo.createDialogueMessage({
+    const npcRecord = await this.options.dialogueRepo.createDialogueMessage({
       accountId,
       characterId: resolved.character.id,
       npcActorId: resolved.npc.id,
@@ -177,6 +195,16 @@ export class DialogueService {
       message: aiReply.reply,
       safetyFlags: aiReply.fallbackReason ? [aiReply.fallbackReason] : [],
       createdAt: now
+    });
+
+    await this.options.memory.recordDialogueExchange({
+      npcActorId: resolved.npc.id,
+      characterId: resolved.character.id,
+      playerName: resolved.character.name,
+      playerMessage,
+      npcReply: aiReply.reply,
+      occurredAt: now,
+      sourceIds: [playerRecord.id, npcRecord.id]
     });
 
     await this.options.dialogueRepo.upsertRelationship({
@@ -299,7 +327,15 @@ export class DialogueService {
     resolved: ResolvedDialogueTarget,
     playerMessage: string
   ): Promise<NpcDialoguePromptContext> {
-    const [messages, inventory, action, events, marketInventory, relationship] = await Promise.all([
+    const [
+      messages,
+      inventory,
+      action,
+      events,
+      marketInventory,
+      relationship,
+      memorySummary
+    ] = await Promise.all([
       this.options.dialogueRepo.listDialogueMessages({
         characterId: resolved.character.id,
         npcActorId: resolved.npc.id,
@@ -312,6 +348,11 @@ export class DialogueService {
       this.options.dialogueRepo.findRelationship({
         characterId: resolved.character.id,
         npcActorId: resolved.npc.id
+      }),
+      this.options.memory.getDialogueMemoryContext({
+        characterId: resolved.character.id,
+        npcActorId: resolved.npc.id,
+        now: this.now()
       })
     ]);
 
@@ -321,6 +362,7 @@ export class DialogueService {
         name: resolved.npc.name,
         profession: describeProfession(resolved.npc.profession),
         personality: describePersonality(resolved.npc.npcKey),
+        memorySummary,
         currentState: [
           resolved.target.statusLine,
           describeInventory(inventory),

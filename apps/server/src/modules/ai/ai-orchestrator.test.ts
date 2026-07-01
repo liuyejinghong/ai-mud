@@ -9,7 +9,8 @@ const context: NpcDialoguePromptContext = {
     name: "伯林",
     profession: "blacksmith",
     personality: "谨慎、务实、讨厌浪费矿石。",
-    currentState: "正在黑松哨站盘点基础铁矿石。"
+    currentState: "正在黑松哨站盘点基础铁矿石。",
+    memorySummary: ""
   },
   player: {
     name: "Zichen",

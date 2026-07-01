@@ -11,7 +11,8 @@ const context = {
     name: "伯林",
     profession: "blacksmith",
     personality: "谨慎、务实、对浪费矿石很不耐烦。",
-    currentState: "在黑松哨站盘点基础铁矿石。"
+    currentState: "在黑松哨站盘点基础铁矿石。",
+    memorySummary: "记忆碎片：Zichen 曾询问过基础铁矿石短缺。"
   },
   player: {
     name: "Zichen",
@@ -34,6 +35,23 @@ describe("npc dialogue prompt", () => {
     expect(prompt.system.toLowerCase()).toContain("json");
     expect(prompt.system).toContain("reply");
     expect(prompt.user).toContain("blackpine_blacksmith_borin");
+  });
+
+  it("includes compressed NPC memory in the dialogue prompt context", () => {
+    const prompt = buildNpcDialoguePrompt({
+      ...context,
+      npc: {
+        ...context.npc,
+        memorySummary: "记忆碎片：阿岚上周送过烤鸡，但伯林已经记不清细节。"
+      },
+      player: {
+        ...context.player,
+        name: "阿岚"
+      },
+      playerMessage: "上周的烤鸡是我送的。"
+    });
+
+    expect(prompt.user).toContain("阿岚上周送过烤鸡");
   });
 
   it("parses valid NPC dialogue json", () => {
