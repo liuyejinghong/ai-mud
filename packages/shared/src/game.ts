@@ -40,6 +40,12 @@ export type ItemId = (typeof ITEM_IDS)[number];
 export const DIRECTIONS = ["north", "south", "west", "east"] as const;
 export type Direction = (typeof DIRECTIONS)[number];
 
+export const ACTION_TYPES = ["gathering", "combat"] as const;
+export type ActionType = (typeof ACTION_TYPES)[number];
+
+export const ACTION_STATUSES = ["active", "completed", "cancelled"] as const;
+export type ActionStatus = (typeof ACTION_STATUSES)[number];
+
 export function isDirection(value: unknown): value is Direction {
   return typeof value === "string" && DIRECTIONS.includes(value as Direction);
 }
@@ -59,6 +65,7 @@ export interface CharacterDto {
   maxHp: number;
   currentLocation: GameLocationId;
   position: GridPositionDto | null;
+  injuryUntil: string | null;
 }
 
 export interface InventoryItemDto {
@@ -70,13 +77,29 @@ export interface InventoryItemDto {
 export interface MapCellDto {
   x: number;
   y: number;
-  markers: Array<"player" | "resource" | "exit" | "ordinary">;
+  markers: Array<"player" | "resource" | "encounter" | "exit" | "ordinary">;
 }
 
 export interface GameLogEntryDto {
   id: string;
   message: string;
   createdAt: string;
+}
+
+export interface CurrentActionDto {
+  id: string;
+  actionType: ActionType;
+  status: ActionStatus;
+  description: string;
+  startedAt: string;
+  endsAt: string;
+  progressPct: number;
+  cycleProgressPct: number | null;
+  completedCycles: number | null;
+  settledCycles: number | null;
+  plannedCycles: number | null;
+  expectedYield: InventoryItemDto[];
+  combatLog: string[];
 }
 
 export interface GameStateDto {
@@ -90,8 +113,16 @@ export interface GameStateDto {
     cells: MapCellDto[];
   } | null;
   inventory: InventoryItemDto[];
+  currentAction: CurrentActionDto | null;
   availableActions: Array<
-    "create_character" | "enter_corrupt_forest" | "move" | "gather" | "return_to_village"
+    | "create_character"
+    | "enter_corrupt_forest"
+    | "move"
+    | "gather"
+    | "start_gathering"
+    | "start_combat"
+    | "cancel_action"
+    | "return_to_village"
   >;
   log: GameLogEntryDto[];
 }
@@ -103,4 +134,8 @@ export interface CreateCharacterRequestDto {
 
 export interface MoveRequestDto {
   direction: Direction;
+}
+
+export interface StartGatheringRequestDto {
+  plannedMinutes: 10 | 30 | 120;
 }
