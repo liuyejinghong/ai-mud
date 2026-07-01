@@ -1,5 +1,23 @@
 import { expect, test } from "@playwright/test";
 
+const fedNeeds = {
+  hunger: {
+    current: 5,
+    max: 5,
+    status: "fed",
+    nextMealAt: "2026-07-01T18:00:00.000Z"
+  }
+};
+
+const almostFedNeeds = {
+  hunger: {
+    current: 4,
+    max: 5,
+    status: "fed",
+    nextMealAt: "2026-07-01T18:00:00.000Z"
+  }
+};
+
 const villageState = {
   character: {
     id: "character-1",
@@ -12,12 +30,13 @@ const villageState = {
     currentLocation: "blackpine_outpost",
     position: null,
     injuryUntil: null,
-    money: { gold: 0, silver: 12, copper: 35, totalCopper: 1235 }
+    money: { gold: 0, silver: 12, copper: 35, totalCopper: 1235 },
+    needs: almostFedNeeds
   },
   locationTitle: "黑松哨站",
   locationDescription: "潮湿黑松围住木墙，哨塔上的火盆把灰雾照成暗红色。",
   map: null,
-  inventory: [],
+  inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 2 }],
   equipment: [
     {
       id: "equipment-1",
@@ -39,12 +58,22 @@ const villageState = {
   ],
   market: null,
   currentAction: null,
-  availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment"],
+  availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment", "eat_food"],
   log: []
 };
 
-const repairedVillageState = {
+const eatenVillageState = {
   ...villageState,
+  character: {
+    ...villageState.character,
+    needs: fedNeeds
+  },
+  inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 1 }],
+  availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment"]
+};
+
+const repairedVillageState = {
+  ...eatenVillageState,
   equipment: [
     {
       ...villageState.equipment[0],
@@ -165,6 +194,7 @@ test("player can use the first playable MUD screen", async ({ page }) => {
   await page.route("**/game/state", async (route) => route.fulfill({ json: villageState }));
   await page.route("**/game/enter-zone", async (route) => route.fulfill({ json: forestState }));
   await page.route("**/game/market", async (route) => route.fulfill({ json: marketState }));
+  await page.route("**/game/eat", async (route) => route.fulfill({ json: eatenVillageState }));
   await page.route("**/game/repair", async (route) => route.fulfill({ json: repairedVillageState }));
   await page.route("**/game/move", async (route) => route.fulfill({ json: forestState }));
   await page.route("**/game/gather", async (route) => route.fulfill({ json: activeGatheringState }));
@@ -175,6 +205,9 @@ test("player can use the first playable MUD screen", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "黑松哨站" })).toBeVisible();
   await expect(page.getByText("金币 0 | 银币 12 | 铜币 35")).toBeVisible();
+  await expect(page.getByText("饱腹 4/5")).toBeVisible();
+  await page.getByRole("button", { name: "食用 野莓" }).click();
+  await expect(page.getByText("饱腹 5/5")).toBeVisible();
   await expect(page.getByRole("heading", { name: "装备" })).toBeVisible();
   await expect(page.getByText("训练短剑", { exact: true })).toBeVisible();
   const trainingSword = page.getByRole("article").filter({ hasText: "训练短剑" });
