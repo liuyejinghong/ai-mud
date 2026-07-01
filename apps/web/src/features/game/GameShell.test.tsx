@@ -3,6 +3,15 @@ import type { GameStateDto, MarketDto } from "@ai-mud/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GameShell } from "./GameShell";
 
+const fedNeeds = {
+  hunger: {
+    current: 5,
+    max: 5,
+    status: "fed" as const,
+    nextMealAt: "2026-07-01T18:00:00.000Z"
+  }
+};
+
 const createCharacterState: GameStateDto = {
   character: null,
   locationTitle: "黑松哨站",
@@ -28,7 +37,8 @@ const villageState: GameStateDto = {
     currentLocation: "blackpine_outpost",
     position: null,
     injuryUntil: null,
-    money: { gold: 0, silver: 12, copper: 35, totalCopper: 1235 }
+    money: { gold: 0, silver: 12, copper: 35, totalCopper: 1235 },
+    needs: fedNeeds
   },
   locationTitle: "黑松哨站",
   locationDescription: "潮湿黑松围住木墙，哨塔上的火盆把灰雾照成暗红色。",
@@ -57,6 +67,28 @@ const villageState: GameStateDto = {
   currentAction: null,
   availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment"],
   log: []
+};
+
+const hungryVillageState: GameStateDto = {
+  ...villageState,
+  character: {
+    ...villageState.character!,
+    needs: {
+      hunger: {
+        current: 2,
+        max: 5,
+        status: "hungry",
+        nextMealAt: "2026-07-01T18:00:00.000Z"
+      }
+    }
+  },
+  inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 2 }],
+  availableActions: [
+    "enter_corrupt_forest",
+    "open_market",
+    "repair_equipment",
+    "eat_food"
+  ]
 };
 
 const marketState: MarketDto = {
@@ -190,6 +222,35 @@ describe("GameShell", () => {
         "http://127.0.0.1:3000/game/market/sell",
         expect.objectContaining({
           body: JSON.stringify({ itemId: "iron_ore", quantity: 1 }),
+          method: "POST"
+        })
+      );
+    });
+  });
+
+  it("shows hunger and eats a food item", async () => {
+    const eatenState: GameStateDto = {
+      ...hungryVillageState,
+      character: {
+        ...hungryVillageState.character!,
+        needs: fedNeeds
+      },
+      inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 1 }],
+      availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment"]
+    };
+    const fetchMock = mockFetchWithStates([hungryVillageState, eatenState]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByText("饱腹 2/5")).toBeTruthy();
+    expect(screen.getByText("饥饿：继续外出前最好准备食物。")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "食用 野莓" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:3000/game/eat",
+        expect.objectContaining({
+          body: JSON.stringify({ itemId: "wild_berry" }),
           method: "POST"
         })
       );

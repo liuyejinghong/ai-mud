@@ -4,6 +4,7 @@ import {
   type CharacterClassId,
   type Direction,
   type GameStateDto,
+  type HungerStatus,
   type InventoryItemDto,
   type MarketDto,
   type MoneyDto,
@@ -13,6 +14,7 @@ import {
   buyMarketItem,
   cancelAction,
   createCharacter,
+  eatFood,
   enterCorruptForest,
   getGameState,
   getMarket,
@@ -74,6 +76,16 @@ function moneyText(money: MoneyDto) {
   return `金币 ${money.gold} | 银币 ${money.silver} | 铜币 ${money.copper}`;
 }
 
+function isFoodItem(item: InventoryItemDto) {
+  return item.itemId === "wild_berry" || item.itemId === "beast_meat";
+}
+
+function hungerWarningText(status: HungerStatus) {
+  if (status === "fed") return null;
+  if (status === "starving") return "饥饿：饱腹归零，无法继续外出。";
+  return "饥饿：继续外出前最好准备食物。";
+}
+
 export function GameShell({ csrfToken }: GameShellProps) {
   const [state, setState] = useState<GameStateDto>(initialState);
   const [name, setName] = useState("Zichen");
@@ -99,6 +111,9 @@ export function GameShell({ csrfToken }: GameShellProps) {
   const canOpenMarket = state.availableActions.includes("open_market") && !isBusy;
   const canRepairEquipment =
     state.availableActions.includes("repair_equipment") && !isBusy && !state.currentAction;
+  const canEatFood =
+    state.availableActions.includes("eat_food") && !isBusy && !state.currentAction;
+  const hungerWarning = hungerWarningText(state.character?.needs.hunger.status ?? "fed");
   const damagedEquipment = state.equipment.filter((item) => item.repairQuote !== null);
   const selectedClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
 
@@ -237,10 +252,17 @@ export function GameShell({ csrfToken }: GameShellProps) {
               </dd>
             </div>
             <div>
+              <dt>饱腹</dt>
+              <dd>
+                饱腹 {state.character.needs.hunger.current}/{state.character.needs.hunger.max}
+              </dd>
+            </div>
+            <div>
               <dt>货币</dt>
               <dd>{moneyText(state.character.money)}</dd>
             </div>
           </dl>
+          {hungerWarning ? <p className="needs-warning">{hungerWarning}</p> : null}
         </section>
 
         <section className="game-panel">
@@ -309,14 +331,26 @@ export function GameShell({ csrfToken }: GameShellProps) {
           {state.inventory.length === 0 ? <p className="empty-copy">空</p> : null}
           <div className="inventory-list">
             {state.inventory.map((item) => (
-              <button
-                type="button"
-                key={item.itemId}
-                className="inventory-item"
-                onClick={() => setSelectedItem(item)}
-              >
-                {item.name} x{item.quantity}
-              </button>
+              <div className="inventory-item-row" key={item.itemId}>
+                <button
+                  type="button"
+                  className="inventory-item"
+                  onClick={() => setSelectedItem(item)}
+                >
+                  {item.name} x{item.quantity}
+                </button>
+                {canEatFood && isFoodItem(item) ? (
+                  <button
+                    type="button"
+                    className="game-secondary-button eat-button"
+                    onClick={() =>
+                      void runCommand(() => eatFood({ itemId: item.itemId }, csrfToken))
+                    }
+                  >
+                    食用 {item.name}
+                  </button>
+                ) : null}
+              </div>
             ))}
           </div>
         </section>

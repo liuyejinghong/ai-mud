@@ -1,5 +1,6 @@
 import type {
   CreateCharacterRequestDto,
+  EatFoodRequestDto,
   GameStateDto,
   MarketDto,
   MarketTradeRequestDto,
@@ -77,6 +78,14 @@ export function cancelAction(csrfToken: string) {
     method: "POST",
     headers: { "x-csrf-token": csrfToken },
     body: JSON.stringify({})
+  });
+}
+
+export function eatFood(input: EatFoodRequestDto, csrfToken: string) {
+  return requestGame<GameStateDto>("/game/eat", {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify(input)
   });
 }
 
