@@ -16,6 +16,8 @@ import {
   type NpcDialogueMessageDto,
   type NpcDialogueResponseDto,
   type NpcDialogueTargetDto,
+  type NpcMemoryEntryDto,
+  type NpcMemoryFragmentDto,
   type NpcSimulationReportDto,
   type NpcSummaryDto,
   type WorldRuntimeStatusDto
@@ -34,14 +36,14 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.6.0 AI dialogue compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.6.0");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(9);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(8);
+  it("exposes v0.6.1 NPC memory compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.6.1");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(10);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(9);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(7);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(7);
-    expect(WORLD_COMPATIBILITY.promptVersion).toBe(2);
+    expect(WORLD_COMPATIBILITY.promptVersion).toBe(3);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
   });
 
@@ -358,5 +360,35 @@ describe("game contract", () => {
     expect(reply.ai.model).toBe("deepseek-v4-flash");
     expect(audit.status).toBe("success");
     expect(audit.promptVersion).toBe(2);
+  });
+
+  it("describes NPC memory entries and compressed fragments", () => {
+    const entry: NpcMemoryEntryDto = {
+      id: "mem-1",
+      npcActorId: "npc-blacksmith",
+      characterId: "char-1",
+      sourceType: "dialogue",
+      memoryKind: "conversation",
+      importance: 2,
+      summary: "游侠阿岚告诉伯林自己正在寻找基础铁矿石。",
+      occurredAt: "2026-07-02T08:00:00.000Z",
+      compressedAt: null
+    };
+
+    const fragment: NpcMemoryFragmentDto = {
+      id: "frag-1",
+      npcActorId: "npc-blacksmith",
+      characterId: "char-1",
+      memoryKind: "conversation",
+      importance: 2,
+      summary: "阿岚多次询问铁矿石和修理装备。",
+      firstOccurredAt: "2026-07-02T08:00:00.000Z",
+      lastOccurredAt: "2026-07-02T09:00:00.000Z",
+      compressionLevel: 1
+    };
+
+    expect(entry.memoryKind).toBe("conversation");
+    expect(entry.sourceType).toBe("dialogue");
+    expect(fragment.compressionLevel).toBe(1);
   });
 });

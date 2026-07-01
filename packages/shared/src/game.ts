@@ -225,6 +225,39 @@ export interface AiCallLogDto {
   createdAt: string;
 }
 
+export type NpcMemorySourceType = "dialogue" | "system";
+export type NpcMemoryKind =
+  | "conversation"
+  | "favor"
+  | "conflict"
+  | "trade"
+  | "task"
+  | "world_event";
+
+export interface NpcMemoryEntryDto {
+  id: string;
+  npcActorId: string;
+  characterId: string | null;
+  sourceType: NpcMemorySourceType;
+  memoryKind: NpcMemoryKind;
+  importance: number;
+  summary: string;
+  occurredAt: string;
+  compressedAt: string | null;
+}
+
+export interface NpcMemoryFragmentDto {
+  id: string;
+  npcActorId: string;
+  characterId: string | null;
+  memoryKind: NpcMemoryKind;
+  importance: number;
+  summary: string;
+  firstOccurredAt: string;
+  lastOccurredAt: string;
+  compressionLevel: number;
+}
+
 export interface CurrentActionDto {
   id: string;
   actionType: ActionType;
