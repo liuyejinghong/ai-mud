@@ -1,0 +1,16 @@
+export type ErrorCode =
+  | "UNAUTHENTICATED"
+  | "FORBIDDEN"
+  | "VALIDATION_ERROR"
+  | "ACTIVATION_CODE_INVALID"
+  | "ACTIVATION_CODE_USED"
+  | "ACTIVATION_CODE_EXPIRED"
+  | "ACCOUNT_DISABLED"
+  | "RATE_LIMITED";
+
+export interface ApiErrorBody {
+  error: {
+    code: ErrorCode;
+    message: string;
+  };
+}
