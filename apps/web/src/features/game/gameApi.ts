@@ -1,7 +1,8 @@
 import type {
   CreateCharacterRequestDto,
   GameStateDto,
-  MoveRequestDto
+  MoveRequestDto,
+  StartGatheringRequestDto
 } from "@ai-mud/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:3000";
@@ -51,8 +52,32 @@ export function move(direction: MoveRequestDto["direction"], csrfToken: string) 
   });
 }
 
-export function gather(csrfToken: string) {
+export function startGathering(input: StartGatheringRequestDto, csrfToken: string) {
   return requestGame<GameStateDto>("/game/gather", {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify(input)
+  });
+}
+
+export function startCombat(csrfToken: string) {
+  return requestGame<GameStateDto>("/game/combat/start", {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify({})
+  });
+}
+
+export function cancelAction(csrfToken: string) {
+  return requestGame<GameStateDto>("/game/action/cancel", {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify({})
+  });
+}
+
+export function returnToVillage(csrfToken: string) {
+  return requestGame<GameStateDto>("/game/return-village", {
     method: "POST",
     headers: { "x-csrf-token": csrfToken },
     body: JSON.stringify({})

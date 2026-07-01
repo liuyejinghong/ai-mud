@@ -175,6 +175,45 @@
   margin-bottom: 14px;
 }
 
+.duration-select {
+  display: flex;
+  gap: 8px;
+}
+
+.duration-select select {
+  min-height: 38px;
+  border: 1px solid #236c3b;
+  background: #030806;
+  color: #e5ffe9;
+  padding: 0 8px;
+}
+
+.active-action-panel {
+  border: 1px solid rgba(216, 167, 53, 0.78);
+  background: rgba(20, 15, 6, 0.72);
+  margin-bottom: 14px;
+  padding: 12px;
+}
+
+.action-progress {
+  height: 10px;
+  border: 1px solid rgba(216, 167, 53, 0.65);
+  background: #050604;
+  overflow: hidden;
+}
+
+.action-progress span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #d8a735, #70f49b);
+}
+
+.action-meta {
+  color: #e9d08a;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
 .game-log {
   display: grid;
   gap: 8px;
@@ -213,6 +252,11 @@
 .mini-map-cell.is-resource {
   border-color: #d8a735;
   color: #f3d67d;
+}
+
+.mini-map-cell.is-encounter {
+  border-color: #ff7b7b;
+  color: #ff7b7b;
 }
 
 .mini-map-cell.is-exit {
@@ -269,6 +313,15 @@
   justify-content: flex-end;
   gap: 10px;
   margin-top: 16px;
+}
+
+.combat-log {
+  display: grid;
+  gap: 8px;
+  max-height: 240px;
+  overflow: auto;
+  padding-left: 20px;
+  color: #d8dce0;
 }
 
 @media (max-width: 900px) {

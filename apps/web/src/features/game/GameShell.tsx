@@ -4,14 +4,18 @@ import {
   type CharacterClassId,
   type Direction,
   type GameStateDto,
-  type InventoryItemDto
+  type InventoryItemDto,
+  type StartGatheringRequestDto
 } from "@ai-mud/shared";
 import {
+  cancelAction,
   createCharacter,
   enterCorruptForest,
-  gather,
   getGameState,
-  move
+  move,
+  returnToVillage,
+  startCombat,
+  startGathering
 } from "./gameApi";
 import "./GameShell.css";
 
@@ -25,6 +29,7 @@ const initialState: GameStateDto = {
   locationDescription: "你尚未创建角色。",
   map: null,
   inventory: [],
+  currentAction: null,
   availableActions: ["create_character"],
   log: []
 };
@@ -50,6 +55,7 @@ function isTextEntryTarget(target: EventTarget | null) {
 
 function cellText(markers: string[]) {
   if (markers.includes("player")) return "@";
+  if (markers.includes("encounter")) return "!";
   if (markers.includes("resource")) return "*";
   if (markers.includes("exit")) return "E";
   return ".";
@@ -60,11 +66,20 @@ export function GameShell({ csrfToken }: GameShellProps) {
   const [name, setName] = useState("Zichen");
   const [classId, setClassId] = useState<CharacterClassId>("ranger");
   const [selectedItem, setSelectedItem] = useState<InventoryItemDto | null>(null);
+  const [plannedMinutes, setPlannedMinutes] =
+    useState<StartGatheringRequestDto["plannedMinutes"]>(10);
+  const [isCombatDialogOpen, setIsCombatDialogOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
   const canMove = state.availableActions.includes("move") && !isBusy;
-  const canGather = state.availableActions.includes("gather") && !isBusy;
+  const canGather =
+    (state.availableActions.includes("start_gathering") ||
+      state.availableActions.includes("gather")) &&
+    !isBusy;
+  const canStartCombat = state.availableActions.includes("start_combat") && !isBusy;
+  const canCancelAction = state.availableActions.includes("cancel_action") && !isBusy;
+  const canReturnVillage = state.availableActions.includes("return_to_village") && !isBusy;
   const canEnterForest = state.availableActions.includes("enter_corrupt_forest") && !isBusy;
   const selectedClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
 
@@ -226,15 +241,95 @@ export function GameShell({ csrfToken }: GameShellProps) {
             </button>
           ) : null}
           {canGather ? (
+            <div className="duration-select">
+              <select
+                aria-label="采集时长"
+                value={plannedMinutes}
+                onChange={(event) =>
+                  setPlannedMinutes(Number(event.target.value) as StartGatheringRequestDto["plannedMinutes"])
+                }
+              >
+                <option value={10}>10 分钟</option>
+                <option value={30}>30 分钟</option>
+                <option value={120}>2 小时</option>
+              </select>
+              <button
+                type="button"
+                className="game-secondary-button"
+                onClick={() =>
+                  void runCommand(() => startGathering({ plannedMinutes }, csrfToken))
+                }
+              >
+                开始采集
+              </button>
+            </div>
+          ) : null}
+          {canStartCombat ? (
             <button
               type="button"
               className="game-secondary-button"
-              onClick={() => void runCommand(() => gather(csrfToken))}
+              onClick={() => void runCommand(() => startCombat(csrfToken))}
             >
-              采集
+              攻击野狼
+            </button>
+          ) : null}
+          {canReturnVillage ? (
+            <button
+              type="button"
+              className="game-secondary-button"
+              onClick={() => void runCommand(() => returnToVillage(csrfToken))}
+            >
+              返回哨站
             </button>
           ) : null}
         </div>
+
+        {state.currentAction ? (
+          <section className="active-action-panel" aria-labelledby="active-action-title">
+            <div className="panel-heading">
+              <h2 id="active-action-title">当前行动</h2>
+              <span>{state.currentAction.progressPct}%</span>
+            </div>
+            <p>{state.currentAction.description}</p>
+            <div className="action-progress" aria-hidden="true">
+              <span style={{ width: `${state.currentAction.progressPct}%` }} />
+            </div>
+            {state.currentAction.actionType === "gathering" ? (
+              <p className="action-meta">
+                当前周期 {state.currentAction.cycleProgressPct}% · 已完成{" "}
+                {state.currentAction.completedCycles}/{state.currentAction.plannedCycles}
+              </p>
+            ) : null}
+            {state.currentAction.expectedYield.length > 0 ? (
+              <p className="action-meta">
+                预计产出：
+                {state.currentAction.expectedYield
+                  .map((item) => `${item.name} x${item.quantity}`)
+                  .join("，")}
+              </p>
+            ) : null}
+            <div className="game-actions">
+              {state.currentAction.actionType === "combat" ? (
+                <button
+                  type="button"
+                  className="game-secondary-button"
+                  onClick={() => setIsCombatDialogOpen(true)}
+                >
+                  查看战斗
+                </button>
+              ) : null}
+              {canCancelAction ? (
+                <button
+                  type="button"
+                  className="game-secondary-button"
+                  onClick={() => void runCommand(() => cancelAction(csrfToken))}
+                >
+                  {state.currentAction.actionType === "combat" ? "撤离" : "取消行动"}
+                </button>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
 
         {error ? <p role="alert" className="game-error">{error}</p> : null}
 
@@ -349,6 +444,35 @@ export function GameShell({ csrfToken }: GameShellProps) {
                 type="button"
                 className="game-primary-button"
                 onClick={() => setSelectedItem(null)}
+              >
+                关闭
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isCombatDialogOpen && state.currentAction?.actionType === "combat" ? (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setIsCombatDialogOpen(false)}>
+          <section
+            className="item-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="战斗详情"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <p className="game-kicker">Combat Timeline</p>
+            <h2>战斗详情</h2>
+            <ol className="combat-log">
+              {state.currentAction.combatLog.map((message) => (
+                <li key={message}>{message}</li>
+              ))}
+            </ol>
+            <div className="dialog-actions">
+              <button
+                type="button"
+                className="game-primary-button"
+                onClick={() => setIsCombatDialogOpen(false)}
               >
                 关闭
               </button>
