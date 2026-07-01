@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { NpcSimulationReportDto } from "@ai-mud/shared";
+import type { NpcSimulationReportDto, WorldRuntimeStatusDto } from "@ai-mud/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NpcAdmin } from "./NpcAdmin";
 import type { NpcSnapshotResponse } from "./adminApi";
@@ -50,6 +50,15 @@ const simulationReport: NpcSimulationReportDto = {
   health: { ok: true, issues: [] }
 };
 
+const runtimeStatus: WorldRuntimeStatusDto = {
+  key: "npc_world",
+  generatedAt: "2026-07-01T12:00:00.000Z",
+  lastSettledAt: "2026-07-01T11:59:00.000Z",
+  nextTickAt: "2026-07-01T12:00:00.000Z",
+  leaseOwner: null,
+  leaseUntil: null
+};
+
 describe("NpcAdmin", () => {
   beforeEach(() => {
     cleanup();
@@ -57,10 +66,10 @@ describe("NpcAdmin", () => {
   });
 
   it("loads and renders NPC state", async () => {
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      json: async () => npcSnapshot
-    }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => npcSnapshot })
+      .mockResolvedValueOnce({ ok: true, json: async () => runtimeStatus });
     vi.stubGlobal("fetch", fetchMock);
 
     render(<NpcAdmin csrfToken="csrf-token" />);
@@ -73,6 +82,10 @@ describe("NpcAdmin", () => {
     expect(screen.getByText("正在采集")).toBeTruthy();
     expect(screen.getByText("野莓 x2")).toBeTruthy();
     expect(screen.getByText("玛拉开始采集野莓。")).toBeTruthy();
+    expect(screen.getByText("上次结算")).toBeTruthy();
+    expect(screen.getByText("2026-07-01 11:59")).toBeTruthy();
+    expect(screen.getByText("下次 Tick")).toBeTruthy();
+    expect(screen.getByText("2026-07-01 12:00")).toBeTruthy();
   });
 
   it("settles the NPC world and renders simulation health", async () => {
@@ -83,7 +96,9 @@ describe("NpcAdmin", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => npcSnapshot })
+      .mockResolvedValueOnce({ ok: true, json: async () => runtimeStatus })
       .mockResolvedValueOnce({ ok: true, json: async () => settledSnapshot })
+      .mockResolvedValueOnce({ ok: true, json: async () => runtimeStatus })
       .mockResolvedValueOnce({ ok: true, json: async () => simulationReport });
     vi.stubGlobal("fetch", fetchMock);
 

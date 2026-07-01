@@ -3,7 +3,8 @@ import type {
   EconomySnapshotDto,
   MoneyDto,
   NpcSimulationReportDto,
-  NpcSummaryDto
+  NpcSummaryDto,
+  WorldRuntimeStatusDto
 } from "@ai-mud/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:3000";
@@ -55,6 +56,18 @@ export async function getNpcSnapshot(): Promise<NpcSnapshotResponse> {
   }
 
   return response.json() as Promise<NpcSnapshotResponse>;
+}
+
+export async function getWorldRuntimeStatus(): Promise<WorldRuntimeStatusDto> {
+  const response = await fetch(`${API_BASE}/admin/world-runtime`, {
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to load world runtime status");
+  }
+
+  return response.json() as Promise<WorldRuntimeStatusDto>;
 }
 
 export async function settleNpcWorld(csrfToken: string): Promise<NpcSnapshotResponse> {

@@ -1,5 +1,10 @@
 import Fastify from "fastify";
-import type { EconomySnapshotDto, NpcSimulationReportDto, NpcSummaryDto } from "@ai-mud/shared";
+import type {
+  EconomySnapshotDto,
+  NpcSimulationReportDto,
+  NpcSummaryDto,
+  WorldRuntimeStatusDto
+} from "@ai-mud/shared";
 import { describe, expect, it } from "vitest";
 import { registerAdminRoutes, type AdminRouteDependencies } from "./admin.routes.js";
 
@@ -95,6 +100,15 @@ const npcSimulationReport: NpcSimulationReportDto = {
   health: { ok: true, issues: [] }
 };
 
+const worldRuntimeStatus: WorldRuntimeStatusDto = {
+  key: "npc_world",
+  generatedAt: "2026-07-01T12:00:00.000Z",
+  lastSettledAt: "2026-07-01T11:59:00.000Z",
+  nextTickAt: "2026-07-01T12:00:00.000Z",
+  leaseOwner: null,
+  leaseUntil: null
+};
+
 function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
   const app = Fastify();
   const baseDeps: AdminRouteDependencies = {
@@ -114,6 +128,7 @@ function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
       treasury: { gold: 0, silver: 100, copper: 0, totalCopper: 10000 },
       npcs: npcSummaries
     }),
+    getWorldRuntimeStatus: async () => worldRuntimeStatus,
     settleNpcWorld: async () => ({
       generatedAt: "2026-07-01T00:00:00.000Z",
       settlementId: "blackpine_outpost",
@@ -473,6 +488,25 @@ describe("registerAdminRoutes", () => {
       treasury: { gold: 0, silver: 100, copper: 0, totalCopper: 10000 },
       npcs: npcSummaries
     });
+  });
+
+  it("returns world runtime status for admins", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      getWorldRuntimeStatus: async () => worldRuntimeStatus
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/world-runtime"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(worldRuntimeStatus);
   });
 
   it("settles NPC world only for admins with a mutation token", async () => {

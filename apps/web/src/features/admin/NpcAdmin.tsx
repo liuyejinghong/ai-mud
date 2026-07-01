@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import type { MoneyDto, NpcSimulationReportDto } from "@ai-mud/shared";
+import type { MoneyDto, NpcSimulationReportDto, WorldRuntimeStatusDto } from "@ai-mud/shared";
 import {
   getNpcSnapshot,
+  getWorldRuntimeStatus,
   runNpcSimulation,
   settleNpcWorld,
   type NpcSnapshotResponse
@@ -23,8 +24,13 @@ function inventoryText(npc: NpcSnapshotResponse["npcs"][number]) {
     : "无库存";
 }
 
+function runtimeTimeText(value: string | null) {
+  return value ? value.slice(0, 16).replace("T", " ") : "未开始";
+}
+
 export function NpcAdmin({ csrfToken }: { csrfToken: string }) {
   const [snapshot, setSnapshot] = useState<NpcSnapshotResponse | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<WorldRuntimeStatusDto | null>(null);
   const [simulation, setSimulation] = useState<NpcSimulationReportDto | null>(null);
   const [status, setStatus] = useState("正在读取 NPC 数据...");
   const [isMutating, setIsMutating] = useState(false);
@@ -32,10 +38,11 @@ export function NpcAdmin({ csrfToken }: { csrfToken: string }) {
   useEffect(() => {
     let cancelled = false;
 
-    void getNpcSnapshot()
-      .then((nextSnapshot) => {
+    void Promise.all([getNpcSnapshot(), getWorldRuntimeStatus()])
+      .then(([nextSnapshot, nextRuntimeStatus]) => {
         if (cancelled) return;
         setSnapshot(nextSnapshot);
+        setRuntimeStatus(nextRuntimeStatus);
         setStatus("");
       })
       .catch(() => {
@@ -51,7 +58,12 @@ export function NpcAdmin({ csrfToken }: { csrfToken: string }) {
     setIsMutating(true);
     setStatus("");
     try {
-      setSnapshot(await settleNpcWorld(csrfToken));
+      const [nextSnapshot, nextRuntimeStatus] = await Promise.all([
+        settleNpcWorld(csrfToken),
+        getWorldRuntimeStatus()
+      ]);
+      setSnapshot(nextSnapshot);
+      setRuntimeStatus(nextRuntimeStatus);
       setStatus("NPC 世界已推进。");
     } catch {
       setStatus("NPC 世界推进失败。");
@@ -91,6 +103,23 @@ export function NpcAdmin({ csrfToken }: { csrfToken: string }) {
           </button>
         </div>
       </div>
+
+      {runtimeStatus ? (
+        <dl className="npc-runtime-status" aria-label="世界运行状态">
+          <div>
+            <dt>上次结算</dt>
+            <dd>{runtimeTimeText(runtimeStatus.lastSettledAt)}</dd>
+          </div>
+          <div>
+            <dt>下次 Tick</dt>
+            <dd>{runtimeTimeText(runtimeStatus.nextTickAt)}</dd>
+          </div>
+          <div>
+            <dt>租约状态</dt>
+            <dd>{runtimeStatus.leaseOwner ? runtimeStatus.leaseOwner : "空闲"}</dd>
+          </div>
+        </dl>
+      ) : null}
 
       {status ? (
         <p role="status" aria-live="polite" className="admin-status">

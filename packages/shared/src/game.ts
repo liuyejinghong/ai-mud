@@ -166,6 +166,15 @@ export interface NpcSimulationReportDto {
   };
 }
 
+export interface WorldRuntimeStatusDto {
+  key: "npc_world";
+  generatedAt: string;
+  lastSettledAt: string | null;
+  nextTickAt: string | null;
+  leaseOwner: string | null;
+  leaseUntil: string | null;
+}
+
 export interface CurrentActionDto {
   id: string;
   actionType: ActionType;

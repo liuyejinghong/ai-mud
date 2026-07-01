@@ -13,7 +13,8 @@ import {
   type MoneyDto,
   type NeedsDto,
   type NpcSimulationReportDto,
-  type NpcSummaryDto
+  type NpcSummaryDto,
+  type WorldRuntimeStatusDto
 } from "./game.js";
 import { PRODUCT_VERSION, WORLD_COMPATIBILITY } from "./version.js";
 
@@ -286,5 +287,19 @@ describe("game contract", () => {
     expect(report.days).toBe(7);
     expect(report.health.ok).toBe(true);
     expect(report.resourceSnapshots[0]?.remainingCharges).toBeGreaterThan(0);
+  });
+
+  it("describes NPC world runtime status", () => {
+    const status: WorldRuntimeStatusDto = {
+      key: "npc_world",
+      generatedAt: "2026-07-01T12:00:00.000Z",
+      lastSettledAt: "2026-07-01T11:59:00.000Z",
+      nextTickAt: "2026-07-01T12:00:00.000Z",
+      leaseOwner: null,
+      leaseUntil: null
+    };
+
+    expect(status.key).toBe("npc_world");
+    expect(status.nextTickAt).toBe("2026-07-01T12:00:00.000Z");
   });
 });

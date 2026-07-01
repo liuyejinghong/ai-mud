@@ -6,7 +6,8 @@ import type {
   ErrorCode,
   MoneyDto,
   NpcSimulationReportDto,
-  NpcSummaryDto
+  NpcSummaryDto,
+  WorldRuntimeStatusDto
 } from "@ai-mud/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -19,6 +20,11 @@ import { AuthService } from "../auth/auth.service.js";
 import { GameRepository } from "../game/game.repository.js";
 import { NpcRepository } from "../npc/npc.repository.js";
 import { NpcService } from "../npc/npc.service.js";
+import { WorldRuntimeRepository } from "../world-runtime/world-runtime.repository.js";
+import {
+  NPC_WORLD_RUNTIME_KEY,
+  WORLD_RUNTIME_TICK_MS
+} from "../world-runtime/world-runtime.service.js";
 import { WorldResetService } from "../world-reset/world-reset.service.js";
 
 export interface AdminAccount {
@@ -40,6 +46,7 @@ export interface AdminRouteDependencies {
   listActivationCodes(): Promise<Array<ActivationCodeDto>>;
   getEconomySnapshot(): Promise<EconomySnapshotDto>;
   getNpcSnapshot(): Promise<NpcSnapshotResponse>;
+  getWorldRuntimeStatus(): Promise<WorldRuntimeStatusDto>;
   settleNpcWorld(): Promise<NpcSnapshotResponse>;
   runNpcSimulation(input: {
     days: number;
@@ -193,6 +200,25 @@ async function buildNpcSnapshot(
   };
 }
 
+async function buildWorldRuntimeStatus(
+  repo: WorldRuntimeRepository,
+  now: Date
+): Promise<WorldRuntimeStatusDto> {
+  const record = await repo.find(NPC_WORLD_RUNTIME_KEY);
+  const nextTickAt = record?.lastSettledAt
+    ? new Date(record.lastSettledAt.getTime() + WORLD_RUNTIME_TICK_MS)
+    : null;
+
+  return {
+    key: NPC_WORLD_RUNTIME_KEY,
+    generatedAt: now.toISOString(),
+    lastSettledAt: record?.lastSettledAt?.toISOString() ?? null,
+    nextTickAt: nextTickAt?.toISOString() ?? null,
+    leaseOwner: record?.leaseOwner ?? null,
+    leaseUntil: record?.leaseUntil?.toISOString() ?? null
+  };
+}
+
 function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies {
   const auth = new AuthService();
   const authRepo = new AuthRepository(app.di.db);
@@ -234,6 +260,10 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
       const timestamp = now();
       await app.di.worldRuntime.settleDue(timestamp);
       return buildNpcSnapshot(repo, service, timestamp);
+    },
+    getWorldRuntimeStatus: async () => {
+      const repo = new WorldRuntimeRepository(app.di.db);
+      return buildWorldRuntimeStatus(repo, now());
     },
     settleNpcWorld: async () => {
       const repo = new NpcRepository(app.di.db);
@@ -320,6 +350,15 @@ export async function registerAdminRoutes(
     }
 
     return deps.getNpcSnapshot();
+  });
+
+  app.get("/admin/world-runtime", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+
+    return deps.getWorldRuntimeStatus();
   });
 
   app.post("/admin/npcs/settle", async (request, reply) => {
