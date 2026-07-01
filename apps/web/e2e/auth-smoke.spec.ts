@@ -85,6 +85,15 @@ const npcSnapshot = {
   ]
 };
 
+const worldRuntimeStatus = {
+  key: "npc_world",
+  generatedAt: "2026-07-01T12:00:00.000Z",
+  lastSettledAt: "2026-07-01T11:59:00.000Z",
+  nextTickAt: "2026-07-01T12:00:00.000Z",
+  leaseOwner: null,
+  leaseUntil: null
+};
+
 test("renders closed-test auth without exposing admin invite management", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "AI MUD 内测登录" })).toBeVisible();
@@ -112,6 +121,9 @@ test("renders economy visibility for admins", async ({ page }) => {
   await page.route("**/game/state", async (route) => route.fulfill({ json: createCharacterState }));
   await page.route("**/admin/economy", async (route) => route.fulfill({ json: economySnapshot }));
   await page.route("**/admin/npcs", async (route) => route.fulfill({ json: npcSnapshot }));
+  await page.route("**/admin/world-runtime", async (route) =>
+    route.fulfill({ json: worldRuntimeStatus })
+  );
 
   await page.goto("/");
 
@@ -120,4 +132,5 @@ test("renders economy visibility for admins", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "NPC 运行监控" })).toBeVisible();
   await expect(page.getByText("税收合计 1 铜")).toBeVisible();
   await expect(page.getByText("市政金库 9975 铜")).toBeVisible();
+  await expect(page.getByText("上次结算")).toBeVisible();
 });
