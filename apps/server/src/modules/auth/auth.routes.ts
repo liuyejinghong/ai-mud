@@ -39,7 +39,7 @@ export interface AuthRouteDependencies {
     email: string;
     password: string;
     activationCode: string;
-  }): Promise<{ account: AccountRecord; token: string }>;
+  }): Promise<{ account: AccountRecord }>;
   verifyPassword(password: string, passwordHash: string): Promise<boolean>;
   createSession(accountId: string): Promise<string>;
   revokeSessionByToken(token: string): Promise<void>;
@@ -84,12 +84,6 @@ function createDefaultDependencies(app: FastifyInstance): AuthRouteDependencies 
           throw new ActivationCodeConsumeError(consumed.reason);
         }
 
-        const session = auth.createSessionToken();
-        await scopedAuthRepo.createSession({
-          accountId: account.id,
-          tokenHash: session.tokenHash,
-          expiresAt: new Date(Date.now() + SESSION_TTL_MS)
-        });
         await audit.write({
           actorAccountId: account.id,
           action: "activation_code.consume",
@@ -99,7 +93,7 @@ function createDefaultDependencies(app: FastifyInstance): AuthRouteDependencies 
           metadata: { accountId: account.id }
         });
 
-        return { account, token: session.token };
+        return { account };
       });
     },
     verifyPassword: (password, passwordHash) => auth.verifyPassword(password, passwordHash),
@@ -134,7 +128,7 @@ export async function registerAuthRoutes(app: FastifyInstance, maybeDependencies
       return sendError(reply, 400, "VALIDATION_ERROR", "Email is already registered");
     }
 
-    let result: { account: AccountRecord; token: string };
+    let result: { account: AccountRecord };
 
     try {
       result = await deps.registerWithActivationCode({
@@ -149,16 +143,14 @@ export async function registerAuthRoutes(app: FastifyInstance, maybeDependencies
       throw error;
     }
 
-    setSessionCookie(app, reply, result.token);
-    return {
+    return reply.code(201).send({
       user: {
         id: result.account.id,
         email: result.account.email,
         role: result.account.role,
         status: result.account.status
-      },
-      csrfToken: deps.createCsrfToken(result.token)
-    };
+      }
+    });
   });
 
   app.post("/auth/login", async (request, reply) => {

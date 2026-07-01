@@ -37,13 +37,13 @@ const activeAccount = {
 };
 
 describe("registerAuthRoutes", () => {
-  it("sets a session cookie only after audited registration succeeds", async () => {
+  it("registers with an activation code without opening a session", async () => {
     const registrations: unknown[] = [];
     const app = buildAuthRouteTestApp({
       findAccountByEmail: async () => null,
       registerWithActivationCode: async (input) => {
         registrations.push(input);
-        return { account: activeAccount, token: "session-token" };
+        return { account: activeAccount };
       },
       verifyPassword: async () => false,
       createSession: async () => {
@@ -64,8 +64,16 @@ describe("registerAuthRoutes", () => {
       }
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.headers["set-cookie"]).toContain("ai_mud_session=session-token");
+    expect(response.statusCode).toBe(201);
+    expect(response.headers["set-cookie"]).toBeUndefined();
+    expect(response.json()).toEqual({
+      user: {
+        id: "account-1",
+        email: "player@example.com",
+        role: "player",
+        status: "active"
+      }
+    });
     expect(registrations).toEqual([
       {
         email: "player@example.com",
@@ -103,5 +111,40 @@ describe("registerAuthRoutes", () => {
     expect(response.statusCode).toBe(500);
     expect(response.headers["set-cookie"]).toBeUndefined();
     expect(response.body).not.toContain("session-token");
+  });
+
+  it("sets a session cookie only after login succeeds", async () => {
+    const app = buildAuthRouteTestApp({
+      findAccountByEmail: async () => activeAccount,
+      registerWithActivationCode: async () => {
+        throw new Error("not used");
+      },
+      verifyPassword: async () => true,
+      createSession: async () => "session-token",
+      revokeSessionByToken: async () => undefined,
+      findAccountBySessionToken: async () => null,
+      createCsrfToken: () => "csrf-token"
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: {
+        email: "player@example.com",
+        password: "correct horse battery staple"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["set-cookie"]).toContain("ai_mud_session=session-token");
+    expect(response.json()).toEqual({
+      user: {
+        id: "account-1",
+        email: "player@example.com",
+        role: "player",
+        status: "active"
+      },
+      csrfToken: "csrf-token"
+    });
   });
 });

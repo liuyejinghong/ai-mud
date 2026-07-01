@@ -14,6 +14,10 @@ export interface RegisterRequestDto {
   activationCode: string;
 }
 
+export interface RegisterResponseDto {
+  user: CurrentUserDto;
+}
+
 export interface LoginRequestDto {
   email: string;
   password: string;

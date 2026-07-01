@@ -82,6 +82,31 @@ input {
   padding: 24px;
 }
 
+.auth-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid rgba(31, 208, 91, 0.55);
+  background: #020503;
+}
+
+.auth-tab {
+  min-height: 40px;
+  border: 0;
+  border-right: 1px solid rgba(31, 208, 91, 0.38);
+  background: transparent;
+  color: #99d6a6;
+  cursor: pointer;
+}
+
+.auth-tab:last-child {
+  border-right: 0;
+}
+
+.auth-tab[aria-selected="true"] {
+  background: #12451f;
+  color: #f2fff3;
+}
+
 .auth-field {
   display: grid;
   gap: 7px;
@@ -106,7 +131,6 @@ input {
 
 .auth-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-top: 4px;
 }
