@@ -43,18 +43,39 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
     dbConnection = createDb(config.DATABASE_URL);
     db = dbConnection.db;
   }
+  let worldRuntimeInFlight: Promise<WorldRuntimeSettleResult> | null = null;
+  const runSettleDue = async (now = new Date()) => {
+    const repo = new WorldRuntimeRepository(db);
+    const runtime = new WorldRuntimeService({
+      repo,
+      ownerId: `server-${process.pid}`,
+      maxStepsPerRun: config.WORLD_TICK_MAX_STEPS,
+      settleNpcWorld: async (tickAt) => {
+        const npcRepo = new NpcRepository(db);
+        const npcService = new NpcService(npcRepo);
+        await npcService.settleNpcWorld(tickAt);
+      },
+      settleTick: async (tickAt, progress) => {
+        await db.transaction(async (tx) => {
+          const txNpcRepo = new NpcRepository(tx);
+          const txNpcService = new NpcService(txNpcRepo);
+          const txRuntimeRepo = new WorldRuntimeRepository(tx);
+          await txNpcService.settleNpcWorld(tickAt);
+          await txRuntimeRepo.saveProgress(progress);
+        });
+      }
+    });
+    return runtime.settleDue(now);
+  };
   const worldRuntime = {
     settleDue: async (now = new Date()) => {
-      const repo = new WorldRuntimeRepository(db);
-      const npcRepo = new NpcRepository(db);
-      const npcService = new NpcService(npcRepo);
-      const runtime = new WorldRuntimeService({
-        repo,
-        ownerId: `server-${process.pid}`,
-        maxStepsPerRun: config.WORLD_TICK_MAX_STEPS,
-        settleNpcWorld: (tickAt) => npcService.settleNpcWorld(tickAt)
-      });
-      return runtime.settleDue(now);
+      if (worldRuntimeInFlight) return { settledSteps: 0, skipped: true };
+      worldRuntimeInFlight = runSettleDue(now);
+      try {
+        return await worldRuntimeInFlight;
+      } finally {
+        worldRuntimeInFlight = null;
+      }
     }
   };
   let worldTickTimer: NodeJS.Timeout | null = null;

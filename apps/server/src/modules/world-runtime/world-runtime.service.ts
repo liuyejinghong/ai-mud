@@ -9,10 +9,18 @@ function floorToTick(date: Date) {
 }
 
 export interface WorldRuntimeServiceInput {
-  repo: Pick<WorldRuntimeRepository, "find" | "upsert">;
+  repo: Pick<WorldRuntimeRepository, "acquireLease" | "find" | "releaseLease" | "saveProgress">;
   ownerId: string;
   maxStepsPerRun?: number;
   settleNpcWorld(now: Date): Promise<void>;
+  settleTick?(now: Date, progress: WorldRuntimeProgress): Promise<void>;
+}
+
+export interface WorldRuntimeProgress {
+  key: string;
+  lastSettledAt: Date;
+  leaseOwner: string;
+  leaseUntil: Date;
 }
 
 export interface WorldRuntimeSettleResult {
@@ -27,54 +35,48 @@ export class WorldRuntimeService {
     const currentTick = floorToTick(now);
     const existing = await this.input.repo.find(NPC_WORLD_RUNTIME_KEY);
 
-    if (!existing) {
-      await this.input.repo.upsert({
-        key: NPC_WORLD_RUNTIME_KEY,
-        lastSettledAt: currentTick,
-        leaseOwner: null,
-        leaseUntil: null
-      });
-      return { settledSteps: 0, skipped: false };
-    }
-
-    if (
-      existing.leaseUntil &&
-      existing.leaseUntil.getTime() > now.getTime() &&
-      existing.leaseOwner !== this.input.ownerId
-    ) {
+    if (existing?.leaseUntil && existing.leaseUntil.getTime() > now.getTime()) {
       return { settledSteps: 0, skipped: true };
     }
 
-    const maxSteps = Math.max(1, Math.floor(this.input.maxStepsPerRun ?? 60));
-    let cursor = existing.lastSettledAt ?? currentTick;
-    let settledSteps = 0;
-
-    await this.input.repo.upsert({
-      ...existing,
-      leaseOwner: this.input.ownerId,
-      leaseUntil: new Date(now.getTime() + DEFAULT_LEASE_MS)
+    const leaseUntil = new Date(now.getTime() + DEFAULT_LEASE_MS);
+    const leased = await this.input.repo.acquireLease({
+      key: NPC_WORLD_RUNTIME_KEY,
+      ownerId: this.input.ownerId,
+      now,
+      leaseUntil,
+      initialLastSettledAt: currentTick
     });
+    if (!leased) return { settledSteps: 0, skipped: true };
+
+    const maxSteps = Math.max(1, Math.floor(this.input.maxStepsPerRun ?? 60));
+    let cursor = leased.lastSettledAt ?? currentTick;
+    let settledSteps = 0;
 
     while (
       cursor.getTime() + WORLD_RUNTIME_TICK_MS <= currentTick.getTime() &&
       settledSteps < maxSteps
     ) {
       cursor = new Date(cursor.getTime() + WORLD_RUNTIME_TICK_MS);
-      await this.input.settleNpcWorld(cursor);
-      settledSteps += 1;
-      await this.input.repo.upsert({
+      const progress = {
         key: NPC_WORLD_RUNTIME_KEY,
         lastSettledAt: cursor,
         leaseOwner: this.input.ownerId,
-        leaseUntil: new Date(now.getTime() + DEFAULT_LEASE_MS)
-      });
+        leaseUntil
+      };
+      if (this.input.settleTick) {
+        await this.input.settleTick(cursor, progress);
+      } else {
+        await this.input.settleNpcWorld(cursor);
+        await this.input.repo.saveProgress(progress);
+      }
+      settledSteps += 1;
     }
 
-    await this.input.repo.upsert({
+    await this.input.repo.releaseLease({
       key: NPC_WORLD_RUNTIME_KEY,
       lastSettledAt: cursor,
-      leaseOwner: null,
-      leaseUntil: null
+      ownerId: this.input.ownerId
     });
 
     return { settledSteps, skipped: false };

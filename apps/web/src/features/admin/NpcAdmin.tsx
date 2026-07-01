@@ -58,10 +58,8 @@ export function NpcAdmin({ csrfToken }: { csrfToken: string }) {
     setIsMutating(true);
     setStatus("");
     try {
-      const [nextSnapshot, nextRuntimeStatus] = await Promise.all([
-        settleNpcWorld(csrfToken),
-        getWorldRuntimeStatus()
-      ]);
+      const nextSnapshot = await settleNpcWorld(csrfToken);
+      const nextRuntimeStatus = await getWorldRuntimeStatus();
       setSnapshot(nextSnapshot);
       setRuntimeStatus(nextRuntimeStatus);
       setStatus("NPC 世界已推进。");
