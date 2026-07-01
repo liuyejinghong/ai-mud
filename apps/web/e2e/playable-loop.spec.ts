@@ -18,10 +18,42 @@ const villageState = {
   locationDescription: "潮湿黑松围住木墙，哨塔上的火盆把灰雾照成暗红色。",
   map: null,
   inventory: [],
+  equipment: [
+    {
+      id: "equipment-1",
+      slot: "weapon",
+      itemKey: "training_sword",
+      name: "训练短剑",
+      itemLevel: 5,
+      attackBonus: 2,
+      defenseBonus: 0,
+      maxDurability: 100,
+      currentDurability: 60,
+      durabilityPct: 60,
+      effectiveStatRatio: 1,
+      repairQuote: {
+        copperCost: { gold: 0, silver: 0, copper: 50, totalCopper: 50 },
+        ironOreCost: 1
+      }
+    }
+  ],
   market: null,
   currentAction: null,
-  availableActions: ["enter_corrupt_forest", "open_market"],
+  availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment"],
   log: []
+};
+
+const repairedVillageState = {
+  ...villageState,
+  equipment: [
+    {
+      ...villageState.equipment[0],
+      currentDurability: 100,
+      durabilityPct: 100,
+      repairQuote: null
+    }
+  ],
+  availableActions: ["enter_corrupt_forest", "open_market"]
 };
 
 const marketState = {
@@ -133,6 +165,7 @@ test("player can use the first playable MUD screen", async ({ page }) => {
   await page.route("**/game/state", async (route) => route.fulfill({ json: villageState }));
   await page.route("**/game/enter-zone", async (route) => route.fulfill({ json: forestState }));
   await page.route("**/game/market", async (route) => route.fulfill({ json: marketState }));
+  await page.route("**/game/repair", async (route) => route.fulfill({ json: repairedVillageState }));
   await page.route("**/game/move", async (route) => route.fulfill({ json: forestState }));
   await page.route("**/game/gather", async (route) => route.fulfill({ json: activeGatheringState }));
   await page.route("**/game/action/cancel", async (route) => route.fulfill({ json: forestState }));
@@ -142,6 +175,13 @@ test("player can use the first playable MUD screen", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "黑松哨站" })).toBeVisible();
   await expect(page.getByText("金币 0 | 银币 12 | 铜币 35")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "装备" })).toBeVisible();
+  await expect(page.getByText("训练短剑", { exact: true })).toBeVisible();
+  const trainingSword = page.getByRole("article").filter({ hasText: "训练短剑" });
+  await expect(trainingSword.getByText("60/100")).toBeVisible();
+  await page.getByRole("button", { name: "修理 训练短剑" }).click();
+  await expect(trainingSword.getByText("100/100")).toBeVisible();
+  await expect(trainingSword.getByText("无需修理")).toBeVisible();
 
   await page.getByRole("button", { name: "市政集市" }).click();
   await expect(page.getByRole("dialog", { name: "市政集市" })).toBeVisible();
