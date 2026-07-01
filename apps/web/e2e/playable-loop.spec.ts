@@ -104,6 +104,54 @@ const marketState = {
   ]
 };
 
+const dialogueTargets = [
+  {
+    npcActorId: "npc-blacksmith",
+    npcKey: "blackpine_blacksmith_borin",
+    name: "伯林",
+    profession: "blacksmith",
+    currentLocation: "blackpine_outpost",
+    statusLine: "正在盘点基础铁矿石库存。"
+  }
+];
+
+const emptyDialogue = {
+  target: dialogueTargets[0],
+  messages: [],
+  ai: {
+    status: "fallback",
+    provider: "template",
+    model: "template",
+    fallbackReason: null
+  }
+};
+
+const repliedDialogue = {
+  target: dialogueTargets[0],
+  messages: [
+    {
+      id: "msg-player",
+      npcActorId: "npc-blacksmith",
+      speakerType: "player",
+      message: "最近缺什么？",
+      createdAt: "2026-07-01T12:00:00.000Z"
+    },
+    {
+      id: "msg-npc",
+      npcActorId: "npc-blacksmith",
+      speakerType: "npc",
+      message: "基础铁矿石快见底了。",
+      createdAt: "2026-07-01T12:00:01.000Z"
+    }
+  ],
+  ai: {
+    status: "success",
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    fallbackReason: null
+  }
+};
+
 const forestState = {
   ...villageState,
   character: {
@@ -194,6 +242,14 @@ test("player can use the first playable MUD screen", async ({ page }) => {
   await page.route("**/game/state", async (route) => route.fulfill({ json: villageState }));
   await page.route("**/game/enter-zone", async (route) => route.fulfill({ json: forestState }));
   await page.route("**/game/market", async (route) => route.fulfill({ json: marketState }));
+  await page.route("**/game/npcs/dialogue-targets", async (route) =>
+    route.fulfill({ json: dialogueTargets })
+  );
+  await page.route("**/game/npcs/npc-blacksmith/dialogue", async (route) =>
+    route.fulfill({
+      json: route.request().method() === "POST" ? repliedDialogue : emptyDialogue
+    })
+  );
   await page.route("**/game/eat", async (route) => route.fulfill({ json: eatenVillageState }));
   await page.route("**/game/repair", async (route) => route.fulfill({ json: repairedVillageState }));
   await page.route("**/game/move", async (route) => route.fulfill({ json: forestState }));
@@ -215,6 +271,15 @@ test("player can use the first playable MUD screen", async ({ page }) => {
   await page.getByRole("button", { name: "修理 训练短剑" }).click();
   await expect(trainingSword.getByText("100/100")).toBeVisible();
   await expect(trainingSword.getByText("无需修理")).toBeVisible();
+
+  await page.getByRole("button", { name: "附近 NPC" }).click();
+  await expect(page.getByRole("dialog", { name: "附近 NPC 对话" })).toBeVisible();
+  await page.getByRole("button", { name: /伯林/ }).click();
+  await expect(page.getByText("还没有交谈记录。")).toBeVisible();
+  await page.getByLabel("对 NPC 说").fill("最近缺什么？");
+  await page.getByRole("button", { name: "发送" }).click();
+  await expect(page.getByText("基础铁矿石快见底了。")).toBeVisible();
+  await page.getByRole("button", { name: "关闭" }).click();
 
   await page.getByRole("button", { name: "市政集市" }).click();
   await expect(page.getByRole("dialog", { name: "市政集市" })).toBeVisible();
