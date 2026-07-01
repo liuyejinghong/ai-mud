@@ -16,6 +16,10 @@
     "test": "vitest run --passWithNoTests",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "@ai-mud/content": "workspace:*",
+    "@ai-mud/shared": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
