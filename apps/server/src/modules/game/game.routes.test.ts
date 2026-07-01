@@ -1,4 +1,9 @@
-import type { GameStateDto, MarketDto } from "@ai-mud/shared";
+import type {
+  GameStateDto,
+  MarketDto,
+  NpcDialogueResponseDto,
+  NpcDialogueTargetDto
+} from "@ai-mud/shared";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { GameServiceError } from "./game.service.js";
@@ -81,6 +86,34 @@ const marketState: MarketDto = {
   ]
 };
 
+const dialogueTarget: NpcDialogueTargetDto = {
+  npcActorId: "npc-blacksmith",
+  npcKey: "blackpine_blacksmith_borin",
+  name: "伯林",
+  profession: "blacksmith",
+  currentLocation: "blackpine_outpost",
+  statusLine: "正在盘点基础铁矿石库存。"
+};
+
+const dialogueResponse: NpcDialogueResponseDto = {
+  target: dialogueTarget,
+  messages: [
+    {
+      id: "msg-1",
+      npcActorId: "npc-blacksmith",
+      speakerType: "npc",
+      message: "炉火还没灭。带矿石来再说。",
+      createdAt: "2026-07-01T12:00:00.000Z"
+    }
+  ],
+  ai: {
+    status: "fallback",
+    provider: "template",
+    model: "template",
+    fallbackReason: "disabled"
+  }
+};
+
 function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
   const deps: GameRouteDependencies = {
     getCurrentAccount: async () => activeAccount,
@@ -132,6 +165,9 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
       },
       inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 1 }]
     }),
+    listDialogueTargets: async () => [dialogueTarget],
+    getNpcDialogue: async () => dialogueResponse,
+    sendNpcDialogueMessage: async () => dialogueResponse,
     ...overrides
   };
   const app = Fastify();
@@ -380,6 +416,79 @@ describe("registerGameRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().items[0].itemId).toBe("iron_ore");
+  });
+
+  it("settles world before listing dialogue NPC targets", async () => {
+    const calls: string[] = [];
+    const app = buildGameRouteTestApp({
+      settleWorldIfDue: async () => {
+        calls.push("settled");
+      },
+      listDialogueTargets: async () => {
+        calls.push("targets");
+        return [dialogueTarget];
+      }
+    });
+
+    const response = await app.inject({ method: "GET", url: "/game/npcs/dialogue-targets" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([expect.objectContaining({ npcActorId: "npc-blacksmith" })]);
+    expect(calls).toEqual(["settled", "targets"]);
+  });
+
+  it("returns one NPC dialogue thread", async () => {
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      getNpcDialogue: async (accountId, npcActorId) => {
+        calls.push({ accountId, npcActorId });
+        return dialogueResponse;
+      }
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/game/npcs/npc-blacksmith/dialogue"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().messages[0].message).toContain("炉火");
+    expect(calls).toEqual([{ accountId: "account-1", npcActorId: "npc-blacksmith" }]);
+  });
+
+  it("sends one NPC dialogue message through a CSRF-protected mutation", async () => {
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      sendNpcDialogueMessage: async (accountId, npcActorId, message) => {
+        calls.push({ accountId, npcActorId, message });
+        return {
+          ...dialogueResponse,
+          messages: [
+            {
+              id: "msg-player",
+              npcActorId,
+              speakerType: "player",
+              message,
+              createdAt: "2026-07-01T12:00:00.000Z"
+            },
+            ...dialogueResponse.messages
+          ]
+        };
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/npcs/npc-blacksmith/dialogue",
+      headers: { "x-csrf-token": "csrf" },
+      payload: { message: "最近缺什么？" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().messages[0].speakerType).toBe("player");
+    expect(calls).toEqual([
+      { accountId: "account-1", npcActorId: "npc-blacksmith", message: "最近缺什么？" }
+    ]);
   });
 
   it("buys a market item through a CSRF-protected mutation", async () => {

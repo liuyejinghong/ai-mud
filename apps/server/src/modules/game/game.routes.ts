@@ -1,4 +1,7 @@
 import {
+  NPC_DIALOGUE_MAX_PLAYER_CHARS
+} from "@ai-mud/ai-prompts";
+import {
   CHARACTER_CLASS_IDS,
   DIRECTIONS,
   ITEM_IDS,
@@ -9,14 +12,23 @@ import {
   type GameStateDto,
   type MarketDto,
   type MarketTradeRequestDto,
+  type NpcDialogueResponseDto,
+  type NpcDialogueTargetDto,
   type RepairEquipmentRequestDto,
   type RepairQuoteDto,
   type StartGatheringRequestDto
 } from "@ai-mud/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
+import { AiOrchestrator } from "../ai/ai-orchestrator.js";
+import type { AiProvider } from "../ai/ai-provider.js";
+import { DeepSeekAiProvider } from "../ai/deepseek-ai-provider.js";
 import { AuthRepository, type PublicAccountRecord } from "../auth/auth.repository.js";
 import { AuthService } from "../auth/auth.service.js";
+import { DialogueRepository } from "../dialogue/dialogue.repository.js";
+import { DialogueService, DialogueServiceError } from "../dialogue/dialogue.service.js";
+import { NpcRepository } from "../npc/npc.repository.js";
+import { GameRepository } from "./game.repository.js";
 import { GameService, GameServiceError } from "./game.service.js";
 
 const createCharacterSchema = z.object({
@@ -49,6 +61,10 @@ const eatFoodSchema = z.object({
   itemId: z.enum(ITEM_IDS)
 });
 
+const dialogueMessageSchema = z.object({
+  message: z.string().trim().min(1).max(NPC_DIALOGUE_MAX_PLAYER_CHARS)
+});
+
 export interface GameRouteDependencies {
   getCurrentAccount(request: FastifyRequest): Promise<PublicAccountRecord | null>;
   verifyGameMutation(request: FastifyRequest): Promise<boolean>;
@@ -68,6 +84,13 @@ export interface GameRouteDependencies {
   repairEquipment(accountId: string, input: RepairEquipmentRequestDto): Promise<GameStateDto>;
   repairAllEquipment(accountId: string): Promise<GameStateDto>;
   eatFood(accountId: string, input: EatFoodRequestDto): Promise<GameStateDto>;
+  listDialogueTargets(accountId: string): Promise<NpcDialogueTargetDto[]>;
+  getNpcDialogue(accountId: string, npcActorId: string): Promise<NpcDialogueResponseDto>;
+  sendNpcDialogueMessage(
+    accountId: string,
+    npcActorId: string,
+    message: string
+  ): Promise<NpcDialogueResponseDto>;
 }
 
 function sendError(reply: FastifyReply, statusCode: number, code: ErrorCode, message: string) {
@@ -87,6 +110,7 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
   const auth = new AuthService();
   const authRepo = new AuthRepository(app.di.db);
   const game = new GameService(app.di.db);
+  const dialogue = createDialogueService(app);
 
   return {
     getCurrentAccount: async (request) => {
@@ -120,8 +144,43 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
     getRepairQuote: (accountId, input) => game.getRepairQuote(accountId, input),
     repairEquipment: (accountId, input) => game.repairEquipment(accountId, input),
     repairAllEquipment: (accountId) => game.repairAllEquipment(accountId),
-    eatFood: (accountId, input) => game.eatFood(accountId, input)
+    eatFood: (accountId, input) => game.eatFood(accountId, input),
+    listDialogueTargets: (accountId) => dialogue.listDialogueTargets(accountId),
+    getNpcDialogue: (accountId, npcActorId) => dialogue.getDialogue(accountId, npcActorId),
+    sendNpcDialogueMessage: (accountId, npcActorId, message) =>
+      dialogue.sendDialogueMessage(accountId, npcActorId, message)
   };
+}
+
+function createDialogueService(app: FastifyInstance) {
+  const hasDeepSeekKey =
+    app.config.AI_NPC_DIALOGUE_ENABLED &&
+    app.config.AI_PROVIDER === "deepseek" &&
+    Boolean(app.config.DEEPSEEK_API_KEY);
+  const provider: AiProvider = hasDeepSeekKey
+    ? new DeepSeekAiProvider({
+        apiKey: app.config.DEEPSEEK_API_KEY!,
+        baseUrl: app.config.DEEPSEEK_BASE_URL
+      })
+    : {
+        completeJson: async () => {
+          throw new Error("AI provider is disabled");
+        }
+      };
+
+  return new DialogueService({
+    dialogueRepo: new DialogueRepository(app.di.db),
+    gameRepo: new GameRepository(app.di.db),
+    npcRepo: new NpcRepository(app.di.db),
+    ai: new AiOrchestrator({
+      enabled: hasDeepSeekKey,
+      providerName: hasDeepSeekKey ? "deepseek" : "template",
+      model: hasDeepSeekKey ? app.config.DEEPSEEK_MODEL : "template",
+      maxOutputTokens: app.config.AI_DIALOGUE_MAX_OUTPUT_TOKENS,
+      timeoutMs: app.config.AI_DIALOGUE_TIMEOUT_MS,
+      provider
+    })
+  });
 }
 
 async function requireAccount(
@@ -152,6 +211,9 @@ async function requireMutationToken(
 }
 
 function handleGameError(reply: FastifyReply, error: unknown) {
+  if (error instanceof DialogueServiceError) {
+    return sendError(reply, 400, error.code, error.message);
+  }
   if (error instanceof GameServiceError) {
     return sendError(reply, 400, error.code, error.message);
   }
@@ -280,6 +342,57 @@ export async function registerGameRoutes(app: FastifyInstance, maybeDependencies
 
     try {
       return await deps.getMarket(account.id);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.get("/game/npcs/dialogue-targets", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    await deps.settleWorldIfDue();
+
+    try {
+      return await deps.listDialogueTargets(account.id);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.get("/game/npcs/:npcActorId/dialogue", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    await deps.settleWorldIfDue();
+
+    const params = z.object({ npcActorId: z.string().min(1) }).safeParse(request.params);
+    if (!params.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid NPC dialogue target");
+    }
+
+    try {
+      return await deps.getNpcDialogue(account.id, params.data.npcActorId);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/npcs/:npcActorId/dialogue", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    const params = z.object({ npcActorId: z.string().min(1) }).safeParse(request.params);
+    const parsed = dialogueMessageSchema.safeParse(request.body);
+    if (!params.success || !parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid dialogue input");
+    }
+
+    try {
+      return await deps.sendNpcDialogueMessage(
+        account.id,
+        params.data.npcActorId,
+        parsed.data.message
+      );
     } catch (error) {
       return handleGameError(reply, error);
     }
