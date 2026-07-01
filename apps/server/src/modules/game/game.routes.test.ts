@@ -85,6 +85,7 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
   const deps: GameRouteDependencies = {
     getCurrentAccount: async () => activeAccount,
     verifyGameMutation: async () => true,
+    settleWorldIfDue: async () => undefined,
     getState: async () => baseState,
     createCharacter: async () => baseState,
     enterCorruptForest: async () => ({
@@ -140,13 +141,38 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
 
 describe("registerGameRoutes", () => {
   it("requires an authenticated session for game state", async () => {
-    const app = buildGameRouteTestApp({ getCurrentAccount: async () => null });
+    const settleCalls: string[] = [];
+    const app = buildGameRouteTestApp({
+      getCurrentAccount: async () => null,
+      settleWorldIfDue: async () => {
+        settleCalls.push("settled");
+      }
+    });
     const response = await app.inject({ method: "GET", url: "/game/state" });
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({
       error: { code: "UNAUTHENTICATED", message: "Not signed in" }
     });
+    expect(settleCalls).toEqual([]);
+  });
+
+  it("settles the NPC world before returning game state", async () => {
+    const calls: string[] = [];
+    const app = buildGameRouteTestApp({
+      settleWorldIfDue: async () => {
+        calls.push("settled");
+      },
+      getState: async () => {
+        calls.push("state");
+        return baseState;
+      }
+    });
+
+    const response = await app.inject({ method: "GET", url: "/game/state" });
+
+    expect(response.statusCode).toBe(200);
+    expect(calls).toEqual(["settled", "state"]);
   });
 
   it("creates one character and returns Blackpine Outpost state", async () => {

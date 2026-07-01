@@ -231,13 +231,15 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
     getNpcSnapshot: async () => {
       const repo = new NpcRepository(app.di.db);
       const service = new NpcService(repo);
-      return buildNpcSnapshot(repo, service, now());
+      const timestamp = now();
+      await app.di.worldRuntime.settleDue(timestamp);
+      return buildNpcSnapshot(repo, service, timestamp);
     },
     settleNpcWorld: async () => {
       const repo = new NpcRepository(app.di.db);
       const service = new NpcService(repo);
       const timestamp = now();
-      await service.settleNpcWorld(timestamp);
+      await app.di.worldRuntime.settleDue(timestamp);
       return buildNpcSnapshot(repo, service, timestamp);
     },
     runNpcSimulation: async (input) => {

@@ -9,7 +9,10 @@ const testEnv = {
   DATABASE_URL: "postgres://example",
   SESSION_COOKIE_NAME: "ai_mud_session",
   SESSION_SECRET: "test-secret-that-is-at-least-32-bytes",
-  WEB_ORIGINS: ["http://127.0.0.1:5173"]
+  WEB_ORIGINS: ["http://127.0.0.1:5173"],
+  WORLD_TICK_ENABLED: false,
+  WORLD_TICK_INTERVAL_MS: 60_000,
+  WORLD_TICK_MAX_STEPS: 60
 };
 
 describe("buildApp", () => {

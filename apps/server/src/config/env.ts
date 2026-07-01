@@ -17,7 +17,13 @@ const envSchema = z.object({
         .filter(Boolean)
     ),
   ADMIN_BOOTSTRAP_EMAIL: z.string().email().optional(),
-  ADMIN_BOOTSTRAP_PASSWORD: z.string().min(12).optional()
+  ADMIN_BOOTSTRAP_PASSWORD: z.string().min(12).optional(),
+  WORLD_TICK_ENABLED: z
+    .string()
+    .optional()
+    .transform((value) => (value === undefined ? true : value === "true")),
+  WORLD_TICK_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
+  WORLD_TICK_MAX_STEPS: z.coerce.number().int().positive().default(60)
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -52,6 +52,7 @@ const eatFoodSchema = z.object({
 export interface GameRouteDependencies {
   getCurrentAccount(request: FastifyRequest): Promise<PublicAccountRecord | null>;
   verifyGameMutation(request: FastifyRequest): Promise<boolean>;
+  settleWorldIfDue(): Promise<void>;
   getState(accountId: string): Promise<GameStateDto>;
   createCharacter(accountId: string, input: CreateCharacterRequestDto): Promise<GameStateDto>;
   enterCorruptForest(accountId: string): Promise<GameStateDto>;
@@ -101,6 +102,9 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
       const csrfToken = request.headers["x-csrf-token"];
       if (!token || typeof csrfToken !== "string") return false;
       return auth.verifyCsrfToken(token, app.config.SESSION_SECRET, csrfToken);
+    },
+    settleWorldIfDue: async () => {
+      await app.di.worldRuntime.settleDue(new Date());
     },
     getState: (accountId) => game.getState(accountId),
     createCharacter: (accountId, input) => game.createCharacter(accountId, input),
@@ -162,6 +166,7 @@ export async function registerGameRoutes(app: FastifyInstance, maybeDependencies
   app.get("/game/state", async (request, reply) => {
     const account = await requireAccount(deps, request, reply);
     if (!account) return reply;
+    await deps.settleWorldIfDue();
     return deps.getState(account.id);
   });
 
