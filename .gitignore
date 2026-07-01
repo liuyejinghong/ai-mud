@@ -33,4 +33,5 @@ pnpm-lock 2.yaml
 *.db
 tmp/
 temp/
+.worktrees
 .worktrees/
