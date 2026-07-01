@@ -23,7 +23,17 @@ const envSchema = z.object({
     .optional()
     .transform((value) => (value === undefined ? true : value === "true")),
   WORLD_TICK_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
-  WORLD_TICK_MAX_STEPS: z.coerce.number().int().positive().default(60)
+  WORLD_TICK_MAX_STEPS: z.coerce.number().int().positive().default(60),
+  AI_NPC_DIALOGUE_ENABLED: z
+    .string()
+    .optional()
+    .transform((value) => (value === undefined ? false : value === "true")),
+  AI_PROVIDER: z.enum(["template", "deepseek"]).default("template"),
+  DEEPSEEK_API_KEY: z.string().optional(),
+  DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com"),
+  DEEPSEEK_MODEL: z.string().default("deepseek-v4-flash"),
+  AI_DIALOGUE_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
+  AI_DIALOGUE_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().max(1_000).default(400)
 });
 
 export type Env = z.infer<typeof envSchema>;

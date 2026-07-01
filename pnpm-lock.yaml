@@ -20,6 +20,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@ai-mud/ai-prompts':
+        specifier: workspace:*
+        version: link:../../packages/ai-prompts
       '@ai-mud/content':
         specifier: workspace:*
         version: link:../../packages/content

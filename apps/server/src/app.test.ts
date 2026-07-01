@@ -12,7 +12,13 @@ const testEnv = {
   WEB_ORIGINS: ["http://127.0.0.1:5173"],
   WORLD_TICK_ENABLED: false,
   WORLD_TICK_INTERVAL_MS: 60_000,
-  WORLD_TICK_MAX_STEPS: 60
+  WORLD_TICK_MAX_STEPS: 60,
+  AI_NPC_DIALOGUE_ENABLED: false,
+  AI_PROVIDER: "template" as const,
+  DEEPSEEK_BASE_URL: "https://api.deepseek.com",
+  DEEPSEEK_MODEL: "deepseek-v4-flash",
+  AI_DIALOGUE_TIMEOUT_MS: 8_000,
+  AI_DIALOGUE_MAX_OUTPUT_TOKENS: 400
 };
 
 describe("buildApp", () => {
