@@ -18,3 +18,8 @@ export interface LoginRequestDto {
   email: string;
   password: string;
 }
+
+export interface AuthSessionDto {
+  user: CurrentUserDto;
+  csrfToken: string;
+}

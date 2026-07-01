@@ -15,6 +15,11 @@ declare module "fastify" {
   }
 }
 
+function isAllowedOrigin(origin: string | undefined, allowedOrigins: string[]) {
+  if (!origin) return true;
+  return allowedOrigins.includes(origin);
+}
+
 export async function buildApp(input?: { env?: Env; db?: Db }) {
   const app = Fastify({ logger: true });
   const config = input?.env ?? loadEnv();
@@ -37,7 +42,12 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
     });
   }
 
-  await app.register(cors, { origin: true, credentials: true });
+  await app.register(cors, {
+    credentials: true,
+    origin: (origin, callback) => {
+      callback(null, isAllowedOrigin(origin, config.WEB_ORIGINS));
+    }
+  });
   await app.register(cookie, { secret: config.SESSION_SECRET });
   await app.register(registerAuthRoutes);
   await app.register(registerAdminRoutes);

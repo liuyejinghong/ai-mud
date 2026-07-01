@@ -13,6 +13,7 @@ describe("registerAdminRoutes", () => {
     const createCalls: unknown[] = [];
     const app = buildAdminRouteTestApp({
       getCurrentAdmin: async () => null,
+      verifyAdminMutation: async () => false,
       listActivationCodes: async () => [],
       createActivationCodeWithAudit: async (input) => {
         createCalls.push(input);
@@ -57,6 +58,7 @@ describe("registerAdminRoutes", () => {
         email: "admin@example.com",
         role: "admin"
       }),
+      verifyAdminMutation: async () => true,
       listActivationCodes: async () => [],
       createActivationCodeWithAudit: async (input) => {
         createCalls.push(input);
@@ -113,6 +115,39 @@ describe("registerAdminRoutes", () => {
     ]);
   });
 
+  it("rejects activation-code creation without an admin mutation token", async () => {
+    const createCalls: unknown[] = [];
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      verifyAdminMutation: async () => false,
+      listActivationCodes: async () => [],
+      createActivationCodeWithAudit: async (input) => {
+        createCalls.push(input);
+        throw new Error("not used");
+      },
+      writeAudit: async () => {
+        throw new Error("not used");
+      },
+      now: () => new Date("2026-07-01T00:00:00.000Z")
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/activation-codes",
+      payload: { note: "friend invite" }
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      error: { code: "FORBIDDEN", message: "Admin mutation token required" }
+    });
+    expect(createCalls).toEqual([]);
+  });
+
   it("does not return a generated code if the atomic audited operation fails", async () => {
     const app = buildAdminRouteTestApp({
       getCurrentAdmin: async () => ({
@@ -120,6 +155,7 @@ describe("registerAdminRoutes", () => {
         email: "admin@example.com",
         role: "admin"
       }),
+      verifyAdminMutation: async () => true,
       listActivationCodes: async () => [],
       createActivationCodeWithAudit: async () => {
         throw new Error("audit insert failed");
@@ -143,6 +179,7 @@ describe("registerAdminRoutes", () => {
   it("guards the soft reset route behind an admin session", async () => {
     const app = buildAdminRouteTestApp({
       getCurrentAdmin: async () => null,
+      verifyAdminMutation: async () => false,
       listActivationCodes: async () => [],
       createActivationCodeWithAudit: async () => {
         throw new Error("not used");
@@ -176,6 +213,7 @@ describe("registerAdminRoutes", () => {
         email: "admin@example.com",
         role: "admin"
       }),
+      verifyAdminMutation: async () => true,
       listActivationCodes: async () => [],
       createActivationCodeWithAudit: async () => {
         throw new Error("not used");
@@ -220,6 +258,7 @@ describe("registerAdminRoutes", () => {
         email: "admin@example.com",
         role: "admin"
       }),
+      verifyAdminMutation: async () => true,
       listActivationCodes: async () => [],
       createActivationCodeWithAudit: async () => {
         throw new Error("not used");

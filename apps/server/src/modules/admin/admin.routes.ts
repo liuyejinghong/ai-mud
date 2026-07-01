@@ -17,6 +17,7 @@ export interface AdminAccount {
 
 export interface AdminRouteDependencies {
   getCurrentAdmin(request: FastifyRequest): Promise<AdminAccount | null>;
+  verifyAdminMutation(request: FastifyRequest): Promise<boolean>;
   listActivationCodes(): Promise<Array<ActivationCodeDto>>;
   createActivationCodeWithAudit(input: {
     note?: string;
@@ -93,6 +94,12 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
         role: account.role
       };
     },
+    verifyAdminMutation: async (request) => {
+      const token = request.cookies[app.config.SESSION_COOKIE_NAME];
+      const csrfToken = request.headers["x-ai-mud-csrf"];
+      if (!token || typeof csrfToken !== "string") return false;
+      return auth.verifyCsrfToken(token, app.config.SESSION_SECRET, csrfToken);
+    },
     listActivationCodes: async () => {
       const activationCodeRepo = new DrizzleActivationCodeRepository(app.di.db);
       const records = await activationCodeRepo.listForAdmin();
@@ -160,6 +167,9 @@ export async function registerAdminRoutes(
     if (!admin) {
       return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
     }
+    if (!(await deps.verifyAdminMutation(request))) {
+      return sendError(reply, 403, "FORBIDDEN", "Admin mutation token required");
+    }
 
     const parsed = createActivationCodeSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -181,6 +191,9 @@ export async function registerAdminRoutes(
     const admin = await deps.getCurrentAdmin(request);
     if (!admin) {
       return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+    if (!(await deps.verifyAdminMutation(request))) {
+      return sendError(reply, 403, "FORBIDDEN", "Admin mutation token required");
     }
 
     const parsed = softResetSchema.safeParse(request.body);

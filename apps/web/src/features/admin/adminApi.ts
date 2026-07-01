@@ -2,10 +2,13 @@ import type { CreateActivationCodeResponseDto } from "@ai-mud/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:3000";
 
-export async function createActivationCode(note: string): Promise<CreateActivationCodeResponseDto> {
+export async function createActivationCode(
+  note: string,
+  csrfToken: string
+): Promise<CreateActivationCodeResponseDto> {
   const response = await fetch(`${API_BASE}/admin/activation-codes`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-ai-mud-csrf": csrfToken },
     credentials: "include",
     body: JSON.stringify({ note: note.trim() || undefined })
   });

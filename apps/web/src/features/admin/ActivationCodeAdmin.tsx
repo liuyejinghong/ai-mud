@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createActivationCode } from "./adminApi";
 import "./ActivationCodeAdmin.css";
 
-export function ActivationCodeAdmin() {
+export function ActivationCodeAdmin({ csrfToken }: { csrfToken: string }) {
   const [note, setNote] = useState("");
   const [createdCode, setCreatedCode] = useState("");
   const [message, setMessage] = useState("");
@@ -14,7 +14,7 @@ export function ActivationCodeAdmin() {
     setCreatedCode("");
 
     try {
-      const result = await createActivationCode(note);
+      const result = await createActivationCode(note, csrfToken);
       setCreatedCode(result.code);
       setMessage("激活码已生成");
     } catch {

@@ -1,9 +1,9 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
-import { login, registerAccount } from "./authApi";
+import { login, registerAccount, type AuthSessionDto } from "./authApi";
 import "./AuthPage.css";
 
-export function AuthPage() {
+export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: AuthSessionDto) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [activationCode, setActivationCode] = useState("");
@@ -19,7 +19,14 @@ export function AuthPage() {
         action === "register"
           ? await registerAccount({ email, password, activationCode })
           : await login({ email, password });
-      setMessage(response.ok ? "认证成功，正在进入世界。" : "认证失败，请检查输入。");
+      if (!response.ok) {
+        setMessage("认证失败，请检查输入。");
+        return;
+      }
+
+      const session = (await response.json()) as AuthSessionDto;
+      onAuthenticated?.(session);
+      setMessage("认证成功，正在进入世界。");
     } catch {
       setMessage("无法连接服务器。");
     } finally {

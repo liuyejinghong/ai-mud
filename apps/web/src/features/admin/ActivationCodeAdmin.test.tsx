@@ -4,7 +4,7 @@ import { ActivationCodeAdmin } from "./ActivationCodeAdmin";
 
 describe("ActivationCodeAdmin", () => {
   it("renders activation-code creation controls", () => {
-    render(<ActivationCodeAdmin />);
+    render(<ActivationCodeAdmin csrfToken="csrf-token" />);
 
     expect(screen.getByRole("heading", { name: "激活码管理" })).toBeTruthy();
     expect(screen.getByLabelText("备注")).toBeTruthy();

@@ -7,6 +7,15 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   SESSION_COOKIE_NAME: z.string().default("ai_mud_session"),
   SESSION_SECRET: z.string().min(32),
+  WEB_ORIGINS: z
+    .string()
+    .default("http://127.0.0.1:5173")
+    .transform((value) =>
+      value
+        .split(",")
+        .map((origin) => origin.trim())
+        .filter(Boolean)
+    ),
   ADMIN_BOOTSTRAP_EMAIL: z.string().email().optional(),
   ADMIN_BOOTSTRAP_PASSWORD: z.string().min(12).optional()
 });

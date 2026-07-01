@@ -1,4 +1,9 @@
-import type { LoginRequestDto, RegisterRequestDto } from "@ai-mud/shared";
+import type { CurrentUserDto, LoginRequestDto, RegisterRequestDto } from "@ai-mud/shared";
+
+export interface AuthSessionDto {
+  user: CurrentUserDto;
+  csrfToken: string;
+}
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:3000";
 
@@ -17,4 +22,16 @@ export async function registerAccount(input: RegisterRequestDto) {
 
 export async function login(input: LoginRequestDto) {
   return postAuth("/auth/login", input);
+}
+
+export async function getCurrentSession(): Promise<AuthSessionDto> {
+  const response = await fetch(`${API_BASE}/auth/me`, {
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    throw new Error("Not signed in");
+  }
+
+  return response.json() as Promise<AuthSessionDto>;
 }

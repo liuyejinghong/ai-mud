@@ -34,7 +34,10 @@ export class ActivationCodeService {
     return { code, activationCodeId: record.id };
   }
 
-  async consume(code: string, accountId: string): Promise<{ ok: true } | { ok: false; reason: ErrorCode }> {
+  async consume(
+    code: string,
+    accountId: string
+  ): Promise<{ ok: true; activationCodeId: string } | { ok: false; reason: ErrorCode }> {
     const record = await this.repo.findByHash(this.hash(code));
     if (!record) return { ok: false, reason: "ACTIVATION_CODE_INVALID" };
     if (record.status === "used") return { ok: false, reason: "ACTIVATION_CODE_USED" };
@@ -51,7 +54,7 @@ export class ActivationCodeService {
       return { ok: false, reason: "ACTIVATION_CODE_USED" };
     }
 
-    return { ok: true };
+    return { ok: true, activationCodeId: record.id };
   }
 
   private hash(code: string) {

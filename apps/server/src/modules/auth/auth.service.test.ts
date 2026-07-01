@@ -19,4 +19,12 @@ describe("AuthService", () => {
     expect(session.tokenHash).not.toBe(session.token);
     expect(session.tokenHash).toHaveLength(64);
   });
+
+  it("derives verifiable csrf tokens from the session token", () => {
+    const service = new AuthService();
+    const csrf = service.createCsrfToken("session-token", "secret-that-is-long-enough");
+
+    expect(service.verifyCsrfToken("session-token", "secret-that-is-long-enough", csrf)).toBe(true);
+    expect(service.verifyCsrfToken("other-session", "secret-that-is-long-enough", csrf)).toBe(false);
+  });
 });

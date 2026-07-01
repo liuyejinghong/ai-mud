@@ -59,7 +59,7 @@ describe("ActivationCodeService", () => {
     });
 
     const consumed = await service.consume(code, "account-1");
-    expect(consumed.ok).toBe(true);
+    expect(consumed).toEqual({ ok: true, activationCodeId: "code-1" });
 
     const second = await service.consume(code, "account-2");
     expect(second).toEqual({ ok: false, reason: "ACTIVATION_CODE_USED" });
