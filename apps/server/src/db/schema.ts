@@ -332,6 +332,79 @@ export const worldRuntimeState = pgTable(
   })
 );
 
+export const aiCallLogs = pgTable(
+  "ai_call_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    promptVersion: integer("prompt_version").notNull(),
+    purpose: text("purpose").notNull(),
+    accountId: uuid("account_id").references(() => accounts.id),
+    characterId: uuid("character_id").references(() => characters.id),
+    npcActorId: uuid("npc_actor_id").references(() => worldActors.id),
+    requestHash: text("request_hash").notNull(),
+    inputSummary: text("input_summary").notNull(),
+    outputSummary: text("output_summary").notNull(),
+    status: text("status").notNull(),
+    latencyMs: integer("latency_ms"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    errorCode: text("error_code"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    createdAtIdx: index("ai_call_logs_created_at_idx").on(table.createdAt),
+    npcCreatedAtIdx: index("ai_call_logs_npc_created_at_idx").on(
+      table.npcActorId,
+      table.createdAt
+    )
+  })
+);
+
+export const npcDialogueMessages = pgTable(
+  "npc_dialogue_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id").notNull().references(() => accounts.id),
+    characterId: uuid("character_id").notNull().references(() => characters.id),
+    npcActorId: uuid("npc_actor_id").notNull().references(() => worldActors.id),
+    speakerType: text("speaker_type").notNull(),
+    message: text("message").notNull(),
+    safetyFlags: jsonb("safety_flags").notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    conversationCreatedAtIdx: index("npc_dialogue_messages_conversation_created_at_idx").on(
+      table.characterId,
+      table.npcActorId,
+      table.createdAt
+    )
+  })
+);
+
+export const npcRelationships = pgTable(
+  "npc_relationships",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    characterId: uuid("character_id").notNull().references(() => characters.id),
+    npcActorId: uuid("npc_actor_id").notNull().references(() => worldActors.id),
+    familiarity: integer("familiarity").notNull().default(0),
+    trust: integer("trust").notNull().default(0),
+    lastInteractionAt: timestamp("last_interaction_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    shortSummary: text("short_summary").notNull().default(""),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    characterNpcIdx: uniqueIndex("npc_relationships_character_npc_idx").on(
+      table.characterId,
+      table.npcActorId
+    )
+  })
+);
+
 export const characterActions = pgTable(
   "character_actions",
   {

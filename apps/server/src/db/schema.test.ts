@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   accounts,
   activationCodes,
+  aiCallLogs,
   auditLogs,
   characterActions,
   characterActionStatus,
@@ -14,8 +15,10 @@ import {
   marketTransactions,
   municipalTreasury,
   npcActions,
+  npcDialogueMessages,
   npcEvents,
   npcItems,
+  npcRelationships,
   mapInstances,
   sessions,
   worldActors,
@@ -94,6 +97,20 @@ describe("foundation schema", () => {
     expect(worldRuntimeState.lastSettledAt.getSQLType()).toBe("timestamp with time zone");
     expect(worldRuntimeState.leaseOwner.getSQLType()).toBe("text");
     expect(worldRuntimeState.leaseUntil.getSQLType()).toBe("timestamp with time zone");
+  });
+
+  it("defines AI dialogue and audit tables", () => {
+    expect(getDrizzleTableName(aiCallLogs)).toBe("ai_call_logs");
+    expect(getDrizzleTableName(npcDialogueMessages)).toBe("npc_dialogue_messages");
+    expect(getDrizzleTableName(npcRelationships)).toBe("npc_relationships");
+    expect(aiCallLogs.provider.getSQLType()).toBe("text");
+    expect(aiCallLogs.model.getSQLType()).toBe("text");
+    expect(aiCallLogs.promptVersion.getSQLType()).toBe("integer");
+    expect(aiCallLogs.status.getSQLType()).toBe("text");
+    expect(npcDialogueMessages.speakerType.getSQLType()).toBe("text");
+    expect(npcDialogueMessages.message.getSQLType()).toBe("text");
+    expect(npcRelationships.familiarity.getSQLType()).toBe("integer");
+    expect(npcRelationships.trust.getSQLType()).toBe("integer");
   });
 
   it("stores audit metadata as structured jsonb", () => {
