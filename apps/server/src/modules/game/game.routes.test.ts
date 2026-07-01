@@ -57,10 +57,10 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
       },
       locationTitle: "腐林"
     }),
-    gather: async () => ({
-      ...baseState,
-      inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 2 }]
-    }),
+    startGathering: async () => baseState,
+    startCombat: async () => baseState,
+    cancelAction: async () => baseState,
+    returnToVillage: async () => baseState,
     ...overrides
   };
   const app = Fastify();
@@ -163,22 +163,46 @@ describe("registerGameRoutes", () => {
     });
   });
 
-  it("gathers from the current resource cell and returns updated inventory", async () => {
-    const app = buildGameRouteTestApp();
+  it("starts timed gathering with a planned duration", async () => {
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      startGathering: async (accountId, input) => {
+        calls.push({ accountId, input });
+        return {
+          ...baseState,
+          currentAction: {
+            id: "action-1",
+            actionType: "gathering",
+            status: "active",
+            description: "正在采集野莓灌木",
+            startedAt: "2026-07-01T00:00:00.000Z",
+            endsAt: "2026-07-01T00:10:00.000Z",
+            progressPct: 0,
+            cycleProgressPct: 0,
+            completedCycles: 0,
+            settledCycles: 0,
+            plannedCycles: 20,
+            expectedYield: [{ itemId: "wild_berry", name: "野莓", quantity: 40 }],
+            combatLog: []
+          }
+        };
+      }
+    });
     const response = await app.inject({
       method: "POST",
       url: "/game/gather",
       headers: { "x-csrf-token": "csrf" },
-      payload: {}
+      payload: { plannedMinutes: 10 }
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().inventory).toEqual([{ itemId: "wild_berry", name: "野莓", quantity: 2 }]);
+    expect(response.json().currentAction.actionType).toBe("gathering");
+    expect(calls).toEqual([{ accountId: "account-1", input: { plannedMinutes: 10 } }]);
   });
 
   it("rejects gathering on an empty cell", async () => {
     const app = buildGameRouteTestApp({
-      gather: async () => {
+      startGathering: async () => {
         throw new GameServiceError("VALIDATION_ERROR", "这里没有可采集的资源。");
       }
     });
@@ -194,5 +218,62 @@ describe("registerGameRoutes", () => {
     expect(response.json()).toEqual({
       error: { code: "VALIDATION_ERROR", message: "这里没有可采集的资源。" }
     });
+  });
+
+  it("starts combat", async () => {
+    const app = buildGameRouteTestApp({
+      startCombat: async () => ({
+        ...baseState,
+        currentAction: {
+          id: "action-1",
+          actionType: "combat",
+          status: "active",
+          description: "正在与腐化野狼群战斗",
+          startedAt: "2026-07-01T00:00:00.000Z",
+          endsAt: "2026-07-01T00:02:00.000Z",
+          progressPct: 0,
+          cycleProgressPct: null,
+          completedCycles: null,
+          settledCycles: null,
+          plannedCycles: null,
+          expectedYield: [],
+          combatLog: ["Zichen 攻击腐化野狼，造成 16 点伤害。"]
+        }
+      })
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/combat/start",
+      headers: { "x-csrf-token": "csrf" },
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().currentAction.actionType).toBe("combat");
+  });
+
+  it("cancels the active action", async () => {
+    const app = buildGameRouteTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/action/cancel",
+      headers: { "x-csrf-token": "csrf" },
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  it("returns to the village", async () => {
+    const app = buildGameRouteTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/return-village",
+      headers: { "x-csrf-token": "csrf" },
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(200);
   });
 });

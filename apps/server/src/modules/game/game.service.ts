@@ -1,16 +1,38 @@
-import { BLACKPINE_OUTPOST, CORRUPT_FOREST, getItemById } from "@ai-mud/content";
-import { addInventoryItem, buildMapCells, movePosition } from "@ai-mud/game-rules";
+import {
+  BLACKPINE_OUTPOST,
+  CORRUPT_FOREST,
+  getEncounterById,
+  getItemById,
+  getMonsterById
+} from "@ai-mud/content";
+import {
+  addInventoryItem,
+  buildMapCells,
+  calculateGatheringPlan,
+  calculateGatheringSettlement,
+  movePosition,
+  simulateCombat
+} from "@ai-mud/game-rules";
 import {
   CHARACTER_CLASSES,
-  type CharacterDto,
   type CharacterClassId,
+  type CharacterDto,
   type CreateCharacterRequestDto,
+  type CurrentActionDto,
   type Direction,
   type GameStateDto,
-  type GridPositionDto
+  type GridPositionDto,
+  type InventoryItemDto,
+  type StartGatheringRequestDto
 } from "@ai-mud/shared";
 import type { Db } from "../../db/client.js";
-import { GameRepository, type CharacterRecord } from "./game.repository.js";
+import {
+  GameRepository,
+  type CharacterActionRecord,
+  type CharacterRecord,
+  type CombatActionPayload,
+  type GatheringActionPayload
+} from "./game.repository.js";
 
 export class GameServiceError extends Error {
   constructor(
@@ -27,8 +49,28 @@ function classMaxHp(classId: CharacterClassId) {
   return characterClass.baseStats.vitality * 10;
 }
 
+function classAttack(classId: CharacterClassId) {
+  const characterClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
+  if (!characterClass) throw new GameServiceError("VALIDATION_ERROR", "Unknown class");
+  return characterClass.baseStats.strength + Math.floor(characterClass.baseStats.agility / 2);
+}
+
+function classDefense(classId: CharacterClassId) {
+  const characterClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
+  if (!characterClass) throw new GameServiceError("VALIDATION_ERROR", "Unknown class");
+  return Math.floor(characterClass.baseStats.vitality / 2) + 2;
+}
+
+function classAgility(classId: CharacterClassId) {
+  const characterClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
+  if (!characterClass) throw new GameServiceError("VALIDATION_ERROR", "Unknown class");
+  return characterClass.baseStats.agility;
+}
+
 function initialResourceCharges() {
-  return Object.fromEntries(CORRUPT_FOREST.resources.map((resource) => [resource.id, resource.charges]));
+  return Object.fromEntries(
+    CORRUPT_FOREST.resources.map((resource) => [resource.id, resource.charges])
+  );
 }
 
 function findLiveResourceAt(position: GridPositionDto, resourceCharges: Record<string, number>) {
@@ -42,6 +84,14 @@ function findLiveResourceAt(position: GridPositionDto, resourceCharges: Record<s
   );
 }
 
+function findEncounterAt(position: GridPositionDto) {
+  return (
+    CORRUPT_FOREST.encounters.find(
+      (encounter) => encounter.position.x === position.x && encounter.position.y === position.y
+    ) ?? null
+  );
+}
+
 function directionLabel(direction: Direction) {
   return {
     north: "北",
@@ -49,6 +99,12 @@ function directionLabel(direction: Direction) {
     west: "西",
     east: "东"
   }[direction];
+}
+
+function progressPct(startedAt: Date, endsAt: Date, now: Date) {
+  const totalMs = Math.max(1, endsAt.getTime() - startedAt.getTime());
+  const elapsedMs = Math.max(0, now.getTime() - startedAt.getTime());
+  return Math.min(100, Math.round((elapsedMs / totalMs) * 100));
 }
 
 function toCharacterDto(character: CharacterRecord): CharacterDto {
@@ -66,11 +122,24 @@ function toCharacterDto(character: CharacterRecord): CharacterDto {
   };
 }
 
+function toInventoryDto(items: Array<{ itemId: InventoryItemDto["itemId"]; quantity: number }>) {
+  return items.map((item) => ({
+    itemId: item.itemId,
+    name: getItemById(item.itemId)?.name ?? item.itemId,
+    quantity: item.quantity
+  }));
+}
+
 export class GameService {
   constructor(private readonly db: Db) {}
 
   async getState(accountId: string): Promise<GameStateDto> {
-    return this.buildState(new GameRepository(this.db), accountId);
+    return this.db.transaction(async (tx) => {
+      const repo = new GameRepository(tx);
+      await this.settleDueAction(repo, accountId, new Date());
+      await this.healExpiredInjury(repo, accountId, new Date());
+      return this.buildState(repo, accountId, new Date());
+    });
   }
 
   async createCharacter(
@@ -98,7 +167,7 @@ export class GameService {
         message: `${character.name} 抵达黑松哨站。`
       });
 
-      return this.buildState(repo, accountId);
+      return this.buildState(repo, accountId, new Date());
     });
   }
 
@@ -106,6 +175,7 @@ export class GameService {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
       const character = await this.requireCharacter(repo, accountId);
+      await this.requireNoActiveAction(repo, character.id);
       const existingMap = await repo.findMapInstance(character.id, CORRUPT_FOREST.id);
 
       if (!existingMap) {
@@ -127,14 +197,15 @@ export class GameService {
         message: "你穿过南侧木门，踏入腐林。"
       });
 
-      return this.buildState(repo, accountId);
+      return this.buildState(repo, accountId, new Date());
     });
   }
 
   async move(accountId: string, direction: Direction): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
-      const character = await this.requireCharacterInForest(repo, accountId);
+      const character = await this.requireReadyCharacterInForest(repo, accountId, new Date());
+      await this.requireNoActiveAction(repo, character.id);
       const result = movePosition(CORRUPT_FOREST, character.position, direction);
 
       if (!result.ok) {
@@ -153,14 +224,19 @@ export class GameService {
         metadata: { direction, position: result.position }
       });
 
-      return this.buildState(repo, accountId);
+      return this.buildState(repo, accountId, new Date());
     });
   }
 
-  async gather(accountId: string): Promise<GameStateDto> {
+  async startGathering(
+    accountId: string,
+    input: StartGatheringRequestDto
+  ): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
-      const character = await this.requireCharacterInForest(repo, accountId);
+      const now = new Date();
+      const character = await this.requireReadyCharacterInForest(repo, accountId, now);
+      await this.requireNoActiveAction(repo, character.id);
       const map = await this.requireCorruptForestMap(repo, character);
       const resource = findLiveResourceAt(character.position, map.resourceCharges);
 
@@ -168,39 +244,152 @@ export class GameService {
         throw new GameServiceError("VALIDATION_ERROR", "这里没有可采集的资源。");
       }
 
-      const nextCharges = {
-        ...map.resourceCharges,
-        [resource.id]: (map.resourceCharges[resource.id] ?? resource.charges) - 1
-      };
-      const inventory = await repo.listInventory(character.id);
-      const nextInventory = addInventoryItem(
-        inventory,
-        resource.gatherResult.itemId,
-        resource.gatherResult.quantity
-      );
-      const changedStack = nextInventory.find(
-        (item) => item.itemId === resource.gatherResult.itemId
-      );
+      const plan = calculateGatheringPlan({
+        baseCycleSeconds: resource.cycleSeconds,
+        classId: character.classId,
+        agility: classAgility(character.classId),
+        plannedMinutes: input.plannedMinutes,
+        remainingCharges: map.resourceCharges[resource.id] ?? resource.charges
+      });
+      const item = getItemById(resource.gatherResult.itemId);
 
-      if (!changedStack) {
-        throw new Error("Failed to calculate gathered inventory stack");
-      }
-
-      await repo.updateMapResourceCharges(map.id, nextCharges);
-      await repo.setInventoryItem({
+      await repo.createAction({
         characterId: character.id,
-        itemId: changedStack.itemId,
-        quantity: changedStack.quantity
+        actionType: "gathering",
+        startedAt: now,
+        endsAt: new Date(now.getTime() + plan.cycleMs * plan.plannedCycles),
+        payload: {
+          resourceId: resource.id,
+          itemId: resource.gatherResult.itemId,
+          itemName: item?.name ?? resource.gatherResult.itemId,
+          quantityPerCycle: resource.gatherResult.quantity,
+          cycleMs: plan.cycleMs,
+          plannedCycles: plan.plannedCycles,
+          settledCycles: 0
+        }
       });
       await repo.writeEvent({
         characterId: character.id,
-        eventType: "resource.gather",
-        message: `你采集了${resource.name}。`,
-        metadata: { resourceId: resource.id, itemId: changedStack.itemId }
+        eventType: "action.gathering.start",
+        message: `你开始采集${resource.name}。`
       });
 
-      return this.buildState(repo, accountId);
+      return this.buildState(repo, accountId, now);
     });
+  }
+
+  async startCombat(accountId: string): Promise<GameStateDto> {
+    return this.db.transaction(async (tx) => {
+      const repo = new GameRepository(tx);
+      const now = new Date();
+      const character = await this.requireReadyCharacterInForest(repo, accountId, now);
+      await this.requireNoActiveAction(repo, character.id);
+      const encounter = findEncounterAt(character.position);
+
+      if (!encounter) {
+        throw new GameServiceError("VALIDATION_ERROR", "这里没有可攻击的敌人。");
+      }
+
+      const monsters = encounter.monsterIds.map((monsterId) => getMonsterById(monsterId));
+      if (monsters.some((monster) => !monster)) {
+        throw new GameServiceError("VALIDATION_ERROR", "遭遇配置无效。");
+      }
+
+      const result = simulateCombat({
+        seed: `${character.id}:${encounter.id}:${now.toISOString()}`,
+        player: {
+          name: character.name,
+          hp: character.hp,
+          maxHp: character.maxHp,
+          attack: classAttack(character.classId),
+          defense: classDefense(character.classId),
+          agility: classAgility(character.classId)
+        },
+        monsters: monsters.map((monster) => monster!)
+      });
+
+      if (result.outcome === "stalemate") {
+        throw new GameServiceError("VALIDATION_ERROR", "这场战斗短时间内无法结束。");
+      }
+
+      await repo.createAction({
+        characterId: character.id,
+        actionType: "combat",
+        startedAt: now,
+        endsAt: new Date(now.getTime() + result.durationMs),
+        payload: {
+          encounterId: encounter.id,
+          combatLog: result.timeline.map((entry) => entry.message),
+          expectedEndsAtMs: now.getTime() + result.durationMs,
+          outcome: result.outcome,
+          playerRemainingHp: result.playerRemainingHp,
+          xp: result.xp,
+          loot: result.loot
+        }
+      });
+      await repo.writeEvent({
+        characterId: character.id,
+        eventType: "action.combat.start",
+        message: `你开始与${encounter.name}战斗。`
+      });
+
+      return this.buildState(repo, accountId, now);
+    });
+  }
+
+  async cancelAction(accountId: string): Promise<GameStateDto> {
+    return this.db.transaction(async (tx) => {
+      const repo = new GameRepository(tx);
+      const now = new Date();
+      const character = await this.requireCharacter(repo, accountId);
+      const action = await repo.findActiveActionByCharacterId(character.id);
+      if (!action) {
+        throw new GameServiceError("VALIDATION_ERROR", "当前没有进行中的行动。");
+      }
+
+      if (action.actionType === "gathering") {
+        await this.settleGatheringAction(repo, action, now, { completeAction: false });
+        await repo.writeEvent({
+          characterId: character.id,
+          eventType: "action.gathering.cancel",
+          message: "你停止采集，带走了已经完成周期的收获。"
+        });
+      } else {
+        await repo.writeEvent({
+          characterId: character.id,
+          eventType: "action.combat.escape",
+          message: "你撤离了战斗，敌人没有离开原地追击。"
+        });
+      }
+
+      await repo.markActionCancelled(action.id, now);
+      return this.buildState(repo, accountId, now);
+    });
+  }
+
+  async returnToVillage(accountId: string): Promise<GameStateDto> {
+    return this.db.transaction(async (tx) => {
+      const repo = new GameRepository(tx);
+      const character = await this.requireCharacter(repo, accountId);
+      await this.requireNoActiveAction(repo, character.id);
+
+      await repo.updateCharacterLocation({
+        characterId: character.id,
+        currentLocation: BLACKPINE_OUTPOST.id,
+        position: null
+      });
+      await repo.writeEvent({
+        characterId: character.id,
+        eventType: "zone.return",
+        message: "你返回黑松哨站。"
+      });
+
+      return this.buildState(repo, accountId, new Date());
+    });
+  }
+
+  async gather(accountId: string): Promise<GameStateDto> {
+    return this.startGathering(accountId, { plannedMinutes: 10 });
   }
 
   private async requireCharacter(repo: GameRepository, accountId: string) {
@@ -211,8 +400,15 @@ export class GameService {
     return character;
   }
 
-  private async requireCharacterInForest(repo: GameRepository, accountId: string) {
+  private async requireReadyCharacterInForest(
+    repo: GameRepository,
+    accountId: string,
+    now: Date
+  ) {
     const character = await this.requireCharacter(repo, accountId);
+    if (character.injuryUntil && character.injuryUntil.getTime() > now.getTime()) {
+      throw new GameServiceError("VALIDATION_ERROR", "你正在养伤，暂时不能出城。");
+    }
     if (character.currentLocation !== CORRUPT_FOREST.id || !character.position) {
       throw new GameServiceError("VALIDATION_ERROR", "Character is not exploring");
     }
@@ -230,7 +426,220 @@ export class GameService {
     return map;
   }
 
-  private async buildState(repo: GameRepository, accountId: string): Promise<GameStateDto> {
+  private async requireNoActiveAction(repo: GameRepository, characterId: string) {
+    const action = await repo.findActiveActionByCharacterId(characterId);
+    if (action) {
+      throw new GameServiceError("VALIDATION_ERROR", "已有进行中的行动。");
+    }
+  }
+
+  private async settleDueAction(repo: GameRepository, accountId: string, now: Date) {
+    const character = await repo.findCharacterByAccountId(accountId);
+    if (!character) return;
+
+    const action = await repo.findActiveActionByCharacterId(character.id);
+    if (!action || action.endsAt.getTime() > now.getTime()) return;
+
+    if (action.actionType === "gathering") {
+      await this.settleGatheringAction(repo, action, now, { completeAction: true });
+      return;
+    }
+
+    await this.settleCombatAction(repo, character, action, now);
+  }
+
+  private async settleGatheringAction(
+    repo: GameRepository,
+    action: CharacterActionRecord,
+    now: Date,
+    options: { completeAction: boolean }
+  ) {
+    const payload = action.payload as GatheringActionPayload;
+    const resource = CORRUPT_FOREST.resources.find((entry) => entry.id === payload.resourceId);
+    if (!resource) throw new GameServiceError("VALIDATION_ERROR", "资源配置无效。");
+    const map = await repo.findMapInstance(action.characterId, CORRUPT_FOREST.id);
+    if (!map) throw new GameServiceError("VALIDATION_ERROR", "Map state required");
+
+    const remainingCharges = map.resourceCharges[resource.id] ?? resource.charges;
+    const settlement = calculateGatheringSettlement({
+      startedAtMs: action.startedAt.getTime(),
+      nowMs: now.getTime(),
+      cycleMs: payload.cycleMs,
+      plannedCycles: payload.plannedCycles,
+      settledCycles: payload.settledCycles,
+      remainingCharges
+    });
+
+    if (settlement.newCyclesToSettle > 0) {
+      const inventory = await repo.listInventory(action.characterId);
+      const nextInventory = addInventoryItem(
+        inventory,
+        payload.itemId,
+        payload.quantityPerCycle * settlement.newCyclesToSettle
+      );
+      const changedStack = nextInventory.find((item) => item.itemId === payload.itemId);
+      if (!changedStack) throw new Error("Failed to calculate gathered inventory stack");
+
+      await repo.setInventoryItem({
+        characterId: action.characterId,
+        itemId: changedStack.itemId,
+        quantity: changedStack.quantity
+      });
+      await repo.updateMapResourceCharges(map.id, {
+        ...map.resourceCharges,
+        [resource.id]: remainingCharges - settlement.newCyclesToSettle
+      });
+      await repo.updateActionPayload(action.id, {
+        ...payload,
+        settledCycles: payload.settledCycles + settlement.newCyclesToSettle
+      });
+      await repo.writeEvent({
+        characterId: action.characterId,
+        eventType: "action.gathering.settle",
+        message: `你获得了${payload.itemName} x${payload.quantityPerCycle * settlement.newCyclesToSettle}。`
+      });
+    }
+
+    if (options.completeAction && settlement.isComplete) {
+      await repo.markActionCompleted(action.id, now);
+      await repo.writeEvent({
+        characterId: action.characterId,
+        eventType: "action.gathering.complete",
+        message: "采集行动完成。"
+      });
+    }
+  }
+
+  private async settleCombatAction(
+    repo: GameRepository,
+    character: CharacterRecord,
+    action: CharacterActionRecord,
+    now: Date
+  ) {
+    const payload = action.payload as CombatActionPayload;
+    let nextHp = payload.playerRemainingHp;
+    let nextXp = character.xp;
+    let injuryUntil: Date | null | undefined;
+
+    if (payload.outcome === "victory") {
+      nextXp += payload.xp;
+      const inventory = await repo.listInventory(character.id);
+      let nextInventory = inventory;
+      for (const item of payload.loot) {
+        nextInventory = addInventoryItem(nextInventory, item.itemId, item.quantity);
+      }
+      for (const item of nextInventory) {
+        await repo.setInventoryItem({
+          characterId: character.id,
+          itemId: item.itemId,
+          quantity: item.quantity
+        });
+      }
+      await repo.writeEvent({
+        characterId: character.id,
+        eventType: "action.combat.victory",
+        message: `战斗胜利，获得 ${payload.xp} 经验。`
+      });
+    }
+
+    if (payload.outcome === "injury") {
+      nextHp = 1;
+      injuryUntil = new Date(now.getTime() + 30 * 60_000);
+      await repo.updateCharacterLocation({
+        characterId: character.id,
+        currentLocation: BLACKPINE_OUTPOST.id,
+        position: null
+      });
+      await repo.writeEvent({
+        characterId: character.id,
+        eventType: "action.combat.injury",
+        message: "你伤势过重，被巡逻队带回黑松哨站休养。"
+      });
+    }
+
+    await repo.updateCharacterVitals({
+      characterId: character.id,
+      hp: nextHp,
+      xp: nextXp,
+      ...(injuryUntil === undefined ? {} : { injuryUntil })
+    });
+    await repo.markActionCompleted(action.id, now);
+  }
+
+  private async healExpiredInjury(repo: GameRepository, accountId: string, now: Date) {
+    const character = await repo.findCharacterByAccountId(accountId);
+    if (!character?.injuryUntil || character.injuryUntil.getTime() > now.getTime()) return;
+
+    await repo.updateCharacterVitals({
+      characterId: character.id,
+      hp: character.maxHp,
+      injuryUntil: null
+    });
+    await repo.writeEvent({
+      characterId: character.id,
+      eventType: "character.injury.heal",
+      message: "你的伤势已经恢复。"
+    });
+  }
+
+  private toCurrentActionDto(action: CharacterActionRecord, now: Date): CurrentActionDto {
+    const base = {
+      id: action.id,
+      actionType: action.actionType,
+      status: action.status,
+      startedAt: action.startedAt.toISOString(),
+      endsAt: action.endsAt.toISOString(),
+      progressPct: progressPct(action.startedAt, action.endsAt, now)
+    };
+
+    if (action.actionType === "gathering") {
+      const payload = action.payload as GatheringActionPayload;
+      const settlement = calculateGatheringSettlement({
+        startedAtMs: action.startedAt.getTime(),
+        nowMs: now.getTime(),
+        cycleMs: payload.cycleMs,
+        plannedCycles: payload.plannedCycles,
+        settledCycles: payload.settledCycles,
+        remainingCharges: payload.plannedCycles
+      });
+
+      return {
+        ...base,
+        description: `正在采集${payload.itemName}`,
+        cycleProgressPct: settlement.cycleProgressPct,
+        completedCycles: settlement.completedCycles,
+        settledCycles: payload.settledCycles,
+        plannedCycles: payload.plannedCycles,
+        expectedYield: [
+          {
+            itemId: payload.itemId,
+            name: payload.itemName,
+            quantity: payload.quantityPerCycle * payload.plannedCycles
+          }
+        ],
+        combatLog: []
+      };
+    }
+
+    const payload = action.payload as CombatActionPayload;
+    const encounter = getEncounterById(payload.encounterId);
+    return {
+      ...base,
+      description: `正在与${encounter?.name ?? "敌人"}战斗`,
+      cycleProgressPct: null,
+      completedCycles: null,
+      settledCycles: null,
+      plannedCycles: null,
+      expectedYield: [],
+      combatLog: payload.combatLog
+    };
+  }
+
+  private async buildState(
+    repo: GameRepository,
+    accountId: string,
+    now: Date
+  ): Promise<GameStateDto> {
     const character = await repo.findCharacterByAccountId(accountId);
     if (!character) {
       return {
@@ -247,11 +656,9 @@ export class GameService {
 
     const inventory = await repo.listInventory(character.id);
     const log = await repo.listRecentEvents(character.id);
-    const inventoryDto = inventory.map((item) => ({
-      itemId: item.itemId,
-      name: getItemById(item.itemId)?.name ?? item.itemId,
-      quantity: item.quantity
-    }));
+    const inventoryDto = toInventoryDto(inventory);
+    const activeAction = await repo.findActiveActionByCharacterId(character.id);
+    const currentAction = activeAction ? this.toCurrentActionDto(activeAction, now) : null;
 
     if (character.currentLocation !== CORRUPT_FOREST.id || !character.position) {
       return {
@@ -260,8 +667,8 @@ export class GameService {
         locationDescription: BLACKPINE_OUTPOST.description,
         map: null,
         inventory: inventoryDto,
-        currentAction: null,
-        availableActions: ["enter_corrupt_forest"],
+        currentAction,
+        availableActions: currentAction ? ["cancel_action"] : ["enter_corrupt_forest"],
         log: log.map((entry) => ({
           id: entry.id,
           message: entry.message,
@@ -272,10 +679,16 @@ export class GameService {
 
     const map = await repo.findMapInstance(character.id, CORRUPT_FOREST.id);
     const resourceCharges = map?.resourceCharges ?? initialResourceCharges();
-    const availableActions: GameStateDto["availableActions"] = ["move"];
+    const availableActions: GameStateDto["availableActions"] = currentAction
+      ? ["cancel_action"]
+      : ["move", "return_to_village"];
 
-    if (findLiveResourceAt(character.position, resourceCharges)) {
-      availableActions.push("gather");
+    if (!currentAction && findLiveResourceAt(character.position, resourceCharges)) {
+      availableActions.push("start_gathering");
+    }
+
+    if (!currentAction && findEncounterAt(character.position)) {
+      availableActions.push("start_combat");
     }
 
     return {
@@ -289,7 +702,7 @@ export class GameService {
         cells: buildMapCells(CORRUPT_FOREST, character.position, resourceCharges)
       },
       inventory: inventoryDto,
-      currentAction: null,
+      currentAction,
       availableActions,
       log: log.map((entry) => ({
         id: entry.id,

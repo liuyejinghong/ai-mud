@@ -4,7 +4,8 @@ import {
   type CreateCharacterRequestDto,
   type Direction,
   type ErrorCode,
-  type GameStateDto
+  type GameStateDto,
+  type StartGatheringRequestDto
 } from "@ai-mud/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -25,6 +26,10 @@ const moveSchema = z.object({
   direction: z.enum(DIRECTIONS)
 });
 
+const gatherSchema = z.object({
+  plannedMinutes: z.union([z.literal(10), z.literal(30), z.literal(120)]).default(10)
+});
+
 export interface GameRouteDependencies {
   getCurrentAccount(request: FastifyRequest): Promise<PublicAccountRecord | null>;
   verifyGameMutation(request: FastifyRequest): Promise<boolean>;
@@ -32,7 +37,10 @@ export interface GameRouteDependencies {
   createCharacter(accountId: string, input: CreateCharacterRequestDto): Promise<GameStateDto>;
   enterCorruptForest(accountId: string): Promise<GameStateDto>;
   move(accountId: string, direction: Direction): Promise<GameStateDto>;
-  gather(accountId: string): Promise<GameStateDto>;
+  startGathering(accountId: string, input: StartGatheringRequestDto): Promise<GameStateDto>;
+  startCombat(accountId: string): Promise<GameStateDto>;
+  cancelAction(accountId: string): Promise<GameStateDto>;
+  returnToVillage(accountId: string): Promise<GameStateDto>;
 }
 
 function sendError(reply: FastifyReply, statusCode: number, code: ErrorCode, message: string) {
@@ -72,7 +80,10 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
     createCharacter: (accountId, input) => game.createCharacter(accountId, input),
     enterCorruptForest: (accountId) => game.enterCorruptForest(accountId),
     move: (accountId, direction) => game.move(accountId, direction),
-    gather: (accountId) => game.gather(accountId)
+    startGathering: (accountId, input) => game.startGathering(accountId, input),
+    startCombat: (accountId) => game.startCombat(accountId),
+    cancelAction: (accountId) => game.cancelAction(accountId),
+    returnToVillage: (accountId) => game.returnToVillage(accountId)
   };
 }
 
@@ -177,8 +188,49 @@ export async function registerGameRoutes(app: FastifyInstance, maybeDependencies
     if (!account) return reply;
     if (!(await requireMutationToken(deps, request, reply))) return reply;
 
+    const parsed = gatherSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid gathering input");
+    }
+
     try {
-      return await deps.gather(account.id);
+      return await deps.startGathering(account.id, parsed.data);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/combat/start", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    try {
+      return await deps.startCombat(account.id);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/action/cancel", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    try {
+      return await deps.cancelAction(account.id);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/return-village", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    try {
+      return await deps.returnToVillage(account.id);
     } catch (error) {
       return handleGameError(reply, error);
     }
