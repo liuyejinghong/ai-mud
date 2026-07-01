@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ActivationCodeAdmin } from "./features/admin/ActivationCodeAdmin";
 import { AuthPage } from "./features/auth/AuthPage";
 import { getCurrentSession, type AuthSessionDto } from "./features/auth/authApi";
+import { GameShell } from "./features/game/GameShell";
 
 export function App() {
   const [session, setSession] = useState<AuthSessionDto | null>(null);
@@ -22,11 +23,15 @@ export function App() {
     };
   }, []);
 
-  const isAdmin = session?.user.role === "admin" || session?.user.role === "super_admin";
+  if (!session) {
+    return <AuthPage onAuthenticated={setSession} />;
+  }
+
+  const isAdmin = session.user.role === "admin" || session.user.role === "super_admin";
 
   return (
     <>
-      <AuthPage onAuthenticated={setSession} />
+      <GameShell csrfToken={session.csrfToken} />
       {isAdmin ? <ActivationCodeAdmin csrfToken={session.csrfToken} /> : null}
     </>
   );
