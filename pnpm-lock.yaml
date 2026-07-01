@@ -114,6 +114,10 @@ importers:
         version: 2.1.9(@types/node@22.20.0)(jsdom@29.1.1)
 
   packages/content:
+    dependencies:
+      '@ai-mud/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       typescript:
         specifier: ^5.5.0
