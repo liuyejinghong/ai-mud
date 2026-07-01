@@ -12,7 +12,32 @@ export interface ResourceDefinition {
   name: string;
   position: GridPositionDto;
   charges: number;
+  cycleSeconds: number;
   gatherResult: { itemId: ItemId; quantity: number };
+}
+
+export interface LootEntry {
+  itemId: ItemId;
+  quantity: number;
+  chance: number;
+}
+
+export interface MonsterDefinition {
+  id: string;
+  name: string;
+  hp: number;
+  attack: number;
+  defense: number;
+  agility: number;
+  xp: number;
+  lootTable: LootEntry[];
+}
+
+export interface EncounterDefinition {
+  id: string;
+  name: string;
+  position: GridPositionDto;
+  monsterIds: string[];
 }
 
 export interface ZoneDefinition {
@@ -24,12 +49,38 @@ export interface ZoneDefinition {
   entry: GridPositionDto;
   exits: Array<{ id: string; position: GridPositionDto; toLocation: GameLocationId }>;
   resources: ResourceDefinition[];
+  encounters: EncounterDefinition[];
 }
 
 export const FIRST_ITEMS: ItemDefinition[] = [
   { id: "wild_berry", name: "野莓", category: "food", itemLevel: 1 },
   { id: "beast_meat", name: "兽肉", category: "food", itemLevel: 1 },
   { id: "rough_hide", name: "粗糙皮革", category: "material", itemLevel: 1 }
+];
+
+export const FIRST_MONSTERS: MonsterDefinition[] = [
+  {
+    id: "corrupted_wolf",
+    name: "腐化野狼",
+    hp: 35,
+    attack: 7,
+    defense: 2,
+    agility: 11,
+    xp: 8,
+    lootTable: [
+      { itemId: "beast_meat", quantity: 1, chance: 1 },
+      { itemId: "rough_hide", quantity: 1, chance: 0.5 }
+    ]
+  }
+];
+
+export const FIRST_ENCOUNTERS: EncounterDefinition[] = [
+  {
+    id: "corrupt_wolf_pack_01",
+    name: "腐化野狼群",
+    position: { x: 3, y: 3 },
+    monsterIds: ["corrupted_wolf", "corrupted_wolf"]
+  }
 ];
 
 export const BLACKPINE_OUTPOST = {
@@ -52,6 +103,7 @@ export const CORRUPT_FOREST: ZoneDefinition = {
       name: "野莓灌木",
       position: { x: 1, y: 3 },
       charges: 3,
+      cycleSeconds: 30,
       gatherResult: { itemId: "wild_berry", quantity: 2 }
     },
     {
@@ -59,6 +111,7 @@ export const CORRUPT_FOREST: ZoneDefinition = {
       name: "被撕裂的兽尸",
       position: { x: 3, y: 2 },
       charges: 2,
+      cycleSeconds: 45,
       gatherResult: { itemId: "beast_meat", quantity: 1 }
     },
     {
@@ -66,9 +119,11 @@ export const CORRUPT_FOREST: ZoneDefinition = {
       name: "粗糙兽皮",
       position: { x: 4, y: 1 },
       charges: 1,
+      cycleSeconds: 60,
       gatherResult: { itemId: "rough_hide", quantity: 1 }
     }
-  ]
+  ],
+  encounters: FIRST_ENCOUNTERS
 };
 
 export function getResourceById(resourceId: string) {
@@ -77,4 +132,12 @@ export function getResourceById(resourceId: string) {
 
 export function getItemById(itemId: ItemId) {
   return FIRST_ITEMS.find((item) => item.id === itemId) ?? null;
+}
+
+export function getMonsterById(monsterId: string) {
+  return FIRST_MONSTERS.find((monster) => monster.id === monsterId) ?? null;
+}
+
+export function getEncounterById(encounterId: string) {
+  return FIRST_ENCOUNTERS.find((encounter) => encounter.id === encounterId) ?? null;
 }
