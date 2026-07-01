@@ -226,6 +226,7 @@ export interface AiCallLogDto {
 }
 
 export type NpcMemorySourceType = "dialogue" | "system";
+export type NpcMemoryEvidenceLevel = "dialogue_claim" | "system_verified";
 export type NpcMemoryKind =
   | "conversation"
   | "favor"
@@ -240,6 +241,8 @@ export interface NpcMemoryEntryDto {
   characterId: string | null;
   sourceType: NpcMemorySourceType;
   memoryKind: NpcMemoryKind;
+  evidenceLevel: NpcMemoryEvidenceLevel;
+  sourceIds: string[];
   importance: number;
   summary: string;
   occurredAt: string;
@@ -251,10 +254,12 @@ export interface NpcMemoryFragmentDto {
   npcActorId: string;
   characterId: string | null;
   memoryKind: NpcMemoryKind;
+  evidenceLevel: NpcMemoryEvidenceLevel;
   importance: number;
   summary: string;
   firstOccurredAt: string;
   lastOccurredAt: string;
+  sourceEntryIds: string[];
   compressionLevel: number;
 }
 

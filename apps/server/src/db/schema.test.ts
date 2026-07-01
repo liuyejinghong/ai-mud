@@ -118,9 +118,13 @@ describe("foundation schema", () => {
   it("defines NPC memory entry and fragment tables", () => {
     expect(getDrizzleTableName(npcMemoryEntries)).toBe("npc_memory_entries");
     expect(getDrizzleTableName(npcMemoryFragments)).toBe("npc_memory_fragments");
+    expect(npcMemoryEntries.evidenceLevel.getSQLType()).toBe("text");
+    expect(npcMemoryEntries.sourceIds.getSQLType()).toBe("jsonb");
     expect(npcMemoryEntries.summary.getSQLType()).toBe("text");
     expect(npcMemoryEntries.importance.getSQLType()).toBe("integer");
     expect(npcMemoryEntries.compressedAt.getSQLType()).toBe("timestamp with time zone");
+    expect(npcMemoryFragments.evidenceLevel.getSQLType()).toBe("text");
+    expect(npcMemoryFragments.sourceEntryIds.getSQLType()).toBe("jsonb");
     expect(npcMemoryFragments.summary.getSQLType()).toBe("text");
     expect(npcMemoryFragments.compressionLevel.getSQLType()).toBe("integer");
   });

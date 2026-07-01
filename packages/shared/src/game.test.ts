@@ -369,6 +369,8 @@ describe("game contract", () => {
       characterId: "char-1",
       sourceType: "dialogue",
       memoryKind: "conversation",
+      evidenceLevel: "dialogue_claim",
+      sourceIds: ["msg-1", "msg-2"],
       importance: 2,
       summary: "游侠阿岚告诉伯林自己正在寻找基础铁矿石。",
       occurredAt: "2026-07-02T08:00:00.000Z",
@@ -380,15 +382,18 @@ describe("game contract", () => {
       npcActorId: "npc-blacksmith",
       characterId: "char-1",
       memoryKind: "conversation",
+      evidenceLevel: "dialogue_claim",
       importance: 2,
       summary: "阿岚多次询问铁矿石和修理装备。",
       firstOccurredAt: "2026-07-02T08:00:00.000Z",
       lastOccurredAt: "2026-07-02T09:00:00.000Z",
+      sourceEntryIds: ["mem-1"],
       compressionLevel: 1
     };
 
     expect(entry.memoryKind).toBe("conversation");
     expect(entry.sourceType).toBe("dialogue");
+    expect(entry.evidenceLevel).toBe("dialogue_claim");
     expect(fragment.compressionLevel).toBe(1);
   });
 });
