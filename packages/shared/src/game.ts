@@ -34,7 +34,7 @@ export const GAME_LOCATIONS = {
 
 export type GameLocationId = (typeof GAME_LOCATIONS)[keyof typeof GAME_LOCATIONS];
 
-export const ITEM_IDS = ["wild_berry", "beast_meat", "rough_hide"] as const;
+export const ITEM_IDS = ["wild_berry", "beast_meat", "rough_hide", "iron_ore"] as const;
 export type ItemId = (typeof ITEM_IDS)[number];
 
 export const DIRECTIONS = ["north", "south", "west", "east"] as const;
@@ -55,6 +55,13 @@ export interface GridPositionDto {
   y: number;
 }
 
+export interface MoneyDto {
+  gold: number;
+  silver: number;
+  copper: number;
+  totalCopper: number;
+}
+
 export interface CharacterDto {
   id: string;
   name: string;
@@ -66,6 +73,7 @@ export interface CharacterDto {
   currentLocation: GameLocationId;
   position: GridPositionDto | null;
   injuryUntil: string | null;
+  money: MoneyDto;
 }
 
 export interface InventoryItemDto {
@@ -102,6 +110,35 @@ export interface CurrentActionDto {
   combatLog: string[];
 }
 
+export interface MarketItemDto {
+  itemId: ItemId;
+  name: string;
+  category: "food" | "material" | "ore";
+  itemLevel: number;
+  stockQuantity: number;
+  playerQuantity: number;
+  buyPrice: MoneyDto;
+  sellPrice: MoneyDto;
+  buyTax: MoneyDto;
+  sellTax: MoneyDto;
+}
+
+export interface MarketDto {
+  settlementId: "blackpine_outpost";
+  settlementName: string;
+  items: MarketItemDto[];
+}
+
+export interface MarketTradeRequestDto {
+  itemId: ItemId;
+  quantity: number;
+}
+
+export interface RepairQuoteDto {
+  copperCost: MoneyDto;
+  ironOreCost: number;
+}
+
 export interface GameStateDto {
   character: CharacterDto | null;
   locationTitle: string;
@@ -113,6 +150,7 @@ export interface GameStateDto {
     cells: MapCellDto[];
   } | null;
   inventory: InventoryItemDto[];
+  market: MarketDto | null;
   currentAction: CurrentActionDto | null;
   availableActions: Array<
     | "create_character"
@@ -123,6 +161,7 @@ export interface GameStateDto {
     | "start_combat"
     | "cancel_action"
     | "return_to_village"
+    | "open_market"
   >;
   log: GameLogEntryDto[];
 }
