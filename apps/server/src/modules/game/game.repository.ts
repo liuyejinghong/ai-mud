@@ -81,7 +81,10 @@ export interface MarketInventoryRecord {
 
 export interface MarketTransactionInput {
   settlementId: string;
-  characterId: string;
+  characterId: string | null;
+  actorType: "player" | "npc" | "municipal";
+  actorId: string | null;
+  actorName: string;
   transactionType: "buy" | "sell";
   itemId: ItemId;
   quantity: number;
@@ -94,7 +97,10 @@ export interface MarketTransactionInput {
 export interface MarketTransactionRecord {
   id: string;
   settlementId: string;
-  characterId: string;
+  characterId: string | null;
+  actorType: "player" | "npc" | "municipal";
+  actorId: string | null;
+  actorName: string;
   transactionType: "buy" | "sell";
   itemId: ItemId;
   quantity: number;
@@ -170,6 +176,10 @@ export function serializeMarketTransaction(
     id: row.id,
     settlementId: row.settlementId,
     characterId: row.characterId,
+    actorType:
+      row.actorType === "npc" || row.actorType === "municipal" ? row.actorType : "player",
+    actorId: row.actorId,
+    actorName: row.actorName,
     transactionType: row.transactionType === "buy" ? "buy" : "sell",
     itemId: row.itemId as ItemId,
     quantity: row.quantity,

@@ -189,7 +189,10 @@ export const marketTransactions = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     settlementId: text("settlement_id").notNull(),
-    characterId: uuid("character_id").notNull().references(() => characters.id),
+    characterId: uuid("character_id").references(() => characters.id),
+    actorType: text("actor_type").notNull().default("player"),
+    actorId: text("actor_id"),
+    actorName: text("actor_name").notNull().default("unknown"),
     transactionType: text("transaction_type").notNull(),
     itemId: text("item_id").notNull(),
     quantity: integer("quantity").notNull(),
@@ -208,6 +211,110 @@ export const marketTransactions = pgTable(
       table.characterId,
       table.createdAt
     )
+  })
+);
+
+export const worldActors = pgTable(
+  "world_actors",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorType: text("actor_type").notNull(),
+    npcKey: text("npc_key").unique(),
+    name: text("name").notNull(),
+    profession: text("profession").notNull(),
+    currentLocation: gameLocation("current_location").notNull().default("blackpine_outpost"),
+    position: jsonb("position"),
+    copperBalance: integer("copper_balance").notNull().default(0),
+    hunger: integer("hunger").notNull().default(5),
+    lastHungerSettledAt: timestamp("last_hunger_settled_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    injuryUntil: timestamp("injury_until", { withTimezone: true }),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    actorTypeIdx: index("world_actors_actor_type_idx").on(table.actorType),
+    npcKeyIdx: index("world_actors_npc_key_idx").on(table.npcKey)
+  })
+);
+
+export const npcItems = pgTable(
+  "npc_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorId: uuid("actor_id").notNull().references(() => worldActors.id),
+    itemId: text("item_id").notNull(),
+    quantity: integer("quantity").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    actorItemIdx: uniqueIndex("npc_items_actor_item_idx").on(table.actorId, table.itemId)
+  })
+);
+
+export const npcActions = pgTable(
+  "npc_actions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorId: uuid("actor_id").notNull().references(() => worldActors.id),
+    actionType: text("action_type").notNull(),
+    status: characterActionStatus("status").notNull().default("active"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    actorStatusIdx: index("npc_actions_actor_status_idx").on(table.actorId, table.status),
+    endsAtIdx: index("npc_actions_ends_at_idx").on(table.endsAt)
+  })
+);
+
+export const npcEvents = pgTable(
+  "npc_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorId: uuid("actor_id").notNull().references(() => worldActors.id),
+    eventType: text("event_type").notNull(),
+    message: text("message").notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    actorCreatedAtIdx: index("npc_events_actor_created_at_idx").on(table.actorId, table.createdAt)
+  })
+);
+
+export const worldResourceNodes = pgTable(
+  "world_resource_nodes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    zoneId: gameLocation("zone_id").notNull(),
+    resourceId: text("resource_id").notNull(),
+    position: jsonb("position").notNull(),
+    charges: integer("charges").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    resourceIdx: uniqueIndex("world_resource_nodes_resource_idx").on(table.zoneId, table.resourceId)
+  })
+);
+
+export const municipalTreasury = pgTable(
+  "municipal_treasury",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    settlementId: text("settlement_id").notNull().unique(),
+    copperBalance: integer("copper_balance").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    settlementIdx: index("municipal_treasury_settlement_idx").on(table.settlementId)
   })
 );
 

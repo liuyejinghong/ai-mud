@@ -31,6 +31,9 @@ const economySnapshot: EconomySnapshotDto = {
     {
       id: "tx-1",
       settlementId: "blackpine_outpost",
+      actorId: "character-1",
+      actorType: "player",
+      actorName: "测试角色",
       characterId: "character-1",
       transactionType: "sell",
       itemId: "wild_berry",

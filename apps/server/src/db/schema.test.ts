@@ -12,8 +12,14 @@ import {
   gameEvents,
   marketInventory,
   marketTransactions,
+  municipalTreasury,
+  npcActions,
+  npcEvents,
+  npcItems,
   mapInstances,
-  sessions
+  sessions,
+  worldActors,
+  worldResourceNodes
 } from "./schema.js";
 
 function getDrizzleTableName(table: unknown) {
@@ -39,6 +45,15 @@ describe("foundation schema", () => {
     expect(getDrizzleTableName(gameEvents)).toBe("game_events");
   });
 
+  it("defines the Living NPC world tables", () => {
+    expect(getDrizzleTableName(worldActors)).toBe("world_actors");
+    expect(getDrizzleTableName(npcItems)).toBe("npc_items");
+    expect(getDrizzleTableName(npcActions)).toBe("npc_actions");
+    expect(getDrizzleTableName(npcEvents)).toBe("npc_events");
+    expect(getDrizzleTableName(worldResourceNodes)).toBe("world_resource_nodes");
+    expect(getDrizzleTableName(municipalTreasury)).toBe("municipal_treasury");
+  });
+
   it("stores character money as copper", () => {
     expect(characters.copperBalance.getSQLType()).toBe("integer");
   });
@@ -57,6 +72,19 @@ describe("foundation schema", () => {
   it("defines active action enums", () => {
     expect(characterActionType.enumValues).toEqual(["gathering", "combat"]);
     expect(characterActionStatus.enumValues).toEqual(["active", "completed", "cancelled"]);
+  });
+
+  it("stores NPC actor state and actor-aware market transactions", () => {
+    expect(worldActors.actorType.getSQLType()).toBe("text");
+    expect(worldActors.npcKey.getSQLType()).toBe("text");
+    expect(worldActors.copperBalance.getSQLType()).toBe("integer");
+    expect(worldActors.hunger.getSQLType()).toBe("integer");
+    expect(npcActions.actionType.getSQLType()).toBe("text");
+    expect(worldResourceNodes.charges.getSQLType()).toBe("integer");
+    expect(municipalTreasury.copperBalance.getSQLType()).toBe("integer");
+    expect(marketTransactions.actorType.getSQLType()).toBe("text");
+    expect(marketTransactions.actorId.getSQLType()).toBe("text");
+    expect(marketTransactions.actorName.getSQLType()).toBe("text");
   });
 
   it("stores audit metadata as structured jsonb", () => {

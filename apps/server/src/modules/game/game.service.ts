@@ -565,6 +565,9 @@ export class GameService {
       await repo.createMarketTransaction({
         settlementId: BLACKPINE_MARKET_ID,
         characterId: character.id,
+        actorType: "player",
+        actorId: character.id,
+        actorName: character.name,
         transactionType: "buy",
         itemId: input.itemId,
         quantity,
@@ -625,6 +628,9 @@ export class GameService {
       await repo.createMarketTransaction({
         settlementId: BLACKPINE_MARKET_ID,
         characterId: character.id,
+        actorType: "player",
+        actorId: character.id,
+        actorName: character.name,
         transactionType: "sell",
         itemId: input.itemId,
         quantity,

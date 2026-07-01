@@ -132,6 +132,9 @@ async function buildEconomySnapshot(repo: GameRepository, now: Date): Promise<Ec
       return {
         id: transaction.id,
         settlementId: BLACKPINE_MARKET_ID,
+        actorId: transaction.actorId ?? transaction.characterId ?? "unknown",
+        actorType: transaction.actorType,
+        actorName: transaction.actorName,
         characterId: transaction.characterId,
         transactionType: transaction.transactionType,
         itemId: transaction.itemId,
