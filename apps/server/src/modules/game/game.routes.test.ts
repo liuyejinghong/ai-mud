@@ -21,12 +21,14 @@ const baseState: GameStateDto = {
     hp: 100,
     maxHp: 100,
     currentLocation: "blackpine_outpost",
-    position: null
+    position: null,
+    injuryUntil: null
   },
   locationTitle: "黑松哨站",
   locationDescription: "潮湿黑松围住木墙，哨塔上的火盆把灰雾照成暗红色。",
   map: null,
   inventory: [],
+  currentAction: null,
   availableActions: ["enter_corrupt_forest"],
   log: []
 };

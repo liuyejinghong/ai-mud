@@ -2,6 +2,7 @@ import { BLACKPINE_OUTPOST, CORRUPT_FOREST, getItemById } from "@ai-mud/content"
 import { addInventoryItem, buildMapCells, movePosition } from "@ai-mud/game-rules";
 import {
   CHARACTER_CLASSES,
+  type CharacterDto,
   type CharacterClassId,
   type CreateCharacterRequestDto,
   type Direction,
@@ -48,6 +49,21 @@ function directionLabel(direction: Direction) {
     west: "西",
     east: "东"
   }[direction];
+}
+
+function toCharacterDto(character: CharacterRecord): CharacterDto {
+  return {
+    id: character.id,
+    name: character.name,
+    classId: character.classId,
+    level: character.level,
+    xp: character.xp,
+    hp: character.hp,
+    maxHp: character.maxHp,
+    currentLocation: character.currentLocation,
+    position: character.position,
+    injuryUntil: character.injuryUntil?.toISOString() ?? null
+  };
 }
 
 export class GameService {
@@ -223,6 +239,7 @@ export class GameService {
         locationDescription: "你尚未创建角色。",
         map: null,
         inventory: [],
+        currentAction: null,
         availableActions: ["create_character"],
         log: []
       };
@@ -238,11 +255,12 @@ export class GameService {
 
     if (character.currentLocation !== CORRUPT_FOREST.id || !character.position) {
       return {
-        character,
+        character: toCharacterDto(character),
         locationTitle: BLACKPINE_OUTPOST.title,
         locationDescription: BLACKPINE_OUTPOST.description,
         map: null,
         inventory: inventoryDto,
+        currentAction: null,
         availableActions: ["enter_corrupt_forest"],
         log: log.map((entry) => ({
           id: entry.id,
@@ -261,7 +279,7 @@ export class GameService {
     }
 
     return {
-      character,
+      character: toCharacterDto(character),
       locationTitle: CORRUPT_FOREST.title,
       locationDescription: CORRUPT_FOREST.description,
       map: {
@@ -271,6 +289,7 @@ export class GameService {
         cells: buildMapCells(CORRUPT_FOREST, character.position, resourceCharges)
       },
       inventory: inventoryDto,
+      currentAction: null,
       availableActions,
       log: log.map((entry) => ({
         id: entry.id,

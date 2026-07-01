@@ -20,6 +20,12 @@ export const activationCodeStatus = pgEnum("activation_code_status", [
 ]);
 export const characterClass = pgEnum("character_class", ["warrior", "ranger", "warlock"]);
 export const gameLocation = pgEnum("game_location", ["blackpine_outpost", "corrupt_forest"]);
+export const characterActionType = pgEnum("character_action_type", ["gathering", "combat"]);
+export const characterActionStatus = pgEnum("character_action_status", [
+  "active",
+  "completed",
+  "cancelled"
+]);
 
 export const accounts = pgTable(
   "accounts",
@@ -126,6 +132,30 @@ export const characterItems = pgTable(
       table.characterId,
       table.itemId
     )
+  })
+);
+
+export const characterActions = pgTable(
+  "character_actions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    characterId: uuid("character_id").notNull().references(() => characters.id),
+    actionType: characterActionType("action_type").notNull(),
+    status: characterActionStatus("status").notNull().default("active"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    characterStatusIdx: index("character_actions_character_status_idx").on(
+      table.characterId,
+      table.status
+    ),
+    endsAtIdx: index("character_actions_ends_at_idx").on(table.endsAt)
   })
 );
 

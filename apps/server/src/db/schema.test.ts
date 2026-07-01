@@ -3,6 +3,9 @@ import {
   accounts,
   activationCodes,
   auditLogs,
+  characterActions,
+  characterActionStatus,
+  characterActionType,
   characterItems,
   characters,
   gameEvents,
@@ -25,8 +28,14 @@ describe("foundation schema", () => {
   it("defines the first playable world state tables", () => {
     expect(getDrizzleTableName(characters)).toBe("characters");
     expect(getDrizzleTableName(characterItems)).toBe("character_items");
+    expect(getDrizzleTableName(characterActions)).toBe("character_actions");
     expect(getDrizzleTableName(mapInstances)).toBe("map_instances");
     expect(getDrizzleTableName(gameEvents)).toBe("game_events");
+  });
+
+  it("defines active action enums", () => {
+    expect(characterActionType.enumValues).toEqual(["gathering", "combat"]);
+    expect(characterActionStatus.enumValues).toEqual(["active", "completed", "cancelled"]);
   });
 
   it("stores audit metadata as structured jsonb", () => {

@@ -1,7 +1,13 @@
-import type { ItemId, GameLocationId, GridPositionDto } from "@ai-mud/shared";
+import type { ActionStatus, ActionType, GameLocationId, GridPositionDto, ItemId } from "@ai-mud/shared";
 import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
-import { characterItems, characters, gameEvents, mapInstances } from "../../db/schema.js";
+import {
+  characterActions,
+  characterItems,
+  characters,
+  gameEvents,
+  mapInstances
+} from "../../db/schema.js";
 
 type GameDb = Pick<Db, "insert" | "select" | "update">;
 
@@ -16,6 +22,7 @@ export interface CharacterRecord {
   maxHp: number;
   currentLocation: GameLocationId;
   position: GridPositionDto | null;
+  injuryUntil: Date | null;
 }
 
 export interface InventoryRecord {
@@ -36,8 +43,44 @@ export interface GameEventRecord {
   createdAt: Date;
 }
 
+export interface GatheringActionPayload {
+  resourceId: string;
+  itemId: ItemId;
+  itemName: string;
+  quantityPerCycle: number;
+  cycleMs: number;
+  plannedCycles: number;
+  settledCycles: number;
+}
+
+export interface CombatActionPayload {
+  encounterId: string;
+  combatLog: string[];
+  expectedEndsAtMs: number;
+  outcome: "victory" | "injury" | "stalemate";
+  playerRemainingHp: number;
+  xp: number;
+  loot: Array<{ itemId: ItemId; quantity: number }>;
+}
+
+export type CharacterActionPayload = GatheringActionPayload | CombatActionPayload;
+
+export interface CharacterActionRecord {
+  id: string;
+  characterId: string;
+  actionType: ActionType;
+  status: ActionStatus;
+  startedAt: Date;
+  endsAt: Date;
+  payload: CharacterActionPayload;
+}
+
 export function serializeResourceCharges(charges: Record<string, number>) {
   return { ...charges };
+}
+
+export function serializeActionPayload(payload: CharacterActionPayload) {
+  return { ...payload };
 }
 
 function parsePosition(value: unknown): GridPositionDto | null {
@@ -63,6 +106,88 @@ function parseResourceCharges(value: unknown): Record<string, number> {
   );
 }
 
+function isItemQuantity(value: unknown): value is { itemId: ItemId; quantity: number } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { itemId?: unknown }).itemId === "string" &&
+    typeof (value as { quantity?: unknown }).quantity === "number"
+  );
+}
+
+export function parseActionPayload(
+  actionType: ActionType,
+  value: unknown
+): CharacterActionPayload {
+  if (typeof value !== "object" || value === null) {
+    throw new Error(`Invalid ${actionType} action payload`);
+  }
+
+  const payload = value as Record<string, unknown>;
+
+  if (actionType === "gathering") {
+    if (
+      typeof payload.resourceId === "string" &&
+      typeof payload.itemId === "string" &&
+      typeof payload.itemName === "string" &&
+      typeof payload.quantityPerCycle === "number" &&
+      typeof payload.cycleMs === "number" &&
+      typeof payload.plannedCycles === "number" &&
+      typeof payload.settledCycles === "number"
+    ) {
+      return {
+        resourceId: payload.resourceId,
+        itemId: payload.itemId as ItemId,
+        itemName: payload.itemName,
+        quantityPerCycle: payload.quantityPerCycle,
+        cycleMs: payload.cycleMs,
+        plannedCycles: payload.plannedCycles,
+        settledCycles: payload.settledCycles
+      };
+    }
+  }
+
+  if (actionType === "combat") {
+    if (
+      typeof payload.encounterId === "string" &&
+      Array.isArray(payload.combatLog) &&
+      payload.combatLog.every((entry) => typeof entry === "string") &&
+      typeof payload.expectedEndsAtMs === "number" &&
+      (payload.outcome === "victory" ||
+        payload.outcome === "injury" ||
+        payload.outcome === "stalemate") &&
+      typeof payload.playerRemainingHp === "number" &&
+      typeof payload.xp === "number" &&
+      Array.isArray(payload.loot) &&
+      payload.loot.every(isItemQuantity)
+    ) {
+      return {
+        encounterId: payload.encounterId,
+        combatLog: payload.combatLog,
+        expectedEndsAtMs: payload.expectedEndsAtMs,
+        outcome: payload.outcome,
+        playerRemainingHp: payload.playerRemainingHp,
+        xp: payload.xp,
+        loot: payload.loot
+      };
+    }
+  }
+
+  throw new Error(`Invalid ${actionType} action payload`);
+}
+
+function mapCharacterActionRow(row: typeof characterActions.$inferSelect): CharacterActionRecord {
+  return {
+    id: row.id,
+    characterId: row.characterId,
+    actionType: row.actionType,
+    status: row.status,
+    startedAt: row.startedAt,
+    endsAt: row.endsAt,
+    payload: parseActionPayload(row.actionType, row.payload)
+  };
+}
+
 export class GameRepository {
   constructor(private readonly db: GameDb) {}
 
@@ -85,7 +210,8 @@ export class GameRepository {
       hp: row.hp,
       maxHp: row.maxHp,
       currentLocation: row.currentLocation,
-      position: parsePosition(row.position)
+      position: parsePosition(row.position),
+      injuryUntil: row.injuryUntil
     };
   }
 
@@ -119,8 +245,25 @@ export class GameRepository {
       hp: row.hp,
       maxHp: row.maxHp,
       currentLocation: row.currentLocation,
-      position: parsePosition(row.position)
+      position: parsePosition(row.position),
+      injuryUntil: row.injuryUntil
     };
+  }
+
+  async updateCharacterVitals(input: {
+    characterId: string;
+    hp: number;
+    xp?: number;
+    injuryUntil?: Date | null;
+  }): Promise<void> {
+    await this.db
+      .update(characters)
+      .set({
+        hp: input.hp,
+        ...(input.xp === undefined ? {} : { xp: input.xp }),
+        ...(input.injuryUntil === undefined ? {} : { injuryUntil: input.injuryUntil })
+      })
+      .where(eq(characters.id, input.characterId));
   }
 
   async updateCharacterLocation(input: {
@@ -231,6 +374,60 @@ export class GameRepository {
       .update(mapInstances)
       .set({ resourceCharges: serializeResourceCharges(resourceCharges), updatedAt: new Date() })
       .where(eq(mapInstances.id, mapInstanceId));
+  }
+
+  async createAction(input: {
+    characterId: string;
+    actionType: ActionType;
+    startedAt: Date;
+    endsAt: Date;
+    payload: CharacterActionPayload;
+  }): Promise<CharacterActionRecord> {
+    const [row] = await this.db
+      .insert(characterActions)
+      .values({
+        characterId: input.characterId,
+        actionType: input.actionType,
+        startedAt: input.startedAt,
+        endsAt: input.endsAt,
+        payload: serializeActionPayload(input.payload)
+      })
+      .returning();
+
+    if (!row) throw new Error("Failed to create character action");
+
+    return mapCharacterActionRow(row);
+  }
+
+  async findActiveActionByCharacterId(characterId: string): Promise<CharacterActionRecord | null> {
+    const [row] = await this.db
+      .select()
+      .from(characterActions)
+      .where(and(eq(characterActions.characterId, characterId), eq(characterActions.status, "active")))
+      .limit(1);
+
+    return row ? mapCharacterActionRow(row) : null;
+  }
+
+  async updateActionPayload(actionId: string, payload: CharacterActionPayload): Promise<void> {
+    await this.db
+      .update(characterActions)
+      .set({ payload: serializeActionPayload(payload), updatedAt: new Date() })
+      .where(eq(characterActions.id, actionId));
+  }
+
+  async markActionCompleted(actionId: string, completedAt: Date): Promise<void> {
+    await this.db
+      .update(characterActions)
+      .set({ status: "completed", completedAt, updatedAt: completedAt })
+      .where(eq(characterActions.id, actionId));
+  }
+
+  async markActionCancelled(actionId: string, cancelledAt: Date): Promise<void> {
+    await this.db
+      .update(characterActions)
+      .set({ status: "cancelled", cancelledAt, updatedAt: cancelledAt })
+      .where(eq(characterActions.id, actionId));
   }
 
   async writeEvent(input: {
