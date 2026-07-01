@@ -8,6 +8,8 @@ import {
   type InventoryItemDto,
   type MarketDto,
   type MoneyDto,
+  type NpcDialogueResponseDto,
+  type NpcDialogueTargetDto,
   type StartGatheringRequestDto
 } from "@ai-mud/shared";
 import {
@@ -18,11 +20,14 @@ import {
   enterCorruptForest,
   getGameState,
   getMarket,
+  getNpcDialogue,
+  listDialogueTargets,
   move,
   repairAllEquipment,
   repairEquipment,
   returnToVillage,
   sellMarketItem,
+  sendNpcDialogueMessage,
   startCombat,
   startGathering
 } from "./gameApi";
@@ -93,6 +98,11 @@ export function GameShell({ csrfToken }: GameShellProps) {
   const [selectedItem, setSelectedItem] = useState<InventoryItemDto | null>(null);
   const [market, setMarket] = useState<MarketDto | null>(null);
   const [isMarketDialogOpen, setIsMarketDialogOpen] = useState(false);
+  const [dialogueTargets, setDialogueTargets] = useState<NpcDialogueTargetDto[]>([]);
+  const [dialogue, setDialogue] = useState<NpcDialogueResponseDto | null>(null);
+  const [dialogueInput, setDialogueInput] = useState("");
+  const [dialogueStatus, setDialogueStatus] = useState("");
+  const [isDialogueDialogOpen, setIsDialogueDialogOpen] = useState(false);
   const [plannedMinutes, setPlannedMinutes] =
     useState<StartGatheringRequestDto["plannedMinutes"]>(10);
   const [isCombatDialogOpen, setIsCombatDialogOpen] = useState(false);
@@ -109,6 +119,8 @@ export function GameShell({ csrfToken }: GameShellProps) {
   const canReturnVillage = state.availableActions.includes("return_to_village") && !isBusy;
   const canEnterForest = state.availableActions.includes("enter_corrupt_forest") && !isBusy;
   const canOpenMarket = state.availableActions.includes("open_market") && !isBusy;
+  const canOpenDialogue =
+    state.character?.currentLocation === "blackpine_outpost" && !isBusy && !state.currentAction;
   const canRepairEquipment =
     state.availableActions.includes("repair_equipment") && !isBusy && !state.currentAction;
   const canEatFood =
@@ -137,6 +149,54 @@ export function GameShell({ csrfToken }: GameShellProps) {
       setIsMarketDialogOpen(true);
     } catch {
       setError("集市暂时无法打开。");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function openDialogueDialog() {
+    setError(null);
+    setDialogueStatus("正在寻找附近 NPC...");
+    setIsDialogueDialogOpen(true);
+    setIsBusy(true);
+    try {
+      const targets = await listDialogueTargets();
+      setDialogueTargets(targets);
+      setDialogue(null);
+      setDialogueStatus(targets.length > 0 ? "" : "附近暂时没有可交谈的 NPC。");
+    } catch {
+      setDialogueStatus("附近 NPC 暂时无法读取。");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function openNpcDialogue(npcActorId: string) {
+    setDialogueStatus("正在读取对话...");
+    setIsBusy(true);
+    try {
+      setDialogue(await getNpcDialogue(npcActorId));
+      setDialogueInput("");
+      setDialogueStatus("");
+    } catch {
+      setDialogueStatus("对话暂时无法打开。");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function submitDialogueMessage() {
+    const message = dialogueInput.trim();
+    if (!dialogue || !message) return;
+
+    setDialogueStatus("正在等待回应...");
+    setIsBusy(true);
+    try {
+      setDialogue(await sendNpcDialogueMessage(dialogue.target.npcActorId, message, csrfToken));
+      setDialogueInput("");
+      setDialogueStatus("");
+    } catch {
+      setDialogueStatus("NPC 暂时没有回应。");
     } finally {
       setIsBusy(false);
     }
@@ -380,6 +440,15 @@ export function GameShell({ csrfToken }: GameShellProps) {
               onClick={() => void openMarket()}
             >
               市政集市
+            </button>
+          ) : null}
+          {canOpenDialogue ? (
+            <button
+              type="button"
+              className="game-secondary-button"
+              onClick={() => void openDialogueDialog()}
+            >
+              附近 NPC
             </button>
           ) : null}
           {canGather ? (
@@ -662,6 +731,98 @@ export function GameShell({ csrfToken }: GameShellProps) {
                 type="button"
                 className="game-primary-button"
                 onClick={() => setIsMarketDialogOpen(false)}
+              >
+                关闭
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isDialogueDialogOpen ? (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setIsDialogueDialogOpen(false)}>
+          <section
+            className="dialogue-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="附近 NPC 对话"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <p className="game-kicker">NPC Dialogue</p>
+            <div className="panel-heading">
+              <h2>{dialogue ? dialogue.target.name : "附近 NPC"}</h2>
+              <span>{dialogue?.ai.status ?? "列表"}</span>
+            </div>
+
+            <div className="dialogue-layout">
+              <aside className="dialogue-target-list" aria-label="附近 NPC">
+                {dialogueTargets.length === 0 ? <p className="empty-copy">暂无 NPC</p> : null}
+                {dialogueTargets.map((target) => (
+                  <button
+                    type="button"
+                    className={target.npcActorId === dialogue?.target.npcActorId ? "is-selected" : ""}
+                    key={target.npcActorId}
+                    disabled={isBusy}
+                    onClick={() => void openNpcDialogue(target.npcActorId)}
+                  >
+                    <strong>{target.name}</strong>
+                    <span>{target.statusLine}</span>
+                  </button>
+                ))}
+              </aside>
+
+              <section className="dialogue-thread" aria-label="对话记录">
+                {dialogue ? (
+                  <>
+                    <ol>
+                      {dialogue.messages.length === 0 ? <li>还没有交谈记录。</li> : null}
+                      {dialogue.messages.map((message) => (
+                        <li className={`speaker-${message.speakerType}`} key={message.id}>
+                          <span>{message.speakerType === "player" ? state.character?.name : dialogue.target.name}</span>
+                          <p>{message.message}</p>
+                        </li>
+                      ))}
+                    </ol>
+                    <form
+                      className="dialogue-input-row"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void submitDialogueMessage();
+                      }}
+                    >
+                      <input
+                        aria-label="对 NPC 说"
+                        value={dialogueInput}
+                        maxLength={300}
+                        disabled={isBusy}
+                        onChange={(event) => setDialogueInput(event.target.value)}
+                      />
+                      <button
+                        type="submit"
+                        className="game-primary-button"
+                        disabled={isBusy || !dialogueInput.trim()}
+                      >
+                        发送
+                      </button>
+                    </form>
+                  </>
+                ) : (
+                  <p className="empty-copy">选择一个 NPC 开始交谈。</p>
+                )}
+              </section>
+            </div>
+
+            {dialogueStatus ? (
+              <p role="status" aria-live="polite" className="dialogue-status">
+                {dialogueStatus}
+              </p>
+            ) : null}
+
+            <div className="dialog-actions">
+              <button
+                type="button"
+                className="game-primary-button"
+                onClick={() => setIsDialogueDialogOpen(false)}
               >
                 关闭
               </button>

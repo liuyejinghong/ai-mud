@@ -1,5 +1,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { GameStateDto, MarketDto } from "@ai-mud/shared";
+import type {
+  GameStateDto,
+  MarketDto,
+  NpcDialogueResponseDto,
+  NpcDialogueTargetDto
+} from "@ai-mud/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GameShell } from "./GameShell";
 
@@ -108,6 +113,54 @@ const marketState: MarketDto = {
       sellTax: { gold: 0, silver: 0, copper: 1, totalCopper: 1 }
     }
   ]
+};
+
+const dialogueTargets: NpcDialogueTargetDto[] = [
+  {
+    npcActorId: "npc-blacksmith",
+    npcKey: "blackpine_blacksmith_borin",
+    name: "伯林",
+    profession: "blacksmith",
+    currentLocation: "blackpine_outpost",
+    statusLine: "正在盘点基础铁矿石库存。"
+  }
+];
+
+const emptyDialogue: NpcDialogueResponseDto = {
+  target: dialogueTargets[0]!,
+  messages: [],
+  ai: {
+    status: "fallback",
+    provider: "template",
+    model: "template",
+    fallbackReason: null
+  }
+};
+
+const repliedDialogue: NpcDialogueResponseDto = {
+  target: dialogueTargets[0]!,
+  messages: [
+    {
+      id: "msg-player",
+      npcActorId: "npc-blacksmith",
+      speakerType: "player",
+      message: "最近缺什么？",
+      createdAt: "2026-07-01T12:00:00.000Z"
+    },
+    {
+      id: "msg-npc",
+      npcActorId: "npc-blacksmith",
+      speakerType: "npc",
+      message: "基础铁矿石快见底了。",
+      createdAt: "2026-07-01T12:00:01.000Z"
+    }
+  ],
+  ai: {
+    status: "success",
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    fallbackReason: null
+  }
 };
 
 const forestState: GameStateDto = {
@@ -223,6 +276,39 @@ describe("GameShell", () => {
         expect.objectContaining({
           body: JSON.stringify({ itemId: "iron_ore", quantity: 1 }),
           method: "POST"
+        })
+      );
+    });
+  });
+
+  it("opens NPC dialogue and sends one free-text message", async () => {
+    const fetchMock = mockFetchWithStates([
+      villageState,
+      dialogueTargets,
+      emptyDialogue,
+      repliedDialogue
+    ]);
+    render(<GameShell csrfToken="csrf" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "附近 NPC" }));
+    expect(await screen.findByRole("dialog", { name: "附近 NPC 对话" })).toBeTruthy();
+    expect(await screen.findByText("伯林")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /伯林/ }));
+    expect(await screen.findByText("还没有交谈记录。")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("对 NPC 说"), {
+      target: { value: "最近缺什么？" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByText("基础铁矿石快见底了。")).toBeTruthy();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:3000/game/npcs/npc-blacksmith/dialogue",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ message: "最近缺什么？" })
         })
       );
     });

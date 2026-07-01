@@ -5,6 +5,8 @@ import type {
   MarketDto,
   MarketTradeRequestDto,
   MoveRequestDto,
+  NpcDialogueResponseDto,
+  NpcDialogueTargetDto,
   RepairEquipmentRequestDto,
   RepairQuoteDto,
   StartGatheringRequestDto
@@ -99,6 +101,22 @@ export function returnToVillage(csrfToken: string) {
 
 export function getMarket() {
   return requestGame<MarketDto>("/game/market");
+}
+
+export function listDialogueTargets() {
+  return requestGame<NpcDialogueTargetDto[]>("/game/npcs/dialogue-targets");
+}
+
+export function getNpcDialogue(npcActorId: string) {
+  return requestGame<NpcDialogueResponseDto>(`/game/npcs/${npcActorId}/dialogue`);
+}
+
+export function sendNpcDialogueMessage(npcActorId: string, message: string, csrfToken: string) {
+  return requestGame<NpcDialogueResponseDto>(`/game/npcs/${npcActorId}/dialogue`, {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify({ message })
+  });
 }
 
 export function buyMarketItem(input: MarketTradeRequestDto, csrfToken: string) {
