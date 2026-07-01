@@ -329,6 +329,37 @@ describe("NpcService", () => {
     ).toBe(2);
   });
 
+  it("returns NPCs with gathered inventory toward the village market before more work", async () => {
+    const repo = new InMemoryNpcRepository();
+    const service = new NpcService(repo);
+    const now = new Date("2026-07-01T07:00:00.000Z");
+
+    await service.ensureWorldSeeded(now);
+    const farmer = repo.actors.find((actor) => actor.npcKey === "blackpine_farmer_mara")!;
+    farmer.currentLocation = "corrupt_forest";
+    farmer.position = { x: 1, y: 3 };
+    await service.addNpcInventoryItem(farmer.id, "wild_berry", 2);
+
+    await service.settleNpcWorld(now);
+
+    expect(await repo.findActiveNpcAction(farmer.id)).toMatchObject({
+      actionType: "travel",
+      payload: {
+        toLocation: "corrupt_forest",
+        toPosition: { x: 2, y: 3 }
+      }
+    });
+
+    await service.settleNpcWorld(new Date("2026-07-01T07:02:01.000Z"));
+    await service.settleNpcWorld(new Date("2026-07-01T07:04:02.000Z"));
+    await service.settleNpcWorld(new Date("2026-07-01T07:06:03.000Z"));
+    await service.settleNpcWorld(new Date("2026-07-01T07:08:04.000Z"));
+    await service.settleNpcWorld(new Date("2026-07-01T07:10:05.000Z"));
+
+    expect(farmer.currentLocation).toBe("blackpine_outpost");
+    expect(farmer.position).toBeNull();
+  });
+
   it("pays wages from municipal treasury instead of minting coins", async () => {
     const repo = new InMemoryNpcRepository();
     const service = new NpcService(repo);

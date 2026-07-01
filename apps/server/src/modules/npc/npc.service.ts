@@ -174,6 +174,9 @@ export class NpcService {
       const soldInventory = await this.sellNpcSurplusToMarket(actor);
       if (soldInventory) continue;
 
+      const returningToMarket = await this.returnNpcInventoryToMarket(actor, now);
+      if (returningToMarket) continue;
+
       await this.createNextNpcAction(actor, now);
     }
   }
@@ -400,6 +403,49 @@ export class NpcService {
       grossCopper: quote.grossCopper,
       taxCopper: quote.taxCopper,
       netCopper: quote.totalCopper
+    });
+    return true;
+  }
+
+  private async returnNpcInventoryToMarket(actor: NpcActorRecord, now: Date) {
+    if (actor.currentLocation === BLACKPINE_MARKET_ID) return false;
+
+    const inventory = await this.repo.listNpcInventory(actor.id);
+    if (!inventory.some((item) => item.quantity > 0)) return false;
+
+    if (!actor.position) {
+      await this.repo.createNpcAction({
+        actorId: actor.id,
+        actionType: "travel",
+        startedAt: now,
+        endsAt: new Date(now.getTime() + 2 * 60_000),
+        payload: {
+          toLocation: BLACKPINE_MARKET_ID,
+          toPosition: null
+        }
+      });
+      return true;
+    }
+
+    const atForestExit =
+      actor.position.x === CORRUPT_FOREST.entry.x && actor.position.y === CORRUPT_FOREST.entry.y;
+    await this.repo.createNpcAction({
+      actorId: actor.id,
+      actionType: "travel",
+      startedAt: now,
+      endsAt: new Date(now.getTime() + 2 * 60_000),
+      payload: atForestExit
+        ? {
+            toLocation: BLACKPINE_MARKET_ID,
+            toPosition: null
+          }
+        : {
+            toLocation: CORRUPT_FOREST.id,
+            toPosition: nextNpcTravelStep({
+              current: actor.position,
+              target: CORRUPT_FOREST.entry
+            })
+          }
     });
     return true;
   }
