@@ -7,6 +7,7 @@ import {
   type CharacterDto,
   type CurrentActionDto,
   type EatFoodRequestDto,
+  type EconomySnapshotDto,
   type EquipmentItemDto,
   type GameStateDto,
   type MoneyDto,
@@ -26,8 +27,9 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.4.2 hunger compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.4.2");
+  it("exposes v0.4.3 economy visibility compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.4.3");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(7);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(6);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(6);
@@ -165,5 +167,53 @@ describe("game contract", () => {
     const request: EatFoodRequestDto = { itemId: "wild_berry" };
 
     expect(request.itemId).toBe("wild_berry");
+  });
+
+  it("describes the admin economy snapshot", () => {
+    const snapshot: EconomySnapshotDto = {
+      settlementId: "blackpine_outpost",
+      settlementName: "黑松哨站市政集市",
+      generatedAt: "2026-07-01T12:00:00.000Z",
+      taxSummary: {
+        transactionCount: 2,
+        grossCopper: 180,
+        taxCopper: 9,
+        buyTaxCopper: 4,
+        sellTaxCopper: 5,
+        netCopper: 171
+      },
+      marketItems: [
+        {
+          itemId: "wild_berry",
+          name: "野莓",
+          category: "food",
+          itemLevel: 1,
+          stockQuantity: 12,
+          targetQuantity: 20,
+          baseBuyPrice: { gold: 0, silver: 0, copper: 6, totalCopper: 6 },
+          baseSellPrice: { gold: 0, silver: 0, copper: 10, totalCopper: 10 }
+        }
+      ],
+      recentTransactions: [
+        {
+          id: "tx-1",
+          settlementId: "blackpine_outpost",
+          characterId: "character-1",
+          transactionType: "sell",
+          itemId: "wild_berry",
+          itemName: "野莓",
+          quantity: 3,
+          unitPrice: { gold: 0, silver: 0, copper: 6, totalCopper: 6 },
+          gross: { gold: 0, silver: 0, copper: 18, totalCopper: 18 },
+          tax: { gold: 0, silver: 0, copper: 1, totalCopper: 1 },
+          net: { gold: 0, silver: 0, copper: 17, totalCopper: 17 },
+          createdAt: "2026-07-01T12:00:00.000Z"
+        }
+      ]
+    };
+
+    expect(snapshot.taxSummary.taxCopper).toBe(9);
+    expect(snapshot.marketItems[0]?.targetQuantity).toBe(20);
+    expect(snapshot.recentTransactions[0]?.transactionType).toBe("sell");
   });
 });

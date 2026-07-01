@@ -159,6 +159,50 @@ export interface MarketDto {
   items: MarketItemDto[];
 }
 
+export interface EconomyTaxSummaryDto {
+  transactionCount: number;
+  grossCopper: number;
+  taxCopper: number;
+  buyTaxCopper: number;
+  sellTaxCopper: number;
+  netCopper: number;
+}
+
+export interface EconomyMarketItemDto {
+  itemId: ItemId;
+  name: string;
+  category: "food" | "material" | "ore";
+  itemLevel: number;
+  stockQuantity: number;
+  targetQuantity: number;
+  baseBuyPrice: MoneyDto;
+  baseSellPrice: MoneyDto;
+}
+
+export interface EconomyLedgerEntryDto {
+  id: string;
+  settlementId: "blackpine_outpost";
+  characterId: string;
+  transactionType: "buy" | "sell";
+  itemId: ItemId;
+  itemName: string;
+  quantity: number;
+  unitPrice: MoneyDto;
+  gross: MoneyDto;
+  tax: MoneyDto;
+  net: MoneyDto;
+  createdAt: string;
+}
+
+export interface EconomySnapshotDto {
+  settlementId: "blackpine_outpost";
+  settlementName: string;
+  generatedAt: string;
+  taxSummary: EconomyTaxSummaryDto;
+  marketItems: EconomyMarketItemDto[];
+  recentTransactions: EconomyLedgerEntryDto[];
+}
+
 export interface MarketTradeRequestDto {
   itemId: ItemId;
   quantity: number;
