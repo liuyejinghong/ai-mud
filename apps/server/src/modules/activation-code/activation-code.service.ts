@@ -15,6 +15,10 @@ export interface ActivationCodeRepository {
   markUsed(id: string, accountId: string): Promise<boolean>;
 }
 
+export function normalizeActivationCode(code: string) {
+  return code.trim().replace(/[\u2010-\u2015]/g, "-").replace(/\s+/g, "");
+}
+
 export class ActivationCodeService {
   constructor(private readonly repo: ActivationCodeRepository) {}
 
@@ -58,6 +62,6 @@ export class ActivationCodeService {
   }
 
   private hash(code: string) {
-    return createHash("sha256").update(code).digest("hex");
+    return createHash("sha256").update(normalizeActivationCode(code)).digest("hex");
   }
 }

@@ -1,7 +1,39 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
+import type { ApiErrorBody, ErrorCode } from "@ai-mud/shared";
 import { login, registerAccount, type AuthSessionDto } from "./authApi";
 import "./AuthPage.css";
+
+const PASSWORD_MIN_LENGTH = 12;
+
+function normalizeActivationCode(value: string) {
+  return value.trim().replace(/[\u2010-\u2015]/g, "-").replace(/\s+/g, "");
+}
+
+async function readAuthError(response: Response, fallback: string) {
+  try {
+    const body = (await response.json()) as Partial<ApiErrorBody>;
+    const code = body.error?.code;
+    if (code) return authErrorMessage(code, fallback);
+  } catch {
+    // Keep the user-facing fallback below when the server does not return JSON.
+  }
+
+  return fallback;
+}
+
+function authErrorMessage(code: ErrorCode, fallback: string) {
+  const messages: Partial<Record<ErrorCode, string>> = {
+    VALIDATION_ERROR: "邮箱格式不正确，或密码少于 12 个字符。",
+    ACTIVATION_CODE_INVALID: "激活码无效，请检查字符和横线。",
+    ACTIVATION_CODE_USED: "这个激活码已经被使用。",
+    ACTIVATION_CODE_EXPIRED: "这个激活码已经过期。",
+    UNAUTHENTICATED: "登录失败，请检查邮箱或密码。",
+    ACCOUNT_DISABLED: "账号已被停用。"
+  };
+
+  return messages[code] ?? fallback;
+}
 
 export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: AuthSessionDto) => void }) {
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -24,7 +56,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: Auth
     try {
       const response = await login({ email, password });
       if (!response.ok) {
-        setMessage("登录失败，请检查邮箱或密码。");
+        setMessage(await readAuthError(response, "登录失败，请检查邮箱或密码。"));
         return;
       }
 
@@ -43,14 +75,28 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: Auth
       setMessage("两次输入的密码不一致。");
       return;
     }
+    if (password.length < PASSWORD_MIN_LENGTH) {
+      setMessage(`密码至少需要 ${PASSWORD_MIN_LENGTH} 个字符。`);
+      return;
+    }
+
+    const normalizedCode = normalizeActivationCode(activationCode);
+    if (!normalizedCode) {
+      setMessage("请输入激活码。");
+      return;
+    }
 
     setIsSubmitting(true);
     setMessage("");
 
     try {
-      const response = await registerAccount({ email, password, activationCode });
+      const response = await registerAccount({
+        email: email.trim(),
+        password,
+        activationCode: normalizedCode
+      });
       if (!response.ok) {
-        setMessage("注册失败，请检查邮箱、密码和激活码。");
+        setMessage(await readAuthError(response, "注册失败，请检查邮箱、密码和激活码。"));
         return;
       }
 
@@ -130,6 +176,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: Auth
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
+                minLength={mode === "register" ? PASSWORD_MIN_LENGTH : undefined}
               />
             </label>
 
@@ -143,6 +190,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: Auth
                     autoComplete="new-password"
                     value={confirmPassword}
                     onChange={(event) => setConfirmPassword(event.target.value)}
+                    minLength={PASSWORD_MIN_LENGTH}
                   />
                 </label>
 

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ActivationCodeService } from "./activation-code.service.js";
+import { ActivationCodeService, normalizeActivationCode } from "./activation-code.service.js";
 
 function hashCode(code: string) {
   return createHash("sha256").update(code).digest("hex");
@@ -17,6 +17,10 @@ describe("ActivationCodeService", () => {
 
   beforeEach(() => {
     records = [];
+  });
+
+  it("normalizes pasted activation-code dashes and spacing", () => {
+    expect(normalizeActivationCode(" MUD–7K3M—9Q2P‑6R8T ")).toBe("MUD-7K3M-9Q2P-6R8T");
   });
 
   it("creates one-time plaintext codes and stores only hashes", async () => {
@@ -63,6 +67,30 @@ describe("ActivationCodeService", () => {
 
     const second = await service.consume(code, "account-2");
     expect(second).toEqual({ ok: false, reason: "ACTIVATION_CODE_USED" });
+  });
+
+  it("consumes a valid code pasted with unicode dashes", async () => {
+    const code = "MUD-7K3M-9Q2P-6R8T";
+    records.push({
+      id: "clear-code",
+      codeHash: hashCode(code),
+      status: "unused",
+      usedByAccountId: null,
+      expiresAt: null
+    });
+
+    const service = new ActivationCodeService({
+      insert: async (record) => {
+        records.push(record);
+      },
+      findByHash: async (codeHash) => records.find((record) => record.codeHash === codeHash) ?? null,
+      markUsed: async () => true
+    });
+
+    await expect(service.consume("MUD–7K3M–9Q2P–6R8T", "account-1")).resolves.toEqual({
+      ok: true,
+      activationCodeId: "clear-code"
+    });
   });
 
   it("rejects invalid, revoked, and expired activation codes without marking them used", async () => {
