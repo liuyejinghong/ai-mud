@@ -571,4 +571,38 @@ describe("NpcService", () => {
       ])
     );
   });
+
+  it("runs simulation reports without mutating the live NPC world", async () => {
+    const repo = new InMemoryNpcRepository();
+    const service = new NpcService(repo);
+    const startAt = new Date("2026-07-01T00:00:00.000Z");
+
+    await service.ensureWorldSeeded(startAt);
+    repo.seedMarketItem({
+      itemId: "wild_berry",
+      quantity: 5,
+      targetQuantity: 20,
+      baseBuyPriceCopper: 3,
+      baseSellPriceCopper: 5
+    });
+    const before = {
+      actors: structuredClone(repo.actors),
+      actions: structuredClone(repo.actions),
+      resources: structuredClone(repo.resources),
+      items: structuredClone([...repo.items.entries()]),
+      treasury: structuredClone(repo.treasury),
+      transactions: structuredClone(repo.transactions)
+    };
+
+    const report = await service.runNpcSimulation(1, startAt);
+
+    expect(report.days).toBe(1);
+    expect(report.actionCount).toBeGreaterThan(0);
+    expect(repo.actors).toEqual(before.actors);
+    expect(repo.actions).toEqual(before.actions);
+    expect(repo.resources).toEqual(before.resources);
+    expect([...repo.items.entries()]).toEqual(before.items);
+    expect(repo.treasury).toEqual(before.treasury);
+    expect(repo.transactions).toEqual(before.transactions);
+  });
 });

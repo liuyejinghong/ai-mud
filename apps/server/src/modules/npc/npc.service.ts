@@ -26,6 +26,7 @@ import type {
   NpcSimulationReportDto,
   NpcSummaryDto
 } from "@ai-mud/shared";
+import { NpcSimulationRepository } from "./npc.simulation-repository.js";
 
 const BLACKPINE_MARKET_ID = "blackpine_outpost" as const;
 const INITIAL_TREASURY_COPPER = 10_000;
@@ -270,6 +271,12 @@ export class NpcService {
   }
 
   async runNpcSimulation(days: number, startAt: Date): Promise<NpcSimulationReportDto> {
+    const simulationRepo = await NpcSimulationRepository.fromLive(this.repo);
+    const simulationService = new NpcService(simulationRepo);
+    return simulationService.runNpcSimulationInPlace(days, startAt);
+  }
+
+  async runNpcSimulationInPlace(days: number, startAt: Date): Promise<NpcSimulationReportDto> {
     const boundedDays = Math.min(7, Math.max(1, Math.floor(days)));
     const endedAt = new Date(startAt.getTime() + boundedDays * 24 * 60 * 60_000);
 

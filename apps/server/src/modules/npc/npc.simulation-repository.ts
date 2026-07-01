@@ -1,0 +1,223 @@
+import { CORRUPT_FOREST, type NpcDefinition } from "@ai-mud/content";
+import type { GameLocationId, GridPositionDto, ItemId } from "@ai-mud/shared";
+import type {
+  NpcActionRecord,
+  NpcActorRecord,
+  NpcEventRecord,
+  NpcInventoryRecord,
+  NpcMarketInventoryRecord,
+  NpcRepositoryPort
+} from "./npc.service.js";
+
+const BLACKPINE_MARKET_ID = "blackpine_outpost" as const;
+
+function cloneDate(date: Date) {
+  return new Date(date.getTime());
+}
+
+function cloneAction(action: NpcActionRecord): NpcActionRecord {
+  return {
+    ...action,
+    startedAt: cloneDate(action.startedAt),
+    endsAt: cloneDate(action.endsAt),
+    payload: structuredClone(action.payload)
+  };
+}
+
+export class NpcSimulationRepository implements NpcRepositoryPort {
+  private actors: NpcActorRecord[] = [];
+  private resources: Awaited<ReturnType<NpcRepositoryPort["listWorldResourceNodes"]>> = [];
+  private treasury: Awaited<ReturnType<NpcRepositoryPort["findMunicipalTreasury"]>> = null;
+  private inventory = new Map<string, NpcInventoryRecord[]>();
+  private actions: NpcActionRecord[] = [];
+  private events = new Map<string, NpcEventRecord[]>();
+  private marketInventory: NpcMarketInventoryRecord[] = [];
+  private marketTransactionCount = 0;
+
+  static async fromLive(repo: NpcRepositoryPort) {
+    const simulation = new NpcSimulationRepository();
+    simulation.actors = (await repo.listNpcActors()).map((actor) => ({
+      ...actor,
+      position: actor.position ? { ...actor.position } : null,
+      lastHungerSettledAt: cloneDate(actor.lastHungerSettledAt)
+    }));
+    simulation.resources = (await repo.listWorldResourceNodes()).map((resource) => ({
+      ...resource,
+      position: { ...resource.position }
+    }));
+    const treasury = await repo.findMunicipalTreasury(BLACKPINE_MARKET_ID);
+    simulation.treasury = treasury ? { ...treasury } : null;
+    simulation.actions = (await repo.listNpcActions()).map(cloneAction);
+    simulation.marketInventory = (await repo.listMarketInventory(BLACKPINE_MARKET_ID)).map(
+      (item) => ({ ...item })
+    );
+    simulation.marketTransactionCount = await repo.countNpcMarketTransactions();
+
+    for (const actor of simulation.actors) {
+      simulation.inventory.set(
+        actor.id,
+        (await repo.listNpcInventory(actor.id)).map((item) => ({ ...item }))
+      );
+      simulation.events.set(
+        actor.id,
+        (await repo.listNpcEvents(actor.id, 20)).map((event) => ({
+          ...event,
+          createdAt: cloneDate(event.createdAt)
+        }))
+      );
+    }
+
+    return simulation;
+  }
+
+  async listNpcActors() {
+    return this.actors;
+  }
+
+  async createNpcActor(npc: NpcDefinition, now: Date) {
+    const actor: NpcActorRecord = {
+      id: `simulation-actor-${npc.key}`,
+      actorType: "npc",
+      npcKey: npc.key,
+      name: npc.name,
+      profession: npc.profession,
+      currentLocation: npc.homeLocation,
+      position: npc.homePosition ? { ...npc.homePosition } : null,
+      copperBalance: npc.startingCopper,
+      hunger: 5,
+      lastHungerSettledAt: cloneDate(now),
+      status: "active"
+    };
+    this.actors.push(actor);
+    return actor;
+  }
+
+  async listWorldResourceNodes() {
+    return this.resources;
+  }
+
+  async createWorldResourceNode(input: {
+    zoneId: typeof CORRUPT_FOREST.id;
+    resourceId: string;
+    position: GridPositionDto;
+    charges: number;
+  }) {
+    this.resources.push({
+      zoneId: input.zoneId,
+      resourceId: input.resourceId,
+      position: { ...input.position },
+      charges: input.charges
+    });
+  }
+
+  async findMunicipalTreasury(settlementId: typeof BLACKPINE_MARKET_ID) {
+    return this.treasury?.settlementId === settlementId ? this.treasury : null;
+  }
+
+  async createMunicipalTreasury(input: {
+    settlementId: typeof BLACKPINE_MARKET_ID;
+    copperBalance: number;
+  }) {
+    this.treasury = { ...input };
+  }
+
+  async listNpcInventory(actorId: string) {
+    return this.inventory.get(actorId) ?? [];
+  }
+
+  async setNpcInventoryItem(input: { actorId: string; itemId: ItemId | string; quantity: number }) {
+    const rows = [...(this.inventory.get(input.actorId) ?? [])];
+    const index = rows.findIndex((item) => item.itemId === input.itemId);
+    if (index >= 0) {
+      rows[index] = { itemId: input.itemId, quantity: input.quantity };
+    } else {
+      rows.push({ itemId: input.itemId, quantity: input.quantity });
+    }
+    this.inventory.set(input.actorId, rows);
+  }
+
+  async updateNpcActor(input: {
+    actorId: string;
+    currentLocation?: GameLocationId;
+    position?: GridPositionDto | null;
+    copperBalance?: number;
+    hunger?: number;
+    lastHungerSettledAt?: Date;
+  }) {
+    const actor = this.actors.find((entry) => entry.id === input.actorId);
+    if (!actor) throw new Error("NPC actor not found");
+    if (input.currentLocation !== undefined) actor.currentLocation = input.currentLocation;
+    if ("position" in input) actor.position = input.position ?? null;
+    if (input.copperBalance !== undefined) actor.copperBalance = input.copperBalance;
+    if (input.hunger !== undefined) actor.hunger = input.hunger;
+    if (input.lastHungerSettledAt) actor.lastHungerSettledAt = cloneDate(input.lastHungerSettledAt);
+  }
+
+  async findActiveNpcAction(actorId: string) {
+    return this.actions.find((action) => action.actorId === actorId && action.status === "active") ?? null;
+  }
+
+  async listNpcActions() {
+    return this.actions;
+  }
+
+  async createNpcAction(input: {
+    actorId: string;
+    actionType: string;
+    startedAt: Date;
+    endsAt: Date;
+    payload: Record<string, unknown>;
+  }) {
+    const action: NpcActionRecord = {
+      id: `simulation-action-${this.actions.length + 1}`,
+      status: "active",
+      ...input,
+      startedAt: cloneDate(input.startedAt),
+      endsAt: cloneDate(input.endsAt),
+      payload: structuredClone(input.payload)
+    };
+    this.actions.push(action);
+    return action;
+  }
+
+  async markNpcActionCompleted(actionId: string) {
+    const action = this.actions.find((entry) => entry.id === actionId);
+    if (!action) throw new Error("NPC action not found");
+    action.status = "completed";
+  }
+
+  async listNpcEvents(actorId: string, limit: number) {
+    return (this.events.get(actorId) ?? []).slice(0, limit);
+  }
+
+  async updateWorldResourceNodeCharges(input: { resourceId: string; charges: number }) {
+    const resource = this.resources.find((entry) => entry.resourceId === input.resourceId);
+    if (!resource) throw new Error("World resource node not found");
+    resource.charges = input.charges;
+  }
+
+  async updateMunicipalTreasury(input: {
+    settlementId: typeof BLACKPINE_MARKET_ID;
+    copperBalance: number;
+  }) {
+    this.treasury = { ...input };
+  }
+
+  async listMarketInventory(settlementId: typeof BLACKPINE_MARKET_ID) {
+    return this.marketInventory.filter((item) => item.settlementId === settlementId);
+  }
+
+  async setMarketInventoryQuantity(input: { marketInventoryId: string; quantity: number }) {
+    const item = this.marketInventory.find((entry) => entry.id === input.marketInventoryId);
+    if (!item) throw new Error("Market item not found");
+    item.quantity = input.quantity;
+  }
+
+  async createNpcMarketTransaction() {
+    this.marketTransactionCount += 1;
+  }
+
+  async countNpcMarketTransactions() {
+    return this.marketTransactionCount;
+  }
+}
