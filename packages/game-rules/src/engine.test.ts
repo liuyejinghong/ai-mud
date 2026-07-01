@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import { addInventoryItem } from "./inventory-rules.js";
 import {
   buildMapCells,
+  calculateMarketQuote,
+  calculateRepairQuote,
   calculateGatheringPlan,
   calculateGatheringSettlement,
+  formatMoney,
   movePosition,
   simulateCombat
 } from "./engine.js";
@@ -109,5 +112,39 @@ describe("v0.3 engine rules", () => {
     expect(addInventoryItem([{ itemId: "wild_berry", quantity: 2 }], "wild_berry", 3)).toEqual([
       { itemId: "wild_berry", quantity: 5 }
     ]);
+  });
+
+  it("formats copper into gold, silver, and copper", () => {
+    expect(formatMoney(12345)).toEqual({ gold: 1, silver: 23, copper: 45, totalCopper: 12345 });
+  });
+
+  it("quotes market prices from stock pressure and tax", () => {
+    const scarceBuy = calculateMarketQuote({
+      direction: "buy",
+      basePriceCopper: 20,
+      stockQuantity: 5,
+      targetQuantity: 20,
+      quantity: 2
+    });
+    const surplusSell = calculateMarketQuote({
+      direction: "sell",
+      basePriceCopper: 10,
+      stockQuantity: 100,
+      targetQuantity: 20,
+      quantity: 2
+    });
+
+    expect(scarceBuy.unitPriceCopper).toBeGreaterThan(20);
+    expect(scarceBuy.taxCopper).toBeGreaterThan(0);
+    expect(scarceBuy.totalCopper).toBe(scarceBuy.grossCopper + scarceBuy.taxCopper);
+    expect(surplusSell.unitPriceCopper).toBeLessThanOrEqual(10);
+    expect(surplusSell.totalCopper).toBe(surplusSell.grossCopper - surplusSell.taxCopper);
+  });
+
+  it("quotes repair with copper and basic iron ore", () => {
+    const quote = calculateRepairQuote({ itemLevel: 12, durabilityLossPct: 0.5 });
+
+    expect(quote.copperCost).toBeGreaterThan(0);
+    expect(quote.ironOreCost).toBeGreaterThan(0);
   });
 });

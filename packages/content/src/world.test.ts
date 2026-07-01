@@ -20,11 +20,28 @@ describe("first world content", () => {
   });
 
   it("defines fixed resources with timed gathering cycles", () => {
-    expect(FIRST_ITEMS.map((item) => item.id)).toEqual(["wild_berry", "beast_meat", "rough_hide"]);
+    expect(FIRST_ITEMS.map((item) => item.id)).toEqual([
+      "wild_berry",
+      "beast_meat",
+      "rough_hide",
+      "iron_ore"
+    ]);
     expect(getResourceById("forest_berry_patch_01")?.cycleSeconds).toBe(30);
     expect(getResourceById("fallen_carcass_01")?.cycleSeconds).toBe(45);
     expect(getResourceById("discarded_hide_01")?.cycleSeconds).toBe(60);
+    expect(getResourceById("abandoned_iron_vein_01")?.cycleSeconds).toBe(60);
     expect(getItemById("wild_berry")?.name).toBe("野莓");
+    expect(getItemById("iron_ore")).toMatchObject({
+      name: "基础铁矿石",
+      category: "ore",
+      itemLevel: 1,
+      baseBuyPriceCopper: 18,
+      baseSellPriceCopper: 30,
+      targetMarketQuantity: 80
+    });
+    expect(
+      CORRUPT_FOREST.resources.some((resource) => resource.gatherResult.itemId === "iron_ore")
+    ).toBe(true);
   });
 
   it("defines the first non-currency wolf encounter", () => {

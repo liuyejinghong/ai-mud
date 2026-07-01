@@ -3,8 +3,11 @@ import type { GameLocationId, GridPositionDto, ItemId } from "@ai-mud/shared";
 export interface ItemDefinition {
   id: ItemId;
   name: string;
-  category: "food" | "material";
+  category: "food" | "material" | "ore";
   itemLevel: number;
+  baseBuyPriceCopper: number;
+  baseSellPriceCopper: number;
+  targetMarketQuantity: number;
 }
 
 export interface ResourceDefinition {
@@ -53,9 +56,42 @@ export interface ZoneDefinition {
 }
 
 export const FIRST_ITEMS: ItemDefinition[] = [
-  { id: "wild_berry", name: "野莓", category: "food", itemLevel: 1 },
-  { id: "beast_meat", name: "兽肉", category: "food", itemLevel: 1 },
-  { id: "rough_hide", name: "粗糙皮革", category: "material", itemLevel: 1 }
+  {
+    id: "wild_berry",
+    name: "野莓",
+    category: "food",
+    itemLevel: 1,
+    baseBuyPriceCopper: 5,
+    baseSellPriceCopper: 8,
+    targetMarketQuantity: 100
+  },
+  {
+    id: "beast_meat",
+    name: "兽肉",
+    category: "food",
+    itemLevel: 1,
+    baseBuyPriceCopper: 12,
+    baseSellPriceCopper: 20,
+    targetMarketQuantity: 60
+  },
+  {
+    id: "rough_hide",
+    name: "粗糙皮革",
+    category: "material",
+    itemLevel: 1,
+    baseBuyPriceCopper: 10,
+    baseSellPriceCopper: 18,
+    targetMarketQuantity: 40
+  },
+  {
+    id: "iron_ore",
+    name: "基础铁矿石",
+    category: "ore",
+    itemLevel: 1,
+    baseBuyPriceCopper: 18,
+    baseSellPriceCopper: 30,
+    targetMarketQuantity: 80
+  }
 ];
 
 export const FIRST_MONSTERS: MonsterDefinition[] = [
@@ -121,6 +157,14 @@ export const CORRUPT_FOREST: ZoneDefinition = {
       charges: 1,
       cycleSeconds: 60,
       gatherResult: { itemId: "rough_hide", quantity: 1 }
+    },
+    {
+      id: "abandoned_iron_vein_01",
+      name: "废弃铁矿脉",
+      position: { x: 0, y: 1 },
+      charges: 120,
+      cycleSeconds: 60,
+      gatherResult: { itemId: "iron_ore", quantity: 1 }
     }
   ],
   encounters: FIRST_ENCOUNTERS
