@@ -41,6 +41,9 @@ const economySnapshot = {
     {
       id: "tx-1",
       settlementId: "blackpine_outpost",
+      actorId: "character-1",
+      actorType: "player",
+      actorName: "测试角色",
       characterId: "character-1",
       transactionType: "sell",
       itemId: "wild_berry",
@@ -51,6 +54,33 @@ const economySnapshot = {
       tax: { gold: 0, silver: 0, copper: 1, totalCopper: 1 },
       net: { gold: 0, silver: 0, copper: 17, totalCopper: 17 },
       createdAt: "2026-07-01T12:00:00.000Z"
+    }
+  ]
+};
+
+const npcSnapshot = {
+  generatedAt: "2026-07-01T12:00:00.000Z",
+  settlementId: "blackpine_outpost",
+  treasury: { gold: 0, silver: 99, copper: 75, totalCopper: 9975 },
+  npcs: [
+    {
+      id: "actor-farmer",
+      actorType: "npc",
+      npcKey: "blackpine_farmer_mara",
+      name: "玛拉",
+      profession: "farmer",
+      currentLocation: "corrupt_forest",
+      position: { x: 1, y: 3 },
+      money: { gold: 0, silver: 1, copper: 25, totalCopper: 125 },
+      hunger: {
+        current: 4,
+        max: 5,
+        status: "fed",
+        nextMealAt: "2026-07-01T18:00:00.000Z"
+      },
+      currentAction: { actionType: "gathering", description: "正在采集" },
+      inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 2 }],
+      recentEvents: []
     }
   ]
 };
@@ -81,10 +111,13 @@ test("renders economy visibility for admins", async ({ page }) => {
   });
   await page.route("**/game/state", async (route) => route.fulfill({ json: createCharacterState }));
   await page.route("**/admin/economy", async (route) => route.fulfill({ json: economySnapshot }));
+  await page.route("**/admin/npcs", async (route) => route.fulfill({ json: npcSnapshot }));
 
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "激活码管理" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "经济监控" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "NPC 运行监控" })).toBeVisible();
   await expect(page.getByText("税收合计 1 铜")).toBeVisible();
+  await expect(page.getByText("市政金库 9975 铜")).toBeVisible();
 });
