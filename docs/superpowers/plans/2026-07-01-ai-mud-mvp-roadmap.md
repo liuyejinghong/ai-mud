@@ -271,6 +271,14 @@ Acceptance:
 
 Goal: The village economy starts to run with hunger, market inventory, taxes, repair, mining, wages, and ledger visibility.
 
+Current calibration after `v0.4.0`:
+
+- `v0.4.0` delivered the economy foundation: copper-backed money display, municipal market, stock-sensitive pricing, buy/sell transactions, tax, basic iron ore, and repair quote rules.
+- `v0.4.0` did not complete the whole Economy World scope.
+- Equipment durability and repair execution remain `v0.4.x` work, not `v0.5`.
+- Living NPC remains reserved for `v0.5.x`.
+- Detailed split is recorded in `docs/superpowers/plans/2026-07-01-v0.4x-v0.5-roadmap-realignment-plan.md`.
+
 Included:
 
 - Three-coin currency display backed by copper integer storage.
@@ -293,6 +301,13 @@ Acceptance:
 - Repair consumes money and ore.
 - Transactions write ledger entries.
 - 3-day no-player world simulation runs without invalid ledger totals.
+
+Recommended remaining `v0.4.x` release split:
+
+- `v0.4.1` Economy Sink: equipment durability and repair execution.
+- `v0.4.2` Basic Needs: hunger and food consumption.
+- `v0.4.3` Economy Visibility: ledger query and municipal controls.
+- `v0.4.4` Wage And Simulation Skeleton: wage policy and 3-day economy simulation.
 
 ### v0.5 Living NPC
 
