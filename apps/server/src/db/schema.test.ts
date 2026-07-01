@@ -18,6 +18,8 @@ import {
   npcDialogueMessages,
   npcEvents,
   npcItems,
+  npcMemoryEntries,
+  npcMemoryFragments,
   npcRelationships,
   mapInstances,
   sessions,
@@ -111,6 +113,16 @@ describe("foundation schema", () => {
     expect(npcDialogueMessages.message.getSQLType()).toBe("text");
     expect(npcRelationships.familiarity.getSQLType()).toBe("integer");
     expect(npcRelationships.trust.getSQLType()).toBe("integer");
+  });
+
+  it("defines NPC memory entry and fragment tables", () => {
+    expect(getDrizzleTableName(npcMemoryEntries)).toBe("npc_memory_entries");
+    expect(getDrizzleTableName(npcMemoryFragments)).toBe("npc_memory_fragments");
+    expect(npcMemoryEntries.summary.getSQLType()).toBe("text");
+    expect(npcMemoryEntries.importance.getSQLType()).toBe("integer");
+    expect(npcMemoryEntries.compressedAt.getSQLType()).toBe("timestamp with time zone");
+    expect(npcMemoryFragments.summary.getSQLType()).toBe("text");
+    expect(npcMemoryFragments.compressionLevel.getSQLType()).toBe("integer");
   });
 
   it("stores audit metadata as structured jsonb", () => {

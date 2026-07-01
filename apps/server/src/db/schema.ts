@@ -405,6 +405,65 @@ export const npcRelationships = pgTable(
   })
 );
 
+export const npcMemoryEntries = pgTable(
+  "npc_memory_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    npcActorId: uuid("npc_actor_id").notNull().references(() => worldActors.id),
+    characterId: uuid("character_id").references(() => characters.id),
+    sourceType: text("source_type").notNull(),
+    memoryKind: text("memory_kind").notNull(),
+    importance: integer("importance").notNull().default(1),
+    summary: text("summary").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    compressedAt: timestamp("compressed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    npcOccurredAtIdx: index("npc_memory_entries_npc_occurred_at_idx").on(
+      table.npcActorId,
+      table.occurredAt
+    ),
+    characterNpcIdx: index("npc_memory_entries_character_npc_idx").on(
+      table.characterId,
+      table.npcActorId
+    ),
+    compressionIdx: index("npc_memory_entries_compression_idx").on(
+      table.npcActorId,
+      table.compressedAt,
+      table.occurredAt
+    )
+  })
+);
+
+export const npcMemoryFragments = pgTable(
+  "npc_memory_fragments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    npcActorId: uuid("npc_actor_id").notNull().references(() => worldActors.id),
+    characterId: uuid("character_id").references(() => characters.id),
+    memoryKind: text("memory_kind").notNull(),
+    importance: integer("importance").notNull().default(1),
+    summary: text("summary").notNull(),
+    firstOccurredAt: timestamp("first_occurred_at", { withTimezone: true }).notNull(),
+    lastOccurredAt: timestamp("last_occurred_at", { withTimezone: true }).notNull(),
+    sourceEntryIds: jsonb("source_entry_ids").notNull().default([]),
+    compressionLevel: integer("compression_level").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    npcLastOccurredAtIdx: index("npc_memory_fragments_npc_last_occurred_at_idx").on(
+      table.npcActorId,
+      table.lastOccurredAt
+    ),
+    characterNpcIdx: index("npc_memory_fragments_character_npc_idx").on(
+      table.characterId,
+      table.npcActorId
+    )
+  })
+);
+
 export const characterActions = pgTable(
   "character_actions",
   {

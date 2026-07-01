@@ -64,6 +64,13 @@
       "when": 1782917200000,
       "tag": "0008_ai_dialogue",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782920800000,
+      "tag": "0009_npc_memory",
+      "breakpoints": true
     }
   ]
 }
