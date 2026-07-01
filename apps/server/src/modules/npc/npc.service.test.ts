@@ -37,6 +37,12 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
     endsAt: Date;
     payload: Record<string, unknown>;
   }> = [];
+  events: Array<{
+    id: string;
+    actorId: string;
+    message: string;
+    createdAt: Date;
+  }> = [];
   transactions: Array<{
     actorId: string;
     actorType: "npc";
@@ -149,6 +155,10 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
     );
   }
 
+  async listNpcActions() {
+    return this.actions;
+  }
+
   async createNpcAction(input: {
     actorId: string;
     actionType: string;
@@ -169,6 +179,10 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
     const action = this.actions.find((entry) => entry.id === actionId);
     if (!action) throw new Error("action not found");
     action.status = "completed";
+  }
+
+  async listNpcEvents(actorId: string, limit: number) {
+    return this.events.filter((event) => event.actorId === actorId).slice(0, limit);
   }
 
   async updateWorldResourceNodeCharges(input: { resourceId: string; charges: number }) {
@@ -200,6 +214,10 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
     netCopper: number;
   }) {
     this.transactions.push(input);
+  }
+
+  async countNpcMarketTransactions() {
+    return this.transactions.length;
   }
 
   async listMarketInventory(settlementId: "blackpine_outpost") {
@@ -471,5 +489,84 @@ describe("NpcService", () => {
     expect(await repo.findActiveNpcAction(miner.id)).toBeNull();
     expect(await repo.listNpcInventory(miner.id)).toEqual([]);
     expect(repo.transactions).toEqual([]);
+  });
+
+  it("lists NPC summaries with wallet, inventory, action, and events", async () => {
+    const repo = new InMemoryNpcRepository();
+    const service = new NpcService(repo);
+    const now = new Date("2026-07-01T09:00:00.000Z");
+
+    await service.ensureWorldSeeded(now);
+    const farmer = repo.actors.find((actor) => actor.npcKey === "blackpine_farmer_mara")!;
+    farmer.currentLocation = "corrupt_forest";
+    farmer.position = { x: 1, y: 3 };
+    farmer.copperBalance = 125;
+    await service.addNpcInventoryItem(farmer.id, "wild_berry", 2);
+    await repo.createNpcAction({
+      actorId: farmer.id,
+      actionType: "gathering",
+      startedAt: now,
+      endsAt: new Date("2026-07-01T09:00:30.000Z"),
+      payload: { resourceId: "forest_berry_patch_01" }
+    });
+    repo.events.push({
+      id: "event-1",
+      actorId: farmer.id,
+      message: "玛拉开始采集野莓。",
+      createdAt: now
+    });
+
+    await expect(service.listNpcSummaries(now)).resolves.toEqual([
+      expect.objectContaining({
+        id: farmer.id,
+        actorType: "npc",
+        npcKey: "blackpine_farmer_mara",
+        name: "玛拉",
+        currentLocation: "corrupt_forest",
+        position: { x: 1, y: 3 },
+        money: { gold: 0, silver: 1, copper: 25, totalCopper: 125 },
+        currentAction: {
+          actionType: "gathering",
+          description: "正在采集"
+        },
+        inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 2 }],
+        recentEvents: [
+          {
+            id: "event-1",
+            message: "玛拉开始采集野莓。",
+            createdAt: "2026-07-01T09:00:00.000Z"
+          }
+        ]
+      }),
+      expect.any(Object),
+      expect.any(Object),
+      expect.any(Object)
+    ]);
+  });
+
+  it("runs a bounded NPC simulation report against real settlement state", async () => {
+    const repo = new InMemoryNpcRepository();
+    const service = new NpcService(repo);
+    const startAt = new Date("2026-07-01T00:00:00.000Z");
+
+    const report = await service.runNpcSimulation(1, startAt);
+
+    expect(report).toMatchObject({
+      startedAt: "2026-07-01T00:00:00.000Z",
+      endedAt: "2026-07-02T00:00:00.000Z",
+      days: 1,
+      settlementId: "blackpine_outpost",
+      npcCount: 4,
+      health: { ok: true, issues: [] }
+    });
+    expect(report.actionCount).toBeGreaterThan(0);
+    expect(report.resourceSnapshots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          resourceId: "forest_berry_patch_01",
+          name: "野莓灌木"
+        })
+      ])
+    );
   });
 });

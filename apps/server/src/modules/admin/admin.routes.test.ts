@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import type { EconomySnapshotDto } from "@ai-mud/shared";
+import type { EconomySnapshotDto, NpcSimulationReportDto, NpcSummaryDto } from "@ai-mud/shared";
 import { describe, expect, it } from "vitest";
 import { registerAdminRoutes, type AdminRouteDependencies } from "./admin.routes.js";
 
@@ -48,6 +48,53 @@ const economySnapshot: EconomySnapshotDto = {
   ]
 };
 
+const npcSummaries: NpcSummaryDto[] = [
+  {
+    id: "actor-farmer",
+    actorType: "npc",
+    npcKey: "blackpine_farmer_mara",
+    name: "玛拉",
+    profession: "farmer",
+    currentLocation: "corrupt_forest",
+    position: { x: 1, y: 3 },
+    money: { gold: 0, silver: 1, copper: 25, totalCopper: 125 },
+    hunger: {
+      current: 4,
+      max: 5,
+      status: "fed",
+      nextMealAt: "2026-07-01T18:00:00.000Z"
+    },
+    currentAction: { actionType: "gathering", description: "正在采集" },
+    inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 2 }],
+    recentEvents: [
+      {
+        id: "event-1",
+        message: "玛拉开始采集野莓。",
+        createdAt: "2026-07-01T09:00:00.000Z"
+      }
+    ]
+  }
+];
+
+const npcSimulationReport: NpcSimulationReportDto = {
+  startedAt: "2026-07-01T00:00:00.000Z",
+  endedAt: "2026-07-02T00:00:00.000Z",
+  days: 1,
+  settlementId: "blackpine_outpost",
+  treasury: { gold: 0, silver: 99, copper: 75, totalCopper: 9975 },
+  npcCount: 4,
+  actionCount: 12,
+  marketTransactionCount: 3,
+  resourceSnapshots: [
+    {
+      resourceId: "forest_berry_patch_01",
+      name: "野莓灌木",
+      remainingCharges: 2
+    }
+  ],
+  health: { ok: true, issues: [] }
+};
+
 function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
   const app = Fastify();
   const baseDeps: AdminRouteDependencies = {
@@ -61,6 +108,19 @@ function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
       throw new Error("not used");
     },
     getEconomySnapshot: async () => economySnapshot,
+    getNpcSnapshot: async () => ({
+      generatedAt: "2026-07-01T00:00:00.000Z",
+      settlementId: "blackpine_outpost",
+      treasury: { gold: 0, silver: 100, copper: 0, totalCopper: 10000 },
+      npcs: npcSummaries
+    }),
+    settleNpcWorld: async () => ({
+      generatedAt: "2026-07-01T00:00:00.000Z",
+      settlementId: "blackpine_outpost",
+      treasury: { gold: 0, silver: 100, copper: 0, totalCopper: 10000 },
+      npcs: npcSummaries
+    }),
+    runNpcSimulation: async () => npcSimulationReport,
     now: () => new Date("2026-07-01T00:00:00.000Z")
   };
   void registerAdminRoutes(app, { ...baseDeps, ...deps });
@@ -374,5 +434,126 @@ describe("registerAdminRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual(economySnapshot);
+  });
+
+  it("guards the NPC snapshot behind an admin session", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => null
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/npcs"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: { code: "UNAUTHENTICATED", message: "Admin session required" }
+    });
+  });
+
+  it("returns NPC economy state for admins", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      })
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/npcs"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      generatedAt: "2026-07-01T00:00:00.000Z",
+      settlementId: "blackpine_outpost",
+      treasury: { gold: 0, silver: 100, copper: 0, totalCopper: 10000 },
+      npcs: npcSummaries
+    });
+  });
+
+  it("settles NPC world only for admins with a mutation token", async () => {
+    const settleCalls: string[] = [];
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      verifyAdminMutation: async () => true,
+      settleNpcWorld: async () => {
+        settleCalls.push("settle");
+        return {
+          generatedAt: "2026-07-01T00:00:00.000Z",
+          settlementId: "blackpine_outpost",
+          treasury: { gold: 0, silver: 100, copper: 0, totalCopper: 10000 },
+          npcs: npcSummaries
+        };
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/npcs/settle"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(settleCalls).toEqual(["settle"]);
+    expect(response.json().npcs).toEqual(npcSummaries);
+  });
+
+  it("rejects NPC settlement without a mutation token", async () => {
+    const settleCalls: string[] = [];
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      verifyAdminMutation: async () => false,
+      settleNpcWorld: async () => {
+        settleCalls.push("settle");
+        throw new Error("not used");
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/npcs/settle"
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(settleCalls).toEqual([]);
+  });
+
+  it("runs a bounded NPC simulation report for admins", async () => {
+    const simulateCalls: Array<{ days: number; startAt: Date }> = [];
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      verifyAdminMutation: async () => true,
+      runNpcSimulation: async (input) => {
+        simulateCalls.push(input);
+        return npcSimulationReport;
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/npcs/simulate",
+      payload: { days: 1, startAt: "2026-07-01T00:00:00.000Z" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(npcSimulationReport);
+    expect(simulateCalls).toEqual([
+      { days: 1, startAt: new Date("2026-07-01T00:00:00.000Z") }
+    ]);
   });
 });

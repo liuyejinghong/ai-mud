@@ -1,17 +1,23 @@
 import type { NpcDefinition } from "@ai-mud/content";
 import type { GameLocationId, GridPositionDto, ItemId } from "@ai-mud/shared";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import {
   marketInventory,
   marketTransactions,
   municipalTreasury,
   npcActions,
+  npcEvents,
   npcItems,
   worldActors,
   worldResourceNodes
 } from "../../db/schema.js";
-import type { NpcActionRecord, NpcActorRecord, NpcRepositoryPort } from "./npc.service.js";
+import type {
+  NpcActionRecord,
+  NpcActorRecord,
+  NpcEventRecord,
+  NpcRepositoryPort
+} from "./npc.service.js";
 
 type NpcDb = Pick<Db, "insert" | "select" | "update">;
 
@@ -215,6 +221,12 @@ export class NpcRepository implements NpcRepositoryPort {
     return row ? toNpcAction(row) : null;
   }
 
+  async listNpcActions(): Promise<NpcActionRecord[]> {
+    const rows = await this.db.select().from(npcActions);
+
+    return rows.map(toNpcAction);
+  }
+
   async createNpcAction(input: {
     actorId: string;
     actionType: string;
@@ -246,6 +258,22 @@ export class NpcRepository implements NpcRepositoryPort {
         updatedAt: completedAt
       })
       .where(eq(npcActions.id, actionId));
+  }
+
+  async listNpcEvents(actorId: string, limit: number): Promise<NpcEventRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(npcEvents)
+      .where(eq(npcEvents.actorId, actorId))
+      .orderBy(desc(npcEvents.createdAt))
+      .limit(Math.min(20, Math.max(1, Math.floor(limit))));
+
+    return rows.map((row) => ({
+      id: row.id,
+      actorId: row.actorId,
+      message: row.message,
+      createdAt: row.createdAt
+    }));
   }
 
   async updateWorldResourceNodeCharges(input: {
@@ -321,5 +349,14 @@ export class NpcRepository implements NpcRepositoryPort {
       taxCopper: input.taxCopper,
       netCopper: input.netCopper
     });
+  }
+
+  async countNpcMarketTransactions(): Promise<number> {
+    const rows = await this.db
+      .select({ id: marketTransactions.id })
+      .from(marketTransactions)
+      .where(eq(marketTransactions.actorType, "npc"));
+
+    return rows.length;
   }
 }

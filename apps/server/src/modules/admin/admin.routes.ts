@@ -1,6 +1,13 @@
 import { FIRST_ITEMS, getItemById } from "@ai-mud/content";
 import { formatMoney } from "@ai-mud/game-rules";
-import type { ActivationCodeDto, EconomySnapshotDto, ErrorCode } from "@ai-mud/shared";
+import type {
+  ActivationCodeDto,
+  EconomySnapshotDto,
+  ErrorCode,
+  MoneyDto,
+  NpcSimulationReportDto,
+  NpcSummaryDto
+} from "@ai-mud/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { DrizzleActivationCodeRepository } from "../activation-code/activation-code.repository.js";
@@ -10,6 +17,8 @@ import type { AuditWriter } from "../audit/audit.service.js";
 import { AuthRepository } from "../auth/auth.repository.js";
 import { AuthService } from "../auth/auth.service.js";
 import { GameRepository } from "../game/game.repository.js";
+import { NpcRepository } from "../npc/npc.repository.js";
+import { NpcService } from "../npc/npc.service.js";
 import { WorldResetService } from "../world-reset/world-reset.service.js";
 
 export interface AdminAccount {
@@ -18,11 +27,24 @@ export interface AdminAccount {
   role: "admin" | "super_admin";
 }
 
+export interface NpcSnapshotResponse {
+  generatedAt: string;
+  settlementId: "blackpine_outpost";
+  treasury: MoneyDto;
+  npcs: NpcSummaryDto[];
+}
+
 export interface AdminRouteDependencies {
   getCurrentAdmin(request: FastifyRequest): Promise<AdminAccount | null>;
   verifyAdminMutation(request: FastifyRequest): Promise<boolean>;
   listActivationCodes(): Promise<Array<ActivationCodeDto>>;
   getEconomySnapshot(): Promise<EconomySnapshotDto>;
+  getNpcSnapshot(): Promise<NpcSnapshotResponse>;
+  settleNpcWorld(): Promise<NpcSnapshotResponse>;
+  runNpcSimulation(input: {
+    days: number;
+    startAt: Date;
+  }): Promise<NpcSimulationReportDto>;
   createActivationCodeWithAudit(input: {
     note?: string;
     createdByAdminId: string;
@@ -41,6 +63,11 @@ const createActivationCodeSchema = z.object({
 const softResetSchema = z.object({
   confirmationText: z.string(),
   reason: z.string().min(8)
+});
+
+const npcSimulationSchema = z.object({
+  days: z.number().int().min(1).max(7).default(1),
+  startAt: z.string().datetime().optional()
 });
 
 const BLACKPINE_MARKET_ID = "blackpine_outpost";
@@ -150,6 +177,22 @@ async function buildEconomySnapshot(repo: GameRepository, now: Date): Promise<Ec
   };
 }
 
+async function buildNpcSnapshot(
+  repo: NpcRepository,
+  service: NpcService,
+  now: Date
+): Promise<NpcSnapshotResponse> {
+  await service.ensureWorldSeeded(now);
+  const treasury = await repo.findMunicipalTreasury(BLACKPINE_MARKET_ID);
+
+  return {
+    generatedAt: now.toISOString(),
+    settlementId: BLACKPINE_MARKET_ID,
+    treasury: formatMoney(treasury?.copperBalance ?? 0),
+    npcs: await service.listNpcSummaries(now)
+  };
+}
+
 function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies {
   const auth = new AuthService();
   const authRepo = new AuthRepository(app.di.db);
@@ -184,6 +227,23 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
     getEconomySnapshot: async () => {
       const repo = new GameRepository(app.di.db);
       return buildEconomySnapshot(repo, now());
+    },
+    getNpcSnapshot: async () => {
+      const repo = new NpcRepository(app.di.db);
+      const service = new NpcService(repo);
+      return buildNpcSnapshot(repo, service, now());
+    },
+    settleNpcWorld: async () => {
+      const repo = new NpcRepository(app.di.db);
+      const service = new NpcService(repo);
+      const timestamp = now();
+      await service.settleNpcWorld(timestamp);
+      return buildNpcSnapshot(repo, service, timestamp);
+    },
+    runNpcSimulation: async (input) => {
+      const repo = new NpcRepository(app.di.db);
+      const service = new NpcService(repo);
+      return service.runNpcSimulation(input.days, input.startAt);
     },
     createActivationCodeWithAudit: async (input) =>
       app.di.db.transaction(async (tx) => {
@@ -249,6 +309,47 @@ export async function registerAdminRoutes(
     }
 
     return deps.getEconomySnapshot();
+  });
+
+  app.get("/admin/npcs", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+
+    return deps.getNpcSnapshot();
+  });
+
+  app.post("/admin/npcs/settle", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+    if (!(await deps.verifyAdminMutation(request))) {
+      return sendError(reply, 403, "FORBIDDEN", "Admin mutation token required");
+    }
+
+    return deps.settleNpcWorld();
+  });
+
+  app.post("/admin/npcs/simulate", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+    if (!(await deps.verifyAdminMutation(request))) {
+      return sendError(reply, 403, "FORBIDDEN", "Admin mutation token required");
+    }
+
+    const parsed = npcSimulationSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid NPC simulation input");
+    }
+
+    return deps.runNpcSimulation({
+      days: parsed.data.days,
+      startAt: parsed.data.startAt ? new Date(parsed.data.startAt) : deps.now()
+    });
   });
 
   app.post("/admin/activation-codes", async (request, reply) => {

@@ -9,11 +9,23 @@ import {
 import {
   calculateNpcWagePayment,
   calculateMarketQuote,
+  calculateHungerStatus,
+  calculateNextMealAt,
+  formatMoney,
   chooseNpcMealIntent,
   chooseNpcWorkIntent,
-  nextNpcTravelStep
+  nextNpcTravelStep,
+  validateNpcSimulationHealth
 } from "@ai-mud/game-rules";
-import type { GameLocationId, GridPositionDto, ItemId, NpcProfession } from "@ai-mud/shared";
+import type {
+  GameLocationId,
+  GridPositionDto,
+  ItemId,
+  NpcActionSummaryDto,
+  NpcProfession,
+  NpcSimulationReportDto,
+  NpcSummaryDto
+} from "@ai-mud/shared";
 
 const BLACKPINE_MARKET_ID = "blackpine_outpost" as const;
 const INITIAL_TREASURY_COPPER = 10_000;
@@ -57,6 +69,13 @@ export interface NpcActionRecord {
   payload: Record<string, unknown>;
 }
 
+export interface NpcEventRecord {
+  id: string;
+  actorId: string;
+  message: string;
+  createdAt: Date;
+}
+
 export interface NpcRepositoryPort {
   listNpcActors(): Promise<NpcActorRecord[]>;
   createNpcActor(npc: NpcDefinition, now: Date): Promise<NpcActorRecord>;
@@ -95,6 +114,7 @@ export interface NpcRepositoryPort {
     lastHungerSettledAt?: Date;
   }): Promise<void>;
   findActiveNpcAction(actorId: string): Promise<NpcActionRecord | null>;
+  listNpcActions(): Promise<NpcActionRecord[]>;
   createNpcAction(input: {
     actorId: string;
     actionType: string;
@@ -103,6 +123,7 @@ export interface NpcRepositoryPort {
     payload: Record<string, unknown>;
   }): Promise<NpcActionRecord>;
   markNpcActionCompleted(actionId: string, completedAt?: Date): Promise<void>;
+  listNpcEvents(actorId: string, limit: number): Promise<NpcEventRecord[]>;
   updateWorldResourceNodeCharges(input: {
     resourceId: string;
     charges: number;
@@ -128,6 +149,7 @@ export interface NpcRepositoryPort {
     taxCopper: number;
     netCopper: number;
   }): Promise<void>;
+  countNpcMarketTransactions(): Promise<number>;
 }
 
 export class NpcService {
@@ -202,6 +224,101 @@ export class NpcService {
       actorId,
       copperBalance: actor.copperBalance + payment.paidCopper
     });
+  }
+
+  async listNpcSummaries(now: Date): Promise<NpcSummaryDto[]> {
+    await this.ensureWorldSeeded(now);
+    const actors = await this.repo.listNpcActors();
+
+    return Promise.all(
+      actors.map(async (actor) => {
+        const [inventory, action, recentEvents] = await Promise.all([
+          this.repo.listNpcInventory(actor.id),
+          this.repo.findActiveNpcAction(actor.id),
+          this.repo.listNpcEvents(actor.id, 5)
+        ]);
+
+        return {
+          id: actor.id,
+          actorType: "npc" as const,
+          npcKey: actor.npcKey,
+          name: actor.name,
+          profession: actor.profession as NpcProfession,
+          currentLocation: actor.currentLocation,
+          position: actor.position,
+          money: formatMoney(actor.copperBalance),
+          hunger: {
+            current: actor.hunger,
+            max: 5,
+            status: calculateHungerStatus(actor.hunger),
+            nextMealAt: calculateNextMealAt(now).toISOString()
+          },
+          currentAction: action ? this.toActionSummary(action) : null,
+          inventory: inventory.map((item) => ({
+            itemId: item.itemId as ItemId,
+            name: FIRST_ITEMS.find((entry) => entry.id === item.itemId)?.name ?? item.itemId,
+            quantity: item.quantity
+          })),
+          recentEvents: recentEvents.map((event) => ({
+            id: event.id,
+            message: event.message,
+            createdAt: event.createdAt.toISOString()
+          }))
+        };
+      })
+    );
+  }
+
+  async runNpcSimulation(days: number, startAt: Date): Promise<NpcSimulationReportDto> {
+    const boundedDays = Math.min(7, Math.max(1, Math.floor(days)));
+    const endedAt = new Date(startAt.getTime() + boundedDays * 24 * 60 * 60_000);
+
+    for (
+      let timestamp = startAt.getTime();
+      timestamp <= endedAt.getTime();
+      timestamp += 60 * 60_000
+    ) {
+      await this.settleNpcWorld(new Date(timestamp));
+    }
+
+    const [actors, treasury, resources, actions, marketInventory, marketTransactionCount] =
+      await Promise.all([
+        this.repo.listNpcActors(),
+        this.repo.findMunicipalTreasury(BLACKPINE_MARKET_ID),
+        this.repo.listWorldResourceNodes(),
+        this.repo.listNpcActions(),
+        this.repo.listMarketInventory(BLACKPINE_MARKET_ID),
+        this.repo.countNpcMarketTransactions()
+      ]);
+    const health = validateNpcSimulationHealth({
+      balances: [...actors.map((actor) => actor.copperBalance), treasury?.copperBalance ?? 0],
+      stockQuantities: marketInventory.map((item) => item.quantity),
+      resourceCharges: resources.map((resource) => resource.charges),
+      activeActions: actions
+        .filter((action) => action.status === "active")
+        .map((action) => ({
+          id: action.id,
+          endsAtMs: action.endsAt.getTime(),
+          nowMs: endedAt.getTime()
+        }))
+    });
+
+    return {
+      startedAt: startAt.toISOString(),
+      endedAt: endedAt.toISOString(),
+      days: boundedDays,
+      settlementId: BLACKPINE_MARKET_ID,
+      treasury: formatMoney(treasury?.copperBalance ?? 0),
+      npcCount: actors.length,
+      actionCount: actions.length,
+      marketTransactionCount,
+      resourceSnapshots: resources.map((resource) => ({
+        resourceId: resource.resourceId,
+        name: getResourceById(resource.resourceId)?.name ?? resource.resourceId,
+        remainingCharges: resource.charges
+      })),
+      health
+    };
   }
 
   private async ensureNpcActors(now: Date) {
@@ -298,6 +415,29 @@ export class NpcService {
         quantity: resource.gatherResult.quantity
       }
     });
+  }
+
+  private toActionSummary(action: NpcActionRecord): NpcActionSummaryDto {
+    const actionType = (
+      ["travel", "gathering", "market_buy", "market_sell", "eat", "wage"].includes(
+        action.actionType
+      )
+        ? action.actionType
+        : "travel"
+    ) as NpcActionSummaryDto["actionType"];
+
+    return {
+      actionType,
+      description:
+        {
+          travel: "正在移动",
+          gathering: "正在采集",
+          market_buy: "正在购买物资",
+          market_sell: "正在出售物资",
+          eat: "正在吃饭",
+          wage: "正在发放工资"
+        }[actionType] ?? "正在行动"
+    };
   }
 
   private async handleNpcNeeds(actor: NpcActorRecord) {
