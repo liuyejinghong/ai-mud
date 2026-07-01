@@ -4,10 +4,13 @@ import {
   GAME_LOCATIONS,
   ITEM_IDS,
   isDirection,
+  type CharacterDto,
   type CurrentActionDto,
+  type EatFoodRequestDto,
   type EquipmentItemDto,
   type GameStateDto,
-  type MoneyDto
+  type MoneyDto,
+  type NeedsDto
 } from "./game.js";
 import { PRODUCT_VERSION, WORLD_COMPATIBILITY } from "./version.js";
 
@@ -23,12 +26,12 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.4.1 durability compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.4.1");
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(5);
+  it("exposes v0.4.2 hunger compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.4.2");
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(6);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
-    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(5);
-    expect(WORLD_COMPATIBILITY.contentVersion).toBe(4);
+    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(6);
+    expect(WORLD_COMPATIBILITY.contentVersion).toBe(6);
   });
 
   it("includes basic iron ore in the shared item catalog", () => {
@@ -39,6 +42,21 @@ describe("game contract", () => {
     const money: MoneyDto = { gold: 1, silver: 23, copper: 45, totalCopper: 12345 };
 
     expect(money).toEqual({ gold: 1, silver: 23, copper: 45, totalCopper: 12345 });
+  });
+
+  it("describes player hunger needs", () => {
+    const needs: NeedsDto = {
+      hunger: {
+        current: 5,
+        max: 5,
+        status: "fed",
+        nextMealAt: "2026-07-01T10:00:00.000Z"
+      }
+    };
+    const character: Pick<CharacterDto, "needs"> = { needs };
+
+    expect(character.needs.hunger.current).toBe(5);
+    expect(character.needs.hunger.status).toBe("fed");
   });
 
   it("describes current gathering action progress", () => {
@@ -85,7 +103,7 @@ describe("game contract", () => {
     expect(equipment.repairQuote?.ironOreCost).toBe(1);
   });
 
-  it("allows v0.4.1 action commands in game state", () => {
+  it("allows v0.4.2 action commands in game state", () => {
     const state: Pick<GameStateDto, "availableActions" | "currentAction" | "market" | "equipment"> = {
       availableActions: [
         "move",
@@ -94,7 +112,8 @@ describe("game contract", () => {
         "cancel_action",
         "return_to_village",
         "open_market",
-        "repair_equipment"
+        "repair_equipment",
+        "eat_food"
       ],
       equipment: [
         {
@@ -136,8 +155,15 @@ describe("game contract", () => {
     expect(state.availableActions).toContain("start_gathering");
     expect(state.availableActions).toContain("open_market");
     expect(state.availableActions).toContain("repair_equipment");
+    expect(state.availableActions).toContain("eat_food");
     expect(state.equipment[0]?.durabilityPct).toBe(100);
     expect(state.market?.items[0]?.itemId).toBe("iron_ore");
     expect(state.currentAction).toBeNull();
+  });
+
+  it("describes manual food consumption requests", () => {
+    const request: EatFoodRequestDto = { itemId: "wild_berry" };
+
+    expect(request.itemId).toBe("wild_berry");
   });
 });

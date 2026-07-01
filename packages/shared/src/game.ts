@@ -65,6 +65,17 @@ export interface MoneyDto {
   totalCopper: number;
 }
 
+export type HungerStatus = "fed" | "hungry" | "starving";
+
+export interface NeedsDto {
+  hunger: {
+    current: number;
+    max: number;
+    status: HungerStatus;
+    nextMealAt: string;
+  };
+}
+
 export interface CharacterDto {
   id: string;
   name: string;
@@ -77,6 +88,7 @@ export interface CharacterDto {
   position: GridPositionDto | null;
   injuryUntil: string | null;
   money: MoneyDto;
+  needs: NeedsDto;
 }
 
 export interface InventoryItemDto {
@@ -182,6 +194,7 @@ export interface GameStateDto {
     | "return_to_village"
     | "open_market"
     | "repair_equipment"
+    | "eat_food"
   >;
   log: GameLogEntryDto[];
 }
@@ -201,4 +214,8 @@ export interface StartGatheringRequestDto {
 
 export interface RepairEquipmentRequestDto {
   equipmentId: string;
+}
+
+export interface EatFoodRequestDto {
+  itemId: ItemId;
 }
