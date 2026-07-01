@@ -467,6 +467,8 @@ export class NpcService {
     }
 
     if (intent.intent === "buy_food" && marketFood) {
+      const treasury = await this.repo.findMunicipalTreasury(BLACKPINE_MARKET_ID);
+      if (!treasury) return true;
       const quote = calculateMarketQuote({
         direction: "buy",
         basePriceCopper: marketFood.baseSellPriceCopper,
@@ -485,6 +487,10 @@ export class NpcService {
       await this.repo.setMarketInventoryQuantity({
         marketInventoryId: marketFood.id,
         quantity: marketFood.quantity - 1
+      });
+      await this.repo.updateMunicipalTreasury({
+        settlementId: BLACKPINE_MARKET_ID,
+        copperBalance: treasury.copperBalance + quote.totalCopper
       });
       await this.repo.createNpcMarketTransaction({
         actorId: actor.id,
@@ -522,11 +528,17 @@ export class NpcService {
       targetQuantity: marketItem.targetQuantity,
       quantity: item.quantity
     });
+    const treasury = await this.repo.findMunicipalTreasury(BLACKPINE_MARKET_ID);
+    if (!treasury || treasury.copperBalance < quote.totalCopper) return false;
 
     await this.addNpcInventoryItem(actor.id, item.itemId, -item.quantity);
     await this.repo.updateNpcActor({
       actorId: actor.id,
       copperBalance: actor.copperBalance + quote.totalCopper
+    });
+    await this.repo.updateMunicipalTreasury({
+      settlementId: BLACKPINE_MARKET_ID,
+      copperBalance: treasury.copperBalance - quote.totalCopper
     });
     await this.repo.setMarketInventoryQuantity({
       marketInventoryId: marketItem.id,

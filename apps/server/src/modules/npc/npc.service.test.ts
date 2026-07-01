@@ -419,6 +419,7 @@ describe("NpcService", () => {
     ]);
     expect(repo.marketInventory.get("wild_berry")?.quantity).toBe(12);
     expect(farmer.copperBalance).toBe(11);
+    expect(repo.treasury?.copperBalance).toBe(9_989);
     expect(repo.transactions).toEqual([
       expect.objectContaining({
         actorId: farmer.id,
@@ -456,6 +457,7 @@ describe("NpcService", () => {
 
     expect(miner.hunger).toBe(2);
     expect(miner.copperBalance).toBe(84);
+    expect(repo.treasury?.copperBalance).toBe(10_016);
     expect(repo.marketInventory.get("wild_berry")?.quantity).toBe(2);
     expect(await repo.findActiveNpcAction(miner.id)).toBeNull();
     expect(repo.transactions).toContainEqual(
