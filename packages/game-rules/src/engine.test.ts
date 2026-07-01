@@ -14,11 +14,16 @@ import {
   calculateHungerCombatMultiplier,
   calculateHungerStatus,
   countUnsettledMeals,
+  calculateNpcWagePayment,
+  chooseNpcMealIntent,
+  chooseNpcWorkIntent,
   formatMoney,
   movePosition,
+  nextNpcTravelStep,
   selectAutoEatFood,
   settleHunger,
-  simulateCombat
+  simulateCombat,
+  validateNpcSimulationHealth
 } from "./engine.js";
 
 describe("v0.3 engine rules", () => {
@@ -246,5 +251,116 @@ describe("v0.3 engine rules", () => {
     expect(settlement.consumed).toEqual([{ itemId: "wild_berry", quantity: 1 }]);
     expect(settlement.missedMeals).toBe(2);
     expect(settlement.injured).toBe(false);
+  });
+
+  it("moves an NPC only one grid step toward a target", () => {
+    expect(nextNpcTravelStep({ current: { x: 2, y: 4 }, target: { x: 0, y: 1 } })).toEqual({
+      x: 1,
+      y: 4
+    });
+    expect(nextNpcTravelStep({ current: { x: 0, y: 1 }, target: { x: 0, y: 1 } })).toEqual({
+      x: 0,
+      y: 1
+    });
+  });
+
+  it("chooses NPC work intent from profession and content resources", () => {
+    expect(
+      chooseNpcWorkIntent({
+        profession: "farmer",
+        workResourceId: "forest_berry_patch_01",
+        producesItemId: "wild_berry"
+      })
+    ).toEqual({
+      intent: "gather",
+      resourceId: "forest_berry_patch_01",
+      itemId: "wild_berry"
+    });
+    expect(
+      chooseNpcWorkIntent({
+        profession: "miner",
+        workResourceId: "abandoned_iron_vein_01",
+        producesItemId: "iron_ore"
+      })
+    ).toEqual({
+      intent: "gather",
+      resourceId: "abandoned_iron_vein_01",
+      itemId: "iron_ore"
+    });
+    expect(
+      chooseNpcWorkIntent({
+        profession: "blacksmith",
+        workResourceId: null,
+        producesItemId: null
+      })
+    ).toEqual({ intent: "idle" });
+  });
+
+  it("prioritizes buying food for hungry NPCs before leaving town", () => {
+    expect(
+      chooseNpcMealIntent({
+        hunger: 2,
+        inventory: [],
+        marketFoodStock: 4
+      })
+    ).toEqual({ intent: "buy_food" });
+    expect(
+      chooseNpcMealIntent({
+        hunger: 2,
+        inventory: [{ itemId: "wild_berry", quantity: 1 }],
+        marketFoodStock: 0
+      })
+    ).toEqual({ intent: "eat_food", itemId: "wild_berry" });
+    expect(
+      chooseNpcMealIntent({
+        hunger: 4,
+        inventory: [],
+        marketFoodStock: 0
+      })
+    ).toEqual({ intent: "none" });
+  });
+
+  it("caps NPC wage payments by municipal treasury balance", () => {
+    expect(calculateNpcWagePayment({ requestedCopper: 30, treasuryCopper: 100 })).toEqual({
+      paidCopper: 30,
+      shortfallCopper: 0
+    });
+    expect(calculateNpcWagePayment({ requestedCopper: 30, treasuryCopper: 12 })).toEqual({
+      paidCopper: 12,
+      shortfallCopper: 18
+    });
+  });
+
+  it("validates NPC simulation health against fake economy states", () => {
+    expect(
+      validateNpcSimulationHealth({
+        balances: [100, 0],
+        stockQuantities: [10, 0],
+        resourceCharges: [5],
+        activeActions: []
+      })
+    ).toEqual({ ok: true, issues: [] });
+    expect(
+      validateNpcSimulationHealth({
+        balances: [100, -1],
+        stockQuantities: [10, -2],
+        resourceCharges: [-1],
+        activeActions: [
+          {
+            id: "action-1",
+            endsAtMs: 1_000,
+            nowMs: 2_000
+          }
+        ]
+      })
+    ).toEqual({
+      ok: false,
+      issues: [
+        "negative_balance",
+        "negative_stock",
+        "negative_resource_charge",
+        "overdue_active_action:action-1"
+      ]
+    });
   });
 });
