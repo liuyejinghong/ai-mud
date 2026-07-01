@@ -60,6 +60,29 @@ describe("npc dialogue prompt", () => {
     }
   });
 
+  it("normalizes safe mood aliases returned by low-cost models", () => {
+    const parsed = parseNpcDialogueOutput(
+      JSON.stringify({
+        reply: "缺铁矿石。附近矿洞有，拿到我这里来。",
+        mood: "direct",
+        safety: {
+          containsRewardPromise: false,
+          containsRuleChange: false,
+          containsOoc: false
+        },
+        suggestedIntent: {
+          type: "express_need",
+          reason: "伯林缺少基础铁矿石。"
+        }
+      })
+    );
+
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.value.mood).toBe("guarded");
+    }
+  });
+
   it("rejects reward promises", () => {
     const parsed = parseNpcDialogueOutput(
       JSON.stringify({

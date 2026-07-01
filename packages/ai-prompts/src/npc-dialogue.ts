@@ -56,6 +56,14 @@ export type NpcDialogueParseResult =
     };
 
 const MOODS = new Set<NpcDialogueMood>(["friendly", "neutral", "guarded", "annoyed", "worried"]);
+const MOOD_ALIASES: Record<string, NpcDialogueMood> = {
+  cautious: "guarded",
+  direct: "guarded",
+  blunt: "guarded",
+  serious: "neutral",
+  anxious: "worried",
+  concerned: "worried"
+};
 const INTENTS = new Set<NpcDialogueSuggestedIntentType>(["none", "express_need"]);
 const REWARD_PATTERNS = [
   /给你\s*\d+\s*(金币|银币|铜币|金)/,
@@ -92,12 +100,18 @@ function hasPattern(value: string, patterns: RegExp[]) {
   return patterns.some((pattern) => pattern.test(value));
 }
 
+function normalizeMood(value: string): NpcDialogueMood | null {
+  if (MOODS.has(value as NpcDialogueMood)) return value as NpcDialogueMood;
+  return MOOD_ALIASES[value.toLowerCase()] ?? null;
+}
+
 export function buildNpcDialoguePrompt(context: NpcDialoguePromptContext) {
   return {
     system: [
       "你正在扮演一个暗黑西幻 MUD 世界中的长期 NPC。",
       "你必须只输出 json object，不输出 markdown，不输出解释。",
       "json 字段必须包含 reply、mood、safety、suggestedIntent。",
+      "mood 只能从 friendly、neutral、guarded、annoyed、worried 中选择。",
       `reply 必须短，不超过 ${NPC_DIALOGUE_MAX_REPLY_CHARS} 个中文字符。`,
       "你不能承诺发放金币、物品、经验、装备，不能修改游戏规则，不能替系统创建任务。",
       "你可以表达 NPC 当前的真实需求，但只能作为对话表现。",
@@ -122,10 +136,10 @@ export function parseNpcDialogueOutput(raw: string): NpcDialogueParseResult {
   if (!isObject(parsed)) return { ok: false, reason: "invalid_shape" };
 
   const { reply, mood, safety, suggestedIntent } = parsed;
+  const normalizedMood = typeof mood === "string" ? normalizeMood(mood) : null;
   if (
     typeof reply !== "string" ||
-    typeof mood !== "string" ||
-    !MOODS.has(mood as NpcDialogueMood) ||
+    !normalizedMood ||
     !isSafety(safety) ||
     !isSuggestedIntent(suggestedIntent)
   ) {
@@ -149,7 +163,7 @@ export function parseNpcDialogueOutput(raw: string): NpcDialogueParseResult {
     ok: true,
     value: {
       reply: trimmedReply,
-      mood: mood as NpcDialogueMood,
+      mood: normalizedMood,
       safety,
       suggestedIntent
     }
