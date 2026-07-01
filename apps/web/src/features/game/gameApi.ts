@@ -4,6 +4,7 @@ import type {
   MarketDto,
   MarketTradeRequestDto,
   MoveRequestDto,
+  RepairEquipmentRequestDto,
   RepairQuoteDto,
   StartGatheringRequestDto
 } from "@ai-mud/shared";
@@ -107,8 +108,24 @@ export function sellMarketItem(input: MarketTradeRequestDto, csrfToken: string) 
   });
 }
 
-export function getRepairQuote(csrfToken: string) {
+export function getRepairQuote(input: RepairEquipmentRequestDto, csrfToken: string) {
   return requestGame<RepairQuoteDto>("/game/repair/quote", {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify(input)
+  });
+}
+
+export function repairEquipment(input: RepairEquipmentRequestDto, csrfToken: string) {
+  return requestGame<GameStateDto>("/game/repair", {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify(input)
+  });
+}
+
+export function repairAllEquipment(csrfToken: string) {
+  return requestGame<GameStateDto>("/game/repair/all", {
     method: "POST",
     headers: { "x-csrf-token": csrfToken },
     body: JSON.stringify({})

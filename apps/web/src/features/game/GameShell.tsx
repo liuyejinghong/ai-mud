@@ -17,6 +17,8 @@ import {
   getGameState,
   getMarket,
   move,
+  repairAllEquipment,
+  repairEquipment,
   returnToVillage,
   sellMarketItem,
   startCombat,
@@ -34,6 +36,7 @@ const initialState: GameStateDto = {
   locationDescription: "你尚未创建角色。",
   map: null,
   inventory: [],
+  equipment: [],
   market: null,
   currentAction: null,
   availableActions: ["create_character"],
@@ -94,6 +97,9 @@ export function GameShell({ csrfToken }: GameShellProps) {
   const canReturnVillage = state.availableActions.includes("return_to_village") && !isBusy;
   const canEnterForest = state.availableActions.includes("enter_corrupt_forest") && !isBusy;
   const canOpenMarket = state.availableActions.includes("open_market") && !isBusy;
+  const canRepairEquipment =
+    state.availableActions.includes("repair_equipment") && !isBusy && !state.currentAction;
+  const damagedEquipment = state.equipment.filter((item) => item.repairQuote !== null);
   const selectedClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
 
   async function runCommand(action: () => Promise<GameStateDto>) {
@@ -235,6 +241,64 @@ export function GameShell({ csrfToken }: GameShellProps) {
               <dd>{moneyText(state.character.money)}</dd>
             </div>
           </dl>
+        </section>
+
+        <section className="game-panel">
+          <div className="panel-heading">
+            <h2>装备</h2>
+            <span>{state.equipment.length} 件</span>
+          </div>
+          {state.equipment.length === 0 ? <p className="empty-copy">无</p> : null}
+          <div className="equipment-list">
+            {state.equipment.map((item) => (
+              <article className="equipment-item" key={item.id}>
+                <div className="equipment-title">
+                  <strong>{item.name}</strong>
+                  <span>{item.slot === "weapon" ? "武器" : "胸甲"}</span>
+                </div>
+                <div className="durability-bar" aria-hidden="true">
+                  <span style={{ width: `${item.durabilityPct}%` }} />
+                </div>
+                <div className="equipment-meta">
+                  <span>{item.currentDurability}/{item.maxDurability}</span>
+                  <span>装等 {item.itemLevel}</span>
+                </div>
+                {item.effectiveStatRatio < 1 ? (
+                  <p className="equipment-warning">耐久归零，仅保留 20% 属性。</p>
+                ) : null}
+                {item.repairQuote ? (
+                  <p className="equipment-cost">
+                    修理：{moneyText(item.repairQuote.copperCost)} + 基础铁矿石 x
+                    {item.repairQuote.ironOreCost}
+                  </p>
+                ) : (
+                  <p className="equipment-cost">无需修理</p>
+                )}
+                <button
+                  type="button"
+                  className="game-secondary-button"
+                  disabled={!canRepairEquipment || !item.repairQuote}
+                  onClick={() =>
+                    void runCommand(() =>
+                      repairEquipment({ equipmentId: item.id }, csrfToken)
+                    )
+                  }
+                >
+                  修理 {item.name}
+                </button>
+              </article>
+            ))}
+          </div>
+          {damagedEquipment.length > 1 ? (
+            <button
+              type="button"
+              className="game-secondary-button repair-all-button"
+              disabled={!canRepairEquipment}
+              onClick={() => void runCommand(() => repairAllEquipment(csrfToken))}
+            >
+              修理全部装备
+            </button>
+          ) : null}
         </section>
 
         <section className="game-panel">

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { GameStateDto, MarketDto } from "@ai-mud/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GameShell } from "./GameShell";
@@ -9,6 +9,7 @@ const createCharacterState: GameStateDto = {
   locationDescription: "你尚未创建角色。",
   map: null,
   inventory: [],
+  equipment: [],
   market: null,
   currentAction: null,
   availableActions: ["create_character"],
@@ -33,9 +34,28 @@ const villageState: GameStateDto = {
   locationDescription: "潮湿黑松围住木墙，哨塔上的火盆把灰雾照成暗红色。",
   map: null,
   inventory: [],
+  equipment: [
+    {
+      id: "equipment-1",
+      slot: "weapon",
+      itemKey: "training_sword",
+      name: "训练短剑",
+      itemLevel: 5,
+      attackBonus: 2,
+      defenseBonus: 0,
+      maxDurability: 100,
+      currentDurability: 60,
+      durabilityPct: 60,
+      effectiveStatRatio: 1,
+      repairQuote: {
+        copperCost: { gold: 0, silver: 0, copper: 50, totalCopper: 50 },
+        ironOreCost: 1
+      }
+    }
+  ],
   market: null,
   currentAction: null,
-  availableActions: ["enter_corrupt_forest", "open_market"],
+  availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment"],
   log: []
 };
 
@@ -118,6 +138,7 @@ function mockFetchWithStates(states: unknown[]) {
 
 describe("GameShell", () => {
   beforeEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
   });
 
@@ -173,6 +194,72 @@ describe("GameShell", () => {
         })
       );
     });
+  });
+
+  it("shows equipment durability and repairs one item", async () => {
+    const repairedState: GameStateDto = {
+      ...villageState,
+      equipment: [
+        {
+          ...villageState.equipment[0]!,
+          currentDurability: 100,
+          durabilityPct: 100,
+          repairQuote: null
+        }
+      ],
+      availableActions: ["enter_corrupt_forest", "open_market"]
+    };
+    const fetchMock = mockFetchWithStates([villageState, repairedState]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByRole("heading", { name: "装备" })).toBeTruthy();
+    expect(screen.getByText("训练短剑")).toBeTruthy();
+    expect(screen.getByText("60/100")).toBeTruthy();
+    expect(screen.getByText("修理：金币 0 | 银币 0 | 铜币 50 + 基础铁矿石 x1")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "修理 训练短剑" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:3000/game/repair",
+        expect.objectContaining({
+          body: JSON.stringify({ equipmentId: "equipment-1" }),
+          method: "POST"
+        })
+      );
+    });
+  });
+
+  it("disables equipment repair while an action is active", async () => {
+    mockFetchWithStates([
+      {
+        ...villageState,
+        currentAction: {
+          id: "action-1",
+          actionType: "gathering",
+          status: "active",
+          description: "正在采集野莓灌木",
+          startedAt: "2026-07-01T00:00:00.000Z",
+          endsAt: "2026-07-01T00:10:00.000Z",
+          progressPct: 50,
+          cycleProgressPct: 25,
+          completedCycles: 5,
+          settledCycles: 4,
+          plannedCycles: 10,
+          expectedYield: [{ itemId: "wild_berry", name: "野莓", quantity: 10 }],
+          combatLog: []
+        },
+        availableActions: ["cancel_action"]
+      }
+    ]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByRole("button", { name: "修理 训练短剑" })).toHaveProperty(
+      "disabled",
+      true
+    );
   });
 
   it("shows active gathering progress and cancels completed cycles", async () => {
