@@ -12,7 +12,7 @@ export interface ActivationCodeRecord {
 export interface ActivationCodeRepository {
   insert(record: ActivationCodeRecord & { note?: string | null; createdByAdminId?: string | null }): Promise<void>;
   findByHash(codeHash: string): Promise<ActivationCodeRecord | null>;
-  markUsed(id: string, accountId: string): Promise<void>;
+  markUsed(id: string, accountId: string): Promise<boolean>;
 }
 
 export class ActivationCodeService {
@@ -43,7 +43,14 @@ export class ActivationCodeService {
       return { ok: false, reason: "ACTIVATION_CODE_EXPIRED" };
     }
 
-    await this.repo.markUsed(record.id, accountId);
+    const markedUsed = await this.repo.markUsed(record.id, accountId);
+    if (!markedUsed) {
+      if (record.expiresAt && record.expiresAt.getTime() <= Date.now()) {
+        return { ok: false, reason: "ACTIVATION_CODE_EXPIRED" };
+      }
+      return { ok: false, reason: "ACTIVATION_CODE_USED" };
+    }
+
     return { ok: true };
   }
 

@@ -1,10 +1,7 @@
-import Fastify from "fastify";
+import { buildApp } from "./app.js";
+import { loadEnv } from "./config/env.js";
 
-const app = Fastify({ logger: true });
+const env = loadEnv();
+const app = await buildApp({ env });
 
-app.get("/health", async () => ({ ok: true, service: "ai-mud-server" }));
-
-const port = Number(process.env.SERVER_PORT ?? 3000);
-const host = process.env.SERVER_HOST ?? "127.0.0.1";
-
-await app.listen({ host, port });
+await app.listen({ host: env.SERVER_HOST, port: env.SERVER_PORT });

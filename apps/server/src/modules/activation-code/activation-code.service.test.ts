@@ -25,7 +25,7 @@ describe("ActivationCodeService", () => {
         records.push(record);
       },
       findByHash: async (codeHash) => records.find((record) => record.codeHash === codeHash) ?? null,
-      markUsed: async () => undefined
+      markUsed: async () => true
     });
 
     const created = await service.create({ note: "test", createdByAdminId: "admin-1" });
@@ -54,6 +54,7 @@ describe("ActivationCodeService", () => {
         const record = records.find((candidate) => candidate.id === id)!;
         record.status = "used";
         record.usedByAccountId = accountId;
+        return true;
       }
     });
 
@@ -101,6 +102,7 @@ describe("ActivationCodeService", () => {
       findByHash: async (codeHash) => records.find((record) => record.codeHash === codeHash) ?? null,
       markUsed: async (id, accountId) => {
         markedUsed.push({ id, accountId });
+        return true;
       }
     });
 
@@ -121,5 +123,29 @@ describe("ActivationCodeService", () => {
       reason: "ACTIVATION_CODE_EXPIRED"
     });
     expect(markedUsed).toEqual([]);
+  });
+
+  it("rejects a consume attempt when the repository cannot atomically claim the code", async () => {
+    const code = "RACECODE12345678901234";
+    records.push({
+      id: "race-code",
+      codeHash: hashCode(code),
+      status: "unused",
+      usedByAccountId: null,
+      expiresAt: null
+    });
+
+    const service = new ActivationCodeService({
+      insert: async (record) => {
+        records.push(record);
+      },
+      findByHash: async (codeHash) => records.find((record) => record.codeHash === codeHash) ?? null,
+      markUsed: async () => false
+    });
+
+    await expect(service.consume(code, "account-1")).resolves.toEqual({
+      ok: false,
+      reason: "ACTIVATION_CODE_USED"
+    });
   });
 });
