@@ -40,12 +40,13 @@ Use pre-1.0 semantic-style versions:
 Version line:
 
 - `v0.1.x` Foundation: repo, auth, activation codes, DB, shared contracts, admin basics.
-- `v0.2.x` Playable Loop: character, village, wild movement, inventory, ATB combat, injury.
-- `v0.3.x` Economy World: hunger, market, ledger, resources, taxes, repair, wages.
-- `v0.4.x` Living NPC: long-term NPC movement, jobs, schedules, memory summaries.
-- `v0.5.x` AI Layer: NPC dialogue, AI tasks, prompt safety, memory compression.
-- `v0.6.x` Closed-Test Admin and Simulation: GM tools, world reset, dashboards, 3-day and 7-day simulations.
-- `v0.7.x` Closed-Test Candidate: polish, security hardening, E2E, invite rollout for friends.
+- `v0.2.x` Playable Loop: character, village, wild movement, inventory, first resource feedback.
+- `v0.3.x` Idle Action Loop: timed gathering, automatic ATB combat, active action state, injury return.
+- `v0.4.x` Economy World: hunger, market, ledger, resources, taxes, repair, wages.
+- `v0.5.x` Living NPC: long-term NPC movement, jobs, schedules, memory summaries.
+- `v0.6.x` AI Layer: NPC dialogue, AI tasks, prompt safety, memory compression.
+- `v0.7.x` Closed-Test Admin and Simulation: GM tools, world reset, dashboards, 3-day and 7-day simulations.
+- `v0.8.x` Closed-Test Candidate: polish, security hardening, E2E, invite rollout for friends.
 
 Do not call any build `v1.0` until the game has stable player onboarding, persistent world operation, economic recovery behavior, and at least one complete AI dungeon.
 
@@ -218,7 +219,7 @@ Acceptance:
 
 ### v0.2 Playable Loop
 
-Goal: A player can create a character, enter the village, move in a wild grid, gather resources, fight automatically, get injured, and return to town.
+Goal: A player can create a character, enter the village, move in a wild grid, gather resources, and see inventory/log feedback.
 
 Included:
 
@@ -230,21 +231,43 @@ Included:
 - Keyboard and mouse movement.
 - Inventory.
 - Basic resources: food, beast meat, leather.
-- ATB automatic combat.
-- Multi-monster group support.
-- Injury return to village.
-- Basic loot/material drops.
+- First resource feedback.
 
 Acceptance:
 
 - New player reaches village in under 5 minutes.
 - Player enters `腐林`, moves by `W/A/S/D` and mouse.
 - Player gathers a resource.
-- Player triggers automatic combat.
-- Combat duration changes based on player/monster stats.
-- HP zero creates injury, not death.
+- Player sees gathered resources in inventory.
+- Game shell supports keyboard and mouse movement.
 
-### v0.3 Economy World
+### v0.3 Idle Action Loop
+
+Goal: The player can start timed gathering and automatic ATB combat through one reusable active-action system, then complete, cancel, get injured, or return to town.
+
+Included:
+
+- One active action per character.
+- Timed gathering.
+- First monster group in the Corrupt Forest.
+- Automatic ATB combat.
+- Combat timeline derived from stats, not preset duration.
+- Active action progress in game state.
+- Manual cancel/escape.
+- Injury return to village.
+- Return-to-village command.
+
+Acceptance:
+
+- Gathering takes time and settles through server state.
+- Cancelling gathering preserves rewards from completed gathering cycles only.
+- Combat duration changes based on player/monster stats.
+- High agility attacks more frequently than low agility.
+- HP zero creates injury, not death.
+- Active actions block movement and starting another action.
+- No global per-second world tick is required.
+
+### v0.4 Economy World
 
 Goal: The village economy starts to run with hunger, market inventory, taxes, repair, mining, wages, and ledger visibility.
 
@@ -271,7 +294,7 @@ Acceptance:
 - Transactions write ledger entries.
 - 3-day no-player world simulation runs without invalid ledger totals.
 
-### v0.4 Living NPC
+### v0.5 Living NPC
 
 Goal: Long-term NPCs act like AI-operated world residents with location, inventory, jobs, movement, needs, and memory summaries.
 
@@ -295,7 +318,7 @@ Acceptance:
 - NPCs can get injured and return.
 - 7-day simulation has no world deadlock.
 
-### v0.5 AI Layer
+### v0.6 AI Layer
 
 Goal: AI is integrated as structured intent, dialogue, task proposal, rumor, and memory compression without authority over assets or combat results.
 
@@ -323,7 +346,7 @@ Acceptance:
 - Memory compression turns detailed memory into summaries/fragments.
 - AI failure does not block game flow.
 
-### v0.6 Admin And Simulation
+### v0.7 Admin And Simulation
 
 Goal: Closed-test operators can inspect, reset, and diagnose the living world.
 
@@ -347,7 +370,7 @@ Acceptance:
 - Soft Reset preserves accounts and reinitializes world.
 - 7-day simulation report includes stock, prices, hunger, injuries, civic fund, AI call estimate.
 
-### v0.7 Closed-Test Candidate
+### v0.8 Closed-Test Candidate
 
 Goal: Prepare the first friend-facing closed test.
 
@@ -374,11 +397,12 @@ Write separate implementation plans in this order:
 
 1. `2026-07-01-v0.1-foundation-plan.md`
 2. `2026-07-01-v0.2-playable-loop-plan.md`
-3. `2026-07-01-v0.3-economy-world-plan.md`
-4. `2026-07-01-v0.4-living-npc-plan.md`
-5. `2026-07-01-v0.5-ai-layer-plan.md`
-6. `2026-07-01-v0.6-admin-simulation-plan.md`
-7. `2026-07-01-v0.7-closed-test-candidate-plan.md`
+3. `2026-07-01-v0.3-idle-action-loop-plan.md`
+4. `2026-07-01-v0.4-economy-world-plan.md`
+5. `2026-07-01-v0.5-living-npc-plan.md`
+6. `2026-07-01-v0.6-ai-layer-plan.md`
+7. `2026-07-01-v0.7-admin-simulation-plan.md`
+8. `2026-07-01-v0.8-closed-test-candidate-plan.md`
 
 Each code-level plan must include exact files, test-first steps, implementation snippets, commands, expected output, and commit boundaries.
 
@@ -450,4 +474,3 @@ Placeholder scan:
 Type and naming consistency:
 
 - Product versions, compatibility versions, module names, and planned package names are consistent with the spec.
-
