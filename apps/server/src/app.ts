@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { loadEnv, type Env } from "./config/env.js";
 import { createDb, type Db, type DbConnection } from "./db/client.js";
+import { registerAdminRoutes } from "./modules/admin/admin.routes.js";
 import { registerAuthRoutes } from "./modules/auth/auth.routes.js";
 
 declare module "fastify" {
@@ -39,6 +40,7 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
   await app.register(cors, { origin: true, credentials: true });
   await app.register(cookie, { secret: config.SESSION_SECRET });
   await app.register(registerAuthRoutes);
+  await app.register(registerAdminRoutes);
 
   app.get("/health", async () => ({ ok: true, service: "ai-mud-server" }));
 
