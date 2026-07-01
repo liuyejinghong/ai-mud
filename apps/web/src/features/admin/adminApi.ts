@@ -1,6 +1,19 @@
-import type { CreateActivationCodeResponseDto, EconomySnapshotDto } from "@ai-mud/shared";
+import type {
+  CreateActivationCodeResponseDto,
+  EconomySnapshotDto,
+  MoneyDto,
+  NpcSimulationReportDto,
+  NpcSummaryDto
+} from "@ai-mud/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:3000";
+
+export interface NpcSnapshotResponse {
+  generatedAt: string;
+  settlementId: "blackpine_outpost";
+  treasury: MoneyDto;
+  npcs: NpcSummaryDto[];
+}
 
 export async function createActivationCode(
   note: string,
@@ -30,4 +43,48 @@ export async function getEconomySnapshot(): Promise<EconomySnapshotDto> {
   }
 
   return response.json() as Promise<EconomySnapshotDto>;
+}
+
+export async function getNpcSnapshot(): Promise<NpcSnapshotResponse> {
+  const response = await fetch(`${API_BASE}/admin/npcs`, {
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to load NPC snapshot");
+  }
+
+  return response.json() as Promise<NpcSnapshotResponse>;
+}
+
+export async function settleNpcWorld(csrfToken: string): Promise<NpcSnapshotResponse> {
+  const response = await fetch(`${API_BASE}/admin/npcs/settle`, {
+    method: "POST",
+    headers: { "x-ai-mud-csrf": csrfToken },
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to settle NPC world");
+  }
+
+  return response.json() as Promise<NpcSnapshotResponse>;
+}
+
+export async function runNpcSimulation(
+  csrfToken: string,
+  days: number
+): Promise<NpcSimulationReportDto> {
+  const response = await fetch(`${API_BASE}/admin/npcs/simulate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-ai-mud-csrf": csrfToken },
+    credentials: "include",
+    body: JSON.stringify({ days })
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to run NPC simulation");
+  }
+
+  return response.json() as Promise<NpcSimulationReportDto>;
 }

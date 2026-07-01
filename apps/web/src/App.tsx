@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ActivationCodeAdmin } from "./features/admin/ActivationCodeAdmin";
 import { EconomyAdmin } from "./features/admin/EconomyAdmin";
+import { NpcAdmin } from "./features/admin/NpcAdmin";
 import { AuthPage } from "./features/auth/AuthPage";
 import { getCurrentSession, type AuthSessionDto } from "./features/auth/authApi";
 import { GameShell } from "./features/game/GameShell";
@@ -37,6 +38,7 @@ export function App() {
         <>
           <ActivationCodeAdmin csrfToken={session.csrfToken} />
           <EconomyAdmin />
+          <NpcAdmin csrfToken={session.csrfToken} />
         </>
       ) : null}
     </>

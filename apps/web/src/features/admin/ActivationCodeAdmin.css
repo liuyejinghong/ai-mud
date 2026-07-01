@@ -166,18 +166,134 @@
   font-size: 12px;
 }
 
+.npc-admin-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  max-width: 920px;
+  margin: 0 auto 14px;
+}
+
+.npc-admin-toolbar strong {
+  color: #f0d36b;
+}
+
+.npc-admin-toolbar div {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.npc-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.npc-admin-card {
+  border: 1px solid rgba(31, 208, 91, 0.32);
+  padding: 12px;
+  background: #040905;
+}
+
+.npc-admin-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.npc-admin-card h3 {
+  margin: 0;
+  color: #38e96f;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.npc-admin-card-header span {
+  color: #f0d36b;
+  font-size: 12px;
+}
+
+.npc-admin-card dl {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.npc-admin-card dl div {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 8px;
+}
+
+.npc-admin-card dt {
+  color: #99d6a6;
+  font-size: 12px;
+}
+
+.npc-admin-card dd {
+  margin: 0;
+  color: #d7f8db;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.npc-event-list {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0 0;
+  padding-left: 18px;
+}
+
+.npc-event-list li {
+  color: #99d6a6;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.npc-simulation-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  max-width: 920px;
+  margin: 14px auto 0;
+  color: #bde6c5;
+  font-size: 13px;
+}
+
+.npc-simulation-result strong {
+  color: #f0d36b;
+}
+
 @media (max-width: 720px) {
   .admin-panel {
     padding: 18px 12px;
   }
 
   .admin-panel-header,
-  .admin-panel-body {
+  .admin-panel-body,
+  .npc-admin-toolbar {
     grid-template-columns: 1fr;
   }
 
   .admin-panel-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .npc-admin-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .npc-admin-toolbar div {
+    justify-content: flex-start;
   }
 }
