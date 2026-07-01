@@ -1,10 +1,14 @@
 import {
   CHARACTER_CLASS_IDS,
   DIRECTIONS,
+  ITEM_IDS,
   type CreateCharacterRequestDto,
   type Direction,
   type ErrorCode,
   type GameStateDto,
+  type MarketDto,
+  type MarketTradeRequestDto,
+  type RepairQuoteDto,
   type StartGatheringRequestDto
 } from "@ai-mud/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -30,6 +34,11 @@ const gatherSchema = z.object({
   plannedMinutes: z.union([z.literal(10), z.literal(30), z.literal(120)]).default(10)
 });
 
+const marketTradeSchema = z.object({
+  itemId: z.enum(ITEM_IDS),
+  quantity: z.number().int().min(1).max(999)
+});
+
 export interface GameRouteDependencies {
   getCurrentAccount(request: FastifyRequest): Promise<PublicAccountRecord | null>;
   verifyGameMutation(request: FastifyRequest): Promise<boolean>;
@@ -41,6 +50,10 @@ export interface GameRouteDependencies {
   startCombat(accountId: string): Promise<GameStateDto>;
   cancelAction(accountId: string): Promise<GameStateDto>;
   returnToVillage(accountId: string): Promise<GameStateDto>;
+  getMarket(accountId: string): Promise<MarketDto>;
+  buyMarketItem(accountId: string, input: MarketTradeRequestDto): Promise<GameStateDto>;
+  sellMarketItem(accountId: string, input: MarketTradeRequestDto): Promise<GameStateDto>;
+  getRepairQuote(accountId: string): Promise<RepairQuoteDto>;
 }
 
 function sendError(reply: FastifyReply, statusCode: number, code: ErrorCode, message: string) {
@@ -83,7 +96,11 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
     startGathering: (accountId, input) => game.startGathering(accountId, input),
     startCombat: (accountId) => game.startCombat(accountId),
     cancelAction: (accountId) => game.cancelAction(accountId),
-    returnToVillage: (accountId) => game.returnToVillage(accountId)
+    returnToVillage: (accountId) => game.returnToVillage(accountId),
+    getMarket: (accountId) => game.getMarket(accountId),
+    buyMarketItem: (accountId, input) => game.buyMarketItem(accountId, input),
+    sellMarketItem: (accountId, input) => game.sellMarketItem(accountId, input),
+    getRepairQuote: (accountId) => game.getRepairQuote(accountId)
   };
 }
 
@@ -231,6 +248,63 @@ export async function registerGameRoutes(app: FastifyInstance, maybeDependencies
 
     try {
       return await deps.returnToVillage(account.id);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.get("/game/market", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+
+    try {
+      return await deps.getMarket(account.id);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/market/buy", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    const parsed = marketTradeSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid market input");
+    }
+
+    try {
+      return await deps.buyMarketItem(account.id, parsed.data);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/market/sell", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    const parsed = marketTradeSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid market input");
+    }
+
+    try {
+      return await deps.sellMarketItem(account.id, parsed.data);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/repair/quote", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    try {
+      return await deps.getRepairQuote(account.id);
     } catch (error) {
       return handleGameError(reply, error);
     }

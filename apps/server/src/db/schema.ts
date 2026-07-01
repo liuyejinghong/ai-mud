@@ -108,6 +108,7 @@ export const characters = pgTable(
     xp: integer("xp").notNull().default(0),
     hp: integer("hp").notNull(),
     maxHp: integer("max_hp").notNull(),
+    copperBalance: integer("copper_balance").notNull().default(0),
     currentLocation: gameLocation("current_location").notNull().default("blackpine_outpost"),
     position: jsonb("position"),
     injuryUntil: timestamp("injury_until", { withTimezone: true }),
@@ -131,6 +132,53 @@ export const characterItems = pgTable(
     characterItemIdx: uniqueIndex("character_items_character_item_idx").on(
       table.characterId,
       table.itemId
+    )
+  })
+);
+
+export const marketInventory = pgTable(
+  "market_inventory",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    settlementId: text("settlement_id").notNull(),
+    itemId: text("item_id").notNull(),
+    quantity: integer("quantity").notNull().default(0),
+    targetQuantity: integer("target_quantity").notNull(),
+    baseBuyPriceCopper: integer("base_buy_price_copper").notNull(),
+    baseSellPriceCopper: integer("base_sell_price_copper").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    settlementItemIdx: uniqueIndex("market_inventory_settlement_item_idx").on(
+      table.settlementId,
+      table.itemId
+    )
+  })
+);
+
+export const marketTransactions = pgTable(
+  "market_transactions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    settlementId: text("settlement_id").notNull(),
+    characterId: uuid("character_id").notNull().references(() => characters.id),
+    transactionType: text("transaction_type").notNull(),
+    itemId: text("item_id").notNull(),
+    quantity: integer("quantity").notNull(),
+    unitPriceCopper: integer("unit_price_copper").notNull(),
+    grossCopper: integer("gross_copper").notNull(),
+    taxCopper: integer("tax_copper").notNull(),
+    netCopper: integer("net_copper").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    settlementCreatedAtIdx: index("market_transactions_settlement_created_at_idx").on(
+      table.settlementId,
+      table.createdAt
+    ),
+    characterCreatedAtIdx: index("market_transactions_character_created_at_idx").on(
+      table.characterId,
+      table.createdAt
     )
   })
 );

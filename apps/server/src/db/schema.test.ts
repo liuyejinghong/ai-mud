@@ -9,6 +9,8 @@ import {
   characterItems,
   characters,
   gameEvents,
+  marketInventory,
+  marketTransactions,
   mapInstances,
   sessions
 } from "./schema.js";
@@ -29,8 +31,14 @@ describe("foundation schema", () => {
     expect(getDrizzleTableName(characters)).toBe("characters");
     expect(getDrizzleTableName(characterItems)).toBe("character_items");
     expect(getDrizzleTableName(characterActions)).toBe("character_actions");
+    expect(getDrizzleTableName(marketInventory)).toBe("market_inventory");
+    expect(getDrizzleTableName(marketTransactions)).toBe("market_transactions");
     expect(getDrizzleTableName(mapInstances)).toBe("map_instances");
     expect(getDrizzleTableName(gameEvents)).toBe("game_events");
+  });
+
+  it("stores character money as copper", () => {
+    expect(characters.copperBalance.getSQLType()).toBe("integer");
   });
 
   it("defines active action enums", () => {

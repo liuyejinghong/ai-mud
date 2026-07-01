@@ -6,6 +6,8 @@ import {
   characterItems,
   characters,
   gameEvents,
+  marketInventory,
+  marketTransactions,
   mapInstances
 } from "../../db/schema.js";
 
@@ -20,6 +22,7 @@ export interface CharacterRecord {
   xp: number;
   hp: number;
   maxHp: number;
+  copperBalance: number;
   currentLocation: GameLocationId;
   position: GridPositionDto | null;
   injuryUntil: Date | null;
@@ -41,6 +44,28 @@ export interface GameEventRecord {
   id: string;
   message: string;
   createdAt: Date;
+}
+
+export interface MarketInventoryRecord {
+  id: string;
+  settlementId: string;
+  itemId: ItemId;
+  quantity: number;
+  targetQuantity: number;
+  baseBuyPriceCopper: number;
+  baseSellPriceCopper: number;
+}
+
+export interface MarketTransactionInput {
+  settlementId: string;
+  characterId: string;
+  transactionType: "buy" | "sell";
+  itemId: ItemId;
+  quantity: number;
+  unitPriceCopper: number;
+  grossCopper: number;
+  taxCopper: number;
+  netCopper: number;
 }
 
 export interface GatheringActionPayload {
@@ -209,6 +234,7 @@ export class GameRepository {
       xp: row.xp,
       hp: row.hp,
       maxHp: row.maxHp,
+      copperBalance: row.copperBalance,
       currentLocation: row.currentLocation,
       position: parsePosition(row.position),
       injuryUntil: row.injuryUntil
@@ -244,10 +270,21 @@ export class GameRepository {
       xp: row.xp,
       hp: row.hp,
       maxHp: row.maxHp,
+      copperBalance: row.copperBalance,
       currentLocation: row.currentLocation,
       position: parsePosition(row.position),
       injuryUntil: row.injuryUntil
     };
+  }
+
+  async updateCharacterCopper(input: {
+    characterId: string;
+    copperBalance: number;
+  }): Promise<void> {
+    await this.db
+      .update(characters)
+      .set({ copperBalance: input.copperBalance })
+      .where(eq(characters.id, input.characterId));
   }
 
   async updateCharacterVitals(input: {
@@ -320,6 +357,91 @@ export class GameRepository {
     }
 
     await this.db.insert(characterItems).values(input);
+  }
+
+  async decrementInventoryItem(input: {
+    characterId: string;
+    itemId: ItemId;
+    quantity: number;
+  }): Promise<void> {
+    const inventory = await this.listInventory(input.characterId);
+    const existing = inventory.find((item) => item.itemId === input.itemId);
+    const nextQuantity = (existing?.quantity ?? 0) - input.quantity;
+    if (nextQuantity < 0) {
+      throw new Error(`Cannot decrement ${input.itemId} below zero`);
+    }
+    await this.setInventoryItem({
+      characterId: input.characterId,
+      itemId: input.itemId,
+      quantity: nextQuantity
+    });
+  }
+
+  async listMarketInventory(settlementId: string): Promise<MarketInventoryRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(marketInventory)
+      .where(eq(marketInventory.settlementId, settlementId));
+
+    return rows.map((row) => ({
+      id: row.id,
+      settlementId: row.settlementId,
+      itemId: row.itemId as ItemId,
+      quantity: row.quantity,
+      targetQuantity: row.targetQuantity,
+      baseBuyPriceCopper: row.baseBuyPriceCopper,
+      baseSellPriceCopper: row.baseSellPriceCopper
+    }));
+  }
+
+  async upsertMarketInventory(input: {
+    settlementId: string;
+    itemId: ItemId;
+    quantity: number;
+    targetQuantity: number;
+    baseBuyPriceCopper: number;
+    baseSellPriceCopper: number;
+  }): Promise<void> {
+    const [existing] = await this.db
+      .select({ id: marketInventory.id })
+      .from(marketInventory)
+      .where(
+        and(
+          eq(marketInventory.settlementId, input.settlementId),
+          eq(marketInventory.itemId, input.itemId)
+        )
+      )
+      .limit(1);
+
+    if (existing) {
+      await this.db
+        .update(marketInventory)
+        .set({
+          quantity: input.quantity,
+          targetQuantity: input.targetQuantity,
+          baseBuyPriceCopper: input.baseBuyPriceCopper,
+          baseSellPriceCopper: input.baseSellPriceCopper,
+          updatedAt: new Date()
+        })
+        .where(eq(marketInventory.id, existing.id));
+      return;
+    }
+
+    await this.db.insert(marketInventory).values(input);
+  }
+
+  async setMarketInventoryQuantity(input: {
+    marketInventoryId: string;
+    quantity: number;
+  }): Promise<void> {
+    await this.db
+      .update(marketInventory)
+      .set({ quantity: input.quantity, updatedAt: new Date() })
+      .where(eq(marketInventory.id, input.marketInventoryId));
+  }
+
+  async createMarketTransaction(input: MarketTransactionInput): Promise<void> {
+    await this.db.insert(marketTransactions).values(input);
   }
 
   async findMapInstance(

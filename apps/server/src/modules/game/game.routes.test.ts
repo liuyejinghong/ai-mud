@@ -1,4 +1,4 @@
-import type { GameStateDto } from "@ai-mud/shared";
+import type { GameStateDto, MarketDto } from "@ai-mud/shared";
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { GameServiceError } from "./game.service.js";
@@ -22,15 +22,36 @@ const baseState: GameStateDto = {
     maxHp: 100,
     currentLocation: "blackpine_outpost",
     position: null,
-    injuryUntil: null
+    injuryUntil: null,
+    money: { gold: 0, silver: 12, copper: 35, totalCopper: 1235 }
   },
   locationTitle: "黑松哨站",
   locationDescription: "潮湿黑松围住木墙，哨塔上的火盆把灰雾照成暗红色。",
   map: null,
   inventory: [],
+  market: null,
   currentAction: null,
-  availableActions: ["enter_corrupt_forest"],
+  availableActions: ["enter_corrupt_forest", "open_market"],
   log: []
+};
+
+const marketState: MarketDto = {
+  settlementId: "blackpine_outpost",
+  settlementName: "黑松哨站市政集市",
+  items: [
+    {
+      itemId: "iron_ore",
+      name: "基础铁矿石",
+      category: "ore",
+      itemLevel: 1,
+      stockQuantity: 12,
+      playerQuantity: 1,
+      buyPrice: { gold: 0, silver: 0, copper: 30, totalCopper: 30 },
+      sellPrice: { gold: 0, silver: 0, copper: 18, totalCopper: 18 },
+      buyTax: { gold: 0, silver: 0, copper: 2, totalCopper: 2 },
+      sellTax: { gold: 0, silver: 0, copper: 1, totalCopper: 1 }
+    }
+  ]
 };
 
 function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
@@ -61,6 +82,13 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
     startCombat: async () => baseState,
     cancelAction: async () => baseState,
     returnToVillage: async () => baseState,
+    getMarket: async () => marketState,
+    buyMarketItem: async () => baseState,
+    sellMarketItem: async () => baseState,
+    getRepairQuote: async () => ({
+      copperCost: { gold: 0, silver: 1, copper: 50, totalCopper: 150 },
+      ironOreCost: 1
+    }),
     ...overrides
   };
   const app = Fastify();
@@ -275,5 +303,73 @@ describe("registerGameRoutes", () => {
     });
 
     expect(response.statusCode).toBe(200);
+  });
+
+  it("returns the municipal market", async () => {
+    const app = buildGameRouteTestApp();
+    const response = await app.inject({ method: "GET", url: "/game/market" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().items[0].itemId).toBe("iron_ore");
+  });
+
+  it("buys a market item through a CSRF-protected mutation", async () => {
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      buyMarketItem: async (accountId, input) => {
+        calls.push({ accountId, input });
+        return baseState;
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/market/buy",
+      headers: { "x-csrf-token": "csrf" },
+      payload: { itemId: "iron_ore", quantity: 1 }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(calls).toEqual([
+      { accountId: "account-1", input: { itemId: "iron_ore", quantity: 1 } }
+    ]);
+  });
+
+  it("sells a market item through a CSRF-protected mutation", async () => {
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      sellMarketItem: async (accountId, input) => {
+        calls.push({ accountId, input });
+        return baseState;
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/market/sell",
+      headers: { "x-csrf-token": "csrf" },
+      payload: { itemId: "iron_ore", quantity: 1 }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(calls).toEqual([
+      { accountId: "account-1", input: { itemId: "iron_ore", quantity: 1 } }
+    ]);
+  });
+
+  it("returns a repair quote", async () => {
+    const app = buildGameRouteTestApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/repair/quote",
+      headers: { "x-csrf-token": "csrf" },
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      copperCost: { gold: 0, silver: 1, copper: 50, totalCopper: 150 },
+      ironOreCost: 1
+    });
   });
 });

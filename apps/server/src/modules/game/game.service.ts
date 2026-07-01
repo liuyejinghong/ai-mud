@@ -1,6 +1,7 @@
 import {
   BLACKPINE_OUTPOST,
   CORRUPT_FOREST,
+  FIRST_ITEMS,
   getEncounterById,
   getItemById,
   getMonsterById
@@ -8,8 +9,11 @@ import {
 import {
   addInventoryItem,
   buildMapCells,
+  calculateMarketQuote,
+  calculateRepairQuote,
   calculateGatheringPlan,
   calculateGatheringSettlement,
+  formatMoney,
   movePosition,
   simulateCombat
 } from "@ai-mud/game-rules";
@@ -23,6 +27,9 @@ import {
   type GameStateDto,
   type GridPositionDto,
   type InventoryItemDto,
+  type MarketDto,
+  type MarketTradeRequestDto,
+  type RepairQuoteDto,
   type StartGatheringRequestDto
 } from "@ai-mud/shared";
 import type { Db } from "../../db/client.js";
@@ -33,6 +40,8 @@ import {
   type CombatActionPayload,
   type GatheringActionPayload
 } from "./game.repository.js";
+
+const BLACKPINE_MARKET_ID = "blackpine_outpost";
 
 export class GameServiceError extends Error {
   constructor(
@@ -118,7 +127,8 @@ function toCharacterDto(character: CharacterRecord): CharacterDto {
     maxHp: character.maxHp,
     currentLocation: character.currentLocation,
     position: character.position,
-    injuryUntil: character.injuryUntil?.toISOString() ?? null
+    injuryUntil: character.injuryUntil?.toISOString() ?? null,
+    money: formatMoney(character.copperBalance)
   };
 }
 
@@ -392,6 +402,234 @@ export class GameService {
     return this.startGathering(accountId, { plannedMinutes: 10 });
   }
 
+  async getMarket(accountId: string): Promise<MarketDto> {
+    return this.db.transaction(async (tx) => {
+      const repo = new GameRepository(tx);
+      const character = await this.requireCharacter(repo, accountId);
+      return this.buildMarketDto(repo, character);
+    });
+  }
+
+  async buyMarketItem(
+    accountId: string,
+    input: MarketTradeRequestDto
+  ): Promise<GameStateDto> {
+    return this.db.transaction(async (tx) => {
+      const repo = new GameRepository(tx);
+      const character = await this.requireCharacter(repo, accountId);
+      const quantity = this.requireTradeQuantity(input.quantity);
+      const market = await this.requireMarketInventoryItem(repo, input.itemId);
+      const item = getItemById(input.itemId);
+      if (!item) throw new GameServiceError("VALIDATION_ERROR", "Unknown item");
+      if (market.quantity < quantity) {
+        throw new GameServiceError("VALIDATION_ERROR", "市政集市库存不足。");
+      }
+
+      const quote = calculateMarketQuote({
+        direction: "buy",
+        basePriceCopper: market.baseSellPriceCopper,
+        stockQuantity: market.quantity,
+        targetQuantity: market.targetQuantity,
+        quantity
+      });
+      if (character.copperBalance < quote.totalCopper) {
+        throw new GameServiceError("VALIDATION_ERROR", "铜币不足。");
+      }
+
+      const inventory = await repo.listInventory(character.id);
+      const nextInventory = addInventoryItem(inventory, input.itemId, quantity);
+      const changedStack = nextInventory.find((entry) => entry.itemId === input.itemId);
+      if (!changedStack) throw new Error("Failed to calculate purchased inventory stack");
+
+      await repo.updateCharacterCopper({
+        characterId: character.id,
+        copperBalance: character.copperBalance - quote.totalCopper
+      });
+      await repo.setInventoryItem({
+        characterId: character.id,
+        itemId: input.itemId,
+        quantity: changedStack.quantity
+      });
+      await repo.setMarketInventoryQuantity({
+        marketInventoryId: market.id,
+        quantity: market.quantity - quantity
+      });
+      await repo.createMarketTransaction({
+        settlementId: BLACKPINE_MARKET_ID,
+        characterId: character.id,
+        transactionType: "buy",
+        itemId: input.itemId,
+        quantity,
+        unitPriceCopper: quote.unitPriceCopper,
+        grossCopper: quote.grossCopper,
+        taxCopper: quote.taxCopper,
+        netCopper: quote.totalCopper
+      });
+      await repo.writeEvent({
+        characterId: character.id,
+        eventType: "market.buy",
+        message: `你在市政集市购买了${item.name} x${quantity}。`
+      });
+
+      return this.buildState(repo, accountId, new Date());
+    });
+  }
+
+  async sellMarketItem(
+    accountId: string,
+    input: MarketTradeRequestDto
+  ): Promise<GameStateDto> {
+    return this.db.transaction(async (tx) => {
+      const repo = new GameRepository(tx);
+      const character = await this.requireCharacter(repo, accountId);
+      const quantity = this.requireTradeQuantity(input.quantity);
+      const market = await this.requireMarketInventoryItem(repo, input.itemId);
+      const item = getItemById(input.itemId);
+      if (!item) throw new GameServiceError("VALIDATION_ERROR", "Unknown item");
+
+      const inventory = await repo.listInventory(character.id);
+      const existingStack = inventory.find((entry) => entry.itemId === input.itemId);
+      if (!existingStack || existingStack.quantity < quantity) {
+        throw new GameServiceError("VALIDATION_ERROR", "背包物品不足。");
+      }
+
+      const quote = calculateMarketQuote({
+        direction: "sell",
+        basePriceCopper: market.baseBuyPriceCopper,
+        stockQuantity: market.quantity,
+        targetQuantity: market.targetQuantity,
+        quantity
+      });
+
+      await repo.updateCharacterCopper({
+        characterId: character.id,
+        copperBalance: character.copperBalance + quote.totalCopper
+      });
+      await repo.decrementInventoryItem({
+        characterId: character.id,
+        itemId: input.itemId,
+        quantity
+      });
+      await repo.setMarketInventoryQuantity({
+        marketInventoryId: market.id,
+        quantity: market.quantity + quantity
+      });
+      await repo.createMarketTransaction({
+        settlementId: BLACKPINE_MARKET_ID,
+        characterId: character.id,
+        transactionType: "sell",
+        itemId: input.itemId,
+        quantity,
+        unitPriceCopper: quote.unitPriceCopper,
+        grossCopper: quote.grossCopper,
+        taxCopper: quote.taxCopper,
+        netCopper: quote.totalCopper
+      });
+      await repo.writeEvent({
+        characterId: character.id,
+        eventType: "market.sell",
+        message: `你向市政集市出售了${item.name} x${quantity}。`
+      });
+
+      return this.buildState(repo, accountId, new Date());
+    });
+  }
+
+  async getRepairQuote(accountId: string): Promise<RepairQuoteDto> {
+    return this.db.transaction(async (tx) => {
+      const repo = new GameRepository(tx);
+      await this.requireCharacter(repo, accountId);
+      const quote = calculateRepairQuote({ itemLevel: 10, durabilityLossPct: 0.5 });
+      return {
+        copperCost: formatMoney(quote.copperCost),
+        ironOreCost: quote.ironOreCost
+      };
+    });
+  }
+
+  private requireTradeQuantity(quantity: number) {
+    const normalized = Math.floor(quantity);
+    if (!Number.isFinite(normalized) || normalized < 1) {
+      throw new GameServiceError("VALIDATION_ERROR", "交易数量无效。");
+    }
+    return normalized;
+  }
+
+  private async ensureMarketInventory(repo: GameRepository) {
+    const existing = await repo.listMarketInventory(BLACKPINE_MARKET_ID);
+    const existingItemIds = new Set(existing.map((entry) => entry.itemId));
+
+    for (const item of FIRST_ITEMS) {
+      if (existingItemIds.has(item.id)) continue;
+      await repo.upsertMarketInventory({
+        settlementId: BLACKPINE_MARKET_ID,
+        itemId: item.id,
+        quantity: Math.floor(item.targetMarketQuantity / 2),
+        targetQuantity: item.targetMarketQuantity,
+        baseBuyPriceCopper: item.baseBuyPriceCopper,
+        baseSellPriceCopper: item.baseSellPriceCopper
+      });
+    }
+  }
+
+  private async requireMarketInventoryItem(repo: GameRepository, itemId: MarketTradeRequestDto["itemId"]) {
+    await this.ensureMarketInventory(repo);
+    const marketInventory = await repo.listMarketInventory(BLACKPINE_MARKET_ID);
+    const item = marketInventory.find((entry) => entry.itemId === itemId);
+    if (!item) {
+      throw new GameServiceError("VALIDATION_ERROR", "市政集市没有这种物品。");
+    }
+    return item;
+  }
+
+  private async buildMarketDto(
+    repo: GameRepository,
+    character: CharacterRecord
+  ): Promise<MarketDto> {
+    await this.ensureMarketInventory(repo);
+    const marketInventory = await repo.listMarketInventory(BLACKPINE_MARKET_ID);
+    const inventory = await repo.listInventory(character.id);
+
+    return {
+      settlementId: BLACKPINE_MARKET_ID,
+      settlementName: "黑松哨站市政集市",
+      items: marketInventory
+        .map((marketItem) => {
+          const item = getItemById(marketItem.itemId);
+          if (!item) return null;
+          const buyQuote = calculateMarketQuote({
+            direction: "buy",
+            basePriceCopper: marketItem.baseSellPriceCopper,
+            stockQuantity: marketItem.quantity,
+            targetQuantity: marketItem.targetQuantity,
+            quantity: 1
+          });
+          const sellQuote = calculateMarketQuote({
+            direction: "sell",
+            basePriceCopper: marketItem.baseBuyPriceCopper,
+            stockQuantity: marketItem.quantity,
+            targetQuantity: marketItem.targetQuantity,
+            quantity: 1
+          });
+
+          return {
+            itemId: item.id,
+            name: item.name,
+            category: item.category,
+            itemLevel: item.itemLevel,
+            stockQuantity: marketItem.quantity,
+            playerQuantity:
+              inventory.find((inventoryItem) => inventoryItem.itemId === item.id)?.quantity ?? 0,
+            buyPrice: formatMoney(buyQuote.unitPriceCopper),
+            sellPrice: formatMoney(sellQuote.unitPriceCopper),
+            buyTax: formatMoney(buyQuote.taxCopper),
+            sellTax: formatMoney(sellQuote.taxCopper)
+          };
+        })
+        .filter((item): item is MarketDto["items"][number] => item !== null)
+    };
+  }
+
   private async requireCharacter(repo: GameRepository, accountId: string) {
     const character = await repo.findCharacterByAccountId(accountId);
     if (!character) {
@@ -648,6 +886,7 @@ export class GameService {
         locationDescription: "你尚未创建角色。",
         map: null,
         inventory: [],
+        market: null,
         currentAction: null,
         availableActions: ["create_character"],
         log: []
@@ -667,8 +906,11 @@ export class GameService {
         locationDescription: BLACKPINE_OUTPOST.description,
         map: null,
         inventory: inventoryDto,
+        market: null,
         currentAction,
-        availableActions: currentAction ? ["cancel_action"] : ["enter_corrupt_forest"],
+        availableActions: currentAction
+          ? ["cancel_action"]
+          : ["enter_corrupt_forest", "open_market"],
         log: log.map((entry) => ({
           id: entry.id,
           message: entry.message,
@@ -702,6 +944,7 @@ export class GameService {
         cells: buildMapCells(CORRUPT_FOREST, character.position, resourceCharges)
       },
       inventory: inventoryDto,
+      market: null,
       currentAction,
       availableActions,
       log: log.map((entry) => ({
