@@ -2,6 +2,7 @@ import { FIRST_ITEMS, getItemById } from "@ai-mud/content";
 import { formatMoney } from "@ai-mud/game-rules";
 import type {
   ActivationCodeDto,
+  AiCallLogDto,
   EconomySnapshotDto,
   ErrorCode,
   MoneyDto,
@@ -17,6 +18,7 @@ import { DrizzleAuditWriter } from "../audit/audit.repository.js";
 import type { AuditWriter } from "../audit/audit.service.js";
 import { AuthRepository } from "../auth/auth.repository.js";
 import { AuthService } from "../auth/auth.service.js";
+import { DialogueRepository } from "../dialogue/dialogue.repository.js";
 import { GameRepository } from "../game/game.repository.js";
 import { NpcRepository } from "../npc/npc.repository.js";
 import { NpcService } from "../npc/npc.service.js";
@@ -47,6 +49,7 @@ export interface AdminRouteDependencies {
   getEconomySnapshot(): Promise<EconomySnapshotDto>;
   getNpcSnapshot(): Promise<NpcSnapshotResponse>;
   getWorldRuntimeStatus(): Promise<WorldRuntimeStatusDto>;
+  listAiCallLogs(): Promise<AiCallLogDto[]>;
   settleNpcWorld(): Promise<NpcSnapshotResponse>;
   runNpcSimulation(input: {
     days: number;
@@ -265,6 +268,10 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
       const repo = new WorldRuntimeRepository(app.di.db);
       return buildWorldRuntimeStatus(repo, now());
     },
+    listAiCallLogs: async () => {
+      const repo = new DialogueRepository(app.di.db);
+      return repo.listAiCallLogs({ limit: 50 });
+    },
     settleNpcWorld: async () => {
       const repo = new NpcRepository(app.di.db);
       const service = new NpcService(repo);
@@ -359,6 +366,18 @@ export async function registerAdminRoutes(
     }
 
     return deps.getWorldRuntimeStatus();
+  });
+
+  app.get("/admin/ai-calls", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+
+    return {
+      generatedAt: deps.now().toISOString(),
+      aiCalls: await deps.listAiCallLogs()
+    };
   });
 
   app.post("/admin/npcs/settle", async (request, reply) => {

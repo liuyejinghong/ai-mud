@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import type {
+  AiCallLogDto,
   EconomySnapshotDto,
   NpcSimulationReportDto,
   NpcSummaryDto,
@@ -109,6 +110,27 @@ const worldRuntimeStatus: WorldRuntimeStatusDto = {
   leaseUntil: null
 };
 
+const aiCallLogs: AiCallLogDto[] = [
+  {
+    id: "ai-call-1",
+    purpose: "npc_dialogue",
+    status: "success",
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    promptVersion: 2,
+    accountId: "account-1",
+    characterId: "character-1",
+    npcActorId: "npc-blacksmith",
+    inputSummary: "最近缺什么？",
+    outputSummary: "基础铁矿石快见底了。",
+    latencyMs: 240,
+    inputTokens: 120,
+    outputTokens: 36,
+    errorCode: null,
+    createdAt: "2026-07-01T12:00:00.000Z"
+  }
+];
+
 function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
   const app = Fastify();
   const baseDeps: AdminRouteDependencies = {
@@ -129,6 +151,7 @@ function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
       npcs: npcSummaries
     }),
     getWorldRuntimeStatus: async () => worldRuntimeStatus,
+    listAiCallLogs: async () => aiCallLogs,
     settleNpcWorld: async () => ({
       generatedAt: "2026-07-01T00:00:00.000Z",
       settlementId: "blackpine_outpost",
@@ -507,6 +530,45 @@ describe("registerAdminRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual(worldRuntimeStatus);
+  });
+
+  it("guards AI call logs behind an admin session", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => null
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/ai-calls"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: { code: "UNAUTHENTICATED", message: "Admin session required" }
+    });
+  });
+
+  it("returns recent AI call logs for admins", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      listAiCallLogs: async () => aiCallLogs,
+      now: () => new Date("2026-07-01T12:05:00.000Z")
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/ai-calls"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      generatedAt: "2026-07-01T12:05:00.000Z",
+      aiCalls: aiCallLogs
+    });
   });
 
   it("settles NPC world only for admins with a mutation token", async () => {

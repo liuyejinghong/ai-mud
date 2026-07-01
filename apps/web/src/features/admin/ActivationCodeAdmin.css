@@ -166,6 +166,42 @@
   font-size: 12px;
 }
 
+.ai-call-admin-body {
+  display: grid;
+  gap: 14px;
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.ai-call-table-row {
+  grid-template-columns:
+    minmax(125px, 0.9fr)
+    minmax(86px, 0.7fr)
+    minmax(150px, 1fr)
+    minmax(135px, 0.9fr)
+    minmax(150px, 1fr)
+    minmax(150px, 1fr)
+    minmax(105px, 0.7fr);
+  min-width: 910px;
+}
+
+.ai-call-table-row span {
+  overflow-wrap: anywhere;
+}
+
+.ai-call-table-row [data-status="success"] {
+  color: #38e96f;
+}
+
+.ai-call-table-row [data-status="fallback"],
+.ai-call-table-row [data-status="rejected"] {
+  color: #f0d36b;
+}
+
+.ai-call-table-row [data-status="error"] {
+  color: #ff716d;
+}
+
 .npc-admin-toolbar {
   display: flex;
   justify-content: space-between;

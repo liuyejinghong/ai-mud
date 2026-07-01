@@ -1,4 +1,5 @@
 import type {
+  AiCallLogDto,
   CreateActivationCodeResponseDto,
   EconomySnapshotDto,
   MoneyDto,
@@ -14,6 +15,11 @@ export interface NpcSnapshotResponse {
   settlementId: "blackpine_outpost";
   treasury: MoneyDto;
   npcs: NpcSummaryDto[];
+}
+
+export interface AiCallLogResponse {
+  generatedAt: string;
+  aiCalls: AiCallLogDto[];
 }
 
 export async function createActivationCode(
@@ -68,6 +74,18 @@ export async function getWorldRuntimeStatus(): Promise<WorldRuntimeStatusDto> {
   }
 
   return response.json() as Promise<WorldRuntimeStatusDto>;
+}
+
+export async function getAiCallLogs(): Promise<AiCallLogResponse> {
+  const response = await fetch(`${API_BASE}/admin/ai-calls`, {
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to load AI call logs");
+  }
+
+  return response.json() as Promise<AiCallLogResponse>;
 }
 
 export async function settleNpcWorld(csrfToken: string): Promise<NpcSnapshotResponse> {
