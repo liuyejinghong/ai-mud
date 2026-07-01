@@ -308,6 +308,48 @@
   padding: 16px;
 }
 
+.market-dialog {
+  width: min(860px, 100%);
+  max-height: min(680px, calc(100vh - 32px));
+  overflow: auto;
+  border: 1px solid #d8a735;
+  background: #06100b;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  padding: 16px;
+}
+
+.market-table {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.market-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) 60px 60px minmax(130px, 1fr) minmax(130px, 1fr) minmax(190px, 1.2fr);
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px dashed rgba(119, 184, 160, 0.22);
+  padding: 8px 0;
+  color: #d8dce0;
+  font-size: 12px;
+}
+
+.market-row-heading {
+  color: #77b8a0;
+}
+
+.market-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.market-actions .game-secondary-button {
+  min-height: 30px;
+  padding: 0 8px;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
@@ -327,5 +369,9 @@
 @media (max-width: 900px) {
   .game-shell {
     grid-template-columns: 1fr;
+  }
+
+  .market-row {
+    grid-template-columns: 1fr 1fr;
   }
 }

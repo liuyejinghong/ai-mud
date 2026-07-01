@@ -5,15 +5,20 @@ import {
   type Direction,
   type GameStateDto,
   type InventoryItemDto,
+  type MarketDto,
+  type MoneyDto,
   type StartGatheringRequestDto
 } from "@ai-mud/shared";
 import {
+  buyMarketItem,
   cancelAction,
   createCharacter,
   enterCorruptForest,
   getGameState,
+  getMarket,
   move,
   returnToVillage,
+  sellMarketItem,
   startCombat,
   startGathering
 } from "./gameApi";
@@ -29,6 +34,7 @@ const initialState: GameStateDto = {
   locationDescription: "你尚未创建角色。",
   map: null,
   inventory: [],
+  market: null,
   currentAction: null,
   availableActions: ["create_character"],
   log: []
@@ -61,11 +67,17 @@ function cellText(markers: string[]) {
   return ".";
 }
 
+function moneyText(money: MoneyDto) {
+  return `金币 ${money.gold} | 银币 ${money.silver} | 铜币 ${money.copper}`;
+}
+
 export function GameShell({ csrfToken }: GameShellProps) {
   const [state, setState] = useState<GameStateDto>(initialState);
   const [name, setName] = useState("Zichen");
   const [classId, setClassId] = useState<CharacterClassId>("ranger");
   const [selectedItem, setSelectedItem] = useState<InventoryItemDto | null>(null);
+  const [market, setMarket] = useState<MarketDto | null>(null);
+  const [isMarketDialogOpen, setIsMarketDialogOpen] = useState(false);
   const [plannedMinutes, setPlannedMinutes] =
     useState<StartGatheringRequestDto["plannedMinutes"]>(10);
   const [isCombatDialogOpen, setIsCombatDialogOpen] = useState(false);
@@ -81,6 +93,7 @@ export function GameShell({ csrfToken }: GameShellProps) {
   const canCancelAction = state.availableActions.includes("cancel_action") && !isBusy;
   const canReturnVillage = state.availableActions.includes("return_to_village") && !isBusy;
   const canEnterForest = state.availableActions.includes("enter_corrupt_forest") && !isBusy;
+  const canOpenMarket = state.availableActions.includes("open_market") && !isBusy;
   const selectedClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
 
   async function runCommand(action: () => Promise<GameStateDto>) {
@@ -93,6 +106,24 @@ export function GameShell({ csrfToken }: GameShellProps) {
     } finally {
       setIsBusy(false);
     }
+  }
+
+  async function openMarket() {
+    setError(null);
+    setIsBusy(true);
+    try {
+      setMarket(await getMarket());
+      setIsMarketDialogOpen(true);
+    } catch {
+      setError("集市暂时无法打开。");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function runMarketTrade(action: () => Promise<GameStateDto>) {
+    await runCommand(action);
+    setIsMarketDialogOpen(false);
   }
 
   useEffect(() => {
@@ -199,6 +230,10 @@ export function GameShell({ csrfToken }: GameShellProps) {
                 {state.character.hp}/{state.character.maxHp}
               </dd>
             </div>
+            <div>
+              <dt>货币</dt>
+              <dd>{moneyText(state.character.money)}</dd>
+            </div>
           </dl>
         </section>
 
@@ -238,6 +273,15 @@ export function GameShell({ csrfToken }: GameShellProps) {
               onClick={() => void runCommand(() => enterCorruptForest(csrfToken))}
             >
               前往腐林
+            </button>
+          ) : null}
+          {canOpenMarket ? (
+            <button
+              type="button"
+              className="game-secondary-button"
+              onClick={() => void openMarket()}
+            >
+              市政集市
             </button>
           ) : null}
           {canGather ? (
@@ -444,6 +488,82 @@ export function GameShell({ csrfToken }: GameShellProps) {
                 type="button"
                 className="game-primary-button"
                 onClick={() => setSelectedItem(null)}
+              >
+                关闭
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {isMarketDialogOpen && market ? (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setIsMarketDialogOpen(false)}>
+          <section
+            className="market-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="市政集市"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <p className="game-kicker">Municipal Market</p>
+            <div className="panel-heading">
+              <h2>市政集市</h2>
+              <span>{market.items.length} 类</span>
+            </div>
+            <div className="market-table" role="table" aria-label="市政集市库存">
+              <div className="market-row market-row-heading" role="row">
+                <span role="columnheader">物品</span>
+                <span role="columnheader">库存</span>
+                <span role="columnheader">持有</span>
+                <span role="columnheader">买价</span>
+                <span role="columnheader">卖价</span>
+                <span role="columnheader">操作</span>
+              </div>
+              {market.items.map((item) => (
+                <div className="market-row" role="row" key={item.itemId}>
+                  <span role="cell">{item.name}</span>
+                  <span role="cell">{item.stockQuantity}</span>
+                  <span role="cell">{item.playerQuantity}</span>
+                  <span role="cell">
+                    {moneyText(item.buyPrice)} + 税 {item.buyTax.totalCopper} 铜
+                  </span>
+                  <span role="cell">
+                    {moneyText(item.sellPrice)} - 税 {item.sellTax.totalCopper} 铜
+                  </span>
+                  <span role="cell" className="market-actions">
+                    <button
+                      type="button"
+                      className="game-secondary-button"
+                      disabled={item.stockQuantity < 1 || isBusy}
+                      onClick={() =>
+                        void runMarketTrade(() =>
+                          buyMarketItem({ itemId: item.itemId, quantity: 1 }, csrfToken)
+                        )
+                      }
+                    >
+                      购买 {item.name}
+                    </button>
+                    <button
+                      type="button"
+                      className="game-secondary-button"
+                      disabled={item.playerQuantity < 1 || isBusy}
+                      onClick={() =>
+                        void runMarketTrade(() =>
+                          sellMarketItem({ itemId: item.itemId, quantity: 1 }, csrfToken)
+                        )
+                      }
+                    >
+                      出售 {item.name}
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="dialog-actions">
+              <button
+                type="button"
+                className="game-primary-button"
+                onClick={() => setIsMarketDialogOpen(false)}
               >
                 关闭
               </button>

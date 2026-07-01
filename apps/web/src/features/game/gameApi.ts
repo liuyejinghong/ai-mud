@@ -1,7 +1,10 @@
 import type {
   CreateCharacterRequestDto,
   GameStateDto,
+  MarketDto,
+  MarketTradeRequestDto,
   MoveRequestDto,
+  RepairQuoteDto,
   StartGatheringRequestDto
 } from "@ai-mud/shared";
 
@@ -78,6 +81,34 @@ export function cancelAction(csrfToken: string) {
 
 export function returnToVillage(csrfToken: string) {
   return requestGame<GameStateDto>("/game/return-village", {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify({})
+  });
+}
+
+export function getMarket() {
+  return requestGame<MarketDto>("/game/market");
+}
+
+export function buyMarketItem(input: MarketTradeRequestDto, csrfToken: string) {
+  return requestGame<GameStateDto>("/game/market/buy", {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify(input)
+  });
+}
+
+export function sellMarketItem(input: MarketTradeRequestDto, csrfToken: string) {
+  return requestGame<GameStateDto>("/game/market/sell", {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify(input)
+  });
+}
+
+export function getRepairQuote(csrfToken: string) {
+  return requestGame<RepairQuoteDto>("/game/repair/quote", {
     method: "POST",
     headers: { "x-csrf-token": csrfToken },
     body: JSON.stringify({})

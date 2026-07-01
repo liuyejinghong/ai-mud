@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { GameStateDto } from "@ai-mud/shared";
+import type { GameStateDto, MarketDto } from "@ai-mud/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GameShell } from "./GameShell";
 
@@ -9,6 +9,7 @@ const createCharacterState: GameStateDto = {
   locationDescription: "你尚未创建角色。",
   map: null,
   inventory: [],
+  market: null,
   currentAction: null,
   availableActions: ["create_character"],
   log: []
@@ -25,15 +26,36 @@ const villageState: GameStateDto = {
     maxHp: 100,
     currentLocation: "blackpine_outpost",
     position: null,
-    injuryUntil: null
+    injuryUntil: null,
+    money: { gold: 0, silver: 12, copper: 35, totalCopper: 1235 }
   },
   locationTitle: "黑松哨站",
   locationDescription: "潮湿黑松围住木墙，哨塔上的火盆把灰雾照成暗红色。",
   map: null,
   inventory: [],
+  market: null,
   currentAction: null,
-  availableActions: ["enter_corrupt_forest"],
+  availableActions: ["enter_corrupt_forest", "open_market"],
   log: []
+};
+
+const marketState: MarketDto = {
+  settlementId: "blackpine_outpost",
+  settlementName: "黑松哨站市政集市",
+  items: [
+    {
+      itemId: "iron_ore",
+      name: "基础铁矿石",
+      category: "ore",
+      itemLevel: 1,
+      stockQuantity: 12,
+      playerQuantity: 3,
+      buyPrice: { gold: 0, silver: 0, copper: 30, totalCopper: 30 },
+      sellPrice: { gold: 0, silver: 0, copper: 18, totalCopper: 18 },
+      buyTax: { gold: 0, silver: 0, copper: 2, totalCopper: 2 },
+      sellTax: { gold: 0, silver: 0, copper: 1, totalCopper: 1 }
+    }
+  ]
 };
 
 const forestState: GameStateDto = {
@@ -78,12 +100,13 @@ const forestState: GameStateDto = {
     ]
   },
   inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 2 }],
+  market: null,
   currentAction: null,
   availableActions: ["move", "start_gathering", "start_combat", "return_to_village"],
   log: [{ id: "event-1", message: "你踏入腐林。", createdAt: "2026-07-01T00:00:00.000Z" }]
 };
 
-function mockFetchWithStates(states: GameStateDto[]) {
+function mockFetchWithStates(states: unknown[]) {
   const queue = [...states];
   const fetchMock = vi.fn(async () => ({
     ok: true,
@@ -128,6 +151,28 @@ describe("GameShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "野莓 x2" }));
     expect(screen.getByRole("dialog", { name: "野莓" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "关闭" })).toBeTruthy();
+  });
+
+  it("shows money and trades through the municipal market", async () => {
+    const fetchMock = mockFetchWithStates([villageState, marketState, villageState]);
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByText("金币 0 | 银币 12 | 铜币 35")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "市政集市" }));
+    expect(await screen.findByRole("dialog", { name: "市政集市" })).toBeTruthy();
+    expect(screen.getByText("基础铁矿石")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "出售 基础铁矿石" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:3000/game/market/sell",
+        expect.objectContaining({
+          body: JSON.stringify({ itemId: "iron_ore", quantity: 1 }),
+          method: "POST"
+        })
+      );
+    });
   });
 
   it("shows active gathering progress and cancels completed cycles", async () => {
