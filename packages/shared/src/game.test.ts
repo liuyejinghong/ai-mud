@@ -5,6 +5,7 @@ import {
   ITEM_IDS,
   isDirection,
   type CurrentActionDto,
+  type EquipmentItemDto,
   type GameStateDto,
   type MoneyDto
 } from "./game.js";
@@ -22,11 +23,11 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.4.0 economy compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.4.0");
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(4);
+  it("exposes v0.4.1 durability compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.4.1");
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(5);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
-    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(4);
+    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(5);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(4);
   });
 
@@ -61,15 +62,55 @@ describe("game contract", () => {
     expect(action.completedCycles).toBe(5);
   });
 
-  it("allows v0.4 action commands in game state", () => {
-    const state: Pick<GameStateDto, "availableActions" | "currentAction" | "market"> = {
+  it("describes equipped items with durability and repair quotes", () => {
+    const equipment: EquipmentItemDto = {
+      id: "equipment-1",
+      slot: "weapon",
+      itemKey: "training_sword",
+      name: "训练短剑",
+      itemLevel: 5,
+      attackBonus: 2,
+      defenseBonus: 0,
+      maxDurability: 100,
+      currentDurability: 60,
+      durabilityPct: 60,
+      effectiveStatRatio: 1,
+      repairQuote: {
+        copperCost: { gold: 0, silver: 0, copper: 50, totalCopper: 50 },
+        ironOreCost: 1
+      }
+    };
+
+    expect(equipment.slot).toBe("weapon");
+    expect(equipment.repairQuote?.ironOreCost).toBe(1);
+  });
+
+  it("allows v0.4.1 action commands in game state", () => {
+    const state: Pick<GameStateDto, "availableActions" | "currentAction" | "market" | "equipment"> = {
       availableActions: [
         "move",
         "start_gathering",
         "start_combat",
         "cancel_action",
         "return_to_village",
-        "open_market"
+        "open_market",
+        "repair_equipment"
+      ],
+      equipment: [
+        {
+          id: "equipment-1",
+          slot: "weapon",
+          itemKey: "training_sword",
+          name: "训练短剑",
+          itemLevel: 5,
+          attackBonus: 2,
+          defenseBonus: 0,
+          maxDurability: 100,
+          currentDurability: 100,
+          durabilityPct: 100,
+          effectiveStatRatio: 1,
+          repairQuote: null
+        }
       ],
       currentAction: null,
       market: {
@@ -94,6 +135,8 @@ describe("game contract", () => {
 
     expect(state.availableActions).toContain("start_gathering");
     expect(state.availableActions).toContain("open_market");
+    expect(state.availableActions).toContain("repair_equipment");
+    expect(state.equipment[0]?.durabilityPct).toBe(100);
     expect(state.market?.items[0]?.itemId).toBe("iron_ore");
     expect(state.currentAction).toBeNull();
   });

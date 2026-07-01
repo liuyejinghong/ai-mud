@@ -1,9 +1,9 @@
-export const PRODUCT_VERSION = "0.4.0";
+export const PRODUCT_VERSION = "0.4.1";
 
 export const WORLD_COMPATIBILITY = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   engineVersion: 1,
-  rulesetVersion: 4,
+  rulesetVersion: 5,
   contentVersion: 4,
   promptVersion: 1,
   economyVersion: 1,

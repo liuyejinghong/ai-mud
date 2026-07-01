@@ -37,6 +37,9 @@ export type GameLocationId = (typeof GAME_LOCATIONS)[keyof typeof GAME_LOCATIONS
 export const ITEM_IDS = ["wild_berry", "beast_meat", "rough_hide", "iron_ore"] as const;
 export type ItemId = (typeof ITEM_IDS)[number];
 
+export const EQUIPMENT_SLOTS = ["weapon", "chest"] as const;
+export type EquipmentSlot = (typeof EQUIPMENT_SLOTS)[number];
+
 export const DIRECTIONS = ["north", "south", "west", "east"] as const;
 export type Direction = (typeof DIRECTIONS)[number];
 
@@ -80,6 +83,21 @@ export interface InventoryItemDto {
   itemId: ItemId;
   name: string;
   quantity: number;
+}
+
+export interface EquipmentItemDto {
+  id: string;
+  slot: EquipmentSlot;
+  itemKey: string;
+  name: string;
+  itemLevel: number;
+  attackBonus: number;
+  defenseBonus: number;
+  maxDurability: number;
+  currentDurability: number;
+  durabilityPct: number;
+  effectiveStatRatio: number;
+  repairQuote: RepairQuoteDto | null;
 }
 
 export interface MapCellDto {
@@ -150,6 +168,7 @@ export interface GameStateDto {
     cells: MapCellDto[];
   } | null;
   inventory: InventoryItemDto[];
+  equipment: EquipmentItemDto[];
   market: MarketDto | null;
   currentAction: CurrentActionDto | null;
   availableActions: Array<
@@ -162,6 +181,7 @@ export interface GameStateDto {
     | "cancel_action"
     | "return_to_village"
     | "open_market"
+    | "repair_equipment"
   >;
   log: GameLogEntryDto[];
 }
@@ -177,4 +197,8 @@ export interface MoveRequestDto {
 
 export interface StartGatheringRequestDto {
   plannedMinutes: 10 | 30 | 120;
+}
+
+export interface RepairEquipmentRequestDto {
+  equipmentId: string;
 }
