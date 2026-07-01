@@ -6,7 +6,7 @@
     "dev": "tsx watch src/main.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "pnpm --filter @ai-mud/shared build && pnpm --filter @ai-mud/content build && pnpm --filter @ai-mud/game-rules build && vitest run --passWithNoTests",
     "lint": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
