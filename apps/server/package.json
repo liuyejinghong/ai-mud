@@ -10,7 +10,8 @@
     "lint": "pnpm --filter @ai-mud/shared build && pnpm --filter @ai-mud/content build && pnpm --filter @ai-mud/game-rules build && pnpm --filter @ai-mud/ai-prompts build && tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:verify-migrations": "tsx scripts/verify-migrations.ts"
+    "db:verify-migrations": "tsx scripts/verify-migrations.ts",
+    "test:integration:postgres": "pnpm --filter @ai-mud/shared build && pnpm --filter @ai-mud/content build && pnpm --filter @ai-mud/game-rules build && pnpm --filter @ai-mud/ai-prompts build && vitest run src/db/postgres-integration.test.ts"
   },
   "dependencies": {
     "@ai-mud/content": "workspace:*",
