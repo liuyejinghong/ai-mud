@@ -93,7 +93,10 @@ const dialogueTarget: NpcDialogueTargetDto = {
   name: "伯林",
   profession: "blacksmith",
   currentLocation: "blackpine_outpost",
-  statusLine: "正在盘点基础铁矿石库存。"
+  statusLine: "正在盘点基础铁矿石库存。",
+  hasTask: true,
+  taskStatus: "open",
+  taskTitle: "炉火缺矿"
 };
 
 const dialogueResponse: NpcDialogueResponseDto = {

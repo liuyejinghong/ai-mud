@@ -8,6 +8,7 @@ import type {
   RelationshipRecord,
   UpsertRelationshipInput
 } from "./dialogue.repository.js";
+import type { NpcTaskRecord } from "../npc-task/npc-task.repository.js";
 
 const character = {
   id: "character-1",
@@ -74,6 +75,26 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
   const relationships: UpsertRelationshipInput[] = [];
   const memoryEvents: string[] = [];
   const aiContexts: unknown[] = [];
+  const tasks: NpcTaskRecord[] = [
+    {
+      id: "task-1",
+      npcActorId: "npc-blacksmith",
+      needType: "ore_shortage",
+      status: "open",
+      title: "炉火缺矿",
+      description: "伯林缺少基础铁矿石。",
+      requestedItemId: "iron_ore",
+      requestedQuantity: 3,
+      rewardCopper: 36,
+      escrowCopper: 36,
+      acceptedByCharacterId: null,
+      createdAt: new Date("2026-07-01T11:30:00.000Z"),
+      expiresAt: new Date("2026-07-02T11:30:00.000Z"),
+      acceptedAt: null,
+      completedAt: null,
+      cancelledAt: null
+    }
+  ];
 
   const service = new DialogueService({
     dialogueRepo: {
@@ -128,6 +149,9 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
         }
       ]
     },
+    taskRepo: {
+      listTasksForCharacter: async () => tasks
+    },
     ai: {
       replyToNpcDialogue: async (input) => {
         aiContexts.push(input.npcContext);
@@ -163,8 +187,20 @@ describe("DialogueService", () => {
     const { service } = buildService();
 
     await expect(service.listDialogueTargets("account-1")).resolves.toEqual([
-      expect.objectContaining({ npcActorId: "npc-blacksmith", name: "伯林" }),
-      expect.objectContaining({ npcActorId: "npc-officer", name: "艾廉" })
+      expect.objectContaining({
+        npcActorId: "npc-blacksmith",
+        name: "伯林",
+        hasTask: true,
+        taskStatus: "open",
+        taskTitle: "炉火缺矿"
+      }),
+      expect.objectContaining({
+        npcActorId: "npc-officer",
+        name: "艾廉",
+        hasTask: false,
+        taskStatus: null,
+        taskTitle: null
+      })
     ]);
   });
 
@@ -212,7 +248,8 @@ describe("DialogueService", () => {
     expect(memoryEvents[0]).toContain("msg-1,msg-2");
     expect(aiContexts[0]).toMatchObject({
       npc: expect.objectContaining({
-        memorySummary: "记忆碎片：Zichen 曾询问过基础铁矿石短缺。"
+        memorySummary: "记忆碎片：Zichen 曾询问过基础铁矿石短缺。",
+        taskSummary: "真实任务：炉火缺矿，状态可接取，需要 基础铁矿石 x3，托管奖励 36 铜。"
       })
     });
   });

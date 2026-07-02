@@ -12,7 +12,8 @@ const context = {
     profession: "blacksmith",
     personality: "谨慎、务实、对浪费矿石很不耐烦。",
     currentState: "在黑松哨站盘点基础铁矿石。",
-    memorySummary: "记忆碎片：Zichen 曾询问过基础铁矿石短缺。"
+    memorySummary: "记忆碎片：Zichen 曾询问过基础铁矿石短缺。",
+    taskSummary: "真实任务：炉火缺矿，状态可接取，需要基础铁矿石 x3，奖励 36 铜。"
   },
   player: {
     name: "Zichen",
@@ -34,7 +35,16 @@ describe("npc dialogue prompt", () => {
 
     expect(prompt.system.toLowerCase()).toContain("json");
     expect(prompt.system).toContain("reply");
+    expect(prompt.system).toContain("任务面板");
     expect(prompt.user).toContain("blackpine_blacksmith_borin");
+  });
+
+  it("includes real NPC task context without granting task authority", () => {
+    const prompt = buildNpcDialoguePrompt(context);
+
+    expect(prompt.user).toContain("炉火缺矿");
+    expect(prompt.user).toContain("基础铁矿石 x3");
+    expect(prompt.system).toContain("不能在对话中创建、接取、完成、取消或改变任务奖励");
   });
 
   it("includes compressed NPC memory in the dialogue prompt context", () => {

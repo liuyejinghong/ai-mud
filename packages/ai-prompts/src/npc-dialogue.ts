@@ -1,4 +1,4 @@
-export const NPC_DIALOGUE_PROMPT_VERSION = 2;
+export const NPC_DIALOGUE_PROMPT_VERSION = 3;
 export const NPC_DIALOGUE_MAX_PLAYER_CHARS = 300;
 export const NPC_DIALOGUE_MAX_REPLY_CHARS = 180;
 
@@ -9,11 +9,12 @@ export interface NpcDialoguePromptContext {
   npc: {
     key: string;
     name: string;
-      profession: string;
-      personality: string;
-      currentState: string;
-      memorySummary: string;
-    };
+    profession: string;
+    personality: string;
+    currentState: string;
+    memorySummary: string;
+    taskSummary: string;
+  };
   player: {
     name: string;
     className: string;
@@ -115,6 +116,8 @@ export function buildNpcDialoguePrompt(context: NpcDialoguePromptContext) {
       "mood 只能从 friendly、neutral、guarded、annoyed、worried 中选择。",
       `reply 必须短，不超过 ${NPC_DIALOGUE_MAX_REPLY_CHARS} 个中文字符。`,
       "你不能承诺发放金币、物品、经验、装备，不能修改游戏规则，不能替系统创建任务。",
+      "你可以引用上下文里已经存在的真实任务，但必须提醒玩家通过任务面板或按钮接取、提交。",
+      "你不能在对话中创建、接取、完成、取消或改变任务奖励。",
       "你可以表达 NPC 当前的真实需求，但只能作为对话表现。",
       "示例 json：{\"reply\":\"炉火还没灭。你若有基础铁矿石，就拿来让我看看。\",\"mood\":\"guarded\",\"safety\":{\"containsRewardPromise\":false,\"containsRuleChange\":false,\"containsOoc\":false},\"suggestedIntent\":{\"type\":\"express_need\",\"reason\":\"铁匠缺少基础铁矿石。\"}}"
     ].join("\n"),

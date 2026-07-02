@@ -21,6 +21,7 @@ import type {
   NpcEventRecord,
   NpcInventoryRecord
 } from "../npc/npc.service.js";
+import type { NpcTaskRecord } from "../npc-task/npc-task.repository.js";
 import type {
   CreateAiCallLogInput,
   CreateDialogueMessageInput,
@@ -74,6 +75,10 @@ export interface DialogueNpcRepositoryPort {
   listNpcEvents(actorId: string, limit: number): Promise<NpcEventRecord[]>;
 }
 
+export interface DialogueTaskRepositoryPort {
+  listTasksForCharacter(characterId: string): Promise<NpcTaskRecord[]>;
+}
+
 export interface DialogueAiPort {
   replyToNpcDialogue(input: {
     npcContext: NpcDialoguePromptContext;
@@ -104,6 +109,7 @@ export interface DialogueServiceOptions {
   dialogueRepo: DialogueRepositoryPort;
   gameRepo: DialogueGameRepositoryPort;
   npcRepo: DialogueNpcRepositoryPort;
+  taskRepo: DialogueTaskRepositoryPort;
   ai: DialogueAiPort;
   memory: DialogueMemoryPort;
   now?: () => Date;
@@ -128,7 +134,8 @@ export class DialogueService {
 
     const actors = await this.options.npcRepo.listNpcActors();
     const eligible = actors.filter((actor) => this.canTalkTo(actor));
-    const targets = await Promise.all(eligible.map((actor) => this.toTarget(actor)));
+    const tasks = await this.options.taskRepo.listTasksForCharacter(character.id);
+    const targets = await Promise.all(eligible.map((actor) => this.toTarget(actor, tasks)));
 
     return targets;
   }
@@ -281,7 +288,10 @@ export class DialogueService {
     return {
       character,
       npc,
-      target: await this.toTarget(npc)
+      target: await this.toTarget(
+        npc,
+        await this.options.taskRepo.listTasksForCharacter(character.id)
+      )
     };
   }
 
@@ -294,14 +304,21 @@ export class DialogueService {
     );
   }
 
-  private async toTarget(actor: NpcActorRecord): Promise<NpcDialogueTargetDto> {
+  private async toTarget(
+    actor: NpcActorRecord,
+    tasks: NpcTaskRecord[]
+  ): Promise<NpcDialogueTargetDto> {
+    const visibleTask = findVisibleTaskForNpc(actor.id, tasks);
     return {
       npcActorId: actor.id,
       npcKey: actor.npcKey,
       name: actor.name,
       profession: actor.profession as NpcProfession,
       currentLocation: actor.currentLocation,
-      statusLine: await this.buildStatusLine(actor)
+      statusLine: await this.buildStatusLine(actor),
+      hasTask: Boolean(visibleTask),
+      taskStatus: visibleTask?.status ?? null,
+      taskTitle: visibleTask?.title ?? null
     };
   }
 
@@ -355,6 +372,8 @@ export class DialogueService {
         now: this.now()
       })
     ]);
+    const tasks = await this.options.taskRepo.listTasksForCharacter(resolved.character.id);
+    const taskSummary = describeTaskSummary(resolved.npc.id, tasks);
 
     return {
       npc: {
@@ -363,8 +382,10 @@ export class DialogueService {
         profession: describeProfession(resolved.npc.profession),
         personality: describePersonality(resolved.npc.npcKey),
         memorySummary,
+        taskSummary,
         currentState: [
           resolved.target.statusLine,
+          taskSummary,
           describeInventory(inventory),
           action ? describeAction(resolved.npc, action) : null,
           relationship ? `关系记忆：${relationship.shortSummary}` : null,
@@ -445,6 +466,27 @@ function describeAction(actor: NpcActorRecord, action: NpcActionRecord) {
   if (action.actionType === "market_sell") return `${actor.name} 正在集市出售物资。`;
   if (action.actionType === "eat") return `${actor.name} 正在吃饭。`;
   return `${actor.name} 正在处理 ${action.actionType}。`;
+}
+
+type VisibleDialogueTask = NpcTaskRecord & { status: "open" | "accepted" };
+
+function findVisibleTaskForNpc(
+  npcActorId: string,
+  tasks: NpcTaskRecord[]
+): VisibleDialogueTask | null {
+  const visible = tasks.find(
+    (task): task is VisibleDialogueTask =>
+      task.npcActorId === npcActorId && (task.status === "open" || task.status === "accepted")
+  );
+  return visible ?? null;
+}
+
+function describeTaskSummary(npcActorId: string, tasks: NpcTaskRecord[]) {
+  const task = findVisibleTaskForNpc(npcActorId, tasks);
+  if (!task) return "当前没有可对该玩家展示的真实任务。";
+
+  const statusText = task.status === "open" ? "可接取" : "已接取";
+  return `真实任务：${task.title}，状态${statusText}，需要 ${describeItem(task.requestedItemId)} x${task.requestedQuantity}，托管奖励 ${task.rewardCopper} 铜。`;
 }
 
 function toMessageDto(record: DialogueMessageRecord): NpcDialogueMessageDto {

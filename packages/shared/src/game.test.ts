@@ -37,9 +37,9 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.6.2 NPC task compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.6.2");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(11);
+  it("exposes v0.6.3 dialogue task bridge compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.6.3");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(12);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(10);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(8);
@@ -324,7 +324,10 @@ describe("game contract", () => {
       name: "伯林",
       profession: "blacksmith",
       currentLocation: "blackpine_outpost",
-      statusLine: "正在盘点基础铁矿石库存。"
+      statusLine: "正在盘点基础铁矿石库存。",
+      hasTask: true,
+      taskStatus: "open",
+      taskTitle: "炉火缺矿"
     };
     const message: NpcDialogueMessageDto = {
       id: "msg-1",
@@ -349,7 +352,7 @@ describe("game contract", () => {
       status: "success",
       provider: "deepseek",
       model: "deepseek-v4-flash",
-      promptVersion: 2,
+      promptVersion: 3,
       accountId: "account-1",
       characterId: "character-1",
       npcActorId: target.npcActorId,
@@ -363,10 +366,12 @@ describe("game contract", () => {
     };
 
     expect(reply.target.name).toBe("伯林");
+    expect(reply.target.hasTask).toBe(true);
+    expect(reply.target.taskTitle).toBe("炉火缺矿");
     expect(reply.messages[0]?.speakerType).toBe("npc");
     expect(reply.ai.model).toBe("deepseek-v4-flash");
     expect(audit.status).toBe("success");
-    expect(audit.promptVersion).toBe(2);
+    expect(audit.promptVersion).toBe(3);
   });
 
   it("describes NPC memory entries and compressed fragments", () => {

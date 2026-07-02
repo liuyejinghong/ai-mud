@@ -153,7 +153,10 @@ const dialogueTargets: NpcDialogueTargetDto[] = [
     name: "伯林",
     profession: "blacksmith",
     currentLocation: "blackpine_outpost",
-    statusLine: "正在盘点基础铁矿石库存。"
+    statusLine: "正在盘点基础铁矿石库存。",
+    hasTask: true,
+    taskStatus: "open",
+    taskTitle: "炉火缺矿"
   }
 ];
 
@@ -323,10 +326,12 @@ describe("GameShell", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "附近 NPC" }));
     expect(await screen.findByRole("dialog", { name: "附近 NPC 对话" })).toBeTruthy();
-    expect(await screen.findByText("伯林")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /伯林/ })).toBeTruthy();
+    expect(screen.getByText("可接取：炉火缺矿")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /伯林/ }));
     expect(await screen.findByText("还没有交谈记录。")).toBeTruthy();
+    expect(screen.getByText("可接取：炉火缺矿。请在 NPC 任务面板接取或提交。")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("对 NPC 说"), {
       target: { value: "最近缺什么？" }

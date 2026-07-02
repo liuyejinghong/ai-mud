@@ -104,6 +104,12 @@ function taskStatusText(status: GameStateDto["npcTasks"][number]["status"]) {
   }[status];
 }
 
+function dialogueTaskHint(target: NpcDialogueTargetDto) {
+  if (!target.hasTask || !target.taskTitle || !target.taskStatus) return null;
+  const status = target.taskStatus === "open" ? "可接取" : "进行中";
+  return `${status}：${target.taskTitle}`;
+}
+
 export function GameShell({ csrfToken }: GameShellProps) {
   const [state, setState] = useState<GameStateDto>(initialState);
   const [name, setName] = useState("Zichen");
@@ -845,8 +851,14 @@ export function GameShell({ csrfToken }: GameShellProps) {
                     disabled={isBusy}
                     onClick={() => void openNpcDialogue(target.npcActorId)}
                   >
-                    <strong>{target.name}</strong>
+                    <strong>
+                      {target.hasTask ? "! " : ""}
+                      {target.name}
+                    </strong>
                     <span>{target.statusLine}</span>
+                    {dialogueTaskHint(target) ? (
+                      <span className="dialogue-task-hint">{dialogueTaskHint(target)}</span>
+                    ) : null}
                   </button>
                 ))}
               </aside>
@@ -854,6 +866,11 @@ export function GameShell({ csrfToken }: GameShellProps) {
               <section className="dialogue-thread" aria-label="对话记录">
                 {dialogue ? (
                   <>
+                    {dialogueTaskHint(dialogue.target) ? (
+                      <p className="dialogue-task-summary">
+                        {dialogueTaskHint(dialogue.target)}。请在 NPC 任务面板接取或提交。
+                      </p>
+                    ) : null}
                     <ol>
                       {dialogue.messages.length === 0 ? <li>还没有交谈记录。</li> : null}
                       {dialogue.messages.map((message) => (

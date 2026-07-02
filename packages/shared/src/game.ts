@@ -185,6 +185,9 @@ export interface NpcDialogueTargetDto {
   profession: NpcProfession;
   currentLocation: GameLocationId;
   statusLine: string;
+  hasTask: boolean;
+  taskStatus: "open" | "accepted" | null;
+  taskTitle: string | null;
 }
 
 export interface NpcDialogueMessageDto {

@@ -211,6 +211,7 @@ function createDialogueService(app: FastifyInstance) {
     dialogueRepo: new DialogueRepository(app.di.db),
     gameRepo: new GameRepository(app.di.db),
     npcRepo: new NpcRepository(app.di.db),
+    taskRepo: new NpcTaskRepository(app.di.db),
     memory: new NpcMemoryService(new NpcMemoryRepository(app.di.db)),
     ai: new AiOrchestrator({
       enabled: hasDeepSeekKey,
