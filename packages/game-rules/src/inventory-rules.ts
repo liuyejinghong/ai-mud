@@ -1,4 +1,5 @@
 import type { ItemId } from "@ai-mud/shared";
+import { addStackQuantity } from "./item-rules.js";
 
 export interface InventoryStack {
   itemId: ItemId;
@@ -10,13 +11,5 @@ export function addInventoryItem(
   itemId: ItemId,
   quantity: number
 ): InventoryStack[] {
-  const existing = inventory.find((item) => item.itemId === itemId);
-
-  if (!existing) {
-    return [...inventory, { itemId, quantity }];
-  }
-
-  return inventory.map((item) =>
-    item.itemId === itemId ? { ...item, quantity: item.quantity + quantity } : item
-  );
+  return addStackQuantity(inventory, itemId, quantity);
 }

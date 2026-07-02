@@ -3,6 +3,8 @@ export * from "./economy-rules.js";
 export * from "./equipment-rules.js";
 export * from "./gathering-rules.js";
 export * from "./inventory-rules.js";
+export * from "./item-rules.js";
+export * from "./loot-rules.js";
 export * from "./map-rules.js";
 export * from "./needs-rules.js";
 export * from "./npc-rules.js";
