@@ -21,6 +21,7 @@ import {
   type NpcSimulationReportDto,
   type NpcSummaryDto,
   type NpcTaskDto,
+  type WorldRumorDto,
   type WorldRuntimeStatusDto
 } from "./game.js";
 import { PRODUCT_VERSION, WORLD_COMPATIBILITY } from "./version.js";
@@ -37,14 +38,14 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.6.7 AI memory compression compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.6.7");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(16);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(10);
+  it("exposes v0.6.8 GenerateRumor compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.6.8");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(17);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(11);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(10);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(7);
-    expect(WORLD_COMPATIBILITY.promptVersion).toBe(5);
+    expect(WORLD_COMPATIBILITY.promptVersion).toBe(6);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
   });
 
@@ -120,8 +121,9 @@ describe("game contract", () => {
   it("allows v0.4.2 action commands in game state", () => {
     const state: Pick<
       GameStateDto,
-      "availableActions" | "currentAction" | "market" | "equipment" | "npcTasks"
+      "availableActions" | "currentAction" | "market" | "equipment" | "npcTasks" | "rumors"
     > = {
+      rumors: [],
       availableActions: [
         "move",
         "start_gathering",
@@ -179,6 +181,24 @@ describe("game contract", () => {
     expect(state.equipment[0]?.durabilityPct).toBe(100);
     expect(state.market?.items[0]?.itemId).toBe("iron_ore");
     expect(state.currentAction).toBeNull();
+  });
+
+  it("describes public world rumors with nullable source and expiry", () => {
+    const rumor: WorldRumorDto = {
+      id: "rumor-1",
+      sourceType: "system",
+      sourceId: null,
+      audience: "public",
+      message: "村里有人低声谈起：旧矿道外围又传来铁器敲击声。",
+      tags: ["旧矿道"],
+      generatedBy: "template",
+      createdAt: "2026-07-02T10:00:00.000Z",
+      expiresAt: null
+    };
+
+    expect(rumor.audience).toBe("public");
+    expect(rumor.sourceId).toBeNull();
+    expect(rumor.expiresAt).toBeNull();
   });
 
   it("describes manual food consumption requests", () => {

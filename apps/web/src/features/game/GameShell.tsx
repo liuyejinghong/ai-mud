@@ -49,6 +49,7 @@ const initialState: GameStateDto = {
   market: null,
   npcTasks: [],
   currentAction: null,
+  rumors: [],
   availableActions: ["create_character"],
   log: []
 };
@@ -581,6 +582,22 @@ export function GameShell({ csrfToken }: GameShellProps) {
             </div>
           </section>
         ) : null}
+
+        <section className="rumor-panel" aria-labelledby="rumor-title">
+          <div className="panel-heading">
+            <h2 id="rumor-title">传闻</h2>
+            <span>{state.rumors.length} 条</span>
+          </div>
+          {state.rumors.length === 0 ? (
+            <p className="empty-copy">暂时没有新的传闻。</p>
+          ) : (
+            <ul className="rumor-list">
+              {state.rumors.map((rumor) => (
+                <li key={rumor.id}>{rumor.message}</li>
+              ))}
+            </ul>
+          )}
+        </section>
 
         {state.currentAction ? (
           <section className="active-action-panel" aria-labelledby="active-action-title">

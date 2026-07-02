@@ -176,8 +176,32 @@ export interface WorldRuntimeStatusDto {
 }
 
 export type AiCallStatus = "success" | "fallback" | "rejected" | "error";
-export type AiCallPurpose = "npc_dialogue" | "npc_task_copy" | "npc_memory_compression";
+export type AiCallPurpose =
+  | "npc_dialogue"
+  | "npc_task_copy"
+  | "npc_memory_compression"
+  | "world_rumor";
 export type NpcDialogueSpeakerType = "player" | "npc" | "system";
+
+export type RumorSourceType =
+  | "game_event"
+  | "npc_event"
+  | "market_event"
+  | "world_event"
+  | "system";
+export type RumorAudience = "public";
+
+export interface WorldRumorDto {
+  id: string;
+  sourceType: RumorSourceType;
+  sourceId: string | null;
+  audience: RumorAudience;
+  message: string;
+  tags: string[];
+  generatedBy: "template" | "ai";
+  createdAt: string;
+  expiresAt: string | null;
+}
 
 export interface NpcDialogueTargetDto {
   npcActorId: string;
@@ -394,6 +418,7 @@ export interface GameStateDto {
   market: MarketDto | null;
   npcTasks: NpcTaskDto[];
   currentAction: CurrentActionDto | null;
+  rumors: WorldRumorDto[];
   availableActions: Array<
     | "create_character"
     | "enter_corrupt_forest"

@@ -78,6 +78,13 @@
       "when": 1782928200000,
       "tag": "0010_npc_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782931800000,
+      "tag": "0011_world_rumors",
+      "breakpoints": true
     }
   ]
 }

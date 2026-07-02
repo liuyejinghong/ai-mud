@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { NpcDialoguePromptContext } from "@ai-mud/ai-prompts";
+import type { NpcDialoguePromptContext, WorldRumorPromptContext } from "@ai-mud/ai-prompts";
 import type { AiJsonCompletionInput, AiProvider } from "./ai-provider.js";
 import { AiOrchestrator } from "./ai-orchestrator.js";
 
@@ -62,6 +62,15 @@ const memoryCompressionContext = {
     }
   ],
   fallbackSummary: "阿岚提到上周送过烤鸡。"
+};
+
+const worldRumorContext: WorldRumorPromptContext = {
+  sourceType: "npc_event",
+  sourceMessage: "伯林发现基础铁矿石库存偏低。",
+  sourceActorName: "伯林",
+  sourceLocationName: "黑松哨站",
+  worldDate: "2026-07-02",
+  fallbackMessage: "村里有人低声谈起：伯林发现基础铁矿石库存偏低。"
 };
 
 class FakeProvider implements AiProvider {
@@ -367,5 +376,81 @@ describe("AiOrchestrator", () => {
     expect(compression.status).toBe("rejected");
     expect(compression.fallbackReason).toBe("reward_promise");
     expect(compression.summary).toBe("阿岚提到上周送过烤鸡。");
+  });
+
+  it("uses deterministic world rumors when AI is disabled", async () => {
+    const provider = new FakeProvider("{}");
+    const orchestrator = new AiOrchestrator({
+      enabled: false,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      maxOutputTokens: 400,
+      timeoutMs: 8000,
+      provider
+    });
+
+    const rumor = await orchestrator.generateWorldRumor({ context: worldRumorContext });
+
+    expect(rumor.status).toBe("fallback");
+    expect(rumor.provider).toBe("template");
+    expect(rumor.message).toBe("村里有人低声谈起：伯林发现基础铁矿石库存偏低。");
+    expect(provider.lastInput).toBeNull();
+  });
+
+  it("parses valid world rumor output from the provider", async () => {
+    const provider = new FakeProvider(
+      JSON.stringify({
+        message: "村里有人低声谈起：伯林的矿箱又见了底。",
+        safety: {
+          containsNewFact: false,
+          containsRewardPromise: false,
+          containsOoc: false,
+          containsPlayerInstruction: false
+        }
+      })
+    );
+    const orchestrator = new AiOrchestrator({
+      enabled: true,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      maxOutputTokens: 400,
+      timeoutMs: 8000,
+      provider
+    });
+
+    const rumor = await orchestrator.generateWorldRumor({ context: worldRumorContext });
+
+    expect(rumor.status).toBe("success");
+    expect(rumor.message).toContain("矿箱");
+    expect(provider.lastInput?.maxTokens).toBe(120);
+    expect(provider.lastInput?.responseFormat).toEqual({ type: "json_object" });
+  });
+
+  it("falls back when world rumor output promises rewards", async () => {
+    const provider = new FakeProvider(
+      JSON.stringify({
+        message: "村里传开了：去旧矿道就能领取 100 金币。",
+        safety: {
+          containsNewFact: false,
+          containsRewardPromise: false,
+          containsOoc: false,
+          containsPlayerInstruction: false
+        }
+      })
+    );
+    const orchestrator = new AiOrchestrator({
+      enabled: true,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      maxOutputTokens: 400,
+      timeoutMs: 8000,
+      provider
+    });
+
+    const rumor = await orchestrator.generateWorldRumor({ context: worldRumorContext });
+
+    expect(rumor.status).toBe("rejected");
+    expect(rumor.fallbackReason).toBe("reward_promise");
+    expect(rumor.message).toBe(worldRumorContext.fallbackMessage);
   });
 });

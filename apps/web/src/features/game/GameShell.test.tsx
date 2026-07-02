@@ -27,6 +27,7 @@ const createCharacterState: GameStateDto = {
   market: null,
   npcTasks: [],
   currentAction: null,
+  rumors: [],
   availableActions: ["create_character"],
   log: []
 };
@@ -72,6 +73,7 @@ const villageState: GameStateDto = {
   market: null,
   npcTasks: [],
   currentAction: null,
+  rumors: [],
   availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment"],
   log: []
 };
@@ -339,6 +341,31 @@ describe("GameShell", () => {
         })
       );
     });
+  });
+
+  it("renders recent world rumors in the main game feed", async () => {
+    mockFetchWithStates([
+      {
+        ...villageState,
+        rumors: [
+          {
+            id: "rumor-1",
+            sourceType: "npc_event",
+            sourceId: "event-1",
+            audience: "public",
+            message: "村里有人低声谈起：伯林的矿箱又见了底。",
+            tags: ["ore_shortage"],
+            generatedBy: "ai",
+            createdAt: "2026-07-02T10:00:00.000Z",
+            expiresAt: null
+          }
+        ]
+      }
+    ]);
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByText("传闻")).toBeTruthy();
+    expect(screen.getByText("村里有人低声谈起：伯林的矿箱又见了底。")).toBeTruthy();
   });
 
   it("opens NPC dialogue and sends one free-text message", async () => {

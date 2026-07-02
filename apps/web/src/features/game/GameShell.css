@@ -277,6 +277,26 @@
   padding: 12px;
 }
 
+.rumor-panel {
+  border: 1px solid rgba(119, 184, 160, 0.46);
+  background: rgba(3, 14, 9, 0.62);
+  margin-bottom: 14px;
+  padding: 12px;
+}
+
+.rumor-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+  color: #d8dce0;
+  line-height: 1.6;
+}
+
+.rumor-list li::marker {
+  color: #d8a735;
+}
+
 .npc-task-list {
   display: grid;
   gap: 10px;

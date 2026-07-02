@@ -26,7 +26,8 @@ import {
   sessions,
   worldActors,
   worldResourceNodes,
-  worldRuntimeState
+  worldRuntimeState,
+  worldRumors
 } from "./schema.js";
 
 function getDrizzleTableName(table: unknown) {
@@ -114,6 +115,18 @@ describe("foundation schema", () => {
     expect(npcDialogueMessages.message.getSQLType()).toBe("text");
     expect(npcRelationships.familiarity.getSQLType()).toBe("integer");
     expect(npcRelationships.trust.getSQLType()).toBe("integer");
+  });
+
+  it("defines world rumors for player-visible event flavor", () => {
+    expect(getDrizzleTableName(worldRumors)).toBe("world_rumors");
+    expect(worldRumors.sourceType.getSQLType()).toBe("text");
+    expect(worldRumors.sourceId.getSQLType()).toBe("uuid");
+    expect(worldRumors.settlementId.getSQLType()).toBe("text");
+    expect(worldRumors.audience.getSQLType()).toBe("text");
+    expect(worldRumors.message.getSQLType()).toBe("text");
+    expect(worldRumors.tags.getSQLType()).toBe("jsonb");
+    expect(worldRumors.generatedBy.getSQLType()).toBe("text");
+    expect(worldRumors.expiresAt.getSQLType()).toBe("timestamp with time zone");
   });
 
   it("defines NPC memory entry and fragment tables", () => {

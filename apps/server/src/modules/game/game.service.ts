@@ -1267,6 +1267,7 @@ export class GameService {
         market: null,
         npcTasks: [],
         currentAction: null,
+        rumors: [],
         availableActions: ["create_character"],
         log: []
       };
@@ -1305,6 +1306,7 @@ export class GameService {
         market: null,
         npcTasks: [],
         currentAction,
+        rumors: [],
         availableActions,
         log: log.map((entry) => ({
           id: entry.id,
@@ -1343,6 +1345,7 @@ export class GameService {
       market: null,
       npcTasks: [],
       currentAction,
+      rumors: [],
       availableActions,
       log: log.map((entry) => ({
         id: entry.id,

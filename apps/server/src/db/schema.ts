@@ -362,6 +362,30 @@ export const aiCallLogs = pgTable(
   })
 );
 
+export const worldRumors = pgTable(
+  "world_rumors",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceType: text("source_type").notNull(),
+    sourceId: uuid("source_id"),
+    settlementId: text("settlement_id"),
+    audience: text("audience").notNull().default("public"),
+    message: text("message").notNull(),
+    tags: jsonb("tags").$type<string[]>().notNull().default([]),
+    generatedBy: text("generated_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true })
+  },
+  (table) => ({
+    sourceIdx: index("world_rumors_source_idx").on(table.sourceType, table.sourceId),
+    createdAtIdx: index("world_rumors_created_at_idx").on(table.createdAt),
+    audienceCreatedAtIdx: index("world_rumors_audience_created_at_idx").on(
+      table.audience,
+      table.createdAt
+    )
+  })
+);
+
 export const npcDialogueMessages = pgTable(
   "npc_dialogue_messages",
   {

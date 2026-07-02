@@ -3,7 +3,8 @@ import {
   NPC_MEMORY_COMPRESSION_PROMPT_VERSION,
   NPC_TASK_COPY_PROMPT_VERSION,
   type NpcMemoryCompressionPromptContext,
-  type NpcTaskCopyPromptContext
+  type NpcTaskCopyPromptContext,
+  type WorldRumorPromptContext
 } from "@ai-mud/ai-prompts";
 import { getItemById } from "@ai-mud/content";
 import {
@@ -45,6 +46,8 @@ import {
   NpcTaskServiceError,
   type NpcTaskCopywriterInput
 } from "../npc-task/npc-task.service.js";
+import { RumorRepository } from "../rumor/rumor.repository.js";
+import { RumorService } from "../rumor/rumor.service.js";
 import { GameRepository } from "./game.repository.js";
 import { GameService, GameServiceError } from "./game.service.js";
 
@@ -131,14 +134,29 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
   const game = new GameService(app.di.db);
   const dialogue = createDialogueService(app);
   const task = createNpcTaskService(app);
+  const rumor = createRumorService(app);
 
-  const withNpcTasks = async (accountId: string, state: GameStateDto): Promise<GameStateDto> => {
+  const withNpcTasksAndRumors = async (
+    accountId: string,
+    state: GameStateDto
+  ): Promise<GameStateDto> => {
     if (!state.character) return state;
     const npcTasks = await task.listTasksForAccount(accountId, new Date());
     const availableActions = npcTasks.length
       ? Array.from(new Set([...state.availableActions, "view_npc_tasks" as const]))
       : state.availableActions;
-    return { ...state, npcTasks, availableActions };
+    let rumors = state.rumors;
+    try {
+      await rumor.syncRumors({ now: new Date(), batchLimit: 3 });
+      rumors = await rumor.listRecentPublicRumors(8);
+    } catch {
+      try {
+        rumors = await rumor.listRecentPublicRumors(8);
+      } catch {
+        rumors = state.rumors;
+      }
+    }
+    return { ...state, npcTasks, availableActions, rumors };
   };
 
   return {
@@ -159,36 +177,40 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
     settleWorldIfDue: async () => {
       await app.di.worldRuntime.settleDue(new Date());
     },
-    getState: async (accountId) => withNpcTasks(accountId, await game.getState(accountId)),
+    getState: async (accountId) => withNpcTasksAndRumors(accountId, await game.getState(accountId)),
     createCharacter: async (accountId, input) =>
-      withNpcTasks(accountId, await game.createCharacter(accountId, input)),
+      withNpcTasksAndRumors(accountId, await game.createCharacter(accountId, input)),
     enterCorruptForest: async (accountId) =>
-      withNpcTasks(accountId, await game.enterCorruptForest(accountId)),
-    move: async (accountId, direction) => withNpcTasks(accountId, await game.move(accountId, direction)),
+      withNpcTasksAndRumors(accountId, await game.enterCorruptForest(accountId)),
+    move: async (accountId, direction) =>
+      withNpcTasksAndRumors(accountId, await game.move(accountId, direction)),
     startGathering: async (accountId, input) =>
-      withNpcTasks(accountId, await game.startGathering(accountId, input)),
-    startCombat: async (accountId) => withNpcTasks(accountId, await game.startCombat(accountId)),
-    cancelAction: async (accountId) => withNpcTasks(accountId, await game.cancelAction(accountId)),
+      withNpcTasksAndRumors(accountId, await game.startGathering(accountId, input)),
+    startCombat: async (accountId) =>
+      withNpcTasksAndRumors(accountId, await game.startCombat(accountId)),
+    cancelAction: async (accountId) =>
+      withNpcTasksAndRumors(accountId, await game.cancelAction(accountId)),
     returnToVillage: async (accountId) =>
-      withNpcTasks(accountId, await game.returnToVillage(accountId)),
+      withNpcTasksAndRumors(accountId, await game.returnToVillage(accountId)),
     getMarket: (accountId) => game.getMarket(accountId),
     buyMarketItem: async (accountId, input) =>
-      withNpcTasks(accountId, await game.buyMarketItem(accountId, input)),
+      withNpcTasksAndRumors(accountId, await game.buyMarketItem(accountId, input)),
     sellMarketItem: async (accountId, input) =>
-      withNpcTasks(accountId, await game.sellMarketItem(accountId, input)),
+      withNpcTasksAndRumors(accountId, await game.sellMarketItem(accountId, input)),
     getRepairQuote: (accountId, input) => game.getRepairQuote(accountId, input),
     repairEquipment: async (accountId, input) =>
-      withNpcTasks(accountId, await game.repairEquipment(accountId, input)),
+      withNpcTasksAndRumors(accountId, await game.repairEquipment(accountId, input)),
     repairAllEquipment: async (accountId) =>
-      withNpcTasks(accountId, await game.repairAllEquipment(accountId)),
-    eatFood: async (accountId, input) => withNpcTasks(accountId, await game.eatFood(accountId, input)),
+      withNpcTasksAndRumors(accountId, await game.repairAllEquipment(accountId)),
+    eatFood: async (accountId, input) =>
+      withNpcTasksAndRumors(accountId, await game.eatFood(accountId, input)),
     acceptNpcTask: async (accountId, taskId) => {
       await task.acceptTask(accountId, taskId, new Date());
-      return withNpcTasks(accountId, await game.getState(accountId));
+      return withNpcTasksAndRumors(accountId, await game.getState(accountId));
     },
     completeNpcTask: async (accountId, taskId) => {
       await task.completeTask(accountId, taskId, new Date());
-      return withNpcTasks(accountId, await game.getState(accountId));
+      return withNpcTasksAndRumors(accountId, await game.getState(accountId));
     },
     listDialogueTargets: (accountId) => dialogue.listDialogueTargets(accountId),
     getNpcDialogue: (accountId, npcActorId) => dialogue.getDialogue(accountId, npcActorId),
@@ -202,6 +224,14 @@ function createNpcTaskService(app: FastifyInstance) {
     new NpcTaskRepository(app.di.db),
     createNpcMemoryService(app),
     createNpcTaskCopywriter(app)
+  );
+}
+
+function createRumorService(app: FastifyInstance) {
+  return new RumorService(
+    new RumorRepository(app.di.db),
+    createWorldRumorGenerator(app),
+    new DialogueRepository(app.di.db)
   );
 }
 
@@ -280,6 +310,14 @@ function createNpcTaskCopywriter(app: FastifyInstance) {
 
       return { title: result.title, description: result.description };
     }
+  };
+}
+
+function createWorldRumorGenerator(app: FastifyInstance) {
+  const ai = createAiOrchestrator(app);
+  return {
+    generateRumor: async (input: { context: WorldRumorPromptContext }) =>
+      ai.generateWorldRumor(input)
   };
 }
 

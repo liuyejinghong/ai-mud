@@ -64,6 +64,7 @@ const baseState: GameStateDto = {
   market: null,
   npcTasks: [],
   currentAction: null,
+  rumors: [],
   availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment"],
   log: []
 };
