@@ -99,6 +99,13 @@
       "when": 1782994500000,
       "tag": "0013_npc_task_active_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1782998100000,
+      "tag": "0014_world_regeneration_state",
+      "breakpoints": true
     }
   ]
 }

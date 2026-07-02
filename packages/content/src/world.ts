@@ -142,6 +142,8 @@ export const BLACKPINE_OUTPOST = {
   description: "潮湿黑松围住木墙，哨塔上的火盆把灰雾照成暗红色。"
 };
 
+export const BLACKPINE_DAILY_NPC_WAGE_COPPER = 25;
+
 export const FIRST_NPCS: NpcDefinition[] = [
   {
     key: "blackpine_farmer_mara",

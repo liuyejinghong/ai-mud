@@ -5,11 +5,11 @@ describe("version constants", () => {
   it("exposes the v0.7.1 critical debt repair product line and compatibility versions", () => {
     expect(PRODUCT_VERSION).toBe("0.7.1");
     expect(WORLD_COMPATIBILITY).toEqual({
-      schemaVersion: 13,
+      schemaVersion: 14,
       apiVersion: 20,
-      engineVersion: 1,
-      rulesetVersion: 10,
-      contentVersion: 7,
+      engineVersion: 2,
+      rulesetVersion: 11,
+      contentVersion: 8,
       promptVersion: 7,
       economyVersion: 2,
       worldSeedVersion: 1

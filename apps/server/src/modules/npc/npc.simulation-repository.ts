@@ -27,6 +27,7 @@ function cloneAction(action: NpcActionRecord): NpcActionRecord {
 export class NpcSimulationRepository implements NpcRepositoryPort {
   private actors: NpcActorRecord[] = [];
   private resources: Awaited<ReturnType<NpcRepositoryPort["listWorldResourceNodes"]>> = [];
+  private mapInstances: Awaited<ReturnType<NpcRepositoryPort["listMapInstances"]>> = [];
   private treasury: Awaited<ReturnType<NpcRepositoryPort["findMunicipalTreasury"]>> = null;
   private inventory = new Map<string, NpcInventoryRecord[]>();
   private actions: NpcActionRecord[] = [];
@@ -43,7 +44,13 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
     }));
     simulation.resources = (await repo.listWorldResourceNodes()).map((resource) => ({
       ...resource,
-      position: { ...resource.position }
+      position: { ...resource.position },
+      lastRefreshedAt: cloneDate(resource.lastRefreshedAt)
+    }));
+    simulation.mapInstances = (await repo.listMapInstances()).map((map) => ({
+      ...map,
+      resourceCharges: { ...map.resourceCharges },
+      resourcesRefreshedAt: cloneDate(map.resourcesRefreshedAt)
     }));
     const treasury = await repo.findMunicipalTreasury(BLACKPINE_MARKET_ID);
     simulation.treasury = treasury ? { ...treasury } : null;
@@ -101,13 +108,32 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
     resourceId: string;
     position: GridPositionDto;
     charges: number;
+    lastRefreshedAt?: Date;
   }) {
     this.resources.push({
       zoneId: input.zoneId,
       resourceId: input.resourceId,
       position: { ...input.position },
-      charges: input.charges
+      charges: input.charges,
+      lastRefreshedAt: input.lastRefreshedAt ? cloneDate(input.lastRefreshedAt) : new Date()
     });
+  }
+
+  async listMapInstances() {
+    return this.mapInstances;
+  }
+
+  async updateMapResourceCharges(input: {
+    mapInstanceId: string;
+    resourceCharges: Record<string, number>;
+    resourcesRefreshedAt?: Date;
+  }) {
+    const map = this.mapInstances.find((entry) => entry.id === input.mapInstanceId);
+    if (!map) throw new Error("Map instance not found");
+    map.resourceCharges = { ...input.resourceCharges };
+    if (input.resourcesRefreshedAt) {
+      map.resourcesRefreshedAt = cloneDate(input.resourcesRefreshedAt);
+    }
   }
 
   async findMunicipalTreasury(settlementId: typeof BLACKPINE_MARKET_ID) {
@@ -190,10 +216,32 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
     return (this.events.get(actorId) ?? []).slice(0, limit);
   }
 
-  async updateWorldResourceNodeCharges(input: { resourceId: string; charges: number }) {
+  async createNpcEvent(input: {
+    actorId: string;
+    eventType: string;
+    message: string;
+    metadata: Record<string, unknown>;
+    createdAt: Date;
+  }) {
+    const rows = this.events.get(input.actorId) ?? [];
+    rows.unshift({
+      id: `simulation-event-${rows.length + 1}`,
+      actorId: input.actorId,
+      message: input.message,
+      createdAt: cloneDate(input.createdAt)
+    });
+    this.events.set(input.actorId, rows);
+  }
+
+  async updateWorldResourceNodeCharges(input: {
+    resourceId: string;
+    charges: number;
+    lastRefreshedAt?: Date;
+  }) {
     const resource = this.resources.find((entry) => entry.resourceId === input.resourceId);
     if (!resource) throw new Error("World resource node not found");
     resource.charges = input.charges;
+    if (input.lastRefreshedAt) resource.lastRefreshedAt = cloneDate(input.lastRefreshedAt);
   }
 
   async updateMunicipalTreasury(input: {

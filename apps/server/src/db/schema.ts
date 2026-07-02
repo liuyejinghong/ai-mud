@@ -299,6 +299,7 @@ export const worldResourceNodes = pgTable(
     resourceId: text("resource_id").notNull(),
     position: jsonb("position").notNull(),
     charges: integer("charges").notNull(),
+    lastRefreshedAt: timestamp("last_refreshed_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
@@ -559,6 +560,7 @@ export const mapInstances = pgTable(
     characterId: uuid("character_id").notNull().references(() => characters.id),
     zoneId: gameLocation("zone_id").notNull(),
     resourceCharges: jsonb("resource_charges").notNull().default({}),
+    resourcesRefreshedAt: timestamp("resources_refreshed_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },

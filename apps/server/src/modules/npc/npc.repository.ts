@@ -5,6 +5,7 @@ import type { Db } from "../../db/client.js";
 import {
   marketInventory,
   marketTransactions,
+  mapInstances,
   municipalTreasury,
   npcActions,
   npcEvents,
@@ -56,6 +57,16 @@ function toNpcActor(row: typeof worldActors.$inferSelect): NpcActorRecord {
 
 function parsePayload(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+}
+
+function parseResourceCharges(value: unknown): Record<string, number> {
+  if (typeof value !== "object" || value === null) return {};
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(
+      (entry): entry is [string, number] => typeof entry[1] === "number"
+    )
+  );
 }
 
 function toNpcAction(row: typeof npcActions.$inferSelect): NpcActionRecord {
@@ -111,7 +122,8 @@ export class NpcRepository implements NpcRepositoryPort {
       zoneId: row.zoneId as "corrupt_forest",
       resourceId: row.resourceId,
       position: parsePosition(row.position) ?? { x: 0, y: 0 },
-      charges: row.charges
+      charges: row.charges,
+      lastRefreshedAt: row.lastRefreshedAt
     }));
   }
 
@@ -120,13 +132,45 @@ export class NpcRepository implements NpcRepositoryPort {
     resourceId: string;
     position: GridPositionDto;
     charges: number;
+    lastRefreshedAt?: Date;
   }): Promise<void> {
-    await this.db.insert(worldResourceNodes).values({
+    const values: typeof worldResourceNodes.$inferInsert = {
       zoneId: input.zoneId,
       resourceId: input.resourceId,
       position: input.position,
       charges: input.charges
-    });
+    };
+    if (input.lastRefreshedAt) values.lastRefreshedAt = input.lastRefreshedAt;
+
+    await this.db.insert(worldResourceNodes).values(values);
+  }
+
+  async listMapInstances() {
+    const rows = await this.db.select().from(mapInstances);
+
+    return rows.map((row) => ({
+      id: row.id,
+      zoneId: row.zoneId,
+      resourceCharges: parseResourceCharges(row.resourceCharges),
+      resourcesRefreshedAt: row.resourcesRefreshedAt
+    }));
+  }
+
+  async updateMapResourceCharges(input: {
+    mapInstanceId: string;
+    resourceCharges: Record<string, number>;
+    resourcesRefreshedAt?: Date;
+  }): Promise<void> {
+    const values: Partial<typeof mapInstances.$inferInsert> = {
+      resourceCharges: { ...input.resourceCharges },
+      updatedAt: new Date()
+    };
+    if (input.resourcesRefreshedAt) values.resourcesRefreshedAt = input.resourcesRefreshedAt;
+
+    await this.db
+      .update(mapInstances)
+      .set(values)
+      .where(eq(mapInstances.id, input.mapInstanceId));
   }
 
   async findMunicipalTreasury(settlementId: "blackpine_outpost") {
@@ -276,13 +320,30 @@ export class NpcRepository implements NpcRepositoryPort {
     }));
   }
 
+  async createNpcEvent(input: {
+    actorId: string;
+    eventType: string;
+    message: string;
+    metadata: Record<string, unknown>;
+    createdAt: Date;
+  }): Promise<void> {
+    await this.db.insert(npcEvents).values(input);
+  }
+
   async updateWorldResourceNodeCharges(input: {
     resourceId: string;
     charges: number;
+    lastRefreshedAt?: Date;
   }): Promise<void> {
+    const values: Partial<typeof worldResourceNodes.$inferInsert> = {
+      charges: input.charges,
+      updatedAt: new Date()
+    };
+    if (input.lastRefreshedAt) values.lastRefreshedAt = input.lastRefreshedAt;
+
     await this.db
       .update(worldResourceNodes)
-      .set({ charges: input.charges, updatedAt: new Date() })
+      .set(values)
       .where(eq(worldResourceNodes.resourceId, input.resourceId));
   }
 

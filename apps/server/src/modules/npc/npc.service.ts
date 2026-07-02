@@ -1,4 +1,5 @@
 import {
+  BLACKPINE_DAILY_NPC_WAGE_COPPER,
   CORRUPT_FOREST,
   FIRST_NPCS,
   FIRST_ITEMS,
@@ -11,6 +12,7 @@ import {
   calculateMarketQuote,
   calculateHungerStatus,
   calculateNextMealAt,
+  settleHunger,
   formatMoney,
   chooseNpcMealIntent,
   chooseNpcWorkIntent,
@@ -30,6 +32,10 @@ import { NpcSimulationRepository } from "./npc.simulation-repository.js";
 
 const BLACKPINE_MARKET_ID = "blackpine_outpost" as const;
 const INITIAL_TREASURY_COPPER = 10_000;
+const DAY_MS = 24 * 60 * 60_000;
+const FOOD_RESERVE_QUANTITY = 1;
+const BLACKSMITH_IRON_ORE_RESERVE = 3;
+const BLACKSMITH_REPAIR_ORE_COST = 1;
 
 export interface NpcActorRecord {
   id: string;
@@ -60,6 +66,13 @@ export interface NpcMarketInventoryRecord {
   baseSellPriceCopper: number;
 }
 
+export interface MapInstanceResourceRecord {
+  id: string;
+  zoneId: GameLocationId;
+  resourceCharges: Record<string, number>;
+  resourcesRefreshedAt: Date;
+}
+
 export interface NpcActionRecord {
   id: string;
   actorId: string;
@@ -85,12 +98,20 @@ export interface NpcRepositoryPort {
     resourceId: string;
     position: GridPositionDto;
     charges: number;
+    lastRefreshedAt: Date;
   }>>;
   createWorldResourceNode(input: {
     zoneId: typeof CORRUPT_FOREST.id;
     resourceId: string;
     position: GridPositionDto;
     charges: number;
+    lastRefreshedAt?: Date;
+  }): Promise<void>;
+  listMapInstances(): Promise<MapInstanceResourceRecord[]>;
+  updateMapResourceCharges(input: {
+    mapInstanceId: string;
+    resourceCharges: Record<string, number>;
+    resourcesRefreshedAt?: Date;
   }): Promise<void>;
   findMunicipalTreasury(settlementId: typeof BLACKPINE_MARKET_ID): Promise<{
     settlementId: typeof BLACKPINE_MARKET_ID;
@@ -125,9 +146,17 @@ export interface NpcRepositoryPort {
   }): Promise<NpcActionRecord>;
   markNpcActionCompleted(actionId: string, completedAt?: Date): Promise<void>;
   listNpcEvents(actorId: string, limit: number): Promise<NpcEventRecord[]>;
+  createNpcEvent(input: {
+    actorId: string;
+    eventType: string;
+    message: string;
+    metadata: Record<string, unknown>;
+    createdAt: Date;
+  }): Promise<void>;
   updateWorldResourceNodeCharges(input: {
     resourceId: string;
     charges: number;
+    lastRefreshedAt?: Date;
   }): Promise<void>;
   updateMunicipalTreasury(input: {
     settlementId: typeof BLACKPINE_MARKET_ID;
@@ -158,7 +187,7 @@ export class NpcService {
 
   async ensureWorldSeeded(now: Date) {
     await this.ensureNpcActors(now);
-    await this.ensureSharedResources();
+    await this.ensureSharedResources(now);
     await this.ensureTreasury();
   }
 
@@ -180,27 +209,33 @@ export class NpcService {
 
   async settleNpcWorld(now: Date) {
     await this.ensureWorldSeeded(now);
-    const actors = await this.repo.listNpcActors();
+    await this.refreshDailyResources(now);
+
+    let actors = await this.repo.listNpcActors();
+    await this.payScheduledNpcWages(actors, now);
+    await this.runBlacksmithMaintenance(actors, now);
+    actors = await this.repo.listNpcActors();
 
     for (const actor of actors) {
+      const settledActor = await this.settleNpcHunger(actor, now);
       const action = await this.repo.findActiveNpcAction(actor.id);
       if (action) {
         if (action.endsAt.getTime() <= now.getTime()) {
-          await this.settleNpcAction(actor, action, now);
+          await this.settleNpcAction(settledActor, action, now);
         }
         continue;
       }
 
-      const handledNeeds = await this.handleNpcNeeds(actor);
+      const handledNeeds = await this.handleNpcNeeds(settledActor);
       if (handledNeeds) continue;
 
-      const soldInventory = await this.sellNpcSurplusToMarket(actor);
+      const soldInventory = await this.sellNpcSurplusToMarket(settledActor);
       if (soldInventory) continue;
 
-      const returningToMarket = await this.returnNpcInventoryToMarket(actor, now);
+      const returningToMarket = await this.returnNpcInventoryToMarket(settledActor, now);
       if (returningToMarket) continue;
 
-      await this.createNextNpcAction(actor, now);
+      await this.createNextNpcAction(settledActor, now);
     }
   }
 
@@ -338,7 +373,7 @@ export class NpcService {
     }
   }
 
-  private async ensureSharedResources() {
+  private async ensureSharedResources(now: Date) {
     const existing = await this.repo.listWorldResourceNodes();
     const existingKeys = new Set(
       existing.map((resource) => `${resource.zoneId}:${resource.resourceId}`)
@@ -351,7 +386,8 @@ export class NpcService {
         zoneId: CORRUPT_FOREST.id,
         resourceId: resource.id,
         position: resource.position,
-        charges: resource.charges
+        charges: resource.charges,
+        lastRefreshedAt: now
       });
     }
   }
@@ -521,7 +557,7 @@ export class NpcService {
     if (actor.currentLocation !== BLACKPINE_MARKET_ID) return false;
 
     const inventory = await this.repo.listNpcInventory(actor.id);
-    const item = inventory.find((entry) => entry.quantity > 0);
+    const item = this.findSellableInventoryItem(actor, inventory);
     if (!item) return false;
 
     const marketInventory = await this.repo.listMarketInventory(BLACKPINE_MARKET_ID);
@@ -621,6 +657,150 @@ export class NpcService {
         const rightItem = FIRST_ITEMS.find((item) => item.id === right.itemId);
         return (leftItem?.itemLevel ?? 99) - (rightItem?.itemLevel ?? 99);
       })[0] ?? null;
+  }
+
+  private async refreshDailyResources(now: Date) {
+    const resources = await this.repo.listWorldResourceNodes();
+    for (const resource of resources) {
+      if (!this.isDailyRefreshDue(resource.lastRefreshedAt, now)) continue;
+
+      const definition = getResourceById(resource.resourceId);
+      if (!definition) continue;
+
+      await this.repo.updateWorldResourceNodeCharges({
+        resourceId: resource.resourceId,
+        charges: definition.charges,
+        lastRefreshedAt: now
+      });
+    }
+
+    const maps = await this.repo.listMapInstances();
+    for (const map of maps) {
+      if (!this.isDailyRefreshDue(map.resourcesRefreshedAt, now)) continue;
+
+      const charges = this.initialResourceChargesForZone(map.zoneId);
+      if (!charges) continue;
+
+      await this.repo.updateMapResourceCharges({
+        mapInstanceId: map.id,
+        resourceCharges: charges,
+        resourcesRefreshedAt: now
+      });
+    }
+  }
+
+  private async settleNpcHunger(actor: NpcActorRecord, now: Date): Promise<NpcActorRecord> {
+    const inventory = await this.repo.listNpcInventory(actor.id);
+    const settlement = settleHunger({
+      currentHunger: actor.hunger,
+      lastSettledAt: actor.lastHungerSettledAt,
+      now,
+      inventory: inventory
+        .filter((item): item is { itemId: ItemId; quantity: number } =>
+          typeof item.itemId === "string" && this.isKnownItem(item.itemId)
+        )
+        .map((item) => ({ itemId: item.itemId, quantity: item.quantity })),
+      foods: FIRST_ITEMS.filter((item) => item.category === "food").map((item) => ({
+        itemId: item.id,
+        itemLevel: item.itemLevel,
+        satietyRestore: item.satietyRestore ?? 1
+      }))
+    });
+
+    if (settlement.missedMeals <= 0) return actor;
+
+    for (const consumed of settlement.consumed) {
+      await this.addNpcInventoryItem(actor.id, consumed.itemId, -consumed.quantity);
+    }
+
+    await this.repo.updateNpcActor({
+      actorId: actor.id,
+      hunger: settlement.hunger,
+      lastHungerSettledAt: now
+    });
+
+    return {
+      ...actor,
+      hunger: settlement.hunger,
+      lastHungerSettledAt: now
+    };
+  }
+
+  private async payScheduledNpcWages(actors: NpcActorRecord[], now: Date) {
+    if (!this.isDailyMaintenanceTick(now)) return;
+    if (!actors.some((actor) => getNpcByKey(actor.npcKey)?.paysWages)) return;
+
+    for (const actor of actors) {
+      const npc = getNpcByKey(actor.npcKey);
+      if (!npc || npc.paysWages) continue;
+      await this.payNpcWage(actor.id, BLACKPINE_DAILY_NPC_WAGE_COPPER);
+    }
+  }
+
+  private async runBlacksmithMaintenance(actors: NpcActorRecord[], now: Date) {
+    if (!this.isDailyMaintenanceTick(now)) return;
+
+    for (const actor of actors) {
+      if (actor.profession !== "blacksmith") continue;
+
+      const inventory = await this.repo.listNpcInventory(actor.id);
+      const ironOre = inventory.find((item) => item.itemId === "iron_ore");
+      if (!ironOre || ironOre.quantity < BLACKSMITH_IRON_ORE_RESERVE) continue;
+
+      await this.addNpcInventoryItem(actor.id, "iron_ore", -BLACKSMITH_REPAIR_ORE_COST);
+      await this.repo.createNpcEvent({
+        actorId: actor.id,
+        eventType: "npc.blacksmith.forge_maintenance",
+        message: `${actor.name}消耗 ${BLACKSMITH_REPAIR_ORE_COST} 份基础铁矿石修炉。`,
+        metadata: { itemId: "iron_ore", quantity: BLACKSMITH_REPAIR_ORE_COST },
+        createdAt: now
+      });
+    }
+  }
+
+  private findSellableInventoryItem(actor: NpcActorRecord, inventory: NpcInventoryRecord[]) {
+    for (const item of inventory) {
+      const reserve = this.getInventoryReserve(actor, item.itemId);
+      const sellableQuantity = Math.max(0, item.quantity - reserve);
+      if (sellableQuantity > 0) {
+        return { ...item, quantity: sellableQuantity };
+      }
+    }
+
+    return null;
+  }
+
+  private getInventoryReserve(actor: NpcActorRecord, itemId: ItemId | string) {
+    let reserve = this.isFoodItem(itemId) ? FOOD_RESERVE_QUANTITY : 0;
+    if (actor.profession === "blacksmith" && itemId === "iron_ore") {
+      reserve = Math.max(reserve, BLACKSMITH_IRON_ORE_RESERVE);
+    }
+    return reserve;
+  }
+
+  private isKnownItem(itemId: string): itemId is ItemId {
+    return FIRST_ITEMS.some((item) => item.id === itemId);
+  }
+
+  private isDailyRefreshDue(lastRefreshedAt: Date, now: Date) {
+    return now.getTime() - lastRefreshedAt.getTime() >= DAY_MS;
+  }
+
+  private isDailyMaintenanceTick(now: Date) {
+    return (
+      now.getUTCHours() === 0 &&
+      now.getUTCMinutes() === 0 &&
+      now.getUTCSeconds() === 0 &&
+      now.getUTCMilliseconds() === 0
+    );
+  }
+
+  private initialResourceChargesForZone(zoneId: GameLocationId) {
+    if (zoneId !== CORRUPT_FOREST.id) return null;
+
+    return Object.fromEntries(
+      CORRUPT_FOREST.resources.map((resource) => [resource.id, resource.charges])
+    );
   }
 
   private async settleNpcAction(actor: NpcActorRecord, action: NpcActionRecord, now: Date) {

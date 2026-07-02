@@ -25,6 +25,14 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
     resourceId: string;
     position: { x: number; y: number };
     charges: number;
+    lastRefreshedAt: Date;
+  }> = [];
+
+  mapInstances: Array<{
+    id: string;
+    zoneId: "corrupt_forest";
+    resourceCharges: Record<string, number>;
+    resourcesRefreshedAt: Date;
   }> = [];
 
   treasury: { settlementId: "blackpine_outpost"; copperBalance: number } | null = null;
@@ -99,8 +107,27 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
     resourceId: string;
     position: { x: number; y: number };
     charges: number;
+    lastRefreshedAt?: Date;
   }) {
-    this.resources.push(input);
+    this.resources.push({
+      ...input,
+      lastRefreshedAt: input.lastRefreshedAt ?? new Date("2026-07-01T00:00:00.000Z")
+    });
+  }
+
+  async listMapInstances() {
+    return this.mapInstances;
+  }
+
+  async updateMapResourceCharges(input: {
+    mapInstanceId: string;
+    resourceCharges: Record<string, number>;
+    resourcesRefreshedAt?: Date;
+  }) {
+    const map = this.mapInstances.find((entry) => entry.id === input.mapInstanceId);
+    if (!map) throw new Error("map instance not found");
+    map.resourceCharges = input.resourceCharges;
+    if (input.resourcesRefreshedAt) map.resourcesRefreshedAt = input.resourcesRefreshedAt;
   }
 
   async findMunicipalTreasury(settlementId: "blackpine_outpost") {
@@ -185,10 +212,30 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
     return this.events.filter((event) => event.actorId === actorId).slice(0, limit);
   }
 
-  async updateWorldResourceNodeCharges(input: { resourceId: string; charges: number }) {
+  async createNpcEvent(input: {
+    actorId: string;
+    eventType: string;
+    message: string;
+    metadata: Record<string, unknown>;
+    createdAt: Date;
+  }) {
+    this.events.push({
+      id: `event-${this.events.length + 1}`,
+      actorId: input.actorId,
+      message: input.message,
+      createdAt: input.createdAt
+    });
+  }
+
+  async updateWorldResourceNodeCharges(input: {
+    resourceId: string;
+    charges: number;
+    lastRefreshedAt?: Date;
+  }) {
     const resource = this.resources.find((entry) => entry.resourceId === input.resourceId);
     if (!resource) throw new Error("resource not found");
     resource.charges = input.charges;
+    if (input.lastRefreshedAt) resource.lastRefreshedAt = input.lastRefreshedAt;
   }
 
   async updateMunicipalTreasury(input: {
@@ -393,6 +440,73 @@ describe("NpcService", () => {
     expect(repo.treasury?.copperBalance).toBe(9_975);
   });
 
+  it("settles NPC hunger decay during world ticks", async () => {
+    const repo = new InMemoryNpcRepository();
+    const service = new NpcService(repo);
+    const seededAt = new Date("2026-07-01T07:00:00.000Z");
+
+    await service.ensureWorldSeeded(seededAt);
+    const farmer = repo.actors.find((actor) => actor.npcKey === "blackpine_farmer_mara")!;
+
+    await service.settleNpcWorld(new Date("2026-07-01T09:00:00.000Z"));
+
+    expect(farmer.hunger).toBe(4);
+    expect(farmer.lastHungerSettledAt.toISOString()).toBe("2026-07-01T09:00:00.000Z");
+  });
+
+  it("restores shared and character map resource charges from the world tick", async () => {
+    const repo = new InMemoryNpcRepository();
+    const service = new NpcService(repo);
+    const seededAt = new Date("2026-07-01T00:00:00.000Z");
+    const refreshedAt = new Date("2026-07-02T00:01:00.000Z");
+
+    await service.ensureWorldSeeded(seededAt);
+    const sharedNode = repo.resources.find(
+      (resource) => resource.resourceId === "forest_berry_patch_01"
+    )!;
+    sharedNode.charges = 0;
+    sharedNode.lastRefreshedAt = seededAt;
+    repo.mapInstances.push({
+      id: "map-1",
+      zoneId: "corrupt_forest",
+      resourceCharges: {
+        forest_berry_patch_01: 0,
+        abandoned_iron_vein_01: 0
+      },
+      resourcesRefreshedAt: seededAt
+    });
+
+    await service.settleNpcWorld(refreshedAt);
+
+    expect(sharedNode.charges).toBe(3);
+    expect(sharedNode.lastRefreshedAt).toBe(refreshedAt);
+    expect(repo.mapInstances[0]?.resourceCharges).toMatchObject({
+      forest_berry_patch_01: 3,
+      abandoned_iron_vein_01: 120
+    });
+    expect(repo.mapInstances[0]?.resourcesRefreshedAt).toBe(refreshedAt);
+  });
+
+  it("pays scheduled NPC wages from the municipal treasury on the daily tick", async () => {
+    const repo = new InMemoryNpcRepository();
+    const service = new NpcService(repo);
+    const tickAt = new Date("2026-07-01T00:00:00.000Z");
+
+    await service.ensureWorldSeeded(tickAt);
+    const farmer = repo.actors.find((actor) => actor.npcKey === "blackpine_farmer_mara")!;
+    const miner = repo.actors.find((actor) => actor.npcKey === "blackpine_miner_torin")!;
+    const blacksmith = repo.actors.find(
+      (actor) => actor.npcKey === "blackpine_blacksmith_borin"
+    )!;
+
+    await service.settleNpcWorld(tickAt);
+
+    expect(farmer.copperBalance).toBe(65);
+    expect(miner.copperBalance).toBe(60);
+    expect(blacksmith.copperBalance).toBe(145);
+    expect(repo.treasury?.copperBalance).toBe(9_925);
+  });
+
   it("sells gathered NPC inventory into the municipal market with an actor ledger", async () => {
     const repo = new InMemoryNpcRepository();
     const service = new NpcService(repo);
@@ -415,11 +529,11 @@ describe("NpcService", () => {
     await service.settleNpcWorld(now);
 
     expect(await repo.listNpcInventory(farmer.id)).toEqual([
-      { itemId: "wild_berry", quantity: 0 }
+      { itemId: "wild_berry", quantity: 1 }
     ]);
-    expect(repo.marketInventory.get("wild_berry")?.quantity).toBe(12);
-    expect(farmer.copperBalance).toBe(11);
-    expect(repo.treasury?.copperBalance).toBe(9_989);
+    expect(repo.marketInventory.get("wild_berry")?.quantity).toBe(11);
+    expect(farmer.copperBalance).toBe(5);
+    expect(repo.treasury?.copperBalance).toBe(9_995);
     expect(repo.transactions).toEqual([
       expect.objectContaining({
         actorId: farmer.id,
@@ -427,13 +541,48 @@ describe("NpcService", () => {
         actorName: farmer.name,
         transactionType: "sell",
         itemId: "wild_berry",
-        quantity: 2,
+        quantity: 1,
         unitPriceCopper: 6,
-        grossCopper: 12,
+        grossCopper: 6,
         taxCopper: 1,
-        netCopper: 11
+        netCopper: 5
       })
     ]);
+  });
+
+  it("reserves blacksmith iron ore and consumes it for daily forge upkeep", async () => {
+    const repo = new InMemoryNpcRepository();
+    const service = new NpcService(repo);
+    const tickAt = new Date("2026-07-01T00:00:00.000Z");
+
+    await service.ensureWorldSeeded(tickAt);
+    repo.seedMarketItem({
+      itemId: "iron_ore",
+      quantity: 10,
+      targetQuantity: 20,
+      baseBuyPriceCopper: 10,
+      baseSellPriceCopper: 18
+    });
+    const blacksmith = repo.actors.find(
+      (actor) => actor.npcKey === "blackpine_blacksmith_borin"
+    )!;
+    await service.addNpcInventoryItem(blacksmith.id, "iron_ore", 3);
+
+    await service.settleNpcWorld(tickAt);
+
+    expect(await repo.listNpcInventory(blacksmith.id)).toEqual([
+      { itemId: "iron_ore", quantity: 2 }
+    ]);
+    expect(repo.marketInventory.get("iron_ore")?.quantity).toBe(10);
+    expect(repo.transactions).not.toContainEqual(
+      expect.objectContaining({ actorId: blacksmith.id, itemId: "iron_ore" })
+    );
+    expect(repo.events).toContainEqual(
+      expect.objectContaining({
+        actorId: blacksmith.id,
+        message: "伯林消耗 1 份基础铁矿石修炉。"
+      })
+    );
   });
 
   it("lets hungry NPCs buy and eat market food before working", async () => {
