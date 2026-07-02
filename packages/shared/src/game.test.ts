@@ -37,14 +37,14 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.6.6 verified memory favor compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.6.6");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(15);
+  it("exposes v0.6.7 AI memory compression compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.6.7");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(16);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(10);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(10);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(7);
-    expect(WORLD_COMPATIBILITY.promptVersion).toBe(4);
+    expect(WORLD_COMPATIBILITY.promptVersion).toBe(5);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
   });
 
@@ -383,6 +383,17 @@ describe("game contract", () => {
       outputSummary: "炉火缺矿。"
     };
     expect(taskCopyAudit.purpose).toBe("npc_task_copy");
+
+    const memoryCompressionAudit: AiCallLogDto = {
+      ...audit,
+      id: "ai-call-3",
+      purpose: "npc_memory_compression",
+      accountId: null,
+      characterId: null,
+      inputSummary: "伯林压缩 3 条 conversation 记忆。",
+      outputSummary: "伯林记得阿岚多次提到基础铁矿石。"
+    };
+    expect(memoryCompressionAudit.purpose).toBe("npc_memory_compression");
   });
 
   it("describes NPC memory entries and compressed fragments", () => {

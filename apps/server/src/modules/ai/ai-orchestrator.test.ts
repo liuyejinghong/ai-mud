@@ -48,6 +48,22 @@ const taskCopyContext = {
   }
 };
 
+const memoryCompressionContext = {
+  npc: {
+    name: "伯林",
+    memoryKind: "conversation",
+    evidenceLevel: "dialogue_claim" as const
+  },
+  entries: [
+    {
+      summary: "阿岚 说：“我上周送过烤鸡”；NPC 回应：“伯林像是想起了什么”。",
+      importance: 4,
+      occurredAt: "2026-07-02T08:00:00.000Z"
+    }
+  ],
+  fallbackSummary: "阿岚提到上周送过烤鸡。"
+};
+
 class FakeProvider implements AiProvider {
   public lastInput: AiJsonCompletionInput | null = null;
 
@@ -269,5 +285,87 @@ describe("AiOrchestrator", () => {
     expect(copy.status).toBe("rejected");
     expect(copy.fallbackReason).toBe("reward_promise");
     expect(copy.description).toBe(taskCopyContext.task.deterministicDescription);
+  });
+
+  it("uses deterministic memory compression when AI is disabled", async () => {
+    const provider = new FakeProvider("{}");
+    const orchestrator = new AiOrchestrator({
+      enabled: false,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      maxOutputTokens: 400,
+      timeoutMs: 8000,
+      provider
+    });
+
+    const compression = await orchestrator.compressNpcMemory({
+      context: memoryCompressionContext
+    });
+
+    expect(compression.status).toBe("fallback");
+    expect(compression.provider).toBe("template");
+    expect(compression.summary).toBe("阿岚提到上周送过烤鸡。");
+    expect(provider.lastInput).toBeNull();
+  });
+
+  it("parses valid memory compression from the provider", async () => {
+    const provider = new FakeProvider(
+      JSON.stringify({
+        summary: "伯林记得阿岚声称送过烤鸡，但这仍只是对话记忆。",
+        safety: {
+          changesEvidenceLevel: false,
+          containsRewardPromise: false,
+          containsRuleChange: false,
+          containsOoc: false
+        }
+      })
+    );
+    const orchestrator = new AiOrchestrator({
+      enabled: true,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      maxOutputTokens: 400,
+      timeoutMs: 8000,
+      provider
+    });
+
+    const compression = await orchestrator.compressNpcMemory({
+      context: memoryCompressionContext
+    });
+
+    expect(compression.status).toBe("success");
+    expect(compression.summary).toContain("对话记忆");
+    expect(provider.lastInput?.maxTokens).toBe(260);
+    expect(provider.lastInput?.responseFormat).toEqual({ type: "json_object" });
+  });
+
+  it("falls back when memory compression promises rewards", async () => {
+    const provider = new FakeProvider(
+      JSON.stringify({
+        summary: "伯林答应奖励阿岚 100 金币。",
+        safety: {
+          changesEvidenceLevel: false,
+          containsRewardPromise: true,
+          containsRuleChange: false,
+          containsOoc: false
+        }
+      })
+    );
+    const orchestrator = new AiOrchestrator({
+      enabled: true,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      maxOutputTokens: 400,
+      timeoutMs: 8000,
+      provider
+    });
+
+    const compression = await orchestrator.compressNpcMemory({
+      context: memoryCompressionContext
+    });
+
+    expect(compression.status).toBe("rejected");
+    expect(compression.fallbackReason).toBe("reward_promise");
+    expect(compression.summary).toBe("阿岚提到上周送过烤鸡。");
   });
 });

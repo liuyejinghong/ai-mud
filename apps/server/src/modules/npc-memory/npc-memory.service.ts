@@ -51,8 +51,37 @@ interface MemoryGroup {
   entries: MemoryEntryRecord[];
 }
 
+export interface NpcMemoryCompressionResult {
+  summary: string;
+  status: "success" | "fallback" | "rejected" | "error";
+  provider: string;
+  model: string;
+  fallbackReason: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  latencyMs: number | null;
+}
+
+export interface NpcMemoryCompressorPort {
+  compressMemory(input: {
+    npcActorId: string;
+    characterId: string | null;
+    memoryKind: NpcMemoryKind;
+    evidenceLevel: NpcMemoryEvidenceLevel;
+    entries: Array<{
+      summary: string;
+      importance: number;
+      occurredAt: Date;
+    }>;
+    fallbackSummary: string;
+  }): Promise<NpcMemoryCompressionResult>;
+}
+
 export class NpcMemoryService {
-  constructor(private readonly repo: NpcMemoryRepositoryPort) {}
+  constructor(
+    private readonly repo: NpcMemoryRepositoryPort,
+    private readonly compressor?: NpcMemoryCompressorPort
+  ) {}
 
   async recordDialogueExchange(input: {
     npcActorId: string;
@@ -107,13 +136,16 @@ export class NpcMemoryService {
       const orderedEntries = [...group.entries].sort(
         (left, right) => left.occurredAt.getTime() - right.occurredAt.getTime()
       );
-      const summary = compressSummaries(orderedEntries.map((entry) => entry.summary));
+      const evidenceLevel = weakestEvidenceLevel(
+        orderedEntries.map((entry) => entry.evidenceLevel)
+      );
+      const summary = await this.compressMemoryGroup(group, orderedEntries, evidenceLevel);
 
       await this.repo.createFragment({
         npcActorId: group.npcActorId,
         characterId: group.characterId,
         memoryKind: group.memoryKind,
-        evidenceLevel: weakestEvidenceLevel(orderedEntries.map((entry) => entry.evidenceLevel)),
+        evidenceLevel,
         importance: Math.max(...orderedEntries.map((entry) => entry.importance)),
         summary,
         firstOccurredAt: orderedEntries[0]!.occurredAt,
@@ -125,6 +157,34 @@ export class NpcMemoryService {
         orderedEntries.map((entry) => entry.id),
         now
       );
+    }
+  }
+
+  private async compressMemoryGroup(
+    group: MemoryGroup,
+    orderedEntries: MemoryEntryRecord[],
+    evidenceLevel: NpcMemoryEvidenceLevel
+  ) {
+    const fallbackSummary = compressSummaries(orderedEntries.map((entry) => entry.summary));
+    if (!this.compressor) return fallbackSummary;
+
+    try {
+      const result = await this.compressor.compressMemory({
+        npcActorId: group.npcActorId,
+        characterId: group.characterId,
+        memoryKind: group.memoryKind,
+        evidenceLevel,
+        entries: orderedEntries.map((entry) => ({
+          summary: entry.summary,
+          importance: entry.importance,
+          occurredAt: entry.occurredAt
+        })),
+        fallbackSummary
+      });
+
+      return result.summary || fallbackSummary;
+    } catch {
+      return fallbackSummary;
     }
   }
 

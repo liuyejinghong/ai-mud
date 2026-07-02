@@ -1,6 +1,8 @@
 import {
   NPC_DIALOGUE_MAX_PLAYER_CHARS,
+  NPC_MEMORY_COMPRESSION_PROMPT_VERSION,
   NPC_TASK_COPY_PROMPT_VERSION,
+  type NpcMemoryCompressionPromptContext,
   type NpcTaskCopyPromptContext
 } from "@ai-mud/ai-prompts";
 import { getItemById } from "@ai-mud/content";
@@ -33,7 +35,10 @@ import { DialogueRepository } from "../dialogue/dialogue.repository.js";
 import { DialogueService, DialogueServiceError } from "../dialogue/dialogue.service.js";
 import { NpcRepository } from "../npc/npc.repository.js";
 import { NpcMemoryRepository } from "../npc-memory/npc-memory.repository.js";
-import { NpcMemoryService } from "../npc-memory/npc-memory.service.js";
+import {
+  NpcMemoryService,
+  type NpcMemoryCompressorPort
+} from "../npc-memory/npc-memory.service.js";
 import { NpcTaskRepository } from "../npc-task/npc-task.repository.js";
 import {
   NpcTaskService,
@@ -195,7 +200,7 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
 function createNpcTaskService(app: FastifyInstance) {
   return new NpcTaskService(
     new NpcTaskRepository(app.di.db),
-    new NpcMemoryService(new NpcMemoryRepository(app.di.db)),
+    createNpcMemoryService(app),
     createNpcTaskCopywriter(app)
   );
 }
@@ -284,9 +289,60 @@ function createDialogueService(app: FastifyInstance) {
     gameRepo: new GameRepository(app.di.db),
     npcRepo: new NpcRepository(app.di.db),
     taskRepo: new NpcTaskRepository(app.di.db),
-    memory: new NpcMemoryService(new NpcMemoryRepository(app.di.db)),
+    memory: createNpcMemoryService(app),
     ai: createAiOrchestrator(app)
   });
+}
+
+function createNpcMemoryService(app: FastifyInstance) {
+  return new NpcMemoryService(
+    new NpcMemoryRepository(app.di.db),
+    createNpcMemoryCompressor(app)
+  );
+}
+
+function createNpcMemoryCompressor(app: FastifyInstance): NpcMemoryCompressorPort {
+  const ai = createAiOrchestrator(app);
+  const dialogueRepo = new DialogueRepository(app.di.db);
+
+  return {
+    compressMemory: async (input) => {
+      const context: NpcMemoryCompressionPromptContext = {
+        npc: {
+          name: input.npcActorId,
+          memoryKind: input.memoryKind,
+          evidenceLevel: input.evidenceLevel
+        },
+        entries: input.entries.map((entry) => ({
+          summary: entry.summary,
+          importance: entry.importance,
+          occurredAt: entry.occurredAt.toISOString()
+        })),
+        fallbackSummary: input.fallbackSummary
+      };
+      const result = await ai.compressNpcMemory({ context });
+
+      await dialogueRepo.createAiCallLog({
+        purpose: "npc_memory_compression",
+        status: result.status,
+        provider: result.provider,
+        model: result.model,
+        promptVersion: NPC_MEMORY_COMPRESSION_PROMPT_VERSION,
+        accountId: null,
+        characterId: null,
+        npcActorId: input.npcActorId,
+        requestHash: hashNpcMemoryCompressionRequest(input),
+        inputSummary: summarizeNpcMemoryCompressionInput(input),
+        outputSummary: truncateSummary(result.summary),
+        latencyMs: result.latencyMs,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        errorCode: result.fallbackReason
+      });
+
+      return result;
+    }
+  };
 }
 
 function describeNpcProfession(profession: string) {
@@ -329,9 +385,34 @@ function hashNpcTaskCopyRequest(input: NpcTaskCopywriterInput) {
     .digest("hex");
 }
 
+function hashNpcMemoryCompressionRequest(input: Parameters<NpcMemoryCompressorPort["compressMemory"]>[0]) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        actorId: input.npcActorId,
+        characterId: input.characterId,
+        memoryKind: input.memoryKind,
+        evidenceLevel: input.evidenceLevel,
+        entryCount: input.entries.length,
+        firstOccurredAt: input.entries[0]?.occurredAt.toISOString() ?? null,
+        lastOccurredAt: input.entries.at(-1)?.occurredAt.toISOString() ?? null,
+        fallbackSummary: input.fallbackSummary
+      })
+    )
+    .digest("hex");
+}
+
 function summarizeNpcTaskCopyInput(input: NpcTaskCopywriterInput, itemName: string) {
   return truncateSummary(
     `${input.actor.name}:${input.needType}:${itemName}x${input.requestedQuantity}:${input.rewardCopper}铜`
+  );
+}
+
+function summarizeNpcMemoryCompressionInput(
+  input: Parameters<NpcMemoryCompressorPort["compressMemory"]>[0]
+) {
+  return truncateSummary(
+    `${input.npcActorId}:${input.memoryKind}:${input.evidenceLevel}:${input.entries.length}条`
   );
 }
 
