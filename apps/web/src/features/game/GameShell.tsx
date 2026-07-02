@@ -214,6 +214,7 @@ export function GameShell({ csrfToken }: GameShellProps) {
     setIsBusy(true);
     try {
       setDialogue(await sendNpcDialogueMessage(dialogue.target.npcActorId, message, csrfToken));
+      setState(await getGameState());
       setDialogueInput("");
       setDialogueStatus("");
     } catch {

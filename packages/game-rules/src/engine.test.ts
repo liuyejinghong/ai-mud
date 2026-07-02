@@ -17,6 +17,7 @@ import {
   calculateNpcWagePayment,
   chooseNpcMealIntent,
   chooseNpcWorkIntent,
+  decideNpcResourceRequest,
   formatMoney,
   movePosition,
   nextNpcTravelStep,
@@ -361,6 +362,74 @@ describe("v0.3 engine rules", () => {
         "negative_resource_charge",
         "overdue_active_action:action-1"
       ]
+    });
+  });
+
+  it("ignores dialogue that is not a supported NPC resource request", () => {
+    expect(
+      decideNpcResourceRequest({
+        message: "最近缺什么？",
+        npcInventory: [{ itemId: "iron_ore", quantity: 6 }],
+        npcCopper: 100,
+        relationship: { familiarity: 3, trust: 0 }
+      })
+    ).toEqual({ outcome: "no_request", request: null, reason: "no_supported_request" });
+  });
+
+  it("grants only small real NPC item requests when relationship and reserve allow it", () => {
+    expect(
+      decideNpcResourceRequest({
+        message: "能不能给我一块基础铁矿石？",
+        npcInventory: [{ itemId: "iron_ore", quantity: 5 }],
+        npcCopper: 100,
+        relationship: { familiarity: 2, trust: 0 }
+      })
+    ).toEqual({
+      outcome: "granted",
+      request: { kind: "item", itemId: "iron_ore", quantity: 1 },
+      reason: "rule_verified"
+    });
+  });
+
+  it("refuses NPC item requests when the NPC must keep reserve inventory", () => {
+    expect(
+      decideNpcResourceRequest({
+        message: "给我两个铁矿石吧",
+        npcInventory: [{ itemId: "iron_ore", quantity: 4 }],
+        npcCopper: 100,
+        relationship: { familiarity: 5, trust: 1 }
+      })
+    ).toEqual({
+      outcome: "rejected",
+      request: { kind: "item", itemId: "iron_ore", quantity: 2 },
+      reason: "reserve_required"
+    });
+  });
+
+  it("refuses NPC copper requests without sufficient relationship or reserve", () => {
+    expect(
+      decideNpcResourceRequest({
+        message: "能借我5铜币吗？",
+        npcInventory: [],
+        npcCopper: 100,
+        relationship: { familiarity: 0, trust: 0 }
+      })
+    ).toEqual({
+      outcome: "rejected",
+      request: { kind: "copper", copper: 5 },
+      reason: "low_relationship"
+    });
+    expect(
+      decideNpcResourceRequest({
+        message: "能借我5铜币吗？",
+        npcInventory: [],
+        npcCopper: 22,
+        relationship: { familiarity: 3, trust: 0 }
+      })
+    ).toEqual({
+      outcome: "rejected",
+      request: { kind: "copper", copper: 5 },
+      reason: "reserve_required"
     });
   });
 });

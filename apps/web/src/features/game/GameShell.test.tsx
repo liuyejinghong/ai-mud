@@ -197,6 +197,32 @@ const repliedDialogue: NpcDialogueResponseDto = {
   }
 };
 
+const grantedDialogue: NpcDialogueResponseDto = {
+  target: dialogueTargets[0]!,
+  messages: [
+    {
+      id: "msg-player",
+      npcActorId: "npc-blacksmith",
+      speakerType: "player",
+      message: "能不能给我一块基础铁矿石？",
+      createdAt: "2026-07-01T12:00:00.000Z"
+    },
+    {
+      id: "msg-npc",
+      npcActorId: "npc-blacksmith",
+      speakerType: "npc",
+      message: "伯林从自己的库存里取出 基础铁矿石 x1 交给你。",
+      createdAt: "2026-07-01T12:00:01.000Z"
+    }
+  ],
+  ai: {
+    status: "fallback",
+    provider: "rules",
+    model: "npc-resource-request",
+    fallbackReason: "rule_verified"
+  }
+};
+
 const forestState: GameStateDto = {
   ...villageState,
   character: {
@@ -320,7 +346,8 @@ describe("GameShell", () => {
       villageState,
       dialogueTargets,
       emptyDialogue,
-      repliedDialogue
+      repliedDialogue,
+      villageState
     ]);
     render(<GameShell csrfToken="csrf" />);
 
@@ -348,6 +375,26 @@ describe("GameShell", () => {
         })
       );
     });
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:3000/game/state", expect.any(Object));
+  });
+
+  it("refreshes visible inventory after a rule-verified NPC resource grant", async () => {
+    const grantedState: GameStateDto = {
+      ...villageState,
+      inventory: [{ itemId: "iron_ore", name: "基础铁矿石", quantity: 1 }]
+    };
+    mockFetchWithStates([villageState, dialogueTargets, emptyDialogue, grantedDialogue, grantedState]);
+    render(<GameShell csrfToken="csrf" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "附近 NPC" }));
+    fireEvent.click(await screen.findByRole("button", { name: /伯林/ }));
+    fireEvent.change(await screen.findByLabelText("对 NPC 说"), {
+      target: { value: "能不能给我一块基础铁矿石？" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByText("伯林从自己的库存里取出 基础铁矿石 x1 交给你。")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "基础铁矿石 x1" })).toBeTruthy();
   });
 
   it("shows NPC demand tasks and accepts then completes one with mouse actions", async () => {

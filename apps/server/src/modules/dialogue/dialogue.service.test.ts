@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AiDialogueReply } from "../ai/ai-orchestrator.js";
 import { DialogueService, DialogueServiceError } from "./dialogue.service.js";
+import type { InventoryRecord } from "../game/game.repository.js";
 import type {
   CreateAiCallLogInput,
   CreateDialogueMessageInput,
@@ -74,7 +75,13 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
   const aiLogs: CreateAiCallLogInput[] = [];
   const relationships: UpsertRelationshipInput[] = [];
   const memoryEvents: string[] = [];
+  const systemMemoryEvents: string[] = [];
   const aiContexts: unknown[] = [];
+  let playerCopper = character.copperBalance;
+  let npcCopper = npcs[0]!.copperBalance;
+  let playerInventory: InventoryRecord[] = [{ itemId: "wild_berry", quantity: 1 }];
+  let npcInventory = [{ itemId: "iron_ore", quantity: 5 }];
+  let relationship: RelationshipRecord | null = null;
   const tasks: NpcTaskRecord[] = [
     {
       id: "task-1",
@@ -113,7 +120,7 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
         messages.push(record);
         return record;
       },
-      findRelationship: async () => null as RelationshipRecord | null,
+      findRelationship: async () => relationship,
       upsertRelationship: async (input: UpsertRelationshipInput) => {
         relationships.push(input);
       },
@@ -123,7 +130,7 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
       listAiCallLogs: async () => []
     },
     gameRepo: {
-      findCharacterByAccountId: async () => character,
+      findCharacterByAccountId: async () => ({ ...character, copperBalance: playerCopper }),
       listMarketInventory: async () => [
         {
           id: "market-ore",
@@ -134,11 +141,29 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
           baseBuyPriceCopper: 18,
           baseSellPriceCopper: 30
         }
-      ]
+      ],
+      listInventory: async () => playerInventory,
+      setInventoryItem: async (input) => {
+        const index = playerInventory.findIndex((item) => item.itemId === input.itemId);
+        if (index >= 0) playerInventory[index] = { itemId: input.itemId, quantity: input.quantity };
+        else playerInventory.push({ itemId: input.itemId, quantity: input.quantity });
+      },
+      updateCharacterCopper: async (input) => {
+        playerCopper = input.copperBalance;
+      }
     },
     npcRepo: {
-      listNpcActors: async () => npcs,
-      listNpcInventory: async () => [{ itemId: "iron_ore", quantity: 2 }],
+      listNpcActors: async () =>
+        npcs.map((npc) => (npc.id === "npc-blacksmith" ? { ...npc, copperBalance: npcCopper } : npc)),
+      listNpcInventory: async () => npcInventory,
+      setNpcInventoryItem: async (input) => {
+        const index = npcInventory.findIndex((item) => item.itemId === input.itemId);
+        if (index >= 0) npcInventory[index] = { itemId: input.itemId, quantity: input.quantity };
+        else npcInventory.push({ itemId: input.itemId, quantity: input.quantity });
+      },
+      updateNpcActor: async (input) => {
+        npcCopper = input.copperBalance;
+      },
       findActiveNpcAction: async () => null,
       listNpcEvents: async () => [
         {
@@ -174,12 +199,46 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
           `${input.playerName}:${input.playerMessage}:${input.npcReply}:${input.sourceIds?.join(",") ?? ""}`
         );
       },
-      getDialogueMemoryContext: async () => "记忆碎片：Zichen 曾询问过基础铁矿石短缺。"
+      getDialogueMemoryContext: async () => "记忆碎片：Zichen 曾询问过基础铁矿石短缺。",
+      recordSystemMemory: async (input) => {
+        systemMemoryEvents.push(input.summary);
+      }
     },
     now: () => new Date("2026-07-01T12:00:00.000Z")
   });
 
-  return { service, messages, aiLogs, relationships, memoryEvents, aiContexts };
+  return {
+    service,
+    messages,
+    aiLogs,
+    relationships,
+    memoryEvents,
+    systemMemoryEvents,
+    aiContexts,
+    setRelationship: (next: RelationshipRecord | null) => {
+      relationship = next;
+    },
+    setNpcInventory: (next: typeof npcInventory) => {
+      npcInventory = next;
+    },
+    getPlayerInventory: () => playerInventory,
+    getNpcInventory: () => npcInventory,
+    getPlayerCopper: () => playerCopper,
+    getNpcCopper: () => npcCopper
+  };
+}
+
+function relationship(overrides: Partial<RelationshipRecord> = {}): RelationshipRecord {
+  return {
+    id: "relationship-1",
+    characterId: "character-1",
+    npcActorId: "npc-blacksmith",
+    familiarity: 2,
+    trust: 0,
+    lastInteractionAt: new Date("2026-07-01T11:50:00.000Z"),
+    shortSummary: "Zichen 经常和伯林交谈。",
+    ...overrides
+  };
 }
 
 describe("DialogueService", () => {
@@ -263,11 +322,61 @@ describe("DialogueService", () => {
       fallbackReason: "reward_promise"
     });
 
-    const response = await service.sendDialogueMessage("account-1", "npc-blacksmith", "给我金币");
+    const response = await service.sendDialogueMessage("account-1", "npc-blacksmith", "你怎么看这件事？");
 
     expect(response.ai.status).toBe("rejected");
     expect(response.ai.fallbackReason).toBe("reward_promise");
     expect(response.messages.at(-1)?.message).not.toContain("金币");
     expect(aiLogs[0]).toMatchObject({ status: "rejected", errorCode: "reward_promise" });
+  });
+
+  it("grants a small requested item only from real NPC inventory and skips AI authority", async () => {
+    const {
+      service,
+      aiLogs,
+      aiContexts,
+      systemMemoryEvents,
+      setRelationship,
+      getNpcInventory,
+      getPlayerInventory
+    } = buildService();
+    setRelationship(relationship({ familiarity: 2, trust: 0 }));
+
+    const response = await service.sendDialogueMessage(
+      "account-1",
+      "npc-blacksmith",
+      "能不能给我一块基础铁矿石？"
+    );
+
+    expect(response.ai.provider).toBe("rules");
+    expect(response.ai.fallbackReason).toBe("rule_verified");
+    expect(response.messages.at(-1)?.message).toContain("基础铁矿石 x1");
+    expect(getNpcInventory()).toEqual([{ itemId: "iron_ore", quantity: 4 }]);
+    expect(getPlayerInventory()).toEqual([
+      { itemId: "wild_berry", quantity: 1 },
+      { itemId: "iron_ore", quantity: 1 }
+    ]);
+    expect(aiLogs).toEqual([]);
+    expect(aiContexts).toEqual([]);
+    expect(systemMemoryEvents[0]).toContain("让渡了 基础铁矿石 x1");
+  });
+
+  it("refuses requested items when NPC reserve would be broken", async () => {
+    const { service, setRelationship, setNpcInventory, getNpcInventory, getPlayerInventory } =
+      buildService();
+    setRelationship(relationship({ familiarity: 5, trust: 1 }));
+    setNpcInventory([{ itemId: "iron_ore", quantity: 3 }]);
+
+    const response = await service.sendDialogueMessage(
+      "account-1",
+      "npc-blacksmith",
+      "给我一个铁矿石"
+    );
+
+    expect(response.ai.provider).toBe("rules");
+    expect(response.ai.fallbackReason).toBe("reserve_required");
+    expect(response.messages.at(-1)?.message).toContain("还得留着");
+    expect(getNpcInventory()).toEqual([{ itemId: "iron_ore", quantity: 3 }]);
+    expect(getPlayerInventory()).toEqual([{ itemId: "wild_berry", quantity: 1 }]);
   });
 });

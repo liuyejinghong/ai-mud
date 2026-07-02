@@ -5,8 +5,13 @@ import {
 } from "@ai-mud/ai-prompts";
 import { FIRST_ITEMS, getNpcByKey } from "@ai-mud/content";
 import {
+  addInventoryItem,
+  decideNpcResourceRequest
+} from "@ai-mud/game-rules";
+import {
   CHARACTER_CLASSES,
   type AiCallLogDto,
+  type ItemId,
   type NpcDialogueMessageDto,
   type NpcDialogueResponseDto,
   type NpcDialogueTargetDto,
@@ -14,7 +19,7 @@ import {
 } from "@ai-mud/shared";
 import { createHash } from "node:crypto";
 import type { AiDialogueReply } from "../ai/ai-orchestrator.js";
-import type { CharacterRecord, MarketInventoryRecord } from "../game/game.repository.js";
+import type { CharacterRecord, InventoryRecord, MarketInventoryRecord } from "../game/game.repository.js";
 import type {
   NpcActionRecord,
   NpcActorRecord,
@@ -66,11 +71,16 @@ export interface DialogueRepositoryPort {
 export interface DialogueGameRepositoryPort {
   findCharacterByAccountId(accountId: string): Promise<CharacterRecord | null>;
   listMarketInventory(settlementId: string): Promise<MarketInventoryRecord[]>;
+  listInventory(characterId: string): Promise<InventoryRecord[]>;
+  setInventoryItem(input: { characterId: string; itemId: ItemId; quantity: number }): Promise<void>;
+  updateCharacterCopper(input: { characterId: string; copperBalance: number }): Promise<void>;
 }
 
 export interface DialogueNpcRepositoryPort {
   listNpcActors(): Promise<NpcActorRecord[]>;
   listNpcInventory(actorId: string): Promise<NpcInventoryRecord[]>;
+  setNpcInventoryItem(input: { actorId: string; itemId: ItemId | string; quantity: number }): Promise<void>;
+  updateNpcActor(input: { actorId: string; copperBalance: number }): Promise<void>;
   findActiveNpcAction(actorId: string): Promise<NpcActionRecord | null>;
   listNpcEvents(actorId: string, limit: number): Promise<NpcEventRecord[]>;
 }
@@ -103,6 +113,15 @@ export interface DialogueMemoryPort {
     characterId: string;
     now?: Date;
   }): Promise<string>;
+  recordSystemMemory(input: {
+    npcActorId: string;
+    characterId: string | null;
+    memoryKind: "conversation" | "task";
+    summary: string;
+    importance: number;
+    occurredAt: Date;
+    sourceIds?: string[];
+  }): Promise<void>;
 }
 
 export interface DialogueServiceOptions {
@@ -185,6 +204,15 @@ export class DialogueService {
       safetyFlags: [],
       createdAt: now
     });
+
+    const resourceReply = await this.tryHandleResourceRequest({
+      accountId,
+      resolved,
+      playerMessage,
+      playerRecordId: playerRecord.id,
+      now
+    });
+    if (resourceReply) return resourceReply;
 
     const promptContext = await this.buildPromptContext(resolved, playerMessage);
     const aiReply = await this.options.ai.replyToNpcDialogue({
@@ -415,6 +443,135 @@ export class DialogueService {
       playerMessage
     };
   }
+
+  private async tryHandleResourceRequest(input: {
+    accountId: string;
+    resolved: ResolvedDialogueTarget;
+    playerMessage: string;
+    playerRecordId: string;
+    now: Date;
+  }): Promise<NpcDialogueResponseDto | null> {
+    const [inventory, relationship] = await Promise.all([
+      this.options.npcRepo.listNpcInventory(input.resolved.npc.id),
+      this.options.dialogueRepo.findRelationship({
+        characterId: input.resolved.character.id,
+        npcActorId: input.resolved.npc.id
+      })
+    ]);
+    const decision = decideNpcResourceRequest({
+      message: input.playerMessage,
+      npcInventory: inventory,
+      npcCopper: input.resolved.npc.copperBalance,
+      relationship: relationship
+        ? { familiarity: relationship.familiarity, trust: relationship.trust }
+        : null
+    });
+
+    if (decision.outcome === "no_request") return null;
+
+    const reply = await this.applyResourceRequestDecision({
+      character: input.resolved.character,
+      npc: input.resolved.npc,
+      inventory,
+      decision
+    });
+    const npcRecord = await this.options.dialogueRepo.createDialogueMessage({
+      accountId: input.accountId,
+      characterId: input.resolved.character.id,
+      npcActorId: input.resolved.npc.id,
+      speakerType: "npc",
+      message: reply,
+      safetyFlags: [`resource_request:${decision.reason}`],
+      createdAt: input.now
+    });
+
+    await this.options.memory.recordDialogueExchange({
+      npcActorId: input.resolved.npc.id,
+      characterId: input.resolved.character.id,
+      playerName: input.resolved.character.name,
+      playerMessage: input.playerMessage,
+      npcReply: reply,
+      occurredAt: input.now,
+      sourceIds: [input.playerRecordId, npcRecord.id]
+    });
+    await this.options.memory.recordSystemMemory({
+      npcActorId: input.resolved.npc.id,
+      characterId: input.resolved.character.id,
+      memoryKind: "conversation",
+      importance: decision.outcome === "granted" ? 4 : 2,
+      occurredAt: input.now,
+      sourceIds: [input.playerRecordId, npcRecord.id],
+      summary: buildResourceRequestMemorySummary(input.resolved.character.name, decision)
+    });
+    await this.options.dialogueRepo.upsertRelationship({
+      characterId: input.resolved.character.id,
+      npcActorId: input.resolved.npc.id,
+      familiarityDelta: 1,
+      trustDelta: 0,
+      shortSummary: `${input.resolved.character.name} 向 ${input.resolved.npc.name} 提出过物资请求。`,
+      interactedAt: input.now
+    });
+
+    const messages = await this.options.dialogueRepo.listDialogueMessages({
+      characterId: input.resolved.character.id,
+      npcActorId: input.resolved.npc.id,
+      limit: RECENT_DIALOGUE_LIMIT
+    });
+
+    return {
+      target: input.resolved.target,
+      messages: messages.map(toMessageDto),
+      ai: {
+        status: "fallback",
+        provider: "rules",
+        model: "npc-resource-request",
+        fallbackReason: decision.reason
+      }
+    };
+  }
+
+  private async applyResourceRequestDecision(input: {
+    character: CharacterRecord;
+    npc: NpcActorRecord;
+    inventory: NpcInventoryRecord[];
+    decision: Exclude<ReturnType<typeof decideNpcResourceRequest>, { outcome: "no_request" }>;
+  }) {
+    if (input.decision.outcome === "rejected") {
+      return buildResourceRequestRejection(input.npc.name, input.decision);
+    }
+
+    const request = input.decision.request;
+    if (request.kind === "copper") {
+      await this.options.npcRepo.updateNpcActor({
+        actorId: input.npc.id,
+        copperBalance: input.npc.copperBalance - request.copper
+      });
+      await this.options.gameRepo.updateCharacterCopper({
+        characterId: input.character.id,
+        copperBalance: input.character.copperBalance + request.copper
+      });
+      return `${input.npc.name} 数出 ${request.copper} 枚铜币递给你：“拿去，别乱花。”`;
+    }
+
+    const stack = input.inventory.find((entry) => entry.itemId === request.itemId);
+    const nextNpcQuantity = (stack?.quantity ?? 0) - request.quantity;
+    await this.options.npcRepo.setNpcInventoryItem({
+      actorId: input.npc.id,
+      itemId: request.itemId,
+      quantity: nextNpcQuantity
+    });
+    const playerInventory = await this.options.gameRepo.listInventory(input.character.id);
+    const nextPlayerInventory = addInventoryItem(playerInventory, request.itemId, request.quantity);
+    const playerStack = nextPlayerInventory.find((entry) => entry.itemId === request.itemId);
+    if (!playerStack) throw new Error("Failed to calculate player inventory grant");
+    await this.options.gameRepo.setInventoryItem({
+      characterId: input.character.id,
+      itemId: request.itemId,
+      quantity: playerStack.quantity
+    });
+
+    return `${input.npc.name} 从自己的库存里取出 ${describeItem(request.itemId)} x${request.quantity} 交给你：“这是我能拿出来的。”`;
+  }
 }
 
 function describeProfession(profession: string) {
@@ -487,6 +644,40 @@ function describeTaskSummary(npcActorId: string, tasks: NpcTaskRecord[]) {
 
   const statusText = task.status === "open" ? "可接取" : "已接取";
   return `真实任务：${task.title}，状态${statusText}，需要 ${describeItem(task.requestedItemId)} x${task.requestedQuantity}，托管奖励 ${task.rewardCopper} 铜。`;
+}
+
+type HandledResourceDecision = Exclude<
+  ReturnType<typeof decideNpcResourceRequest>,
+  { outcome: "no_request" }
+>;
+
+function buildResourceRequestRejection(npcName: string, decision: HandledResourceDecision) {
+  const itemName =
+    decision.request.kind === "item" ? describeItem(decision.request.itemId) : "铜币";
+  const reasonText: Record<HandledResourceDecision["reason"], string> = {
+    rule_verified: "可以拿给你",
+    unsupported_item: "我手里没有这种东西",
+    low_relationship: "我们还没熟到能开这个口",
+    insufficient_inventory: `我现在没有足够的${itemName}`,
+    insufficient_copper: "我身上没有足够的铜币",
+    reserve_required: "这些我还得留着维持自己的活计",
+    quantity_too_high: "你要得太多了"
+  };
+  return `${npcName} 摇头：“${reasonText[decision.reason]}。”`;
+}
+
+function buildResourceRequestMemorySummary(
+  playerName: string,
+  decision: HandledResourceDecision
+) {
+  const requestText =
+    decision.request.kind === "item"
+      ? `${describeItem(decision.request.itemId)} x${decision.request.quantity}`
+      : `${decision.request.copper} 铜`;
+  if (decision.outcome === "granted") {
+    return `${playerName} 提出物资请求，NPC 基于真实库存让渡了 ${requestText}。`;
+  }
+  return `${playerName} 提出物资请求 ${requestText}，NPC 基于规则拒绝，原因：${decision.reason}。`;
 }
 
 function toMessageDto(record: DialogueMessageRecord): NpcDialogueMessageDto {

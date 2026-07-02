@@ -37,12 +37,12 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.6.4 AI task copy compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.6.4");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(13);
+  it("exposes v0.6.5 NPC resource request compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.6.5");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(14);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(10);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
-    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(8);
+    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(9);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(7);
     expect(WORLD_COMPATIBILITY.promptVersion).toBe(4);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);

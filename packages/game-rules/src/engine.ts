@@ -6,3 +6,4 @@ export * from "./inventory-rules.js";
 export * from "./map-rules.js";
 export * from "./needs-rules.js";
 export * from "./npc-rules.js";
+export * from "./npc-request-rules.js";
