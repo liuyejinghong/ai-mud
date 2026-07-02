@@ -9,7 +9,8 @@
     "test": "pnpm --filter @ai-mud/shared build && pnpm --filter @ai-mud/content build && pnpm --filter @ai-mud/game-rules build && pnpm --filter @ai-mud/ai-prompts build && vitest run --passWithNoTests",
     "lint": "pnpm --filter @ai-mud/shared build && pnpm --filter @ai-mud/content build && pnpm --filter @ai-mud/game-rules build && pnpm --filter @ai-mud/ai-prompts build && tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:verify-migrations": "tsx scripts/verify-migrations.ts"
   },
   "dependencies": {
     "@ai-mud/content": "workspace:*",
