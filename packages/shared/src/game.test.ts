@@ -43,7 +43,7 @@ describe("game contract", () => {
   it("exposes v0.7.1 critical debt repair compatibility", () => {
     expect(PRODUCT_VERSION).toBe("0.7.1");
     expect(WORLD_COMPATIBILITY.apiVersion).toBe(20);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(14);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(15);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(11);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(8);

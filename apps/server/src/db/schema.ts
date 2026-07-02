@@ -1,5 +1,8 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
+  boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -161,6 +164,101 @@ export const characterEquipment = pgTable(
     characterSlotIdx: uniqueIndex("character_equipment_character_slot_idx").on(
       table.characterId,
       table.slot
+    )
+  })
+);
+
+export const itemInstances = pgTable(
+  "item_instances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    itemDefId: text("item_def_id").notNull(),
+    ownerType: text("owner_type").notNull(),
+    ownerId: uuid("owner_id"),
+    locationType: text("location_type").notNull().default("inventory"),
+    locationId: text("location_id"),
+    slot: text("slot"),
+    rarity: text("rarity").notNull().default("common"),
+    itemLevel: integer("item_level").notNull(),
+    baseStats: jsonb("base_stats").notNull().default({}),
+    affixes: jsonb("affixes").notNull().default([]),
+    maxDurability: integer("max_durability").notNull(),
+    currentDurability: integer("current_durability").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    ownerIdx: index("item_instances_owner_idx").on(
+      table.ownerType,
+      table.ownerId,
+      table.locationType
+    ),
+    characterEquippedSlotIdx: uniqueIndex("item_instances_character_equipped_slot_idx")
+      .on(table.ownerId, table.slot)
+      .where(
+        sql`${table.ownerType} = 'character' AND ${table.locationType} = 'equipped' AND ${table.slot} IS NOT NULL`
+      ),
+    ownerTypeCheck: check(
+      "item_instances_owner_type_check",
+      sql`${table.ownerType} IN ('character', 'npc', 'market', 'system')`
+    ),
+    locationTypeCheck: check(
+      "item_instances_location_type_check",
+      sql`${table.locationType} IN ('inventory', 'equipped', 'market', 'destroyed')`
+    ),
+    slotCheck: check(
+      "item_instances_slot_check",
+      sql`${table.slot} IS NULL OR ${table.slot} IN ('weapon', 'chest', 'head', 'accessory')`
+    ),
+    rarityCheck: check(
+      "item_instances_rarity_check",
+      sql`${table.rarity} IN ('common', 'uncommon', 'rare', 'epic')`
+    ),
+    durabilityCheck: check(
+      "item_instances_durability_check",
+      sql`${table.maxDurability} > 0 AND ${table.currentDurability} >= 0 AND ${table.currentDurability} <= ${table.maxDurability}`
+    )
+  })
+);
+
+export const itemLedger = pgTable(
+  "item_ledger",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    operation: text("operation").notNull(),
+    itemDefId: text("item_def_id").notNull(),
+    quantity: integer("quantity"),
+    itemInstanceId: uuid("item_instance_id").references(() => itemInstances.id),
+    fromOwnerType: text("from_owner_type"),
+    fromOwnerId: uuid("from_owner_id"),
+    toOwnerType: text("to_owner_type"),
+    toOwnerId: uuid("to_owner_id"),
+    reason: text("reason").notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    instanceIdx: index("item_ledger_instance_idx").on(table.itemInstanceId, table.createdAt),
+    ownerIdx: index("item_ledger_owner_idx").on(
+      table.toOwnerType,
+      table.toOwnerId,
+      table.createdAt
+    ),
+    operationCheck: check(
+      "item_ledger_operation_check",
+      sql`${table.operation} IN ('grant', 'consume', 'transfer', 'equip', 'unequip', 'destroy')`
+    ),
+    quantityCheck: check(
+      "item_ledger_quantity_check",
+      sql`${table.quantity} IS NULL OR ${table.quantity} > 0`
+    ),
+    fromOwnerTypeCheck: check(
+      "item_ledger_from_owner_type_check",
+      sql`${table.fromOwnerType} IS NULL OR ${table.fromOwnerType} IN ('character', 'npc', 'market', 'system')`
+    ),
+    toOwnerTypeCheck: check(
+      "item_ledger_to_owner_type_check",
+      sql`${table.toOwnerType} IS NULL OR ${table.toOwnerType} IN ('character', 'npc', 'market', 'system')`
     )
   })
 );
@@ -586,6 +684,29 @@ export const gameEvents = pgTable(
     characterCreatedAtIdx: index("game_events_character_created_at_idx").on(
       table.characterId,
       table.createdAt
+    )
+  })
+);
+
+export const syncEvents = pgTable(
+  "sync_events",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    audience: text("audience").notNull(),
+    accountId: uuid("account_id").references(() => accounts.id),
+    characterId: uuid("character_id").references(() => characters.id),
+    eventType: text("event_type").notNull(),
+    stateDirty: boolean("state_dirty").notNull().default(false),
+    payload: jsonb("payload").notNull().default({}),
+    source: text("source").notNull().default("server"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    accountIdx: index("sync_events_account_id_idx").on(table.accountId, table.id),
+    characterIdx: index("sync_events_character_id_idx").on(table.characterId, table.id),
+    audienceCheck: check(
+      "sync_events_audience_check",
+      sql`${table.audience} IN ('account', 'character', 'public', 'admin')`
     )
   })
 );

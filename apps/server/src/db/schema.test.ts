@@ -11,6 +11,8 @@ import {
   characterItems,
   characters,
   gameEvents,
+  itemInstances,
+  itemLedger,
   marketInventory,
   marketTransactions,
   municipalTreasury,
@@ -24,6 +26,7 @@ import {
   npcTasks,
   mapInstances,
   sessions,
+  syncEvents,
   worldActors,
   worldResourceNodes,
   worldRuntimeState,
@@ -46,6 +49,8 @@ describe("foundation schema", () => {
     expect(getDrizzleTableName(characters)).toBe("characters");
     expect(getDrizzleTableName(characterItems)).toBe("character_items");
     expect(getDrizzleTableName(characterEquipment)).toBe("character_equipment");
+    expect(getDrizzleTableName(itemInstances)).toBe("item_instances");
+    expect(getDrizzleTableName(itemLedger)).toBe("item_ledger");
     expect(getDrizzleTableName(characterActions)).toBe("character_actions");
     expect(getDrizzleTableName(marketInventory)).toBe("market_inventory");
     expect(getDrizzleTableName(marketTransactions)).toBe("market_transactions");
@@ -75,6 +80,17 @@ describe("foundation schema", () => {
     expect(characterEquipment.slot.getSQLType()).toBe("text");
     expect(characterEquipment.currentDurability.getSQLType()).toBe("integer");
     expect(characterEquipment.maxDurability.getSQLType()).toBe("integer");
+  });
+
+  it("defines item instance and ledger tables for the v0.8 asset write path", () => {
+    expect(itemInstances.ownerType.getSQLType()).toBe("text");
+    expect(itemInstances.locationType.getSQLType()).toBe("text");
+    expect(itemInstances.rarity.getSQLType()).toBe("text");
+    expect(itemInstances.affixes.getSQLType()).toBe("jsonb");
+    expect(itemInstances.currentDurability.getSQLType()).toBe("integer");
+    expect(itemLedger.operation.getSQLType()).toBe("text");
+    expect(itemLedger.itemInstanceId.getSQLType()).toBe("uuid");
+    expect(itemLedger.metadata.getSQLType()).toBe("jsonb");
   });
 
   it("defines active action enums", () => {
@@ -155,6 +171,16 @@ describe("foundation schema", () => {
     expect(npcTasks.proposalReason.getSQLType()).toBe("text");
     expect(npcTasks.acceptedByCharacterId.getSQLType()).toBe("uuid");
     expect(npcTasks.expiresAt.getSQLType()).toBe("timestamp with time zone");
+  });
+
+  it("defines sync events for the single game sync stream", () => {
+    expect(getDrizzleTableName(syncEvents)).toBe("sync_events");
+    expect(syncEvents.id.getSQLType()).toBe("bigint");
+    expect(syncEvents.audience.getSQLType()).toBe("text");
+    expect(syncEvents.accountId.getSQLType()).toBe("uuid");
+    expect(syncEvents.characterId.getSQLType()).toBe("uuid");
+    expect(syncEvents.stateDirty.getSQLType()).toBe("boolean");
+    expect(syncEvents.payload.getSQLType()).toBe("jsonb");
   });
 
   it("stores audit metadata as structured jsonb", () => {

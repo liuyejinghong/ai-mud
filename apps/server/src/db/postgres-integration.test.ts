@@ -23,7 +23,10 @@ const requiredColumns: RequiredColumn[] = [
   { tableName: "npc_tasks", columnName: "proposal_source" },
   { tableName: "npc_tasks", columnName: "proposal_reason" },
   { tableName: "world_resource_nodes", columnName: "last_refreshed_at" },
-  { tableName: "map_instances", columnName: "resources_refreshed_at" }
+  { tableName: "map_instances", columnName: "resources_refreshed_at" },
+  { tableName: "item_instances", columnName: "owner_type" },
+  { tableName: "item_ledger", columnName: "operation" },
+  { tableName: "sync_events", columnName: "state_dirty" }
 ];
 
 function quoteIdentifier(value: string) {
