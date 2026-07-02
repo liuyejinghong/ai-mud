@@ -111,25 +111,31 @@ function dialogueTaskHint(target: NpcDialogueTargetDto) {
   return `${status}：${target.taskTitle}`;
 }
 
+type ActiveModal =
+  | { type: "item"; item: InventoryItemDto }
+  | { type: "market" }
+  | { type: "dialogue" }
+  | { type: "combat" }
+  | null;
+
 export function GameShell({ csrfToken }: GameShellProps) {
   const [state, setState] = useState<GameStateDto>(initialState);
   const [name, setName] = useState("Zichen");
   const [classId, setClassId] = useState<CharacterClassId>("ranger");
-  const [selectedItem, setSelectedItem] = useState<InventoryItemDto | null>(null);
+  const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [market, setMarket] = useState<MarketDto | null>(null);
-  const [isMarketDialogOpen, setIsMarketDialogOpen] = useState(false);
   const [dialogueTargets, setDialogueTargets] = useState<NpcDialogueTargetDto[]>([]);
   const [dialogue, setDialogue] = useState<NpcDialogueResponseDto | null>(null);
   const [dialogueInput, setDialogueInput] = useState("");
   const [dialogueStatus, setDialogueStatus] = useState("");
-  const [isDialogueDialogOpen, setIsDialogueDialogOpen] = useState(false);
   const [plannedMinutes, setPlannedMinutes] =
     useState<StartGatheringRequestDto["plannedMinutes"]>(10);
-  const [isCombatDialogOpen, setIsCombatDialogOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
-  const canMove = state.availableActions.includes("move") && !isBusy;
+  const selectedItem = activeModal?.type === "item" ? activeModal.item : null;
+  const isModalOpen = activeModal !== null;
+  const canMove = state.availableActions.includes("move") && !isBusy && !isModalOpen;
   const canGather =
     (state.availableActions.includes("start_gathering") ||
       state.availableActions.includes("gather")) &&
@@ -168,7 +174,7 @@ export function GameShell({ csrfToken }: GameShellProps) {
     setIsBusy(true);
     try {
       setMarket(await getMarket());
-      setIsMarketDialogOpen(true);
+      setActiveModal({ type: "market" });
     } catch {
       setError("集市暂时无法打开。");
     } finally {
@@ -179,7 +185,7 @@ export function GameShell({ csrfToken }: GameShellProps) {
   async function openDialogueDialog() {
     setError(null);
     setDialogueStatus("正在寻找附近 NPC...");
-    setIsDialogueDialogOpen(true);
+    setActiveModal({ type: "dialogue" });
     setIsBusy(true);
     try {
       const targets = await listDialogueTargets();
@@ -227,7 +233,7 @@ export function GameShell({ csrfToken }: GameShellProps) {
 
   async function runMarketTrade(action: () => Promise<GameStateDto>) {
     await runCommand(action);
-    setIsMarketDialogOpen(false);
+    setActiveModal(null);
   }
 
   useEffect(() => {
@@ -247,6 +253,7 @@ export function GameShell({ csrfToken }: GameShellProps) {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (isTextEntryTarget(event.target)) return;
+      if (isModalOpen) return;
 
       const direction = keyDirections[event.key.toLowerCase()];
       if (!direction || !canMove) return;
@@ -257,7 +264,11 @@ export function GameShell({ csrfToken }: GameShellProps) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [canMove, csrfToken]);
+  }, [canMove, csrfToken, isModalOpen]);
+
+  useEffect(() => {
+    setActiveModal((current) => (current?.type === "combat" ? null : current));
+  }, [state.currentAction?.id, state.currentAction?.actionType]);
 
   const cells = useMemo(() => state.map?.cells ?? [], [state.map]);
 
@@ -418,7 +429,7 @@ export function GameShell({ csrfToken }: GameShellProps) {
                 <button
                   type="button"
                   className="inventory-item"
-                  onClick={() => setSelectedItem(item)}
+                  onClick={() => setActiveModal({ type: "item", item })}
                 >
                   {item.name} x{item.quantity}
                 </button>
@@ -631,7 +642,7 @@ export function GameShell({ csrfToken }: GameShellProps) {
                 <button
                   type="button"
                   className="game-secondary-button"
-                  onClick={() => setIsCombatDialogOpen(true)}
+                  onClick={() => setActiveModal({ type: "combat" })}
                 >
                   查看战斗
                 </button>
@@ -734,7 +745,7 @@ export function GameShell({ csrfToken }: GameShellProps) {
       </aside>
 
       {selectedItem ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setSelectedItem(null)}>
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setActiveModal(null)}>
           <section
             className="item-dialog"
             role="dialog"
@@ -761,7 +772,7 @@ export function GameShell({ csrfToken }: GameShellProps) {
               <button
                 type="button"
                 className="game-primary-button"
-                onClick={() => setSelectedItem(null)}
+                onClick={() => setActiveModal(null)}
               >
                 关闭
               </button>
@@ -770,8 +781,8 @@ export function GameShell({ csrfToken }: GameShellProps) {
         </div>
       ) : null}
 
-      {isMarketDialogOpen && market ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setIsMarketDialogOpen(false)}>
+      {activeModal?.type === "market" && market ? (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setActiveModal(null)}>
           <section
             className="market-dialog"
             role="dialog"
@@ -837,7 +848,7 @@ export function GameShell({ csrfToken }: GameShellProps) {
               <button
                 type="button"
                 className="game-primary-button"
-                onClick={() => setIsMarketDialogOpen(false)}
+                onClick={() => setActiveModal(null)}
               >
                 关闭
               </button>
@@ -846,8 +857,8 @@ export function GameShell({ csrfToken }: GameShellProps) {
         </div>
       ) : null}
 
-      {isDialogueDialogOpen ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setIsDialogueDialogOpen(false)}>
+      {activeModal?.type === "dialogue" ? (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setActiveModal(null)}>
           <section
             className="dialogue-dialog"
             role="dialog"
@@ -940,7 +951,7 @@ export function GameShell({ csrfToken }: GameShellProps) {
               <button
                 type="button"
                 className="game-primary-button"
-                onClick={() => setIsDialogueDialogOpen(false)}
+                onClick={() => setActiveModal(null)}
               >
                 关闭
               </button>
@@ -949,8 +960,8 @@ export function GameShell({ csrfToken }: GameShellProps) {
         </div>
       ) : null}
 
-      {isCombatDialogOpen && state.currentAction?.actionType === "combat" ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setIsCombatDialogOpen(false)}>
+      {activeModal?.type === "combat" && state.currentAction?.actionType === "combat" ? (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setActiveModal(null)}>
           <section
             className="item-dialog"
             role="dialog"
@@ -969,7 +980,7 @@ export function GameShell({ csrfToken }: GameShellProps) {
               <button
                 type="button"
                 className="game-primary-button"
-                onClick={() => setIsCombatDialogOpen(false)}
+                onClick={() => setActiveModal(null)}
               >
                 关闭
               </button>

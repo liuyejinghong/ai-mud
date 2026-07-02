@@ -323,6 +323,25 @@ describe("GameShell", () => {
     expect(screen.getByRole("button", { name: "关闭" })).toBeTruthy();
   });
 
+  it("blocks movement shortcuts while an item dialog is open", async () => {
+    const fetchMock = mockFetchWithStates([forestState]);
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByRole("heading", { name: "腐林" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "野莓 x2" }));
+    expect(screen.getByRole("button", { name: "向东移动" })).toHaveProperty("disabled", true);
+
+    fireEvent.keyDown(window, { key: "d" });
+
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "http://127.0.0.1:3000/game/move",
+      expect.objectContaining({
+        body: JSON.stringify({ direction: "east" }),
+        method: "POST"
+      })
+    );
+  });
+
   it("shows money and trades through the municipal market", async () => {
     const fetchMock = mockFetchWithStates([villageState, marketState, villageState]);
     render(<GameShell csrfToken="csrf" />);
@@ -604,32 +623,40 @@ describe("GameShell", () => {
   });
 
   it("opens combat detail dialog", async () => {
-    mockFetchWithStates([
-      {
-        ...forestState,
-        currentAction: {
-          id: "action-1",
-          actionType: "combat",
-          status: "active",
-          description: "正在与腐化野狼群战斗",
-          startedAt: "2026-07-01T00:00:00.000Z",
-          endsAt: "2026-07-01T00:02:00.000Z",
-          progressPct: 20,
-          cycleProgressPct: null,
-          completedCycles: null,
-          settledCycles: null,
-          plannedCycles: null,
-          expectedYield: [],
-          combatLog: ["Zichen 攻击腐化野狼，造成 16 点伤害。"]
-        },
-        availableActions: ["cancel_action"]
-      }
-    ]);
+    const activeCombatState: GameStateDto = {
+      ...forestState,
+      currentAction: {
+        id: "action-1",
+        actionType: "combat",
+        status: "active",
+        description: "正在与腐化野狼群战斗",
+        startedAt: "2026-07-01T00:00:00.000Z",
+        endsAt: "2026-07-01T00:02:00.000Z",
+        progressPct: 20,
+        cycleProgressPct: null,
+        completedCycles: null,
+        settledCycles: null,
+        plannedCycles: null,
+        expectedYield: [],
+        combatLog: ["Zichen 攻击腐化野狼，造成 16 点伤害。"]
+      },
+      availableActions: ["cancel_action"]
+    };
+    const fetchMock = mockFetchWithStates([activeCombatState, forestState]);
 
     render(<GameShell csrfToken="csrf" />);
 
     expect(await screen.findByText("正在与腐化野狼群战斗")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "查看战斗" }));
     expect(screen.getByRole("dialog", { name: "战斗详情" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "撤离" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "战斗详情" })).toBeNull();
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:3000/game/action/cancel",
+      expect.objectContaining({ method: "POST" })
+    );
   });
 });
