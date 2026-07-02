@@ -90,6 +90,8 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
     recentGrantCount: 0,
     summary: ""
   };
+  let resourceTransferCalls = 0;
+  let failNextResourceTransfer = false;
   const tasks: NpcTaskRecord[] = [
     {
       id: "task-1",
@@ -152,29 +154,37 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
           baseBuyPriceCopper: 18,
           baseSellPriceCopper: 30
         }
-      ],
-      listInventory: async () => playerInventory,
-      setInventoryItem: async (input) => {
-        const index = playerInventory.findIndex((item) => item.itemId === input.itemId);
-        if (index >= 0) playerInventory[index] = { itemId: input.itemId, quantity: input.quantity };
-        else playerInventory.push({ itemId: input.itemId, quantity: input.quantity });
+      ]
+    },
+    resourceTransferRepo: {
+      transferNpcCopperToCharacter: async (input) => {
+        resourceTransferCalls += 1;
+        if (failNextResourceTransfer || npcCopper < input.copper) {
+          failNextResourceTransfer = false;
+          return false;
+        }
+        npcCopper -= input.copper;
+        playerCopper += input.copper;
+        return true;
       },
-      updateCharacterCopper: async (input) => {
-        playerCopper = input.copperBalance;
+      transferNpcItemToCharacter: async (input) => {
+        resourceTransferCalls += 1;
+        const npcStack = npcInventory.find((item) => item.itemId === input.itemId);
+        if (failNextResourceTransfer || !npcStack || npcStack.quantity < input.quantity) {
+          failNextResourceTransfer = false;
+          return false;
+        }
+        npcStack.quantity -= input.quantity;
+        const playerStack = playerInventory.find((item) => item.itemId === input.itemId);
+        if (playerStack) playerStack.quantity += input.quantity;
+        else playerInventory.push({ itemId: input.itemId, quantity: input.quantity });
+        return true;
       }
     },
     npcRepo: {
       listNpcActors: async () =>
         npcs.map((npc) => (npc.id === "npc-blacksmith" ? { ...npc, copperBalance: npcCopper } : npc)),
       listNpcInventory: async () => npcInventory,
-      setNpcInventoryItem: async (input) => {
-        const index = npcInventory.findIndex((item) => item.itemId === input.itemId);
-        if (index >= 0) npcInventory[index] = { itemId: input.itemId, quantity: input.quantity };
-        else npcInventory.push({ itemId: input.itemId, quantity: input.quantity });
-      },
-      updateNpcActor: async (input) => {
-        npcCopper = input.copperBalance;
-      },
       findActiveNpcAction: async () => null,
       listNpcEvents: async () => [
         {
@@ -241,6 +251,10 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
     setLatestAiCallLog: (next: AiCallLogDto | null) => {
       latestAiCallLog = next;
     },
+    failNextResourceTransfer: () => {
+      failNextResourceTransfer = true;
+    },
+    getResourceTransferCalls: () => resourceTransferCalls,
     getPlayerInventory: () => playerInventory,
     getNpcInventory: () => npcInventory,
     getPlayerCopper: () => playerCopper,
@@ -468,6 +482,57 @@ describe("DialogueService", () => {
     expect(aiLogs).toEqual([]);
     expect(aiContexts).toEqual([]);
     expect(systemMemoryEvents[0]).toContain("让渡了 基础铁矿石 x1");
+  });
+
+  it("rejects an item grant when the transactional final inventory check fails", async () => {
+    const {
+      service,
+      setRelationship,
+      failNextResourceTransfer,
+      getNpcInventory,
+      getPlayerInventory,
+      getResourceTransferCalls
+    } = buildService();
+    setRelationship(relationship({ familiarity: 2, trust: 0 }));
+    failNextResourceTransfer();
+
+    const response = await service.sendDialogueMessage(
+      "account-1",
+      "npc-blacksmith",
+      "能不能给我一块基础铁矿石？"
+    );
+
+    expect(response.ai.provider).toBe("rules");
+    expect(response.ai.fallbackReason).toBe("insufficient_inventory");
+    expect(response.messages.at(-1)?.message).toContain("没有足够的基础铁矿石");
+    expect(getResourceTransferCalls()).toBe(1);
+    expect(getNpcInventory()).toEqual([{ itemId: "iron_ore", quantity: 5 }]);
+    expect(getPlayerInventory()).toEqual([{ itemId: "wild_berry", quantity: 1 }]);
+  });
+
+  it("uses the transactional final balance check for NPC copper grants", async () => {
+    const {
+      service,
+      setRelationship,
+      failNextResourceTransfer,
+      getNpcCopper,
+      getPlayerCopper,
+      getResourceTransferCalls
+    } = buildService();
+    setRelationship(relationship({ familiarity: 5, trust: 1 }));
+    failNextResourceTransfer();
+
+    const response = await service.sendDialogueMessage(
+      "account-1",
+      "npc-blacksmith",
+      "能不能给我 5 铜币？"
+    );
+
+    expect(response.ai.provider).toBe("rules");
+    expect(response.ai.fallbackReason).toBe("insufficient_copper");
+    expect(getResourceTransferCalls()).toBe(1);
+    expect(getNpcCopper()).toBe(120);
+    expect(getPlayerCopper()).toBe(120);
   });
 
   it("uses verified task memory as favor without trusting raw dialogue claims", async () => {

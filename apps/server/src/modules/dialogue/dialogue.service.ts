@@ -5,8 +5,8 @@ import {
 } from "@ai-mud/ai-prompts";
 import { FIRST_ITEMS, getNpcByKey } from "@ai-mud/content";
 import {
-  addInventoryItem,
-  decideNpcResourceRequest
+  decideNpcResourceRequest,
+  type NpcResourceRequestDecision
 } from "@ai-mud/game-rules";
 import {
   CHARACTER_CLASSES,
@@ -20,7 +20,7 @@ import {
 import { createHash } from "node:crypto";
 import type { AiDialogueReply } from "../ai/ai-orchestrator.js";
 import { AI_PURPOSE_POLICIES } from "../ai/ai-purpose-policy.js";
-import type { CharacterRecord, InventoryRecord, MarketInventoryRecord } from "../game/game.repository.js";
+import type { CharacterRecord, MarketInventoryRecord } from "../game/game.repository.js";
 import type { VerifiedFavorProfile } from "../npc-memory/npc-memory.service.js";
 import type {
   NpcActionRecord,
@@ -78,16 +78,25 @@ export interface DialogueRepositoryPort {
 export interface DialogueGameRepositoryPort {
   findCharacterByAccountId(accountId: string): Promise<CharacterRecord | null>;
   listMarketInventory(settlementId: string): Promise<MarketInventoryRecord[]>;
-  listInventory(characterId: string): Promise<InventoryRecord[]>;
-  setInventoryItem(input: { characterId: string; itemId: ItemId; quantity: number }): Promise<void>;
-  updateCharacterCopper(input: { characterId: string; copperBalance: number }): Promise<void>;
+}
+
+export interface DialogueResourceTransferRepositoryPort {
+  transferNpcCopperToCharacter(input: {
+    npcActorId: string;
+    characterId: string;
+    copper: number;
+  }): Promise<boolean>;
+  transferNpcItemToCharacter(input: {
+    npcActorId: string;
+    characterId: string;
+    itemId: ItemId;
+    quantity: number;
+  }): Promise<boolean>;
 }
 
 export interface DialogueNpcRepositoryPort {
   listNpcActors(): Promise<NpcActorRecord[]>;
   listNpcInventory(actorId: string): Promise<NpcInventoryRecord[]>;
-  setNpcInventoryItem(input: { actorId: string; itemId: ItemId | string; quantity: number }): Promise<void>;
-  updateNpcActor(input: { actorId: string; copperBalance: number }): Promise<void>;
   findActiveNpcAction(actorId: string): Promise<NpcActionRecord | null>;
   listNpcEvents(actorId: string, limit: number): Promise<NpcEventRecord[]>;
 }
@@ -139,6 +148,7 @@ export interface DialogueMemoryPort {
 export interface DialogueServiceOptions {
   dialogueRepo: DialogueRepositoryPort;
   gameRepo: DialogueGameRepositoryPort;
+  resourceTransferRepo: DialogueResourceTransferRepositoryPort;
   npcRepo: DialogueNpcRepositoryPort;
   taskRepo: DialogueTaskRepositoryPort;
   ai: DialogueAiPort;
@@ -497,10 +507,9 @@ export class DialogueService {
 
     if (decision.outcome === "no_request") return null;
 
-    const reply = await this.applyResourceRequestDecision({
+    const { reply, decision: finalDecision } = await this.applyResourceRequestDecision({
       character: input.resolved.character,
       npc: input.resolved.npc,
-      inventory,
       decision
     });
     const npcRecord = await this.options.dialogueRepo.createDialogueMessage({
@@ -509,7 +518,7 @@ export class DialogueService {
       npcActorId: input.resolved.npc.id,
       speakerType: "npc",
       message: reply,
-      safetyFlags: [`resource_request:${decision.reason}`],
+      safetyFlags: [`resource_request:${finalDecision.reason}`],
       createdAt: input.now
     });
 
@@ -526,10 +535,10 @@ export class DialogueService {
       npcActorId: input.resolved.npc.id,
       characterId: input.resolved.character.id,
       memoryKind: "conversation",
-      importance: decision.outcome === "granted" ? 4 : 2,
+      importance: finalDecision.outcome === "granted" ? 4 : 2,
       occurredAt: input.now,
       sourceIds: [input.playerRecordId, npcRecord.id],
-      summary: buildResourceRequestMemorySummary(input.resolved.character.name, decision)
+      summary: buildResourceRequestMemorySummary(input.resolved.character.name, finalDecision)
     });
     await this.options.dialogueRepo.upsertRelationship({
       characterId: input.resolved.character.id,
@@ -553,7 +562,7 @@ export class DialogueService {
         status: "fallback",
         provider: "rules",
         model: "npc-resource-request",
-        fallbackReason: decision.reason
+        fallbackReason: finalDecision.reason
       }
     };
   }
@@ -653,44 +662,64 @@ export class DialogueService {
   private async applyResourceRequestDecision(input: {
     character: CharacterRecord;
     npc: NpcActorRecord;
-    inventory: NpcInventoryRecord[];
     decision: Exclude<ReturnType<typeof decideNpcResourceRequest>, { outcome: "no_request" }>;
-  }) {
+  }): Promise<{
+    reply: string;
+    decision: Exclude<NpcResourceRequestDecision, { outcome: "no_request" }>;
+  }> {
     if (input.decision.outcome === "rejected") {
-      return buildResourceRequestRejection(input.npc.name, input.decision);
+      return {
+        reply: buildResourceRequestRejection(input.npc.name, input.decision),
+        decision: input.decision
+      };
     }
 
     const request = input.decision.request;
     if (request.kind === "copper") {
-      await this.options.npcRepo.updateNpcActor({
-        actorId: input.npc.id,
-        copperBalance: input.npc.copperBalance - request.copper
-      });
-      await this.options.gameRepo.updateCharacterCopper({
+      const transferred = await this.options.resourceTransferRepo.transferNpcCopperToCharacter({
+        npcActorId: input.npc.id,
         characterId: input.character.id,
-        copperBalance: input.character.copperBalance + request.copper
+        copper: request.copper
       });
-      return `${input.npc.name} 数出 ${request.copper} 枚铜币递给你：“拿去，别乱花。”`;
+      if (!transferred) {
+        const finalDecision = {
+          outcome: "rejected",
+          request,
+          reason: "insufficient_copper"
+        } as const;
+        return {
+          reply: buildResourceRequestRejection(input.npc.name, finalDecision),
+          decision: finalDecision
+        };
+      }
+      return {
+        reply: `${input.npc.name} 数出 ${request.copper} 枚铜币递给你：“拿去，别乱花。”`,
+        decision: input.decision
+      };
     }
 
-    const stack = input.inventory.find((entry) => entry.itemId === request.itemId);
-    const nextNpcQuantity = (stack?.quantity ?? 0) - request.quantity;
-    await this.options.npcRepo.setNpcInventoryItem({
-      actorId: input.npc.id,
-      itemId: request.itemId,
-      quantity: nextNpcQuantity
-    });
-    const playerInventory = await this.options.gameRepo.listInventory(input.character.id);
-    const nextPlayerInventory = addInventoryItem(playerInventory, request.itemId, request.quantity);
-    const playerStack = nextPlayerInventory.find((entry) => entry.itemId === request.itemId);
-    if (!playerStack) throw new Error("Failed to calculate player inventory grant");
-    await this.options.gameRepo.setInventoryItem({
+    const transferred = await this.options.resourceTransferRepo.transferNpcItemToCharacter({
+      npcActorId: input.npc.id,
       characterId: input.character.id,
       itemId: request.itemId,
-      quantity: playerStack.quantity
+      quantity: request.quantity
     });
+    if (!transferred) {
+      const finalDecision = {
+        outcome: "rejected",
+        request,
+        reason: "insufficient_inventory"
+      } as const;
+      return {
+        reply: buildResourceRequestRejection(input.npc.name, finalDecision),
+        decision: finalDecision
+      };
+    }
 
-    return `${input.npc.name} 从自己的库存里取出 ${describeItem(request.itemId)} x${request.quantity} 交给你：“这是我能拿出来的。”`;
+    return {
+      reply: `${input.npc.name} 从自己的库存里取出 ${describeItem(request.itemId)} x${request.quantity} 交给你：“这是我能拿出来的。”`,
+      decision: input.decision
+    };
   }
 }
 

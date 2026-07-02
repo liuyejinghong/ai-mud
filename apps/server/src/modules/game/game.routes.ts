@@ -33,6 +33,7 @@ import { DeepSeekAiProvider } from "../ai/deepseek-ai-provider.js";
 import { AuthRepository, type PublicAccountRecord } from "../auth/auth.repository.js";
 import { AuthService } from "../auth/auth.service.js";
 import { DialogueRepository } from "../dialogue/dialogue.repository.js";
+import { DialogueResourceTransferRepository } from "../dialogue/dialogue-resource-transfer.repository.js";
 import { DialogueService, DialogueServiceError } from "../dialogue/dialogue.service.js";
 import { NpcRepository } from "../npc/npc.repository.js";
 import { NpcMemoryRepository } from "../npc-memory/npc-memory.repository.js";
@@ -339,6 +340,7 @@ function createDialogueService(app: FastifyInstance) {
   return new DialogueService({
     dialogueRepo: new DialogueRepository(app.di.db),
     gameRepo: new GameRepository(app.di.db),
+    resourceTransferRepo: new DialogueResourceTransferRepository(app.di.db),
     npcRepo: new NpcRepository(app.di.db),
     taskRepo: new NpcTaskRepository(app.di.db),
     memory: createNpcMemoryService(app),
