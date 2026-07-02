@@ -1,15 +1,8 @@
 import type { GameLocationId, GridPositionDto, ItemId, NpcProfession } from "@ai-mud/shared";
+import { ITEM_DEFINITIONS } from "./items.js";
+import type { FoodDefinition, MaterialDefinition, OreDefinition } from "./items.js";
 
-export interface ItemDefinition {
-  id: ItemId;
-  name: string;
-  category: "food" | "material" | "ore";
-  itemLevel: number;
-  baseBuyPriceCopper: number;
-  baseSellPriceCopper: number;
-  targetMarketQuantity: number;
-  satietyRestore?: number;
-}
+type MarketItemDefinition = FoodDefinition | MaterialDefinition | OreDefinition;
 
 export interface ResourceDefinition {
   id: string;
@@ -70,46 +63,9 @@ export interface NpcDefinition {
   paysWages: boolean;
 }
 
-export const FIRST_ITEMS: ItemDefinition[] = [
-  {
-    id: "wild_berry",
-    name: "野莓",
-    category: "food",
-    itemLevel: 1,
-    baseBuyPriceCopper: 5,
-    baseSellPriceCopper: 8,
-    targetMarketQuantity: 100,
-    satietyRestore: 1
-  },
-  {
-    id: "beast_meat",
-    name: "兽肉",
-    category: "food",
-    itemLevel: 1,
-    baseBuyPriceCopper: 12,
-    baseSellPriceCopper: 20,
-    targetMarketQuantity: 60,
-    satietyRestore: 1
-  },
-  {
-    id: "rough_hide",
-    name: "粗糙皮革",
-    category: "material",
-    itemLevel: 1,
-    baseBuyPriceCopper: 10,
-    baseSellPriceCopper: 18,
-    targetMarketQuantity: 40
-  },
-  {
-    id: "iron_ore",
-    name: "基础铁矿石",
-    category: "ore",
-    itemLevel: 1,
-    baseBuyPriceCopper: 18,
-    baseSellPriceCopper: 30,
-    targetMarketQuantity: 80
-  }
-];
+export const FIRST_ITEMS = ITEM_DEFINITIONS.filter(
+  (item) => item.category !== "equipment"
+) as MarketItemDefinition[];
 
 export const FIRST_MONSTERS: MonsterDefinition[] = [
   {
@@ -246,10 +202,6 @@ export const CORRUPT_FOREST: ZoneDefinition = {
 
 export function getResourceById(resourceId: string) {
   return CORRUPT_FOREST.resources.find((resource) => resource.id === resourceId) ?? null;
-}
-
-export function getItemById(itemId: ItemId) {
-  return FIRST_ITEMS.find((item) => item.id === itemId) ?? null;
 }
 
 export function getMonsterById(monsterId: string) {

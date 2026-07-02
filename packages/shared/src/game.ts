@@ -34,10 +34,9 @@ export const GAME_LOCATIONS = {
 
 export type GameLocationId = (typeof GAME_LOCATIONS)[keyof typeof GAME_LOCATIONS];
 
-export const ITEM_IDS = ["wild_berry", "beast_meat", "rough_hide", "iron_ore"] as const;
-export type ItemId = (typeof ITEM_IDS)[number];
+export type ItemId = string;
 
-export const EQUIPMENT_SLOTS = ["weapon", "chest"] as const;
+export const EQUIPMENT_SLOTS = ["weapon", "chest", "head", "accessory"] as const;
 export type EquipmentSlot = (typeof EQUIPMENT_SLOTS)[number];
 
 export const DIRECTIONS = ["north", "south", "west", "east"] as const;
@@ -365,7 +364,7 @@ export interface CurrentActionDto {
 export interface MarketItemDto {
   itemId: ItemId;
   name: string;
-  category: "food" | "material" | "ore";
+  category: string;
   itemLevel: number;
   stockQuantity: number;
   playerQuantity: number;
@@ -393,7 +392,7 @@ export interface EconomyTaxSummaryDto {
 export interface EconomyMarketItemDto {
   itemId: ItemId;
   name: string;
-  category: "food" | "material" | "ore";
+  category: string;
   itemLevel: number;
   stockQuantity: number;
   targetQuantity: number;

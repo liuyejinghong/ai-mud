@@ -7,11 +7,11 @@ import {
   FIRST_MONSTERS,
   FIRST_NPCS,
   getEncounterById,
-  getItemById,
   getMonsterById,
   getNpcByKey,
   getResourceById
 } from "./world.js";
+import { getItemById } from "./items.js";
 
 describe("first world content", () => {
   it("defines Blackpine Outpost and a 5x5 Corrupt Forest", () => {

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   CHARACTER_CLASSES,
   GAME_LOCATIONS,
-  ITEM_IDS,
   isDirection,
   type CharacterDto,
   type CurrentActionDto,
@@ -52,8 +51,14 @@ describe("game contract", () => {
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
   });
 
-  it("includes basic iron ore in the shared item catalog", () => {
-    expect(ITEM_IDS).toContain("iron_ore");
+  it("keeps item ids as DTO strings instead of a shared content catalog", () => {
+    const inventory: CurrentActionDto["expectedYield"][number] = {
+      itemId: "unknown_future_content_item",
+      name: "未同步物品",
+      quantity: 1
+    };
+
+    expect(inventory.itemId).toBe("unknown_future_content_item");
   });
 
   it("describes formatted money values", () => {
