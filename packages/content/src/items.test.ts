@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AFFIX_POOLS, EQUIPMENT_SLOTS, ITEM_DEFINITIONS, getItemById } from "./items.js";
+import { CORRUPT_FOREST, FIRST_MONSTERS, FIRST_NPCS } from "./world.js";
 
 const itemIds = ITEM_DEFINITIONS.map((item) => item.id);
 
@@ -19,6 +20,22 @@ describe("item registry", () => {
     expect(new Set(ITEM_DEFINITIONS.map((item) => item.category))).toEqual(
       new Set(["food", "material", "ore", "equipment"])
     );
+  });
+
+  it("keeps all world item references backed by registered item definitions", () => {
+    const registeredIds = new Set<string>(itemIds);
+    const referencedIds = [
+      ...CORRUPT_FOREST.resources.map((resource) => resource.gatherResult.itemId),
+      ...FIRST_MONSTERS.flatMap((monster) => monster.lootTable.map((loot) => loot.itemId)),
+      ...FIRST_NPCS.flatMap((npc) => [
+        ...(npc.producesItemId ? [npc.producesItemId] : []),
+        ...npc.demandItemIds
+      ])
+    ];
+
+    for (const itemId of referencedIds) {
+      expect(registeredIds.has(itemId), itemId).toBe(true);
+    }
   });
 
   it("migrates starter equipment with existing combat values", () => {
