@@ -1265,6 +1265,7 @@ export class GameService {
         inventory: [],
         equipment: [],
         market: null,
+        npcTasks: [],
         currentAction: null,
         availableActions: ["create_character"],
         log: []
@@ -1302,6 +1303,7 @@ export class GameService {
         inventory: inventoryDto,
         equipment: equipmentDto,
         market: null,
+        npcTasks: [],
         currentAction,
         availableActions,
         log: log.map((entry) => ({
@@ -1339,6 +1341,7 @@ export class GameService {
       inventory: inventoryDto,
       equipment: equipmentDto,
       market: null,
+      npcTasks: [],
       currentAction,
       availableActions,
       log: log.map((entry) => ({

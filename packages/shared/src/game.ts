@@ -263,6 +263,26 @@ export interface NpcMemoryFragmentDto {
   compressionLevel: number;
 }
 
+export type NpcTaskNeedType = "food_shortage" | "ore_shortage";
+export type NpcTaskStatus = "open" | "accepted" | "completed" | "expired" | "cancelled";
+
+export interface NpcTaskDto {
+  id: string;
+  npcActorId: string;
+  npcName: string;
+  needType: NpcTaskNeedType;
+  status: NpcTaskStatus;
+  title: string;
+  description: string;
+  requestedItem: InventoryItemDto;
+  rewardCopper: MoneyDto;
+  acceptedByCharacterId: string | null;
+  expiresAt: string;
+  createdAt: string;
+  acceptedAt: string | null;
+  completedAt: string | null;
+}
+
 export interface CurrentActionDto {
   id: string;
   actionType: ActionType;
@@ -368,6 +388,7 @@ export interface GameStateDto {
   inventory: InventoryItemDto[];
   equipment: EquipmentItemDto[];
   market: MarketDto | null;
+  npcTasks: NpcTaskDto[];
   currentAction: CurrentActionDto | null;
   availableActions: Array<
     | "create_character"
@@ -381,6 +402,7 @@ export interface GameStateDto {
     | "open_market"
     | "repair_equipment"
     | "eat_food"
+    | "view_npc_tasks"
   >;
   log: GameLogEntryDto[];
 }
@@ -404,4 +426,8 @@ export interface RepairEquipmentRequestDto {
 
 export interface EatFoodRequestDto {
   itemId: ItemId;
+}
+
+export interface NpcTaskCompleteRequestDto {
+  taskId: string;
 }

@@ -70,6 +70,28 @@ export class NpcMemoryService {
     });
   }
 
+  async recordSystemMemory(input: {
+    npcActorId: string;
+    characterId: string | null;
+    memoryKind: NpcMemoryKind;
+    summary: string;
+    importance: number;
+    occurredAt: Date;
+    sourceIds?: string[];
+  }) {
+    await this.repo.createEntry({
+      npcActorId: input.npcActorId,
+      characterId: input.characterId,
+      sourceType: "system",
+      memoryKind: input.memoryKind,
+      evidenceLevel: "system_verified",
+      sourceIds: input.sourceIds ?? [],
+      importance: Math.max(1, Math.min(5, Math.floor(input.importance))),
+      summary: truncate(input.summary, 220),
+      occurredAt: input.occurredAt
+    });
+  }
+
   async compressDueMemories(now: Date) {
     const cutoff = new Date(now.getTime() - RAW_MEMORY_RETENTION_MS);
     const entries = await this.repo.listUncompressedBefore(cutoff, MAX_COMPRESSION_BATCH);

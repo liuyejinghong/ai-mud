@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { PRODUCT_VERSION, WORLD_COMPATIBILITY } from "./version.js";
 
 describe("version constants", () => {
-  it("exposes the v0.6.1 NPC memory product line and compatibility versions", () => {
-    expect(PRODUCT_VERSION).toBe("0.6.1");
+  it("exposes the v0.6.2 NPC task product line and compatibility versions", () => {
+    expect(PRODUCT_VERSION).toBe("0.6.2");
     expect(WORLD_COMPATIBILITY).toEqual({
-      schemaVersion: 9,
-      apiVersion: 10,
+      schemaVersion: 10,
+      apiVersion: 11,
       engineVersion: 1,
-      rulesetVersion: 7,
+      rulesetVersion: 8,
       contentVersion: 7,
       promptVersion: 3,
       economyVersion: 2,

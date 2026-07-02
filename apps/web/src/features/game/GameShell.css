@@ -270,6 +270,71 @@
   padding: 0 8px;
 }
 
+.npc-task-panel {
+  border: 1px solid rgba(216, 167, 53, 0.78);
+  background: rgba(20, 15, 6, 0.58);
+  margin-bottom: 14px;
+  padding: 12px;
+}
+
+.npc-task-list {
+  display: grid;
+  gap: 10px;
+}
+
+.npc-task-item {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(216, 167, 53, 0.36);
+  background: rgba(6, 10, 6, 0.7);
+  padding: 10px;
+}
+
+.npc-task-title,
+.npc-task-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.npc-task-title strong {
+  color: #ffd98a;
+}
+
+.npc-task-title span,
+.npc-task-item p,
+.npc-task-meta {
+  color: #b8c9bd;
+  font-size: 12px;
+}
+
+.npc-task-item p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.npc-task-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.npc-task-meta div {
+  border-top: 1px dashed rgba(119, 184, 160, 0.24);
+  padding-top: 6px;
+}
+
+.npc-task-meta dt {
+  color: #77b8a0;
+}
+
+.npc-task-meta dd {
+  margin: 2px 0 0;
+  color: #f3d67d;
+}
+
 .active-action-panel {
   border: 1px solid rgba(216, 167, 53, 0.78);
   background: rgba(20, 15, 6, 0.72);
@@ -576,6 +641,10 @@
 
   .market-row {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .npc-task-meta {
+    grid-template-columns: 1fr;
   }
 
   .dialogue-layout {

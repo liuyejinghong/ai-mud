@@ -467,6 +467,37 @@ export const npcMemoryFragments = pgTable(
   })
 );
 
+export const npcTasks = pgTable(
+  "npc_tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    npcActorId: uuid("npc_actor_id").notNull().references(() => worldActors.id),
+    needType: text("need_type").notNull(),
+    status: text("status").notNull().default("open"),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    requestedItemId: text("requested_item_id").notNull(),
+    requestedQuantity: integer("requested_quantity").notNull(),
+    rewardCopper: integer("reward_copper").notNull(),
+    escrowCopper: integer("escrow_copper").notNull(),
+    acceptedByCharacterId: uuid("accepted_by_character_id").references(() => characters.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    npcStatusIdx: index("npc_tasks_npc_status_idx").on(table.npcActorId, table.status),
+    characterStatusIdx: index("npc_tasks_character_status_idx").on(
+      table.acceptedByCharacterId,
+      table.status
+    ),
+    expiresAtIdx: index("npc_tasks_expires_at_idx").on(table.expiresAt)
+  })
+);
+
 export const characterActions = pgTable(
   "character_actions",
   {

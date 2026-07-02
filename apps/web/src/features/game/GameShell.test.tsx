@@ -25,6 +25,7 @@ const createCharacterState: GameStateDto = {
   inventory: [],
   equipment: [],
   market: null,
+  npcTasks: [],
   currentAction: null,
   availableActions: ["create_character"],
   log: []
@@ -69,6 +70,7 @@ const villageState: GameStateDto = {
     }
   ],
   market: null,
+  npcTasks: [],
   currentAction: null,
   availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment"],
   log: []
@@ -93,6 +95,35 @@ const hungryVillageState: GameStateDto = {
     "open_market",
     "repair_equipment",
     "eat_food"
+  ]
+};
+
+const taskVillageState: GameStateDto = {
+  ...villageState,
+  inventory: [{ itemId: "iron_ore", name: "基础铁矿石", quantity: 3 }],
+  availableActions: [
+    "enter_corrupt_forest",
+    "open_market",
+    "repair_equipment",
+    "view_npc_tasks"
+  ],
+  npcTasks: [
+    {
+      id: "task-1",
+      npcActorId: "npc-blacksmith",
+      npcName: "伯林",
+      needType: "ore_shortage",
+      status: "open",
+      title: "炉火缺矿",
+      description: "伯林缺少基础铁矿石，修理炉火和补强装备都会被拖慢。",
+      requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
+      rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 },
+      acceptedByCharacterId: null,
+      expiresAt: "2026-07-03T08:00:00.000Z",
+      createdAt: "2026-07-02T08:00:00.000Z",
+      acceptedAt: null,
+      completedAt: null
+    }
   ]
 };
 
@@ -312,6 +343,50 @@ describe("GameShell", () => {
         })
       );
     });
+  });
+
+  it("shows NPC demand tasks and accepts then completes one with mouse actions", async () => {
+    const acceptedState: GameStateDto = {
+      ...taskVillageState,
+      npcTasks: [
+        {
+          ...taskVillageState.npcTasks[0]!,
+          status: "accepted",
+          acceptedByCharacterId: "character-1",
+          acceptedAt: "2026-07-02T08:05:00.000Z"
+        }
+      ]
+    };
+    const completedState: GameStateDto = {
+      ...taskVillageState,
+      npcTasks: [],
+      inventory: [{ itemId: "iron_ore", name: "基础铁矿石", quantity: 0 }],
+      character: {
+        ...taskVillageState.character!,
+        money: { gold: 0, silver: 12, copper: 71, totalCopper: 1271 }
+      }
+    };
+    const fetchMock = mockFetchWithStates([taskVillageState, acceptedState, completedState]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByRole("heading", { name: "NPC 任务" })).toBeTruthy();
+    expect(screen.getByText("! 炉火缺矿")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "接取" }));
+
+    expect(await screen.findByText("进行中")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "提交" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:3000/game/npc-tasks/task-1/complete",
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:3000/game/npc-tasks/task-1/accept",
+      expect.objectContaining({ method: "POST" })
+    );
   });
 
   it("shows hunger and eats a food item", async () => {

@@ -13,8 +13,10 @@ import {
   type StartGatheringRequestDto
 } from "@ai-mud/shared";
 import {
+  acceptNpcTask,
   buyMarketItem,
   cancelAction,
+  completeNpcTask,
   createCharacter,
   eatFood,
   enterCorruptForest,
@@ -45,6 +47,7 @@ const initialState: GameStateDto = {
   inventory: [],
   equipment: [],
   market: null,
+  npcTasks: [],
   currentAction: null,
   availableActions: ["create_character"],
   log: []
@@ -91,6 +94,16 @@ function hungerWarningText(status: HungerStatus) {
   return "饥饿：继续外出前最好准备食物。";
 }
 
+function taskStatusText(status: GameStateDto["npcTasks"][number]["status"]) {
+  return {
+    open: "可接取",
+    accepted: "进行中",
+    completed: "已完成",
+    expired: "已过期",
+    cancelled: "已取消"
+  }[status];
+}
+
 export function GameShell({ csrfToken }: GameShellProps) {
   const [state, setState] = useState<GameStateDto>(initialState);
   const [name, setName] = useState("Zichen");
@@ -120,6 +133,8 @@ export function GameShell({ csrfToken }: GameShellProps) {
   const canEnterForest = state.availableActions.includes("enter_corrupt_forest") && !isBusy;
   const canOpenMarket = state.availableActions.includes("open_market") && !isBusy;
   const canOpenDialogue =
+    state.character?.currentLocation === "blackpine_outpost" && !isBusy && !state.currentAction;
+  const canInteractWithTasks =
     state.character?.currentLocation === "blackpine_outpost" && !isBusy && !state.currentAction;
   const canRepairEquipment =
     state.availableActions.includes("repair_equipment") && !isBusy && !state.currentAction;
@@ -494,6 +509,71 @@ export function GameShell({ csrfToken }: GameShellProps) {
             </button>
           ) : null}
         </div>
+
+        {state.npcTasks.length > 0 ? (
+          <section className="npc-task-panel" aria-labelledby="npc-task-title">
+            <div className="panel-heading">
+              <h2 id="npc-task-title">NPC 任务</h2>
+              <span>{state.npcTasks.length} 个</span>
+            </div>
+            <div className="npc-task-list">
+              {state.npcTasks.map((task) => (
+                <article className="npc-task-item" key={task.id}>
+                  <div className="npc-task-title">
+                    <strong>
+                      {task.status === "open" ? "! " : ""}
+                      {task.title}
+                    </strong>
+                    <span>{taskStatusText(task.status)}</span>
+                  </div>
+                  <p>{task.description}</p>
+                  <dl className="npc-task-meta">
+                    <div>
+                      <dt>发布者</dt>
+                      <dd>{task.npcName}</dd>
+                    </div>
+                    <div>
+                      <dt>需求</dt>
+                      <dd>
+                        {task.requestedItem.name} x{task.requestedItem.quantity}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>奖励</dt>
+                      <dd>{moneyText(task.rewardCopper)}</dd>
+                    </div>
+                  </dl>
+                  <div className="npc-task-actions">
+                    {task.status === "open" ? (
+                      <button
+                        type="button"
+                        className="game-secondary-button"
+                        disabled={!canInteractWithTasks}
+                        onClick={() =>
+                          void runCommand(() => acceptNpcTask(task.id, csrfToken))
+                        }
+                      >
+                        接取
+                      </button>
+                    ) : null}
+                    {task.status === "accepted" ? (
+                      <button
+                        type="button"
+                        className="game-secondary-button"
+                        disabled={!canInteractWithTasks}
+                        onClick={() =>
+                          void runCommand(() => completeNpcTask(task.id, csrfToken))
+                        }
+                      >
+                        提交
+                      </button>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {state.currentAction ? (
           <section className="active-action-panel" aria-labelledby="active-action-title">

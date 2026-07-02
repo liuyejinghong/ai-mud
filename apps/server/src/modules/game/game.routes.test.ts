@@ -62,6 +62,7 @@ const baseState: GameStateDto = {
     }
   ],
   market: null,
+  npcTasks: [],
   currentAction: null,
   availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment"],
   log: []
@@ -165,6 +166,8 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
       },
       inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 1 }]
     }),
+    acceptNpcTask: async () => baseState,
+    completeNpcTask: async () => baseState,
     listDialogueTargets: async () => [dialogueTarget],
     getNpcDialogue: async () => dialogueResponse,
     sendNpcDialogueMessage: async () => dialogueResponse,
@@ -489,6 +492,73 @@ describe("registerGameRoutes", () => {
     expect(calls).toEqual([
       { accountId: "account-1", npcActorId: "npc-blacksmith", message: "最近缺什么？" }
     ]);
+  });
+
+  it("accepts an NPC task through a CSRF-protected mutation", async () => {
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      acceptNpcTask: async (accountId, taskId) => {
+        calls.push({ accountId, taskId });
+        return {
+          ...baseState,
+          npcTasks: [
+            {
+              id: taskId,
+              npcActorId: "npc-blacksmith",
+              npcName: "伯林",
+              needType: "ore_shortage",
+              status: "accepted",
+              title: "炉火缺矿",
+              description: "伯林缺少基础铁矿石。",
+              requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
+              rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 },
+              acceptedByCharacterId: "character-1",
+              expiresAt: "2026-07-03T08:00:00.000Z",
+              createdAt: "2026-07-02T08:00:00.000Z",
+              acceptedAt: "2026-07-02T08:05:00.000Z",
+              completedAt: null
+            }
+          ]
+        };
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/npc-tasks/task-1/accept",
+      headers: { "x-csrf-token": "csrf" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().npcTasks[0].status).toBe("accepted");
+    expect(calls).toEqual([{ accountId: "account-1", taskId: "task-1" }]);
+  });
+
+  it("completes an NPC task through a CSRF-protected mutation", async () => {
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      completeNpcTask: async (accountId, taskId) => {
+        calls.push({ accountId, taskId });
+        return {
+          ...baseState,
+          npcTasks: [],
+          character: {
+            ...baseState.character!,
+            money: { gold: 0, silver: 12, copper: 71, totalCopper: 1271 }
+          }
+        };
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/npc-tasks/task-1/complete",
+      headers: { "x-csrf-token": "csrf" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().npcTasks).toEqual([]);
+    expect(calls).toEqual([{ accountId: "account-1", taskId: "task-1" }]);
   });
 
   it("buys a market item through a CSRF-protected mutation", async () => {

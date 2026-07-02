@@ -20,6 +20,7 @@ import {
   type NpcMemoryFragmentDto,
   type NpcSimulationReportDto,
   type NpcSummaryDto,
+  type NpcTaskDto,
   type WorldRuntimeStatusDto
 } from "./game.js";
 import { PRODUCT_VERSION, WORLD_COMPATIBILITY } from "./version.js";
@@ -36,12 +37,12 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.6.1 NPC memory compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.6.1");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(10);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(9);
+  it("exposes v0.6.2 NPC task compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.6.2");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(11);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(10);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
-    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(7);
+    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(8);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(7);
     expect(WORLD_COMPATIBILITY.promptVersion).toBe(3);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
@@ -117,7 +118,10 @@ describe("game contract", () => {
   });
 
   it("allows v0.4.2 action commands in game state", () => {
-    const state: Pick<GameStateDto, "availableActions" | "currentAction" | "market" | "equipment"> = {
+    const state: Pick<
+      GameStateDto,
+      "availableActions" | "currentAction" | "market" | "equipment" | "npcTasks"
+    > = {
       availableActions: [
         "move",
         "start_gathering",
@@ -126,8 +130,10 @@ describe("game contract", () => {
         "return_to_village",
         "open_market",
         "repair_equipment",
-        "eat_food"
+        "eat_food",
+        "view_npc_tasks"
       ],
+      npcTasks: [],
       equipment: [
         {
           id: "equipment-1",
@@ -169,6 +175,7 @@ describe("game contract", () => {
     expect(state.availableActions).toContain("open_market");
     expect(state.availableActions).toContain("repair_equipment");
     expect(state.availableActions).toContain("eat_food");
+    expect(state.availableActions).toContain("view_npc_tasks");
     expect(state.equipment[0]?.durabilityPct).toBe(100);
     expect(state.market?.items[0]?.itemId).toBe("iron_ore");
     expect(state.currentAction).toBeNull();
@@ -395,5 +402,28 @@ describe("game contract", () => {
     expect(entry.sourceType).toBe("dialogue");
     expect(entry.evidenceLevel).toBe("dialogue_claim");
     expect(fragment.compressionLevel).toBe(1);
+  });
+
+  it("describes NPC demand tasks with escrowed copper rewards", () => {
+    const task: NpcTaskDto = {
+      id: "task-1",
+      npcActorId: "npc-blacksmith",
+      npcName: "伯林",
+      needType: "ore_shortage",
+      status: "open",
+      title: "炉火缺矿",
+      description: "伯林需要基础铁矿石维持修理炉火。",
+      requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
+      rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 },
+      acceptedByCharacterId: null,
+      expiresAt: "2026-07-03T08:00:00.000Z",
+      createdAt: "2026-07-02T08:00:00.000Z",
+      acceptedAt: null,
+      completedAt: null
+    };
+
+    expect(task.needType).toBe("ore_shortage");
+    expect(task.requestedItem.itemId).toBe("iron_ore");
+    expect(task.rewardCopper.totalCopper).toBe(36);
   });
 });

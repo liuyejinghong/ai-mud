@@ -21,6 +21,7 @@ import {
   npcMemoryEntries,
   npcMemoryFragments,
   npcRelationships,
+  npcTasks,
   mapInstances,
   sessions,
   worldActors,
@@ -127,6 +128,18 @@ describe("foundation schema", () => {
     expect(npcMemoryFragments.sourceEntryIds.getSQLType()).toBe("jsonb");
     expect(npcMemoryFragments.summary.getSQLType()).toBe("text");
     expect(npcMemoryFragments.compressionLevel.getSQLType()).toBe("integer");
+  });
+
+  it("defines NPC demand task tables with escrowed rewards", () => {
+    expect(getDrizzleTableName(npcTasks)).toBe("npc_tasks");
+    expect(npcTasks.needType.getSQLType()).toBe("text");
+    expect(npcTasks.status.getSQLType()).toBe("text");
+    expect(npcTasks.requestedItemId.getSQLType()).toBe("text");
+    expect(npcTasks.requestedQuantity.getSQLType()).toBe("integer");
+    expect(npcTasks.rewardCopper.getSQLType()).toBe("integer");
+    expect(npcTasks.escrowCopper.getSQLType()).toBe("integer");
+    expect(npcTasks.acceptedByCharacterId.getSQLType()).toBe("uuid");
+    expect(npcTasks.expiresAt.getSQLType()).toBe("timestamp with time zone");
   });
 
   it("stores audit metadata as structured jsonb", () => {

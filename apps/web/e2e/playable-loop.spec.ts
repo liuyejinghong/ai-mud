@@ -57,6 +57,7 @@ const villageState = {
     }
   ],
   market: null,
+  npcTasks: [],
   currentAction: null,
   availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment", "eat_food"],
   log: []

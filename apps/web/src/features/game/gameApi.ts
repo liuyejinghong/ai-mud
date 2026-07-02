@@ -119,6 +119,22 @@ export function sendNpcDialogueMessage(npcActorId: string, message: string, csrf
   });
 }
 
+export function acceptNpcTask(taskId: string, csrfToken: string) {
+  return requestGame<GameStateDto>(`/game/npc-tasks/${taskId}/accept`, {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify({})
+  });
+}
+
+export function completeNpcTask(taskId: string, csrfToken: string) {
+  return requestGame<GameStateDto>(`/game/npc-tasks/${taskId}/complete`, {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify({})
+  });
+}
+
 export function buyMarketItem(input: MarketTradeRequestDto, csrfToken: string) {
   return requestGame<GameStateDto>("/game/market/buy", {
     method: "POST",

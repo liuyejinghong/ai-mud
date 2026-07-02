@@ -30,6 +30,8 @@ import { DialogueService, DialogueServiceError } from "../dialogue/dialogue.serv
 import { NpcRepository } from "../npc/npc.repository.js";
 import { NpcMemoryRepository } from "../npc-memory/npc-memory.repository.js";
 import { NpcMemoryService } from "../npc-memory/npc-memory.service.js";
+import { NpcTaskRepository } from "../npc-task/npc-task.repository.js";
+import { NpcTaskService, NpcTaskServiceError } from "../npc-task/npc-task.service.js";
 import { GameRepository } from "./game.repository.js";
 import { GameService, GameServiceError } from "./game.service.js";
 
@@ -86,6 +88,8 @@ export interface GameRouteDependencies {
   repairEquipment(accountId: string, input: RepairEquipmentRequestDto): Promise<GameStateDto>;
   repairAllEquipment(accountId: string): Promise<GameStateDto>;
   eatFood(accountId: string, input: EatFoodRequestDto): Promise<GameStateDto>;
+  acceptNpcTask(accountId: string, taskId: string): Promise<GameStateDto>;
+  completeNpcTask(accountId: string, taskId: string): Promise<GameStateDto>;
   listDialogueTargets(accountId: string): Promise<NpcDialogueTargetDto[]>;
   getNpcDialogue(accountId: string, npcActorId: string): Promise<NpcDialogueResponseDto>;
   sendNpcDialogueMessage(
@@ -113,6 +117,16 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
   const authRepo = new AuthRepository(app.di.db);
   const game = new GameService(app.di.db);
   const dialogue = createDialogueService(app);
+  const task = createNpcTaskService(app);
+
+  const withNpcTasks = async (accountId: string, state: GameStateDto): Promise<GameStateDto> => {
+    if (!state.character) return state;
+    const npcTasks = await task.listTasksForAccount(accountId, new Date());
+    const availableActions = npcTasks.length
+      ? Array.from(new Set([...state.availableActions, "view_npc_tasks" as const]))
+      : state.availableActions;
+    return { ...state, npcTasks, availableActions };
+  };
 
   return {
     getCurrentAccount: async (request) => {
@@ -132,26 +146,49 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
     settleWorldIfDue: async () => {
       await app.di.worldRuntime.settleDue(new Date());
     },
-    getState: (accountId) => game.getState(accountId),
-    createCharacter: (accountId, input) => game.createCharacter(accountId, input),
-    enterCorruptForest: (accountId) => game.enterCorruptForest(accountId),
-    move: (accountId, direction) => game.move(accountId, direction),
-    startGathering: (accountId, input) => game.startGathering(accountId, input),
-    startCombat: (accountId) => game.startCombat(accountId),
-    cancelAction: (accountId) => game.cancelAction(accountId),
-    returnToVillage: (accountId) => game.returnToVillage(accountId),
+    getState: async (accountId) => withNpcTasks(accountId, await game.getState(accountId)),
+    createCharacter: async (accountId, input) =>
+      withNpcTasks(accountId, await game.createCharacter(accountId, input)),
+    enterCorruptForest: async (accountId) =>
+      withNpcTasks(accountId, await game.enterCorruptForest(accountId)),
+    move: async (accountId, direction) => withNpcTasks(accountId, await game.move(accountId, direction)),
+    startGathering: async (accountId, input) =>
+      withNpcTasks(accountId, await game.startGathering(accountId, input)),
+    startCombat: async (accountId) => withNpcTasks(accountId, await game.startCombat(accountId)),
+    cancelAction: async (accountId) => withNpcTasks(accountId, await game.cancelAction(accountId)),
+    returnToVillage: async (accountId) =>
+      withNpcTasks(accountId, await game.returnToVillage(accountId)),
     getMarket: (accountId) => game.getMarket(accountId),
-    buyMarketItem: (accountId, input) => game.buyMarketItem(accountId, input),
-    sellMarketItem: (accountId, input) => game.sellMarketItem(accountId, input),
+    buyMarketItem: async (accountId, input) =>
+      withNpcTasks(accountId, await game.buyMarketItem(accountId, input)),
+    sellMarketItem: async (accountId, input) =>
+      withNpcTasks(accountId, await game.sellMarketItem(accountId, input)),
     getRepairQuote: (accountId, input) => game.getRepairQuote(accountId, input),
-    repairEquipment: (accountId, input) => game.repairEquipment(accountId, input),
-    repairAllEquipment: (accountId) => game.repairAllEquipment(accountId),
-    eatFood: (accountId, input) => game.eatFood(accountId, input),
+    repairEquipment: async (accountId, input) =>
+      withNpcTasks(accountId, await game.repairEquipment(accountId, input)),
+    repairAllEquipment: async (accountId) =>
+      withNpcTasks(accountId, await game.repairAllEquipment(accountId)),
+    eatFood: async (accountId, input) => withNpcTasks(accountId, await game.eatFood(accountId, input)),
+    acceptNpcTask: async (accountId, taskId) => {
+      await task.acceptTask(accountId, taskId, new Date());
+      return withNpcTasks(accountId, await game.getState(accountId));
+    },
+    completeNpcTask: async (accountId, taskId) => {
+      await task.completeTask(accountId, taskId, new Date());
+      return withNpcTasks(accountId, await game.getState(accountId));
+    },
     listDialogueTargets: (accountId) => dialogue.listDialogueTargets(accountId),
     getNpcDialogue: (accountId, npcActorId) => dialogue.getDialogue(accountId, npcActorId),
     sendNpcDialogueMessage: (accountId, npcActorId, message) =>
       dialogue.sendDialogueMessage(accountId, npcActorId, message)
   };
+}
+
+function createNpcTaskService(app: FastifyInstance) {
+  return new NpcTaskService(
+    new NpcTaskRepository(app.di.db),
+    new NpcMemoryService(new NpcMemoryRepository(app.di.db))
+  );
 }
 
 function createDialogueService(app: FastifyInstance) {
@@ -215,6 +252,9 @@ async function requireMutationToken(
 
 function handleGameError(reply: FastifyReply, error: unknown) {
   if (error instanceof DialogueServiceError) {
+    return sendError(reply, 400, error.code, error.message);
+  }
+  if (error instanceof NpcTaskServiceError) {
     return sendError(reply, 400, error.code, error.message);
   }
   if (error instanceof GameServiceError) {
@@ -396,6 +436,40 @@ export async function registerGameRoutes(app: FastifyInstance, maybeDependencies
         params.data.npcActorId,
         parsed.data.message
       );
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/npc-tasks/:taskId/accept", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    const params = z.object({ taskId: z.string().min(1) }).safeParse(request.params);
+    if (!params.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid NPC task");
+    }
+
+    try {
+      return await deps.acceptNpcTask(account.id, params.data.taskId);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/npc-tasks/:taskId/complete", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    const params = z.object({ taskId: z.string().min(1) }).safeParse(request.params);
+    if (!params.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid NPC task");
+    }
+
+    try {
+      return await deps.completeNpcTask(account.id, params.data.taskId);
     } catch (error) {
       return handleGameError(reply, error);
     }
