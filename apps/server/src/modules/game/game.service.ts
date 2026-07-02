@@ -50,6 +50,7 @@ import {
   type CharacterActionRecord,
   type CharacterRecord,
   type CombatActionPayload,
+  type CombatTimelineEntry,
   type EquipmentRecord,
   type GatheringActionPayload
 } from "./game.repository.js";
@@ -158,6 +159,28 @@ function progressPct(startedAt: Date, endsAt: Date, now: Date) {
   const totalMs = Math.max(1, endsAt.getTime() - startedAt.getTime());
   const elapsedMs = Math.max(0, now.getTime() - startedAt.getTime());
   return Math.min(100, Math.round((elapsedMs / totalMs) * 100));
+}
+
+function playedCombatTimeline(
+  payload: CombatActionPayload,
+  startedAt: Date,
+  now: Date
+): CombatTimelineEntry[] {
+  const elapsedMs = Math.max(0, now.getTime() - startedAt.getTime());
+  return payload.combatTimeline.filter((entry) => entry.atMs <= elapsedMs);
+}
+
+function visibleCombatLog(payload: CombatActionPayload, startedAt: Date, now: Date) {
+  return playedCombatTimeline(payload, startedAt, now).map((entry) => entry.message);
+}
+
+function playerDamageFromCombatLog(messages: string[], characterName: string) {
+  return messages
+    .filter((message) => !message.startsWith(`${characterName} 攻击`))
+    .reduce((sum, message) => {
+      const damage = message.match(/造成\s+(\d+)\s+点伤害/)?.[1];
+      return sum + (damage ? Number.parseInt(damage, 10) : 0);
+    }, 0);
 }
 
 function toNeedsDto(character: CharacterRecord, now: Date): NeedsDto {
@@ -438,6 +461,7 @@ export class GameService {
         payload: {
           encounterId: encounter.id,
           combatLog: result.timeline.map((entry) => entry.message),
+          combatTimeline: result.timeline,
           expectedEndsAtMs: now.getTime() + result.durationMs,
           outcome: result.outcome,
           playerRemainingHp: result.playerRemainingHp,
@@ -476,6 +500,7 @@ export class GameService {
           message: "你停止采集，带走了已经完成周期的收获。"
         });
       } else {
+        await this.settleCombatEscapeCost(repo, character, action, now);
         await repo.writeEvent({
           characterId: character.id,
           eventType: "action.combat.escape",
@@ -1122,6 +1147,36 @@ export class GameService {
     }
   }
 
+  private async settleCombatEscapeCost(
+    repo: GameRepository,
+    character: CharacterRecord,
+    action: CharacterActionRecord,
+    now: Date
+  ) {
+    const payload = action.payload as CombatActionPayload;
+    const playedMessages = visibleCombatLog(payload, action.startedAt, now);
+    const damageTaken = playerDamageFromCombatLog(playedMessages, character.name);
+
+    if (damageTaken > 0) {
+      await repo.updateCharacterVitals({
+        characterId: character.id,
+        hp: Math.max(1, character.hp - damageTaken)
+      });
+
+      const equipment = await repo.listEquipment(character.id);
+      const damagedEquipment = applyCombatDurabilityLoss(equipment);
+      for (const item of damagedEquipment) {
+        const previous = equipment.find((entry) => entry.id === item.id);
+        if (!previous || previous.currentDurability === item.currentDurability) continue;
+        await repo.updateEquipmentDurability({
+          equipmentId: item.id,
+          currentDurability: item.currentDurability,
+          maxDurability: item.maxDurability
+        });
+      }
+    }
+  }
+
   private async settleCombatAction(
     repo: GameRepository,
     character: CharacterRecord,
@@ -1257,7 +1312,7 @@ export class GameService {
       settledCycles: null,
       plannedCycles: null,
       expectedYield: [],
-      combatLog: payload.combatLog
+      combatLog: visibleCombatLog(payload, action.startedAt, now)
     };
   }
 

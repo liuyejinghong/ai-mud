@@ -121,9 +121,15 @@ export interface GatheringActionPayload {
   settledCycles: number;
 }
 
+export interface CombatTimelineEntry {
+  atMs: number;
+  message: string;
+}
+
 export interface CombatActionPayload {
   encounterId: string;
   combatLog: string[];
+  combatTimeline: CombatTimelineEntry[];
   expectedEndsAtMs: number;
   outcome: "victory" | "injury" | "stalemate";
   playerRemainingHp: number;
@@ -223,6 +229,15 @@ function isItemQuantity(value: unknown): value is { itemId: ItemId; quantity: nu
   );
 }
 
+function isCombatTimelineEntry(value: unknown): value is CombatTimelineEntry {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { atMs?: unknown }).atMs === "number" &&
+    typeof (value as { message?: unknown }).message === "string"
+  );
+}
+
 export function parseActionPayload(
   actionType: ActionType,
   value: unknown
@@ -269,9 +284,16 @@ export function parseActionPayload(
       Array.isArray(payload.loot) &&
       payload.loot.every(isItemQuantity)
     ) {
+      const combatTimeline = Array.isArray(payload.combatTimeline)
+        ? payload.combatTimeline.filter(isCombatTimelineEntry)
+        : payload.combatLog.map((message) => ({
+            atMs: Number.MAX_SAFE_INTEGER,
+            message
+          }));
       return {
         encounterId: payload.encounterId,
         combatLog: payload.combatLog,
+        combatTimeline,
         expectedEndsAtMs: payload.expectedEndsAtMs,
         outcome: payload.outcome,
         playerRemainingHp: payload.playerRemainingHp,

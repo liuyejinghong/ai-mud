@@ -36,6 +36,35 @@ function combatAction(payload: CombatActionPayload): CharacterActionRecord {
 }
 
 describe("GameService action settlement", () => {
+  it("only exposes the played combat log prefix for active combat", () => {
+    const service = new GameService({} as Db);
+    const startedAt = new Date("2026-07-02T08:00:00.000Z");
+    const dto = (service as unknown as {
+      toCurrentActionDto(action: CharacterActionRecord, now: Date): { combatLog: string[] };
+    }).toCurrentActionDto(
+      {
+        ...combatAction({
+          encounterId: "forest_wolf_pack",
+          combatLog: ["旧日志不应直接透出"],
+          combatTimeline: [
+            { atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。" },
+            { atMs: 5_000, message: "腐化野狼 撕咬Zichen，造成 7 点伤害。" }
+          ],
+          expectedEndsAtMs: startedAt.getTime() + 10_000,
+          outcome: "victory",
+          playerRemainingHp: 73,
+          xp: 12,
+          loot: []
+        }),
+        startedAt,
+        endsAt: new Date(startedAt.getTime() + 10_000)
+      },
+      new Date(startedAt.getTime() + 2_000)
+    );
+
+    expect(dto.combatLog).toEqual(["Zichen 攻击腐化野狼，造成 16 点伤害。"]);
+  });
+
   it("does not grant combat rewards when the completion mark loses the race", async () => {
     const service = new GameService({} as Db);
     const calls: string[] = [];
@@ -71,6 +100,7 @@ describe("GameService action settlement", () => {
     const payload: CombatActionPayload = {
       encounterId: "forest_wolf_pack",
       combatLog: ["Zichen 攻击腐化野狼，造成 16 点伤害。"],
+      combatTimeline: [{ atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。" }],
       expectedEndsAtMs: new Date("2026-07-02T08:01:00.000Z").getTime(),
       outcome: "victory",
       playerRemainingHp: 64,
@@ -93,5 +123,76 @@ describe("GameService action settlement", () => {
     );
 
     expect(calls).toEqual(["mark"]);
+  });
+
+  it("applies played combat damage and durability loss when escaping", async () => {
+    const service = new GameService({} as Db);
+    const calls: string[] = [];
+    const vitals: Array<{ hp: number; xp?: number }> = [];
+    const durabilityUpdates: Array<{ equipmentId: string; currentDurability: number }> = [];
+    const repo = {
+      updateCharacterVitals: async (input: { hp: number; xp?: number }) => {
+        calls.push("updateCharacterVitals");
+        vitals.push(input);
+      },
+      listEquipment: async () => {
+        calls.push("listEquipment");
+        return [
+          {
+            id: "weapon-1",
+            slot: "weapon" as const,
+            itemKey: "training_sword",
+            name: "训练短剑",
+            itemLevel: 5,
+            attackBonus: 2,
+            defenseBonus: 0,
+            currentDurability: 10,
+            maxDurability: 10
+          }
+        ];
+      },
+      updateEquipmentDurability: async (input: {
+        equipmentId: string;
+        currentDurability: number;
+      }) => {
+        calls.push("updateEquipmentDurability");
+        durabilityUpdates.push(input);
+      }
+    };
+    const startedAt = new Date("2026-07-02T08:00:00.000Z");
+    const payload: CombatActionPayload = {
+      encounterId: "forest_wolf_pack",
+      combatLog: [],
+      combatTimeline: [
+        { atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。" },
+        { atMs: 2_000, message: "腐化野狼 撕咬Zichen，造成 7 点伤害。" },
+        { atMs: 8_000, message: "腐化野狼 撕咬Zichen，造成 99 点伤害。" }
+      ],
+      expectedEndsAtMs: startedAt.getTime() + 10_000,
+      outcome: "injury",
+      playerRemainingHp: 0,
+      xp: 0,
+      loot: []
+    };
+
+    await (service as unknown as {
+      settleCombatEscapeCost(
+        repo: object,
+        character: CharacterRecord,
+        action: CharacterActionRecord,
+        now: Date
+      ): Promise<void>;
+    }).settleCombatEscapeCost(
+      repo,
+      character({ hp: 80, xp: 4 }),
+      { ...combatAction(payload), startedAt, endsAt: new Date(startedAt.getTime() + 10_000) },
+      new Date(startedAt.getTime() + 2_500)
+    );
+
+    expect(vitals).toEqual([{ characterId: "character-1", hp: 73 }]);
+    expect(durabilityUpdates).toEqual([
+      { equipmentId: "weapon-1", currentDurability: 8, maxDurability: 10 }
+    ]);
+    expect(calls).toEqual(["updateCharacterVitals", "listEquipment", "updateEquipmentDurability"]);
   });
 });
