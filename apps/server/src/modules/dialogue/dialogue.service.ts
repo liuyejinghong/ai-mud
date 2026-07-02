@@ -20,6 +20,7 @@ import {
 import { createHash } from "node:crypto";
 import type { AiDialogueReply } from "../ai/ai-orchestrator.js";
 import type { CharacterRecord, InventoryRecord, MarketInventoryRecord } from "../game/game.repository.js";
+import type { VerifiedFavorProfile } from "../npc-memory/npc-memory.service.js";
 import type {
   NpcActionRecord,
   NpcActorRecord,
@@ -122,6 +123,11 @@ export interface DialogueMemoryPort {
     occurredAt: Date;
     sourceIds?: string[];
   }): Promise<void>;
+  getVerifiedFavorProfile(input: {
+    npcActorId: string;
+    characterId: string;
+    now?: Date;
+  }): Promise<VerifiedFavorProfile>;
 }
 
 export interface DialogueServiceOptions {
@@ -451,11 +457,16 @@ export class DialogueService {
     playerRecordId: string;
     now: Date;
   }): Promise<NpcDialogueResponseDto | null> {
-    const [inventory, relationship] = await Promise.all([
+    const [inventory, relationship, favorProfile] = await Promise.all([
       this.options.npcRepo.listNpcInventory(input.resolved.npc.id),
       this.options.dialogueRepo.findRelationship({
         characterId: input.resolved.character.id,
         npcActorId: input.resolved.npc.id
+      }),
+      this.options.memory.getVerifiedFavorProfile({
+        characterId: input.resolved.character.id,
+        npcActorId: input.resolved.npc.id,
+        now: input.now
       })
     ]);
     const decision = decideNpcResourceRequest({
@@ -464,7 +475,9 @@ export class DialogueService {
       npcCopper: input.resolved.npc.copperBalance,
       relationship: relationship
         ? { familiarity: relationship.familiarity, trust: relationship.trust }
-        : null
+        : null,
+      verifiedFavorScore: favorProfile.score,
+      recentGrantCount: favorProfile.recentGrantCount
     });
 
     if (decision.outcome === "no_request") return null;
@@ -661,7 +674,8 @@ function buildResourceRequestRejection(npcName: string, decision: HandledResourc
     insufficient_inventory: `我现在没有足够的${itemName}`,
     insufficient_copper: "我身上没有足够的铜币",
     reserve_required: "这些我还得留着维持自己的活计",
-    quantity_too_high: "你要得太多了"
+    quantity_too_high: "你要得太多了",
+    recently_helped: "我刚帮过你，不能总这样掏自己的库存"
   };
   return `${npcName} 摇头：“${reasonText[decision.reason]}。”`;
 }

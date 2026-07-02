@@ -24,7 +24,8 @@ export type NpcResourceRequestDecision =
         | "insufficient_inventory"
         | "insufficient_copper"
         | "reserve_required"
-        | "quantity_too_high";
+        | "quantity_too_high"
+        | "recently_helped";
     };
 
 export interface NpcResourceRequestDecisionInput {
@@ -35,6 +36,8 @@ export interface NpcResourceRequestDecisionInput {
     familiarity: number;
     trust: number;
   } | null;
+  verifiedFavorScore?: number;
+  recentGrantCount?: number;
 }
 
 const ITEM_GRANT_CAP = 2;
@@ -81,8 +84,11 @@ export function decideNpcResourceRequest(
     return { outcome: "no_request", request: null, reason: "no_supported_request" };
   }
 
-  if (!hasRelationshipForFavor(input.relationship)) {
+  if (!hasRelationshipForFavor(input)) {
     return { outcome: "rejected", request, reason: "low_relationship" };
+  }
+  if ((input.recentGrantCount ?? 0) >= 2) {
+    return { outcome: "rejected", request, reason: "recently_helped" };
   }
 
   if (request.kind === "copper") {
@@ -117,8 +123,12 @@ export function decideNpcResourceRequest(
   return { outcome: "granted", request, reason: "rule_verified" };
 }
 
-function hasRelationshipForFavor(relationship: NpcResourceRequestDecisionInput["relationship"]) {
-  return (relationship?.familiarity ?? 0) >= 2 || (relationship?.trust ?? 0) >= 1;
+function hasRelationshipForFavor(input: NpcResourceRequestDecisionInput) {
+  return (
+    (input.relationship?.familiarity ?? 0) >= 2 ||
+    (input.relationship?.trust ?? 0) >= 1 ||
+    (input.verifiedFavorScore ?? 0) >= 2
+  );
 }
 
 function hasSupportedItem(itemId: ItemId) {

@@ -432,4 +432,37 @@ describe("v0.3 engine rules", () => {
       reason: "reserve_required"
     });
   });
+
+  it("allows verified favor history to satisfy the NPC request relationship gate", () => {
+    expect(
+      decideNpcResourceRequest({
+        message: "能不能给我一块基础铁矿石？",
+        npcInventory: [{ itemId: "iron_ore", quantity: 5 }],
+        npcCopper: 100,
+        relationship: { familiarity: 0, trust: 0 },
+        verifiedFavorScore: 2
+      })
+    ).toEqual({
+      outcome: "granted",
+      request: { kind: "item", itemId: "iron_ore", quantity: 1 },
+      reason: "rule_verified"
+    });
+  });
+
+  it("refuses repeated NPC resource requests after recent verified grants", () => {
+    expect(
+      decideNpcResourceRequest({
+        message: "能不能给我一块基础铁矿石？",
+        npcInventory: [{ itemId: "iron_ore", quantity: 6 }],
+        npcCopper: 100,
+        relationship: { familiarity: 5, trust: 1 },
+        verifiedFavorScore: 4,
+        recentGrantCount: 2
+      })
+    ).toEqual({
+      outcome: "rejected",
+      request: { kind: "item", itemId: "iron_ore", quantity: 1 },
+      reason: "recently_helped"
+    });
+  });
 });

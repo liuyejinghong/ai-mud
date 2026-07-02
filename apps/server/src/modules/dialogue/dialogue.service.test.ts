@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AiDialogueReply } from "../ai/ai-orchestrator.js";
 import { DialogueService, DialogueServiceError } from "./dialogue.service.js";
 import type { InventoryRecord } from "../game/game.repository.js";
+import type { VerifiedFavorProfile } from "../npc-memory/npc-memory.service.js";
 import type {
   CreateAiCallLogInput,
   CreateDialogueMessageInput,
@@ -82,6 +83,11 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
   let playerInventory: InventoryRecord[] = [{ itemId: "wild_berry", quantity: 1 }];
   let npcInventory = [{ itemId: "iron_ore", quantity: 5 }];
   let relationship: RelationshipRecord | null = null;
+  let verifiedFavorProfile: VerifiedFavorProfile = {
+    score: 0,
+    recentGrantCount: 0,
+    summary: ""
+  };
   const tasks: NpcTaskRecord[] = [
     {
       id: "task-1",
@@ -202,6 +208,9 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
       getDialogueMemoryContext: async () => "记忆碎片：Zichen 曾询问过基础铁矿石短缺。",
       recordSystemMemory: async (input) => {
         systemMemoryEvents.push(input.summary);
+      },
+      getVerifiedFavorProfile: async () => {
+        return verifiedFavorProfile;
       }
     },
     now: () => new Date("2026-07-01T12:00:00.000Z")
@@ -220,6 +229,9 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
     },
     setNpcInventory: (next: typeof npcInventory) => {
       npcInventory = next;
+    },
+    setVerifiedFavorProfile: (next: VerifiedFavorProfile) => {
+      verifiedFavorProfile = next;
     },
     getPlayerInventory: () => playerInventory,
     getNpcInventory: () => npcInventory,
@@ -359,6 +371,70 @@ describe("DialogueService", () => {
     expect(aiLogs).toEqual([]);
     expect(aiContexts).toEqual([]);
     expect(systemMemoryEvents[0]).toContain("让渡了 基础铁矿石 x1");
+  });
+
+  it("uses verified task memory as favor without trusting raw dialogue claims", async () => {
+    const {
+      service,
+      aiLogs,
+      aiContexts,
+      setRelationship,
+      setVerifiedFavorProfile,
+      getNpcInventory,
+      getPlayerInventory
+    } = buildService();
+    setRelationship(relationship({ familiarity: 0, trust: 0 }));
+    setVerifiedFavorProfile({
+      score: 2,
+      recentGrantCount: 0,
+      summary: "可信记忆：Zichen 完成了任务「炉火缺矿」。"
+    });
+
+    const response = await service.sendDialogueMessage(
+      "account-1",
+      "npc-blacksmith",
+      "能不能给我一块基础铁矿石？"
+    );
+
+    expect(response.ai.provider).toBe("rules");
+    expect(response.ai.fallbackReason).toBe("rule_verified");
+    expect(getNpcInventory()).toEqual([{ itemId: "iron_ore", quantity: 4 }]);
+    expect(getPlayerInventory()).toEqual([
+      { itemId: "wild_berry", quantity: 1 },
+      { itemId: "iron_ore", quantity: 1 }
+    ]);
+    expect(aiLogs).toEqual([]);
+    expect(aiContexts).toEqual([]);
+  });
+
+  it("refuses repeated resource requests after recent verified grants", async () => {
+    const {
+      service,
+      setRelationship,
+      setVerifiedFavorProfile,
+      setNpcInventory,
+      getNpcInventory,
+      getPlayerInventory
+    } = buildService();
+    setRelationship(relationship({ familiarity: 5, trust: 1 }));
+    setVerifiedFavorProfile({
+      score: 4,
+      recentGrantCount: 2,
+      summary: "可信记忆：NPC 基于真实库存让渡了 基础铁矿石 x1。可信记忆：NPC 基于真实库存让渡了 野莓 x1。"
+    });
+    setNpcInventory([{ itemId: "iron_ore", quantity: 6 }]);
+
+    const response = await service.sendDialogueMessage(
+      "account-1",
+      "npc-blacksmith",
+      "再给我一个铁矿石"
+    );
+
+    expect(response.ai.provider).toBe("rules");
+    expect(response.ai.fallbackReason).toBe("recently_helped");
+    expect(response.messages.at(-1)?.message).toContain("刚帮过你");
+    expect(getNpcInventory()).toEqual([{ itemId: "iron_ore", quantity: 6 }]);
+    expect(getPlayerInventory()).toEqual([{ itemId: "wild_berry", quantity: 1 }]);
   });
 
   it("refuses requested items when NPC reserve would be broken", async () => {

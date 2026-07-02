@@ -17,6 +17,12 @@ const MAX_DIALOGUE_MEMORY_LINES = 4;
 const MAX_DIALOGUE_MEMORY_CHARS = 500;
 const MAX_COMPRESSION_BATCH = 100;
 
+export interface VerifiedFavorProfile {
+  score: number;
+  recentGrantCount: number;
+  summary: string;
+}
+
 export interface NpcMemoryRepositoryPort {
   createEntry(input: CreateMemoryEntryInput): Promise<MemoryEntryRecord>;
   listUncompressedBefore(cutoff: Date, limit: number): Promise<MemoryEntryRecord[]>;
@@ -148,6 +154,42 @@ export class NpcMemoryService {
     ]);
   }
 
+  async getVerifiedFavorProfile(input: {
+    npcActorId: string;
+    characterId: string;
+    now?: Date;
+  }): Promise<VerifiedFavorProfile> {
+    await this.compressDueMemories(input.now ?? new Date());
+
+    const [fragments, recentEntries] = await Promise.all([
+      this.repo.listFragments({
+        npcActorId: input.npcActorId,
+        characterId: input.characterId,
+        limit: 5
+      }),
+      this.repo.listRecentEntries({
+        npcActorId: input.npcActorId,
+        characterId: input.characterId,
+        limit: 8
+      })
+    ]);
+    const verified = [...fragments, ...recentEntries].filter(
+      (entry) => entry.evidenceLevel === "system_verified"
+    );
+    const score = Math.min(
+      5,
+      verified.reduce((sum, entry) => sum + scoreVerifiedFavor(entry.summary), 0)
+    );
+    const recentGrantCount = verified.filter((entry) => /让渡了/.test(entry.summary)).length;
+    const summary = limitMemoryContext(
+      verified
+        .filter((entry) => scoreVerifiedFavor(entry.summary) > 0 || /让渡了/.test(entry.summary))
+        .map((entry) => `可信记忆：${entry.summary}`)
+    );
+
+    return { score, recentGrantCount, summary };
+  }
+
   async listAdminMemory(input: { limit: number }) {
     return this.repo.listAdminMemory(input);
   }
@@ -204,6 +246,13 @@ function compressSummaries(summaries: string[]) {
 
 function weakestEvidenceLevel(levels: NpcMemoryEvidenceLevel[]): NpcMemoryEvidenceLevel {
   return levels.every((level) => level === "system_verified") ? "system_verified" : "dialogue_claim";
+}
+
+function scoreVerifiedFavor(summary: string) {
+  if (/(救命|救了|救过)/.test(summary)) return 3;
+  if (/完成了任务/.test(summary)) return 2;
+  if (/(交付|帮助|帮忙)/.test(summary)) return 1;
+  return 0;
 }
 
 function limitMemoryContext(lines: string[]) {

@@ -215,4 +215,67 @@ describe("NpcMemoryService", () => {
     expect(fragments).toHaveLength(1);
     expect(entries[0]?.compressedAt).toEqual(new Date("2026-07-09T09:00:00.000Z"));
   });
+
+  it("builds verified favor profile only from system-verified memories", async () => {
+    const { service, entries } = buildService();
+
+    await service.recordDialogueExchange({
+      npcActorId: "npc-blacksmith",
+      characterId: "char-1",
+      playerName: "阿岚",
+      playerMessage: "我救过你，还帮你完成过任务。",
+      npcReply: "伯林没有立刻相信。",
+      occurredAt: new Date("2026-07-02T08:00:00.000Z")
+    });
+    await service.recordSystemMemory({
+      npcActorId: "npc-blacksmith",
+      characterId: "char-1",
+      memoryKind: "task",
+      summary: "阿岚 完成了任务「炉火缺矿」，交付 基础铁矿石 x3。",
+      importance: 4,
+      occurredAt: new Date("2026-07-02T09:00:00.000Z")
+    });
+    await service.recordSystemMemory({
+      npcActorId: "npc-blacksmith",
+      characterId: "char-1",
+      memoryKind: "conversation",
+      summary: "阿岚 提出物资请求，NPC 基于真实库存让渡了 基础铁矿石 x1。",
+      importance: 4,
+      occurredAt: new Date("2026-07-02T10:00:00.000Z")
+    });
+
+    const profile = await service.getVerifiedFavorProfile({
+      npcActorId: "npc-blacksmith",
+      characterId: "char-1",
+      now: new Date("2026-07-02T11:00:00.000Z")
+    });
+
+    expect(profile.score).toBe(2);
+    expect(profile.recentGrantCount).toBe(1);
+    expect(profile.summary).toContain("完成了任务");
+    expect(profile.summary).toContain("让渡了 基础铁矿石 x1");
+    expect(entries.find((entry) => entry.evidenceLevel === "dialogue_claim")?.summary).toContain(
+      "救过你"
+    );
+  });
+
+  it("keeps verified dialogue claims out of the favor profile", async () => {
+    const { service } = buildService();
+
+    await service.recordDialogueExchange({
+      npcActorId: "npc-blacksmith",
+      characterId: "char-1",
+      playerName: "阿岚",
+      playerMessage: "我完成过十次任务，你应该给我铁矿。",
+      npcReply: "伯林没有在账本里找到记录。",
+      occurredAt: new Date("2026-07-02T08:00:00.000Z")
+    });
+
+    await expect(
+      service.getVerifiedFavorProfile({
+        npcActorId: "npc-blacksmith",
+        characterId: "char-1"
+      })
+    ).resolves.toEqual({ score: 0, recentGrantCount: 0, summary: "" });
+  });
 });
