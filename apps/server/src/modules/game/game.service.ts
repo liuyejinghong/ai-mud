@@ -465,6 +465,9 @@ export class GameService {
         throw new GameServiceError("VALIDATION_ERROR", "当前没有进行中的行动。");
       }
 
+      const marked = await repo.markActionCancelled(action.id, now);
+      if (!marked) return this.buildState(repo, accountId, now);
+
       if (action.actionType === "gathering") {
         await this.settleGatheringAction(repo, action, now, { completeAction: false });
         await repo.writeEvent({
@@ -480,7 +483,6 @@ export class GameService {
         });
       }
 
-      await repo.markActionCancelled(action.id, now);
       return this.buildState(repo, accountId, now);
     });
   }
@@ -1044,7 +1046,14 @@ export class GameService {
     if (!action || action.endsAt.getTime() > now.getTime()) return;
 
     if (action.actionType === "gathering") {
-      await this.settleGatheringAction(repo, action, now, { completeAction: true });
+      const marked = await repo.markActionCompleted(action.id, now);
+      if (!marked) return;
+      await this.settleGatheringAction(repo, action, now, { completeAction: false });
+      await repo.writeEvent({
+        characterId: action.characterId,
+        eventType: "action.gathering.complete",
+        message: "采集行动完成。"
+      });
       return;
     }
 
@@ -1120,6 +1129,9 @@ export class GameService {
     now: Date
   ) {
     const payload = action.payload as CombatActionPayload;
+    const marked = await repo.markActionCompleted(action.id, now);
+    if (!marked) return;
+
     let nextHp = payload.playerRemainingHp;
     let nextXp = character.xp;
     let injuryUntil: Date | null | undefined;
@@ -1178,7 +1190,6 @@ export class GameService {
       xp: nextXp,
       ...(injuryUntil === undefined ? {} : { injuryUntil })
     });
-    await repo.markActionCompleted(action.id, now);
   }
 
   private async healExpiredInjury(repo: GameRepository, accountId: string, now: Date) {

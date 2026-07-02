@@ -732,18 +732,22 @@ export class GameRepository {
       .where(eq(characterActions.id, actionId));
   }
 
-  async markActionCompleted(actionId: string, completedAt: Date): Promise<void> {
-    await this.db
+  async markActionCompleted(actionId: string, completedAt: Date): Promise<boolean> {
+    const rows = await this.db
       .update(characterActions)
       .set({ status: "completed", completedAt, updatedAt: completedAt })
-      .where(eq(characterActions.id, actionId));
+      .where(and(eq(characterActions.id, actionId), eq(characterActions.status, "active")))
+      .returning({ id: characterActions.id });
+    return rows.length > 0;
   }
 
-  async markActionCancelled(actionId: string, cancelledAt: Date): Promise<void> {
-    await this.db
+  async markActionCancelled(actionId: string, cancelledAt: Date): Promise<boolean> {
+    const rows = await this.db
       .update(characterActions)
       .set({ status: "cancelled", cancelledAt, updatedAt: cancelledAt })
-      .where(eq(characterActions.id, actionId));
+      .where(and(eq(characterActions.id, actionId), eq(characterActions.status, "active")))
+      .returning({ id: characterActions.id });
+    return rows.length > 0;
   }
 
   async writeEvent(input: {
