@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest";
 import { PRODUCT_VERSION, WORLD_COMPATIBILITY } from "./version.js";
 
 describe("version constants", () => {
-  it("exposes the v0.7.1 critical debt repair product line and compatibility versions", () => {
-    expect(PRODUCT_VERSION).toBe("0.7.1");
+  it("exposes the v0.8.0 foundation product line and compatibility versions", () => {
+    expect(PRODUCT_VERSION).toBe("0.8.0");
     expect(WORLD_COMPATIBILITY).toEqual({
-      schemaVersion: 15,
-      apiVersion: 21,
+      schemaVersion: 16,
+      apiVersion: 22,
       engineVersion: 2,
-      rulesetVersion: 11,
-      contentVersion: 8,
+      rulesetVersion: 12,
+      contentVersion: 9,
       promptVersion: 7,
       economyVersion: 2,
       worldSeedVersion: 1

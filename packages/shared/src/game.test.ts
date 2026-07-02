@@ -41,13 +41,13 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.7.1 critical debt repair compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.7.1");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(21);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(15);
+  it("exposes v0.8.0 foundation compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.8.0");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(22);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(16);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
-    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(11);
-    expect(WORLD_COMPATIBILITY.contentVersion).toBe(8);
+    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(12);
+    expect(WORLD_COMPATIBILITY.contentVersion).toBe(9);
     expect(WORLD_COMPATIBILITY.promptVersion).toBe(7);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
   });
