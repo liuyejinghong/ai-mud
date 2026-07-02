@@ -35,6 +35,7 @@ import { AuthService } from "../auth/auth.service.js";
 import { DialogueRepository } from "../dialogue/dialogue.repository.js";
 import { DialogueResourceTransferRepository } from "../dialogue/dialogue-resource-transfer.repository.js";
 import { DialogueService, DialogueServiceError } from "../dialogue/dialogue.service.js";
+import { ItemServiceError } from "../item/item.service.js";
 import { NpcRepository } from "../npc/npc.repository.js";
 import { NpcMemoryRepository } from "../npc-memory/npc-memory.repository.js";
 import {
@@ -524,6 +525,9 @@ function handleGameError(reply: FastifyReply, error: unknown) {
     return sendError(reply, 400, error.code, error.message);
   }
   if (error instanceof GameServiceError) {
+    return sendError(reply, 400, error.code, error.message);
+  }
+  if (error instanceof ItemServiceError) {
     return sendError(reply, 400, error.code, error.message);
   }
   throw error;

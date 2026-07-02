@@ -9,6 +9,8 @@ import type { Db } from "../../db/client.js";
 import { characterItems, characters, npcItems, npcTasks, worldActors } from "../../db/schema.js";
 import type { CharacterRecord, InventoryRecord } from "../game/game.repository.js";
 import { serializeHunger } from "../game/game.repository.js";
+import { ItemRepository } from "../item/item.repository.js";
+import { ItemService } from "../item/item.service.js";
 import type { NpcActorRecord, NpcInventoryRecord } from "../npc/npc.service.js";
 
 type NpcTaskDb = Pick<Db, "insert" | "select" | "update"> & { transaction?: Db["transaction"] };
@@ -167,24 +169,6 @@ export class NpcTaskRepository {
     return rows;
   }
 
-  async setNpcInventoryItem(input: { actorId: string; itemId: ItemId; quantity: number }) {
-    const [existing] = await this.db
-      .select({ id: npcItems.id })
-      .from(npcItems)
-      .where(and(eq(npcItems.actorId, input.actorId), eq(npcItems.itemId, input.itemId)))
-      .limit(1);
-
-    if (existing) {
-      await this.db
-        .update(npcItems)
-        .set({ quantity: input.quantity, updatedAt: new Date() })
-        .where(eq(npcItems.id, existing.id));
-      return;
-    }
-
-    await this.db.insert(npcItems).values(input);
-  }
-
   async findCharacterByAccountId(accountId: string): Promise<CharacterRecord | null> {
     const [row] = await this.db
       .select()
@@ -210,31 +194,22 @@ export class NpcTaskRepository {
     return rows.map((row) => ({ itemId: row.itemId as ItemId, quantity: row.quantity }));
   }
 
-  async setCharacterInventoryItem(input: {
+  async transferCharacterItemToNpc(input: {
     characterId: string;
+    actorId: string;
     itemId: ItemId;
     quantity: number;
+    reason: string;
+    metadata?: Record<string, unknown>;
   }) {
-    const [existing] = await this.db
-      .select({ id: characterItems.id })
-      .from(characterItems)
-      .where(
-        and(
-          eq(characterItems.characterId, input.characterId),
-          eq(characterItems.itemId, input.itemId)
-        )
-      )
-      .limit(1);
-
-    if (existing) {
-      await this.db
-        .update(characterItems)
-        .set({ quantity: input.quantity, updatedAt: new Date() })
-        .where(eq(characterItems.id, existing.id));
-      return;
-    }
-
-    await this.db.insert(characterItems).values(input);
+    await new ItemService(new ItemRepository(this.db, false)).transfer({
+      fromOwner: { ownerType: "character", ownerId: input.characterId },
+      toOwner: { ownerType: "npc", ownerId: input.actorId },
+      itemId: input.itemId,
+      quantity: input.quantity,
+      reason: input.reason,
+      ...(input.metadata ? { metadata: input.metadata } : {})
+    });
   }
 
   async listBlockingTasksForNpc(actorId: string): Promise<NpcTaskRecord[]> {

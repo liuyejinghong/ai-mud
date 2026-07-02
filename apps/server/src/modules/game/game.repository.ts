@@ -19,6 +19,8 @@ import {
   mapInstances,
   syncEvents
 } from "../../db/schema.js";
+import { ItemRepository } from "../item/item.repository.js";
+import { ItemService } from "../item/item.service.js";
 
 type GameDb = Pick<Db, "insert" | "select" | "update">;
 
@@ -470,48 +472,35 @@ export class GameRepository {
     }));
   }
 
-  async setInventoryItem(input: {
+  async grantCharacterItem(input: {
     characterId: string;
     itemId: ItemId;
     quantity: number;
+    reason: string;
+    metadata?: Record<string, unknown>;
   }): Promise<void> {
-    const [existing] = await this.db
-      .select({ id: characterItems.id })
-      .from(characterItems)
-      .where(
-        and(
-          eq(characterItems.characterId, input.characterId),
-          eq(characterItems.itemId, input.itemId)
-        )
-      )
-      .limit(1);
-
-    if (existing) {
-      await this.db
-        .update(characterItems)
-        .set({ quantity: input.quantity, updatedAt: new Date() })
-        .where(eq(characterItems.id, existing.id));
-      return;
-    }
-
-    await this.db.insert(characterItems).values(input);
+    await new ItemService(new ItemRepository(this.db, false)).grantStackable({
+      owner: { ownerType: "character", ownerId: input.characterId },
+      itemId: input.itemId,
+      quantity: input.quantity,
+      reason: input.reason,
+      ...(input.metadata ? { metadata: input.metadata } : {})
+    });
   }
 
-  async decrementInventoryItem(input: {
+  async consumeCharacterItem(input: {
     characterId: string;
     itemId: ItemId;
     quantity: number;
+    reason: string;
+    metadata?: Record<string, unknown>;
   }): Promise<void> {
-    const inventory = await this.listInventory(input.characterId);
-    const existing = inventory.find((item) => item.itemId === input.itemId);
-    const nextQuantity = (existing?.quantity ?? 0) - input.quantity;
-    if (nextQuantity < 0) {
-      throw new Error(`Cannot decrement ${input.itemId} below zero`);
-    }
-    await this.setInventoryItem({
-      characterId: input.characterId,
+    await new ItemService(new ItemRepository(this.db, false)).consume({
+      owner: { ownerType: "character", ownerId: input.characterId },
       itemId: input.itemId,
-      quantity: nextQuantity
+      quantity: input.quantity,
+      reason: input.reason,
+      ...(input.metadata ? { metadata: input.metadata } : {})
     });
   }
 

@@ -3,7 +3,8 @@ import type {
   CreateItemInstanceInput,
   ItemInstanceRecord,
   ItemOwner,
-  WriteLedgerInput
+  WriteLedgerInput,
+  WriteSyncEventInput
 } from "./item.repository.js";
 import { ItemService, ItemServiceError } from "./item.service.js";
 
@@ -11,6 +12,7 @@ class FakeItemRepo {
   stacks = new Map<string, number>();
   instances = new Map<string, ItemInstanceRecord>();
   ledger: WriteLedgerInput[] = [];
+  syncEvents: WriteSyncEventInput[] = [];
   transactionCalls = 0;
   nextInstance = 1;
 
@@ -91,6 +93,10 @@ class FakeItemRepo {
     this.ledger.push(input);
   }
 
+  async writeSyncEvent(input: WriteSyncEventInput) {
+    this.syncEvents.push(input);
+  }
+
   private stackKey(owner: ItemOwner, itemId: string) {
     return `${owner.ownerType}:${owner.ownerId ?? "none"}:${itemId}`;
   }
@@ -119,6 +125,15 @@ describe("ItemService", () => {
         quantity: 3,
         toOwner: characterOwner,
         reason: "test.grant"
+      }
+    ]);
+    expect(repo.syncEvents).toMatchObject([
+      {
+        owner: characterOwner,
+        eventType: "item.grant",
+        stateDirty: true,
+        payload: { itemId: "iron_ore", quantity: 3, reason: "test.grant" },
+        source: "item-service"
       }
     ]);
     expect(repo.transactionCalls).toBe(1);
@@ -195,6 +210,10 @@ describe("ItemService", () => {
     ).rejects.toBeInstanceOf(ItemServiceError);
     expect(repo.stacks.get("character:character-1:wild_berry")).toBe(1);
     expect(repo.ledger.filter((entry) => entry.operation === "transfer")).toHaveLength(1);
+    expect(repo.syncEvents.map((entry) => entry.eventType)).toEqual([
+      "item.transfer.out",
+      "item.transfer.in"
+    ]);
   });
 
   it("rejects a second equip after the instance has already moved", async () => {

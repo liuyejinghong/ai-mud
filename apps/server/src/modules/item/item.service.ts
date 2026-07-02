@@ -12,7 +12,8 @@ import {
   type ItemOwner,
   type ItemLocationType,
   type ItemRarity,
-  type WriteLedgerInput
+  type WriteLedgerInput,
+  type WriteSyncEventInput
 } from "./item.repository.js";
 
 export class ItemServiceError extends Error {
@@ -40,6 +41,7 @@ interface ItemRepositoryLike {
     slot?: string | null;
   }): Promise<boolean>;
   writeLedger(input: WriteLedgerInput): Promise<void>;
+  writeSyncEvent?(input: WriteSyncEventInput): Promise<void>;
 }
 
 export class ItemService {
@@ -73,6 +75,11 @@ export class ItemService {
         toOwner: input.owner,
         reason: input.reason,
         metadata: input.metadata
+      });
+      await this.writeOwnerSyncEvent(repo, input.owner, {
+        eventType: "item.grant",
+        stateDirty: true,
+        payload: { itemId: input.itemId, quantity: input.quantity, reason: input.reason }
       });
     });
   }
@@ -112,6 +119,16 @@ export class ItemService {
         reason: input.reason,
         metadata: input.metadata
       });
+      await this.writeOwnerSyncEvent(repo, input.owner, {
+        eventType: "item.instance.grant",
+        stateDirty: true,
+        payload: {
+          itemDefId: input.itemDefId,
+          itemInstanceId: instance.id,
+          rarity: input.rarity,
+          reason: input.reason
+        }
+      });
 
       return instance;
     });
@@ -145,6 +162,11 @@ export class ItemService {
         fromOwner: input.owner,
         reason: input.reason,
         metadata: input.metadata
+      });
+      await this.writeOwnerSyncEvent(repo, input.owner, {
+        eventType: "item.consume",
+        stateDirty: true,
+        payload: { itemId: input.itemId, quantity: input.quantity, reason: input.reason }
       });
     });
   }
@@ -185,6 +207,16 @@ export class ItemService {
         reason: input.reason,
         metadata: input.metadata
       });
+      await this.writeOwnerSyncEvent(repo, input.fromOwner, {
+        eventType: "item.transfer.out",
+        stateDirty: true,
+        payload: { itemId: input.itemId, quantity: input.quantity, reason: input.reason }
+      });
+      await this.writeOwnerSyncEvent(repo, input.toOwner, {
+        eventType: "item.transfer.in",
+        stateDirty: true,
+        payload: { itemId: input.itemId, quantity: input.quantity, reason: input.reason }
+      });
     });
   }
 
@@ -216,6 +248,16 @@ export class ItemService {
         toOwner: input.toOwner,
         reason: input.reason,
         metadata: input.metadata
+      });
+      await this.writeOwnerSyncEvent(repo, input.fromOwner, {
+        eventType: "item.instance.transfer.out",
+        stateDirty: true,
+        payload: { itemInstanceId: input.instanceId, itemDefId: instance.itemDefId, reason: input.reason }
+      });
+      await this.writeOwnerSyncEvent(repo, input.toOwner, {
+        eventType: "item.instance.transfer.in",
+        stateDirty: true,
+        payload: { itemInstanceId: input.instanceId, itemDefId: instance.itemDefId, reason: input.reason }
       });
     });
   }
@@ -267,6 +309,11 @@ export class ItemService {
         toOwner: input.owner,
         reason: input.reason,
         metadata: input.metadata
+      });
+      await this.writeOwnerSyncEvent(repo, input.owner, {
+        eventType: "item.instance.equip",
+        stateDirty: true,
+        payload: { itemInstanceId: input.instanceId, itemDefId: instance.itemDefId, slot: input.targetSlot }
       });
     });
   }
@@ -337,6 +384,25 @@ export class ItemService {
         reason: input.reason,
         metadata: input.metadata
       });
+      await this.writeOwnerSyncEvent(repo, input.owner, {
+        eventType: `item.instance.${input.operation}`,
+        stateDirty: true,
+        payload: { itemInstanceId: input.instanceId, itemDefId: instance.itemDefId, reason: input.reason }
+      });
+    });
+  }
+
+  private async writeOwnerSyncEvent(
+    repo: ItemRepositoryLike,
+    owner: ItemOwner,
+    input: Pick<WriteSyncEventInput, "eventType" | "stateDirty" | "payload">
+  ) {
+    await repo.writeSyncEvent?.({
+      owner,
+      eventType: input.eventType,
+      stateDirty: input.stateDirty,
+      payload: input.payload,
+      source: "item-service"
     });
   }
 

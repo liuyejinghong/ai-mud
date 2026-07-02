@@ -5,7 +5,8 @@ import {
   characterItems,
   itemInstances,
   itemLedger,
-  npcItems
+  npcItems,
+  syncEvents
 } from "../../db/schema.js";
 
 type ItemDb = Pick<Db, "insert" | "select" | "update"> & { transaction?: Db["transaction"] };
@@ -60,6 +61,14 @@ export interface WriteLedgerInput {
   metadata?: Record<string, unknown> | undefined;
 }
 
+export interface WriteSyncEventInput {
+  owner: ItemOwner;
+  eventType: string;
+  stateDirty: boolean;
+  payload: Record<string, unknown>;
+  source: string;
+}
+
 function toItemInstance(row: typeof itemInstances.$inferSelect): ItemInstanceRecord {
   return {
     id: row.id,
@@ -79,11 +88,14 @@ function toItemInstance(row: typeof itemInstances.$inferSelect): ItemInstanceRec
 }
 
 export class ItemRepository {
-  constructor(private readonly db: ItemDb) {}
+  constructor(
+    private readonly db: ItemDb,
+    private readonly ownsTransaction = true
+  ) {}
 
   async transaction<T>(operation: (repo: ItemRepository) => Promise<T>): Promise<T> {
-    if (!this.db.transaction) return operation(this);
-    return this.db.transaction(async (tx) => operation(new ItemRepository(tx)));
+    if (!this.ownsTransaction || !this.db.transaction) return operation(this);
+    return this.db.transaction(async (tx) => operation(new ItemRepository(tx, false)));
   }
 
   async grantStackable(input: { owner: ItemOwner; itemId: ItemId; quantity: number }) {
@@ -245,6 +257,19 @@ export class ItemRepository {
       toOwnerId: input.toOwner?.ownerId ?? null,
       reason: input.reason,
       metadata: input.metadata ?? {}
+    });
+  }
+
+  async writeSyncEvent(input: WriteSyncEventInput) {
+    if (input.owner.ownerType !== "character" || !input.owner.ownerId) return;
+
+    await this.db.insert(syncEvents).values({
+      audience: "character",
+      characterId: input.owner.ownerId,
+      eventType: input.eventType,
+      stateDirty: input.stateDirty,
+      payload: input.payload,
+      source: input.source
     });
   }
 }

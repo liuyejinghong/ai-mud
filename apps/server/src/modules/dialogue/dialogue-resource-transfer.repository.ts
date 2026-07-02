@@ -1,7 +1,9 @@
 import type { ItemId } from "@ai-mud/shared";
 import { and, eq, gte, sql } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
-import { characterItems, characters, npcItems, worldActors } from "../../db/schema.js";
+import { characters, worldActors } from "../../db/schema.js";
+import { ItemRepository } from "../item/item.repository.js";
+import { ItemService, ItemServiceError } from "../item/item.service.js";
 
 type DialogueResourceTransferDb = Pick<Db, "transaction">;
 
@@ -51,39 +53,19 @@ export class DialogueResourceTransferRepository {
     quantity: number;
   }): Promise<boolean> {
     return this.db.transaction(async (tx) => {
-      const [npcStack] = await tx
-        .select({ id: npcItems.id, quantity: npcItems.quantity })
-        .from(npcItems)
-        .where(and(eq(npcItems.actorId, input.npcActorId), eq(npcItems.itemId, input.itemId)))
-        .limit(1);
-      if (!npcStack || npcStack.quantity < input.quantity) return false;
-
-      const debited = await tx
-        .update(npcItems)
-        .set({
-          quantity: sql`${npcItems.quantity} - ${input.quantity}`,
-          updatedAt: new Date()
-        })
-        .where(and(eq(npcItems.id, npcStack.id), gte(npcItems.quantity, input.quantity)))
-        .returning({ id: npcItems.id });
-      if (debited.length === 0) return false;
-
-      await tx
-        .insert(characterItems)
-        .values({
-          characterId: input.characterId,
+      try {
+        await new ItemService(new ItemRepository(tx, false)).transfer({
+          fromOwner: { ownerType: "npc", ownerId: input.npcActorId },
+          toOwner: { ownerType: "character", ownerId: input.characterId },
           itemId: input.itemId,
-          quantity: input.quantity
-        })
-        .onConflictDoUpdate({
-          target: [characterItems.characterId, characterItems.itemId],
-          set: {
-            quantity: sql`${characterItems.quantity} + ${input.quantity}`,
-            updatedAt: new Date()
-          }
+          quantity: input.quantity,
+          reason: "dialogue.resource_request"
         });
-
-      return true;
+        return true;
+      } catch (error) {
+        if (error instanceof ItemServiceError) return false;
+        throw error;
+      }
     });
   }
 }

@@ -10,7 +10,6 @@ import {
   isFoodDefinition
 } from "@ai-mud/content";
 import {
-  addInventoryItem,
   applyCombatDurabilityLoss,
   buildMapCells,
   calculateDurabilityPct,
@@ -609,19 +608,16 @@ export class GameService {
         throw new GameServiceError("VALIDATION_ERROR", "铜币不足。");
       }
 
-      const inventory = await repo.listInventory(character.id);
-      const nextInventory = addInventoryItem(inventory, input.itemId, quantity);
-      const changedStack = nextInventory.find((entry) => entry.itemId === input.itemId);
-      if (!changedStack) throw new Error("Failed to calculate purchased inventory stack");
-
       await repo.updateCharacterCopper({
         characterId: character.id,
         copperBalance: character.copperBalance - quote.totalCopper
       });
-      await repo.setInventoryItem({
+      await repo.grantCharacterItem({
         characterId: character.id,
         itemId: input.itemId,
-        quantity: changedStack.quantity
+        quantity,
+        reason: "market.buy",
+        metadata: { settlementId: BLACKPINE_MARKET_ID, unitPriceCopper: quote.unitPriceCopper }
       });
       await repo.setMarketInventoryQuantity({
         marketInventoryId: market.id,
@@ -681,10 +677,12 @@ export class GameService {
         characterId: character.id,
         copperBalance: character.copperBalance + quote.totalCopper
       });
-      await repo.decrementInventoryItem({
+      await repo.consumeCharacterItem({
         characterId: character.id,
         itemId: input.itemId,
-        quantity
+        quantity,
+        reason: "market.sell",
+        metadata: { settlementId: BLACKPINE_MARKET_ID, unitPriceCopper: quote.unitPriceCopper }
       });
       await repo.setMarketInventoryQuantity({
         marketInventoryId: market.id,
@@ -782,10 +780,11 @@ export class GameService {
         throw new GameServiceError("VALIDATION_ERROR", "背包里没有这种食物。");
       }
 
-      await repo.decrementInventoryItem({
+      await repo.consumeCharacterItem({
         characterId: character.id,
         itemId: input.itemId,
-        quantity: 1
+        quantity: 1,
+        reason: "character.eat"
       });
       await repo.updateCharacterNeeds({
         characterId: character.id,
@@ -925,10 +924,11 @@ export class GameService {
     if (settlement.missedMeals === 0) return character;
 
     for (const consumed of settlement.consumed) {
-      await repo.decrementInventoryItem({
+      await repo.consumeCharacterItem({
         characterId: character.id,
         itemId: consumed.itemId,
-        quantity: consumed.quantity
+        quantity: consumed.quantity,
+        reason: "character.hunger.auto_eat"
       });
     }
 
@@ -1046,10 +1046,12 @@ export class GameService {
       characterId: character.id,
       copperBalance: character.copperBalance - totalCopper
     });
-    await repo.decrementInventoryItem({
+    await repo.consumeCharacterItem({
       characterId: character.id,
       itemId: "iron_ore",
-      quantity: totalIronOre
+      quantity: totalIronOre,
+      reason: "equipment.repair",
+      metadata: { equipmentIds: equipment.map((item) => item.id), totalCopper, totalIronOre }
     });
     for (const entry of quotes) {
       await repo.updateEquipmentDurability({
@@ -1147,19 +1149,13 @@ export class GameService {
     });
 
     if (settlement.newCyclesToSettle > 0) {
-      const inventory = await repo.listInventory(action.characterId);
-      const nextInventory = addInventoryItem(
-        inventory,
-        payload.itemId,
-        payload.quantityPerCycle * settlement.newCyclesToSettle
-      );
-      const changedStack = nextInventory.find((item) => item.itemId === payload.itemId);
-      if (!changedStack) throw new Error("Failed to calculate gathered inventory stack");
-
-      await repo.setInventoryItem({
+      const quantity = payload.quantityPerCycle * settlement.newCyclesToSettle;
+      await repo.grantCharacterItem({
         characterId: action.characterId,
-        itemId: changedStack.itemId,
-        quantity: changedStack.quantity
+        itemId: payload.itemId,
+        quantity,
+        reason: "action.gathering.settle",
+        metadata: { actionId: action.id, resourceId: payload.resourceId }
       });
       await repo.updateMapResourceCharges(map.id, {
         ...map.resourceCharges,
@@ -1172,7 +1168,7 @@ export class GameService {
       await repo.writeEvent({
         characterId: action.characterId,
         eventType: "action.gathering.settle",
-        message: `你获得了${payload.itemName} x${payload.quantityPerCycle * settlement.newCyclesToSettle}。`
+        message: `你获得了${payload.itemName} x${quantity}。`
       });
     }
 
@@ -1232,16 +1228,13 @@ export class GameService {
 
     if (payload.outcome === "victory") {
       nextXp += payload.xp;
-      const inventory = await repo.listInventory(character.id);
-      let nextInventory = inventory;
       for (const item of payload.loot) {
-        nextInventory = addInventoryItem(nextInventory, item.itemId, item.quantity);
-      }
-      for (const item of nextInventory) {
-        await repo.setInventoryItem({
+        await repo.grantCharacterItem({
           characterId: character.id,
           itemId: item.itemId,
-          quantity: item.quantity
+          quantity: item.quantity,
+          reason: "action.combat.loot",
+          metadata: { actionId: action.id, encounterId: payload.encounterId }
         });
       }
       await repo.writeEvent({

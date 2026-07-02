@@ -1,5 +1,5 @@
 import { FIRST_ITEMS, getItemById } from "@ai-mud/content";
-import { addInventoryItem, formatMoney } from "@ai-mud/game-rules";
+import { formatMoney } from "@ai-mud/game-rules";
 import type {
   AiCallStatus,
   ItemId,
@@ -45,14 +45,16 @@ export interface NpcTaskRepositoryPort {
   findNpcActor(actorId: string): Promise<NpcActorRecord | null>;
   incrementNpcCopper(input: { actorId: string; delta: number }): Promise<void>;
   listNpcInventory(actorId: string): Promise<NpcInventoryRecord[]>;
-  setNpcInventoryItem(input: { actorId: string; itemId: ItemId; quantity: number }): Promise<void>;
   findCharacterByAccountId(accountId: string): Promise<CharacterRecord | null>;
   incrementCharacterCopper(input: { characterId: string; delta: number }): Promise<void>;
   listCharacterInventory(characterId: string): Promise<InventoryRecord[]>;
-  setCharacterInventoryItem(input: {
+  transferCharacterItemToNpc(input: {
     characterId: string;
+    actorId: string;
     itemId: ItemId;
     quantity: number;
+    reason: string;
+    metadata?: Record<string, unknown>;
   }): Promise<void>;
   listBlockingTasksForNpc(actorId: string): Promise<NpcTaskRecord[]>;
   listTasksForCharacter(characterId: string): Promise<NpcTaskRecord[]>;
@@ -200,24 +202,13 @@ export class NpcTaskService {
         throw new NpcTaskServiceError("VALIDATION_ERROR", "这个任务不能提交。");
       }
 
-      const npcInventory = await repo.listNpcInventory(task.npcActorId);
-      const nextNpcInventory = addInventoryItem(
-        npcInventory.map((item) => ({ itemId: item.itemId as ItemId, quantity: item.quantity })),
-        task.requestedItemId,
-        task.requestedQuantity
-      );
-      const npcStack = nextNpcInventory.find((item) => item.itemId === task.requestedItemId);
-      if (!npcStack) throw new Error("Failed to calculate NPC inventory stack");
-
-      await repo.setCharacterInventoryItem({
+      await repo.transferCharacterItemToNpc({
         characterId: character.id,
-        itemId: task.requestedItemId,
-        quantity: stack.quantity - task.requestedQuantity
-      });
-      await repo.setNpcInventoryItem({
         actorId: task.npcActorId,
         itemId: task.requestedItemId,
-        quantity: npcStack.quantity
+        quantity: task.requestedQuantity,
+        reason: "npc_task.complete",
+        metadata: { taskId: task.id }
       });
       await repo.incrementCharacterCopper({
         characterId: character.id,

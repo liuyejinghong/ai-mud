@@ -79,6 +79,38 @@ class FakeNpcTaskRepo {
     this.characterInventory.set(input.characterId, inventory);
   }
 
+  async transferCharacterItemToNpc(input: {
+    characterId: string;
+    actorId: string;
+    itemId: ItemId;
+    quantity: number;
+  }) {
+    const characterInventory = [...(this.characterInventory.get(input.characterId) ?? [])];
+    const characterIndex = characterInventory.findIndex((item) => item.itemId === input.itemId);
+    const characterStack = characterIndex >= 0 ? characterInventory[characterIndex] : null;
+    if (!characterStack || characterStack.quantity < input.quantity) {
+      throw new Error("物品数量不足。");
+    }
+
+    characterInventory[characterIndex] = {
+      itemId: input.itemId,
+      quantity: characterStack.quantity - input.quantity
+    };
+    this.characterInventory.set(input.characterId, characterInventory);
+
+    const npcInventory = [...(this.npcInventory.get(input.actorId) ?? [])];
+    const npcIndex = npcInventory.findIndex((item) => item.itemId === input.itemId);
+    if (npcIndex >= 0) {
+      npcInventory[npcIndex] = {
+        itemId: input.itemId,
+        quantity: npcInventory[npcIndex]!.quantity + input.quantity
+      };
+    } else {
+      npcInventory.push({ itemId: input.itemId, quantity: input.quantity });
+    }
+    this.npcInventory.set(input.actorId, npcInventory);
+  }
+
   async listBlockingTasksForNpc(actorId: string) {
     return [...this.tasks.values()].filter(
       (task) =>
