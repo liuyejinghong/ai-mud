@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CHARACTER_CLASSES,
   type CharacterClassId,
   type Direction,
   type GameStateDto,
+  type GameSyncEventDto,
   type HungerStatus,
   type InventoryItemDto,
   type MarketDto,
@@ -20,7 +21,8 @@ import {
   createCharacter,
   eatFood,
   enterCorruptForest,
-  getGameState,
+  GameApiError,
+  getGameSync,
   getMarket,
   getNpcDialogue,
   listDialogueTargets,
@@ -35,11 +37,13 @@ import {
 } from "./gameApi";
 import { HotkeyRegistry } from "./input/HotkeyRegistry";
 import { dispatchHotkey, getInputContextScopes } from "./input/InputContext";
+import { useGameSync } from "./sync/useGameSync";
 import { ModalManager } from "./ui/ModalManager";
 import "./GameShell.css";
 
 interface GameShellProps {
   csrfToken: string;
+  onAuthExpired?: () => void;
 }
 
 const initialState: GameStateDto = {
@@ -102,13 +106,41 @@ function dialogueTaskHint(target: NpcDialogueTargetDto) {
   return `${status}：${target.taskTitle}`;
 }
 
+function syncEventText(event: GameSyncEventDto) {
+  const itemId = typeof event.payload.itemId === "string" ? event.payload.itemId : null;
+  const quantity = typeof event.payload.quantity === "number" ? event.payload.quantity : null;
+  if (event.eventType === "item.grant" && itemId && quantity) return `获得 ${itemId} x${quantity}`;
+  if (event.eventType === "item.consume" && itemId && quantity) return `消耗 ${itemId} x${quantity}`;
+  if (event.eventType === "item.transfer.in" && itemId && quantity) {
+    return `收到 ${itemId} x${quantity}`;
+  }
+  return null;
+}
+
 type ActiveModal =
   | { type: "item"; item: InventoryItemDto }
   | { type: "market" }
   | { type: "dialogue" }
   | { type: "combat" };
 
-export function GameShell({ csrfToken }: GameShellProps) {
+function gameErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof GameApiError) {
+    if (error.status === 401 || error.code === "UNAUTHENTICATED") {
+      return "登录已失效，请重新登录。";
+    }
+    return error.message || fallback;
+  }
+  return fallback;
+}
+
+function isAuthExpired(error: unknown) {
+  return (
+    error instanceof GameApiError &&
+    (error.status === 401 || error.code === "UNAUTHENTICATED")
+  );
+}
+
+export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
   const [state, setState] = useState<GameStateDto>(initialState);
   const [name, setName] = useState("Zichen");
   const [classId, setClassId] = useState<CharacterClassId>("ranger");
@@ -118,10 +150,23 @@ export function GameShell({ csrfToken }: GameShellProps) {
   const [dialogue, setDialogue] = useState<NpcDialogueResponseDto | null>(null);
   const [dialogueInput, setDialogueInput] = useState("");
   const [dialogueStatus, setDialogueStatus] = useState("");
+  const [syncNotices, setSyncNotices] = useState<string[]>([]);
   const [plannedMinutes, setPlannedMinutes] =
     useState<StartGatheringRequestDto["plannedMinutes"]>(10);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+
+  const handleSyncEvents = useCallback((events: GameSyncEventDto[]) => {
+    const notices = events.map(syncEventText).filter((entry): entry is string => entry !== null);
+    if (notices.length === 0) return;
+    setSyncNotices((current) => [...notices, ...current].slice(0, 3));
+  }, []);
+
+  const sync = useGameSync({
+    activeAction: state.currentAction,
+    onState: setState,
+    onEvents: handleSyncEvents
+  });
 
   const isModalOpen = activeModal !== null;
   const canMove = state.availableActions.includes("move") && !isBusy && !isModalOpen;
@@ -151,8 +196,9 @@ export function GameShell({ csrfToken }: GameShellProps) {
     setIsBusy(true);
     try {
       setState(await action());
-    } catch {
-      setError("动作失败，请稍后再试。");
+    } catch (caught) {
+      if (isAuthExpired(caught)) onAuthExpired?.();
+      setError(gameErrorMessage(caught, "动作失败，请稍后再试。"));
     } finally {
       setIsBusy(false);
     }
@@ -164,8 +210,9 @@ export function GameShell({ csrfToken }: GameShellProps) {
     try {
       setMarket(await getMarket());
       setActiveModal({ type: "market" });
-    } catch {
-      setError("集市暂时无法打开。");
+    } catch (caught) {
+      if (isAuthExpired(caught)) onAuthExpired?.();
+      setError(gameErrorMessage(caught, "集市暂时无法打开。"));
     } finally {
       setIsBusy(false);
     }
@@ -181,8 +228,9 @@ export function GameShell({ csrfToken }: GameShellProps) {
       setDialogueTargets(targets);
       setDialogue(null);
       setDialogueStatus(targets.length > 0 ? "" : "附近暂时没有可交谈的 NPC。");
-    } catch {
-      setDialogueStatus("附近 NPC 暂时无法读取。");
+    } catch (caught) {
+      if (isAuthExpired(caught)) onAuthExpired?.();
+      setDialogueStatus(gameErrorMessage(caught, "附近 NPC 暂时无法读取。"));
     } finally {
       setIsBusy(false);
     }
@@ -195,8 +243,9 @@ export function GameShell({ csrfToken }: GameShellProps) {
       setDialogue(await getNpcDialogue(npcActorId));
       setDialogueInput("");
       setDialogueStatus("");
-    } catch {
-      setDialogueStatus("对话暂时无法打开。");
+    } catch (caught) {
+      if (isAuthExpired(caught)) onAuthExpired?.();
+      setDialogueStatus(gameErrorMessage(caught, "对话暂时无法打开。"));
     } finally {
       setIsBusy(false);
     }
@@ -210,11 +259,13 @@ export function GameShell({ csrfToken }: GameShellProps) {
     setIsBusy(true);
     try {
       setDialogue(await sendNpcDialogueMessage(dialogue.target.npcActorId, message, csrfToken));
-      setState(await getGameState());
+      const refreshed = await getGameSync();
+      if (refreshed.state) setState(refreshed.state);
       setDialogueInput("");
       setDialogueStatus("");
-    } catch {
-      setDialogueStatus("NPC 暂时没有回应。");
+    } catch (caught) {
+      if (isAuthExpired(caught)) onAuthExpired?.();
+      setDialogueStatus(gameErrorMessage(caught, "NPC 暂时没有回应。"));
     } finally {
       setIsBusy(false);
     }
@@ -259,18 +310,10 @@ export function GameShell({ csrfToken }: GameShellProps) {
   }, [canMove, csrfToken]);
 
   useEffect(() => {
-    let cancelled = false;
-    void getGameState()
-      .then((nextState) => {
-        if (!cancelled) setState(nextState);
-      })
-      .catch(() => {
-        if (!cancelled) setState(initialState);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (!sync.error) return;
+    if (isAuthExpired(sync.error)) onAuthExpired?.();
+    setError(gameErrorMessage(sync.error, "同步世界状态失败。"));
+  }, [onAuthExpired, sync.error]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -678,6 +721,14 @@ export function GameShell({ csrfToken }: GameShellProps) {
               ) : null}
             </div>
           </section>
+        ) : null}
+
+        {syncNotices.length > 0 ? (
+          <ul className="sync-feedback-list" aria-live="polite" aria-label="同步事件提示">
+            {syncNotices.map((notice, index) => (
+              <li key={`${notice}:${index}`}>{notice}</li>
+            ))}
+          </ul>
         ) : null}
 
         {error ? <p role="alert" className="game-error">{error}</p> : null}

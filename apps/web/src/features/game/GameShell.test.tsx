@@ -275,11 +275,40 @@ const forestState: GameStateDto = {
   log: [{ id: "event-1", message: "你踏入腐林。", createdAt: "2026-07-01T00:00:00.000Z" }]
 };
 
+function isSyncResponse(value: unknown) {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "nextCursor" in value &&
+    "events" in value
+  );
+}
+
 function mockFetchWithStates(states: unknown[]) {
   const queue = [...states];
-  const fetchMock = vi.fn(async () => ({
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => ({
     ok: true,
-    json: async () => queue.shift() ?? states.at(-1) ?? createCharacterState
+    json: async () => {
+      const url = String(input);
+      if (url.includes("/game/sync?cursor=")) {
+        return {
+          stateVersion: 1,
+          state: null,
+          events: [],
+          nextCursor: 1
+        };
+      }
+      const next = queue.shift() ?? states.at(-1) ?? createCharacterState;
+      if (url.includes("/game/sync") && !isSyncResponse(next)) {
+        return {
+          stateVersion: 1,
+          state: next,
+          events: [],
+          nextCursor: 1
+        };
+      }
+      return next;
+    }
   }));
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
@@ -442,7 +471,32 @@ describe("GameShell", () => {
         })
       );
     });
-    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:3000/game/state", expect.any(Object));
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:3000/game/sync", expect.any(Object));
+  });
+
+  it("renders asset feedback from the sync event stream", async () => {
+    mockFetchWithStates([
+      {
+        stateVersion: 3,
+        state: forestState,
+        events: [
+          {
+            id: 3,
+            eventType: "item.grant",
+            stateDirty: true,
+            payload: { itemId: "wild_berry", quantity: 2, reason: "action.gathering.settle" },
+            source: "item-service",
+            createdAt: "2026-07-02T08:00:00.000Z"
+          }
+        ],
+        nextCursor: 3
+      }
+    ]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByLabelText("同步事件提示")).toBeTruthy();
+    expect(screen.getByText("获得 wild_berry x2")).toBeTruthy();
   });
 
   it("refreshes visible inventory after a rule-verified NPC resource grant", async () => {

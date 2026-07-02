@@ -15,6 +15,27 @@ import type {
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:3000";
 
+export class GameApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+function isErrorResponse(value: unknown): value is { error: { code: string; message: string } } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { error?: unknown }).error === "object" &&
+    (value as { error: { code?: unknown } }).error !== null &&
+    typeof (value as { error: { code?: unknown } }).error.code === "string" &&
+    typeof (value as { error: { message?: unknown } }).error.message === "string"
+  );
+}
+
 async function requestGame<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
@@ -26,7 +47,19 @@ async function requestGame<T>(path: string, options?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(`Game request failed: ${response.status}`);
+    let code = response.status === 401 ? "UNAUTHENTICATED" : "REQUEST_FAILED";
+    let message =
+      response.status === 401 ? "登录已失效，请重新登录。" : `请求失败：${response.status}`;
+    try {
+      const body = (await response.json()) as unknown;
+      if (isErrorResponse(body)) {
+        code = body.error.code;
+        message = body.error.message;
+      }
+    } catch {
+      // Keep the status-derived fallback when the server did not return JSON.
+    }
+    throw new GameApiError(response.status, code, message);
   }
 
   return response.json() as Promise<T>;

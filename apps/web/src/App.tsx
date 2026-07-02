@@ -36,7 +36,7 @@ export function App() {
 
   return (
     <>
-      <GameShell csrfToken={session.csrfToken} />
+      <GameShell csrfToken={session.csrfToken} onAuthExpired={() => setSession(null)} />
       {isAdmin ? (
         <>
           <ActivationCodeAdmin csrfToken={session.csrfToken} />

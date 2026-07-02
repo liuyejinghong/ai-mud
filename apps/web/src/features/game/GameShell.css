@@ -672,6 +672,18 @@
   color: #d8dce0;
 }
 
+.sync-feedback-list {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(65, 255, 124, 0.26);
+  background: rgba(65, 255, 124, 0.06);
+  color: #aef2c1;
+  font-size: 12px;
+  list-style-position: inside;
+}
+
 @media (max-width: 900px) {
   .game-shell {
     grid-template-columns: 1fr;
