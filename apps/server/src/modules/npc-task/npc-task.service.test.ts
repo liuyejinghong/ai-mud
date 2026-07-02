@@ -16,6 +16,13 @@ class FakeNpcTaskRepo {
   characterInventory = new Map<string, InventoryRecord[]>();
   tasks = new Map<string, NpcTaskRecord>();
   nextTask = 1;
+  transactionCalls = 0;
+  failNextConditionalUpdate = false;
+
+  async transaction<T>(operation: (repo: FakeNpcTaskRepo) => Promise<T>) {
+    this.transactionCalls += 1;
+    return operation(this);
+  }
 
   async listNpcActors() {
     return [...this.actors.values()];
@@ -25,10 +32,10 @@ class FakeNpcTaskRepo {
     return this.actors.get(actorId) ?? null;
   }
 
-  async updateNpcCopper(input: { actorId: string; copperBalance: number }) {
+  async incrementNpcCopper(input: { actorId: string; delta: number }) {
     const actor = this.actors.get(input.actorId);
     if (!actor) throw new Error("actor not found");
-    this.actors.set(input.actorId, { ...actor, copperBalance: input.copperBalance });
+    this.actors.set(input.actorId, { ...actor, copperBalance: actor.copperBalance + input.delta });
   }
 
   async listNpcInventory(actorId: string) {
@@ -47,12 +54,12 @@ class FakeNpcTaskRepo {
     return [...this.characters.values()].find((character) => character.accountId === accountId) ?? null;
   }
 
-  async updateCharacterCopper(input: { characterId: string; copperBalance: number }) {
+  async incrementCharacterCopper(input: { characterId: string; delta: number }) {
     const character = this.characters.get(input.characterId);
     if (!character) throw new Error("character not found");
     this.characters.set(input.characterId, {
       ...character,
-      copperBalance: input.copperBalance
+      copperBalance: character.copperBalance + input.delta
     });
   }
 
@@ -119,6 +126,28 @@ class FakeNpcTaskRepo {
   async updateTask(input: UpdateNpcTaskInput) {
     const task = this.tasks.get(input.taskId);
     if (!task) throw new Error("task not found");
+    const conditionalInput = input as UpdateNpcTaskInput & {
+      expectedStatuses?: string[];
+      expectedAcceptedByCharacterId?: string | null;
+    };
+    if (conditionalInput.expectedStatuses || conditionalInput.expectedAcceptedByCharacterId !== undefined) {
+      if (this.failNextConditionalUpdate) {
+        this.failNextConditionalUpdate = false;
+        return false;
+      }
+      if (
+        conditionalInput.expectedStatuses &&
+        !conditionalInput.expectedStatuses.includes(task.status)
+      ) {
+        return false;
+      }
+      if (
+        conditionalInput.expectedAcceptedByCharacterId !== undefined &&
+        task.acceptedByCharacterId !== conditionalInput.expectedAcceptedByCharacterId
+      ) {
+        return false;
+      }
+    }
     this.tasks.set(input.taskId, {
       ...task,
       ...(input.status === undefined ? {} : { status: input.status }),
@@ -129,6 +158,7 @@ class FakeNpcTaskRepo {
       ...(input.completedAt === undefined ? {} : { completedAt: input.completedAt }),
       ...(input.cancelledAt === undefined ? {} : { cancelledAt: input.cancelledAt })
     });
+    return true;
   }
 }
 
@@ -187,6 +217,7 @@ describe("NpcTaskService", () => {
     expect(tasks[0]?.rewardCopper.totalCopper).toBe(36);
     expect(repo.actors.get("npc-blacksmith")?.copperBalance).toBe(84);
     expect([...repo.tasks.values()][0]?.escrowCopper).toBe(36);
+    expect(repo.transactionCalls).toBeGreaterThan(0);
   });
 
   it("uses AI task proposal text without changing rule-owned item quantity or reward", async () => {
@@ -321,6 +352,66 @@ describe("NpcTaskService", () => {
     expect(memories[0]?.sourceIds).toEqual([task!.id]);
   });
 
+  it("rejects task accept when the conditional status update loses the race", async () => {
+    const repo = new FakeNpcTaskRepo();
+    repo.actors.set("npc-blacksmith", actor({ copperBalance: 120 }));
+    repo.characters.set("character-1", character());
+    const service = new NpcTaskService(repo);
+    const [task] = await service.listTasksForAccount(
+      "account-1",
+      new Date("2026-07-02T08:00:00.000Z")
+    );
+
+    repo.failNextConditionalUpdate = true;
+
+    await expect(
+      service.acceptTask("account-1", task!.id, new Date("2026-07-02T08:05:00.000Z"))
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+    expect(repo.tasks.get(task!.id)?.status).toBe("open");
+  });
+
+  it("does not double pay when task completion loses the conditional update race", async () => {
+    const repo = new FakeNpcTaskRepo();
+    repo.actors.set("npc-blacksmith", actor({ copperBalance: 84 }));
+    repo.npcInventory.set("npc-blacksmith", []);
+    repo.characters.set("character-1", character());
+    repo.characterInventory.set("character-1", [{ itemId: "iron_ore", quantity: 3 }]);
+    const now = new Date("2026-07-02T08:00:00.000Z");
+    const task = await repo.createTask({
+      npcActorId: "npc-blacksmith",
+      needType: "ore_shortage",
+      title: "炉火缺矿",
+      description: "伯林缺少基础铁矿石。",
+      proposalSource: "template",
+      proposalReason: "基础铁矿石不足。",
+      requestedItemId: "iron_ore",
+      requestedQuantity: 3,
+      rewardCopper: 36,
+      escrowCopper: 36,
+      createdAt: now,
+      expiresAt: new Date("2026-07-03T08:00:00.000Z")
+    });
+    repo.tasks.set(task.id, {
+      ...task,
+      status: "accepted",
+      acceptedByCharacterId: "character-1",
+      acceptedAt: new Date("2026-07-02T08:05:00.000Z")
+    });
+    repo.failNextConditionalUpdate = true;
+    const service = new NpcTaskService(repo);
+
+    await expect(
+      service.completeTask("account-1", task.id, new Date("2026-07-02T08:10:00.000Z"))
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    expect(repo.characters.get("character-1")?.copperBalance).toBe(5);
+    expect(repo.characterInventory.get("character-1")).toEqual([
+      { itemId: "iron_ore", quantity: 3 }
+    ]);
+    expect(repo.npcInventory.get("npc-blacksmith")).toEqual([]);
+    expect(repo.tasks.get(task.id)?.status).toBe("accepted");
+  });
+
   it("expires tasks and can repost when the NPC still has the same demand", async () => {
     const repo = new FakeNpcTaskRepo();
     repo.actors.set("npc-blacksmith", actor({ copperBalance: 120 }));
@@ -340,5 +431,32 @@ describe("NpcTaskService", () => {
     expect(visibleTasks).toHaveLength(1);
     expect(visibleTasks[0]?.id).not.toBe(task!.id);
     expect(repo.actors.get("npc-blacksmith")?.copperBalance).toBe(84);
+  });
+
+  it("does not refund escrow when expiring a task loses the conditional update race", async () => {
+    const repo = new FakeNpcTaskRepo();
+    repo.actors.set("npc-blacksmith", actor({ copperBalance: 84 }));
+    repo.characters.set("character-1", character());
+    const task = await repo.createTask({
+      npcActorId: "npc-blacksmith",
+      needType: "ore_shortage",
+      title: "炉火缺矿",
+      description: "伯林缺少基础铁矿石。",
+      proposalSource: "template",
+      proposalReason: "基础铁矿石不足。",
+      requestedItemId: "iron_ore",
+      requestedQuantity: 3,
+      rewardCopper: 36,
+      escrowCopper: 36,
+      createdAt: new Date("2026-07-02T08:00:00.000Z"),
+      expiresAt: new Date("2026-07-02T09:00:00.000Z")
+    });
+    repo.failNextConditionalUpdate = true;
+    const service = new NpcTaskService(repo);
+
+    await service.expireDueTasks(new Date("2026-07-02T09:00:01.000Z"));
+
+    expect(repo.actors.get("npc-blacksmith")?.copperBalance).toBe(84);
+    expect(repo.tasks.get(task.id)?.status).toBe("open");
   });
 });

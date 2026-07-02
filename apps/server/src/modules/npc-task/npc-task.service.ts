@@ -40,13 +40,14 @@ export interface NpcTaskMemoryPort {
 }
 
 export interface NpcTaskRepositoryPort {
+  transaction<T>(operation: (repo: NpcTaskRepositoryPort) => Promise<T>): Promise<T>;
   listNpcActors(): Promise<NpcActorRecord[]>;
   findNpcActor(actorId: string): Promise<NpcActorRecord | null>;
-  updateNpcCopper(input: { actorId: string; copperBalance: number }): Promise<void>;
+  incrementNpcCopper(input: { actorId: string; delta: number }): Promise<void>;
   listNpcInventory(actorId: string): Promise<NpcInventoryRecord[]>;
   setNpcInventoryItem(input: { actorId: string; itemId: ItemId; quantity: number }): Promise<void>;
   findCharacterByAccountId(accountId: string): Promise<CharacterRecord | null>;
-  updateCharacterCopper(input: { characterId: string; copperBalance: number }): Promise<void>;
+  incrementCharacterCopper(input: { characterId: string; delta: number }): Promise<void>;
   listCharacterInventory(characterId: string): Promise<InventoryRecord[]>;
   setCharacterInventoryItem(input: {
     characterId: string;
@@ -57,7 +58,7 @@ export interface NpcTaskRepositoryPort {
   listTasksForCharacter(characterId: string): Promise<NpcTaskRecord[]>;
   findTask(taskId: string): Promise<NpcTaskRecord | null>;
   createTask(input: Parameters<NpcTaskRepository["createTask"]>[0]): Promise<NpcTaskRecord>;
-  updateTask(input: Parameters<NpcTaskRepository["updateTask"]>[0]): Promise<void>;
+  updateTask(input: Parameters<NpcTaskRepository["updateTask"]>[0]): Promise<boolean>;
 }
 
 interface TaskProposal {
@@ -97,25 +98,29 @@ export class NpcTaskService {
   ) {}
 
   async syncOpenTasks(now: Date) {
-    await this.expireDueTasks(now);
-    const actors = await this.repo.listNpcActors();
+    await this.repo.transaction((repo) => this.syncOpenTasksInTransaction(repo, now));
+  }
+
+  private async syncOpenTasksInTransaction(repo: NpcTaskRepositoryPort, now: Date) {
+    await this.expireDueTasksInTransaction(repo, now);
+    const actors = await repo.listNpcActors();
 
     for (const actor of actors) {
-      const blockingTasks = await this.repo.listBlockingTasksForNpc(actor.id);
+      const blockingTasks = await repo.listBlockingTasksForNpc(actor.id);
       if (blockingTasks.length > 0) continue;
 
-      const inventory = await this.repo.listNpcInventory(actor.id);
+      const inventory = await repo.listNpcInventory(actor.id);
       const proposal = this.proposeTask(actor, inventory);
       if (!proposal) continue;
 
       if (actor.copperBalance < proposal.rewardCopper + NPC_COPPER_RESERVE) continue;
       const presentation = await this.presentProposal(actor, inventory, proposal, now);
 
-      await this.repo.updateNpcCopper({
+      await repo.incrementNpcCopper({
         actorId: actor.id,
-        copperBalance: actor.copperBalance - proposal.rewardCopper
+        delta: -proposal.rewardCopper
       });
-      await this.repo.createTask({
+      await repo.createTask({
         npcActorId: actor.id,
         needType: proposal.needType,
         title: presentation.title,
@@ -134,88 +139,104 @@ export class NpcTaskService {
 
   async listTasksForAccount(accountId: string, now = new Date()): Promise<NpcTaskDto[]> {
     await this.syncOpenTasks(now);
-    const character = await this.requireCharacter(accountId);
+    const character = await this.requireCharacter(this.repo, accountId);
     const tasks = await this.repo.listTasksForCharacter(character.id);
     return Promise.all(tasks.map((task) => this.toDto(task)));
   }
 
   async acceptTask(accountId: string, taskId: string, now = new Date()): Promise<NpcTaskDto[]> {
-    await this.expireDueTasks(now);
-    const character = await this.requireCharacter(accountId);
-    const task = await this.requireTask(taskId);
+    await this.repo.transaction(async (repo) => {
+      await this.expireDueTasksInTransaction(repo, now);
+      const character = await this.requireCharacter(repo, accountId);
+      const task = await this.requireTask(repo, taskId);
 
-    if (task.status !== "open" || task.expiresAt.getTime() <= now.getTime()) {
-      throw new NpcTaskServiceError("VALIDATION_ERROR", "这个任务已经不可接取。");
-    }
+      if (task.status !== "open" || task.expiresAt.getTime() <= now.getTime()) {
+        throw new NpcTaskServiceError("VALIDATION_ERROR", "这个任务已经不可接取。");
+      }
 
-    await this.repo.updateTask({
-      taskId,
-      status: "accepted",
-      acceptedByCharacterId: character.id,
-      acceptedAt: now
+      const updated = await repo.updateTask({
+        taskId,
+        expectedStatuses: ["open"],
+        status: "accepted",
+        acceptedByCharacterId: character.id,
+        acceptedAt: now
+      });
+      if (!updated) {
+        throw new NpcTaskServiceError("VALIDATION_ERROR", "这个任务已经不可接取。");
+      }
     });
 
     return this.listTasksForAccount(accountId, now);
   }
 
   async completeTask(accountId: string, taskId: string, now = new Date()): Promise<NpcTaskDto[]> {
-    await this.expireDueTasks(now);
-    const character = await this.requireCharacter(accountId);
-    const task = await this.requireTask(taskId);
+    const completedMemory = await this.repo.transaction(async (repo) => {
+      await this.expireDueTasksInTransaction(repo, now);
+      const character = await this.requireCharacter(repo, accountId);
+      const task = await this.requireTask(repo, taskId);
 
-    if (
-      task.status !== "accepted" ||
-      task.acceptedByCharacterId !== character.id ||
-      task.expiresAt.getTime() <= now.getTime()
-    ) {
-      throw new NpcTaskServiceError("VALIDATION_ERROR", "这个任务不能提交。");
-    }
+      if (
+        task.status !== "accepted" ||
+        task.acceptedByCharacterId !== character.id ||
+        task.expiresAt.getTime() <= now.getTime()
+      ) {
+        throw new NpcTaskServiceError("VALIDATION_ERROR", "这个任务不能提交。");
+      }
 
-    const inventory = await this.repo.listCharacterInventory(character.id);
-    const stack = inventory.find((item) => item.itemId === task.requestedItemId);
-    if (!stack || stack.quantity < task.requestedQuantity) {
-      throw new NpcTaskServiceError("VALIDATION_ERROR", "提交物品不足。");
-    }
+      const inventory = await repo.listCharacterInventory(character.id);
+      const stack = inventory.find((item) => item.itemId === task.requestedItemId);
+      if (!stack || stack.quantity < task.requestedQuantity) {
+        throw new NpcTaskServiceError("VALIDATION_ERROR", "提交物品不足。");
+      }
 
-    const npcInventory = await this.repo.listNpcInventory(task.npcActorId);
-    const nextNpcInventory = addInventoryItem(
-      npcInventory.map((item) => ({ itemId: item.itemId as ItemId, quantity: item.quantity })),
-      task.requestedItemId,
-      task.requestedQuantity
-    );
-    const npcStack = nextNpcInventory.find((item) => item.itemId === task.requestedItemId);
-    if (!npcStack) throw new Error("Failed to calculate NPC inventory stack");
+      const updated = await repo.updateTask({
+        taskId,
+        expectedStatuses: ["accepted"],
+        expectedAcceptedByCharacterId: character.id,
+        status: "completed",
+        completedAt: now
+      });
+      if (!updated) {
+        throw new NpcTaskServiceError("VALIDATION_ERROR", "这个任务不能提交。");
+      }
 
-    await this.repo.setCharacterInventoryItem({
-      characterId: character.id,
-      itemId: task.requestedItemId,
-      quantity: stack.quantity - task.requestedQuantity
-    });
-    await this.repo.setNpcInventoryItem({
-      actorId: task.npcActorId,
-      itemId: task.requestedItemId,
-      quantity: npcStack.quantity
-    });
-    await this.repo.updateCharacterCopper({
-      characterId: character.id,
-      copperBalance: character.copperBalance + task.escrowCopper
-    });
-    await this.repo.updateTask({
-      taskId,
-      status: "completed",
-      completedAt: now
+      const npcInventory = await repo.listNpcInventory(task.npcActorId);
+      const nextNpcInventory = addInventoryItem(
+        npcInventory.map((item) => ({ itemId: item.itemId as ItemId, quantity: item.quantity })),
+        task.requestedItemId,
+        task.requestedQuantity
+      );
+      const npcStack = nextNpcInventory.find((item) => item.itemId === task.requestedItemId);
+      if (!npcStack) throw new Error("Failed to calculate NPC inventory stack");
+
+      await repo.setCharacterInventoryItem({
+        characterId: character.id,
+        itemId: task.requestedItemId,
+        quantity: stack.quantity - task.requestedQuantity
+      });
+      await repo.setNpcInventoryItem({
+        actorId: task.npcActorId,
+        itemId: task.requestedItemId,
+        quantity: npcStack.quantity
+      });
+      await repo.incrementCharacterCopper({
+        characterId: character.id,
+        delta: task.escrowCopper
+      });
+
+      return { character, task };
     });
 
     if (this.memory) {
-      const item = getItemById(task.requestedItemId);
+      const item = getItemById(completedMemory.task.requestedItemId);
       await this.memory.recordSystemMemory({
-        npcActorId: task.npcActorId,
-        characterId: character.id,
+        npcActorId: completedMemory.task.npcActorId,
+        characterId: completedMemory.character.id,
         memoryKind: "task",
         importance: 4,
         occurredAt: now,
-        sourceIds: [task.id],
-        summary: `${character.name} 完成了任务「${task.title}」，交付 ${item?.name ?? task.requestedItemId} x${task.requestedQuantity}。`
+        sourceIds: [completedMemory.task.id],
+        summary: `${completedMemory.character.name} 完成了任务「${completedMemory.task.title}」，交付 ${item?.name ?? completedMemory.task.requestedItemId} x${completedMemory.task.requestedQuantity}。`
       });
     }
 
@@ -223,20 +244,26 @@ export class NpcTaskService {
   }
 
   async expireDueTasks(now: Date) {
-    const actors = await this.repo.listNpcActors();
+    await this.repo.transaction((repo) => this.expireDueTasksInTransaction(repo, now));
+  }
+
+  private async expireDueTasksInTransaction(repo: NpcTaskRepositoryPort, now: Date) {
+    const actors = await repo.listNpcActors();
 
     for (const actor of actors) {
-      const tasks = await this.repo.listBlockingTasksForNpc(actor.id);
+      const tasks = await repo.listBlockingTasksForNpc(actor.id);
       for (const task of tasks) {
         if (task.expiresAt.getTime() > now.getTime()) continue;
-        await this.repo.updateNpcCopper({
-          actorId: actor.id,
-          copperBalance: actor.copperBalance + task.escrowCopper
-        });
-        await this.repo.updateTask({
+        const updated = await repo.updateTask({
           taskId: task.id,
+          expectedStatuses: ["open", "accepted"],
           status: "expired",
           cancelledAt: now
+        });
+        if (!updated) continue;
+        await repo.incrementNpcCopper({
+          actorId: actor.id,
+          delta: task.escrowCopper
         });
       }
     }
@@ -336,14 +363,14 @@ export class NpcTaskService {
     };
   }
 
-  private async requireCharacter(accountId: string) {
-    const character = await this.repo.findCharacterByAccountId(accountId);
+  private async requireCharacter(repo: NpcTaskRepositoryPort, accountId: string) {
+    const character = await repo.findCharacterByAccountId(accountId);
     if (!character) throw new NpcTaskServiceError("VALIDATION_ERROR", "角色不存在。");
     return character;
   }
 
-  private async requireTask(taskId: string) {
-    const task = await this.repo.findTask(taskId);
+  private async requireTask(repo: NpcTaskRepositoryPort, taskId: string) {
+    const task = await repo.findTask(taskId);
     if (!task) throw new NpcTaskServiceError("VALIDATION_ERROR", "任务不存在。");
     return task;
   }

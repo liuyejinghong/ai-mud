@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -520,7 +521,10 @@ export const npcTasks = pgTable(
       table.acceptedByCharacterId,
       table.status
     ),
-    expiresAtIdx: index("npc_tasks_expires_at_idx").on(table.expiresAt)
+    expiresAtIdx: index("npc_tasks_expires_at_idx").on(table.expiresAt),
+    npcActiveUniqueIdx: uniqueIndex("npc_tasks_one_active_per_npc_idx")
+      .on(table.npcActorId)
+      .where(sql`${table.status} IN ('open', 'accepted')`)
   })
 );
 

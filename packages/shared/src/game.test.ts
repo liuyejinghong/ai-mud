@@ -41,10 +41,10 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.7.0 AI task proposal compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.7.0");
+  it("exposes v0.7.1 critical debt repair compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.7.1");
     expect(WORLD_COMPATIBILITY.apiVersion).toBe(19);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(12);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(13);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(10);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(7);

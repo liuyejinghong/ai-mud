@@ -4,14 +4,14 @@ import type {
   NpcTaskProposalSource,
   NpcTaskStatus
 } from "@ai-mud/shared";
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import { characterItems, characters, npcItems, npcTasks, worldActors } from "../../db/schema.js";
 import type { CharacterRecord, InventoryRecord } from "../game/game.repository.js";
 import { serializeHunger } from "../game/game.repository.js";
 import type { NpcActorRecord, NpcInventoryRecord } from "../npc/npc.service.js";
 
-type NpcTaskDb = Pick<Db, "insert" | "select" | "update">;
+type NpcTaskDb = Pick<Db, "insert" | "select" | "update"> & { transaction?: Db["transaction"] };
 
 export interface NpcTaskRecord {
   id: string;
@@ -51,6 +51,8 @@ export interface CreateNpcTaskInput {
 
 export interface UpdateNpcTaskInput {
   taskId: string;
+  expectedStatuses?: NpcTaskStatus[];
+  expectedAcceptedByCharacterId?: string | null;
   status?: NpcTaskStatus;
   acceptedByCharacterId?: string | null;
   acceptedAt?: Date | null;
@@ -125,6 +127,11 @@ function toTask(row: typeof npcTasks.$inferSelect): NpcTaskRecord {
 export class NpcTaskRepository {
   constructor(private readonly db: NpcTaskDb) {}
 
+  async transaction<T>(operation: (repo: NpcTaskRepository) => Promise<T>): Promise<T> {
+    if (!this.db.transaction) return operation(this);
+    return this.db.transaction(async (tx) => operation(new NpcTaskRepository(tx)));
+  }
+
   async listNpcActors(): Promise<NpcActorRecord[]> {
     const rows = await this.db
       .select()
@@ -142,10 +149,13 @@ export class NpcTaskRepository {
     return row ? toNpcActor(row) : null;
   }
 
-  async updateNpcCopper(input: { actorId: string; copperBalance: number }) {
+  async incrementNpcCopper(input: { actorId: string; delta: number }) {
     await this.db
       .update(worldActors)
-      .set({ copperBalance: input.copperBalance, updatedAt: new Date() })
+      .set({
+        copperBalance: sql`${worldActors.copperBalance} + ${input.delta}`,
+        updatedAt: new Date()
+      })
       .where(eq(worldActors.id, input.actorId));
   }
 
@@ -184,10 +194,10 @@ export class NpcTaskRepository {
     return row ? toCharacter(row) : null;
   }
 
-  async updateCharacterCopper(input: { characterId: string; copperBalance: number }) {
+  async incrementCharacterCopper(input: { characterId: string; delta: number }) {
     await this.db
       .update(characters)
-      .set({ copperBalance: input.copperBalance })
+      .set({ copperBalance: sql`${characters.copperBalance} + ${input.delta}` })
       .where(eq(characters.id, input.characterId));
   }
 
@@ -282,8 +292,20 @@ export class NpcTaskRepository {
     return toTask(row);
   }
 
-  async updateTask(input: UpdateNpcTaskInput): Promise<void> {
-    await this.db
+  async updateTask(input: UpdateNpcTaskInput): Promise<boolean> {
+    const predicates = [eq(npcTasks.id, input.taskId)];
+    if (input.expectedStatuses) {
+      predicates.push(inArray(npcTasks.status, input.expectedStatuses));
+    }
+    if (input.expectedAcceptedByCharacterId !== undefined) {
+      predicates.push(
+        input.expectedAcceptedByCharacterId === null
+          ? isNull(npcTasks.acceptedByCharacterId)
+          : eq(npcTasks.acceptedByCharacterId, input.expectedAcceptedByCharacterId)
+      );
+    }
+
+    const rows = await this.db
       .update(npcTasks)
       .set({
         ...(input.status === undefined ? {} : { status: input.status }),
@@ -295,6 +317,9 @@ export class NpcTaskRepository {
         ...(input.cancelledAt === undefined ? {} : { cancelledAt: input.cancelledAt }),
         updatedAt: new Date()
       })
-      .where(eq(npcTasks.id, input.taskId));
+      .where(and(...predicates))
+      .returning({ id: npcTasks.id });
+
+    return rows.length > 0;
   }
 }
