@@ -33,6 +33,9 @@ import {
   startCombat,
   startGathering
 } from "./gameApi";
+import { HotkeyRegistry } from "./input/HotkeyRegistry";
+import { dispatchHotkey, getInputContextScopes } from "./input/InputContext";
+import { ModalManager } from "./ui/ModalManager";
 import "./GameShell.css";
 
 interface GameShellProps {
@@ -54,24 +57,12 @@ const initialState: GameStateDto = {
   log: []
 };
 
-const keyDirections: Record<string, Direction> = {
-  w: "north",
-  a: "west",
-  s: "south",
-  d: "east"
-};
-
 const directionLabels: Record<Direction, string> = {
   north: "北",
   west: "西",
   south: "南",
   east: "东"
 };
-
-function isTextEntryTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) return false;
-  return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
-}
 
 function cellText(markers: string[]) {
   if (markers.includes("player")) return "@";
@@ -115,14 +106,13 @@ type ActiveModal =
   | { type: "item"; item: InventoryItemDto }
   | { type: "market" }
   | { type: "dialogue" }
-  | { type: "combat" }
-  | null;
+  | { type: "combat" };
 
 export function GameShell({ csrfToken }: GameShellProps) {
   const [state, setState] = useState<GameStateDto>(initialState);
   const [name, setName] = useState("Zichen");
   const [classId, setClassId] = useState<CharacterClassId>("ranger");
-  const [activeModal, setActiveModal] = useState<ActiveModal>(null);
+  const [activeModal, setActiveModal] = useState<ActiveModal | null>(null);
   const [market, setMarket] = useState<MarketDto | null>(null);
   const [dialogueTargets, setDialogueTargets] = useState<NpcDialogueTargetDto[]>([]);
   const [dialogue, setDialogue] = useState<NpcDialogueResponseDto | null>(null);
@@ -133,7 +123,6 @@ export function GameShell({ csrfToken }: GameShellProps) {
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
-  const selectedItem = activeModal?.type === "item" ? activeModal.item : null;
   const isModalOpen = activeModal !== null;
   const canMove = state.availableActions.includes("move") && !isBusy && !isModalOpen;
   const canGather =
@@ -236,6 +225,39 @@ export function GameShell({ csrfToken }: GameShellProps) {
     setActiveModal(null);
   }
 
+  const hotkeyRegistry = useMemo(() => {
+    const registry = new HotkeyRegistry();
+    const movementHotkeys: Array<{ key: string; direction: Direction; description: string }> = [
+      { key: "w", direction: "north", description: "向北移动" },
+      { key: "a", direction: "west", description: "向西移动" },
+      { key: "s", direction: "south", description: "向南移动" },
+      { key: "d", direction: "east", description: "向东移动" }
+    ];
+
+    for (const hotkey of movementHotkeys) {
+      registry.register({
+        key: hotkey.key,
+        contextScope: "global",
+        action: `move:${hotkey.direction}`,
+        description: hotkey.description,
+        handler: () => {
+          if (!canMove) return;
+          void runCommand(() => move(hotkey.direction, csrfToken));
+        }
+      });
+    }
+
+    registry.register({
+      key: "Escape",
+      contextScope: "modal",
+      action: "modal:close",
+      description: "关闭弹层",
+      handler: () => setActiveModal(null)
+    });
+
+    return registry;
+  }, [canMove, csrfToken]);
+
   useEffect(() => {
     let cancelled = false;
     void getGameState()
@@ -252,19 +274,17 @@ export function GameShell({ csrfToken }: GameShellProps) {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (isTextEntryTarget(event.target)) return;
-      if (isModalOpen) return;
-
-      const direction = keyDirections[event.key.toLowerCase()];
-      if (!direction || !canMove) return;
-
-      event.preventDefault();
-      void runCommand(() => move(direction, csrfToken));
+      const handled = dispatchHotkey(
+        hotkeyRegistry,
+        event.key,
+        getInputContextScopes(event, { isModalOpen })
+      );
+      if (handled) event.preventDefault();
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [canMove, csrfToken, isModalOpen]);
+  }, [hotkeyRegistry, isModalOpen]);
 
   useEffect(() => {
     setActiveModal((current) => (current?.type === "combat" ? null : current));
@@ -744,250 +764,242 @@ export function GameShell({ csrfToken }: GameShellProps) {
         </section>
       </aside>
 
-      {selectedItem ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setActiveModal(null)}>
-          <section
-            className="item-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label={selectedItem.name}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <p className="game-kicker">Inventory Item</p>
-            <h2>{selectedItem.name}</h2>
-            <dl className="stat-list">
-              <div>
-                <dt>数量</dt>
-                <dd>{selectedItem.quantity}</dd>
-              </div>
-              <div>
-                <dt>物品 ID</dt>
-                <dd>{selectedItem.itemId}</dd>
-              </div>
-            </dl>
-            <div className="dialog-actions">
-              <button type="button" className="game-secondary-button" disabled>
-                使用
-              </button>
-              <button
-                type="button"
-                className="game-primary-button"
-                onClick={() => setActiveModal(null)}
+      <ModalManager activeModal={activeModal} onClose={() => setActiveModal(null)}>
+        {(modal, closeModal) => {
+          if (modal.type === "item") {
+            return (
+              <section
+                className="item-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label={modal.item.name}
               >
-                关闭
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
-
-      {activeModal?.type === "market" && market ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setActiveModal(null)}>
-          <section
-            className="market-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="市政集市"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <p className="game-kicker">Municipal Market</p>
-            <div className="panel-heading">
-              <h2>市政集市</h2>
-              <span>{market.items.length} 类</span>
-            </div>
-            <div className="market-table" role="table" aria-label="市政集市库存">
-              <div className="market-row market-row-heading" role="row">
-                <span role="columnheader">物品</span>
-                <span role="columnheader">库存</span>
-                <span role="columnheader">持有</span>
-                <span role="columnheader">买价</span>
-                <span role="columnheader">卖价</span>
-                <span role="columnheader">操作</span>
-              </div>
-              {market.items.map((item) => (
-                <div className="market-row" role="row" key={item.itemId}>
-                  <span role="cell">{item.name}</span>
-                  <span role="cell">{item.stockQuantity}</span>
-                  <span role="cell">{item.playerQuantity}</span>
-                  <span role="cell">
-                    {moneyText(item.buyPrice)} + 税 {item.buyTax.totalCopper} 铜
-                  </span>
-                  <span role="cell">
-                    {moneyText(item.sellPrice)} - 税 {item.sellTax.totalCopper} 铜
-                  </span>
-                  <span role="cell" className="market-actions">
-                    <button
-                      type="button"
-                      className="game-secondary-button"
-                      disabled={item.stockQuantity < 1 || isBusy}
-                      onClick={() =>
-                        void runMarketTrade(() =>
-                          buyMarketItem({ itemId: item.itemId, quantity: 1 }, csrfToken)
-                        )
-                      }
-                    >
-                      购买 {item.name}
-                    </button>
-                    <button
-                      type="button"
-                      className="game-secondary-button"
-                      disabled={item.playerQuantity < 1 || isBusy}
-                      onClick={() =>
-                        void runMarketTrade(() =>
-                          sellMarketItem({ itemId: item.itemId, quantity: 1 }, csrfToken)
-                        )
-                      }
-                    >
-                      出售 {item.name}
-                    </button>
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="dialog-actions">
-              <button
-                type="button"
-                className="game-primary-button"
-                onClick={() => setActiveModal(null)}
-              >
-                关闭
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
-
-      {activeModal?.type === "dialogue" ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setActiveModal(null)}>
-          <section
-            className="dialogue-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="附近 NPC 对话"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <p className="game-kicker">NPC Dialogue</p>
-            <div className="panel-heading">
-              <h2>{dialogue ? dialogue.target.name : "附近 NPC"}</h2>
-              <span>{dialogue?.ai.status ?? "列表"}</span>
-            </div>
-
-            <div className="dialogue-layout">
-              <aside className="dialogue-target-list" aria-label="附近 NPC">
-                {dialogueTargets.length === 0 ? <p className="empty-copy">暂无 NPC</p> : null}
-                {dialogueTargets.map((target) => (
-                  <button
-                    type="button"
-                    className={target.npcActorId === dialogue?.target.npcActorId ? "is-selected" : ""}
-                    key={target.npcActorId}
-                    disabled={isBusy}
-                    onClick={() => void openNpcDialogue(target.npcActorId)}
-                  >
-                    <strong>
-                      {target.hasTask ? "! " : ""}
-                      {target.name}
-                    </strong>
-                    <span>{target.statusLine}</span>
-                    {dialogueTaskHint(target) ? (
-                      <span className="dialogue-task-hint">{dialogueTaskHint(target)}</span>
-                    ) : null}
+                <p className="game-kicker">Inventory Item</p>
+                <h2>{modal.item.name}</h2>
+                <dl className="stat-list">
+                  <div>
+                    <dt>数量</dt>
+                    <dd>{modal.item.quantity}</dd>
+                  </div>
+                  <div>
+                    <dt>物品 ID</dt>
+                    <dd>{modal.item.itemId}</dd>
+                  </div>
+                </dl>
+                <div className="dialog-actions">
+                  <button type="button" className="game-secondary-button" disabled>
+                    使用
                   </button>
-                ))}
-              </aside>
-
-              <section className="dialogue-thread" aria-label="对话记录">
-                {dialogue ? (
-                  <>
-                    {dialogueTaskHint(dialogue.target) ? (
-                      <p className="dialogue-task-summary">
-                        {dialogueTaskHint(dialogue.target)}。请在 NPC 任务面板接取或提交。
-                      </p>
-                    ) : null}
-                    <ol>
-                      {dialogue.messages.length === 0 ? <li>还没有交谈记录。</li> : null}
-                      {dialogue.messages.map((message) => (
-                        <li className={`speaker-${message.speakerType}`} key={message.id}>
-                          <span>{message.speakerType === "player" ? state.character?.name : dialogue.target.name}</span>
-                          <p>{message.message}</p>
-                        </li>
-                      ))}
-                    </ol>
-                    <form
-                      className="dialogue-input-row"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void submitDialogueMessage();
-                      }}
-                    >
-                      <input
-                        aria-label="对 NPC 说"
-                        value={dialogueInput}
-                        maxLength={300}
-                        disabled={isBusy}
-                        onChange={(event) => setDialogueInput(event.target.value)}
-                      />
-                      <button
-                        type="submit"
-                        className="game-primary-button"
-                        disabled={isBusy || !dialogueInput.trim()}
-                      >
-                        发送
-                      </button>
-                    </form>
-                  </>
-                ) : (
-                  <p className="empty-copy">选择一个 NPC 开始交谈。</p>
-                )}
+                  <button type="button" className="game-primary-button" onClick={closeModal}>
+                    关闭
+                  </button>
+                </div>
               </section>
-            </div>
+            );
+          }
 
-            {dialogueStatus ? (
-              <p role="status" aria-live="polite" className="dialogue-status">
-                {dialogueStatus}
-              </p>
-            ) : null}
-
-            <div className="dialog-actions">
-              <button
-                type="button"
-                className="game-primary-button"
-                onClick={() => setActiveModal(null)}
+          if (modal.type === "market" && market) {
+            return (
+              <section
+                className="market-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label="市政集市"
               >
-                关闭
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+                <p className="game-kicker">Municipal Market</p>
+                <div className="panel-heading">
+                  <h2>市政集市</h2>
+                  <span>{market.items.length} 类</span>
+                </div>
+                <div className="market-table" role="table" aria-label="市政集市库存">
+                  <div className="market-row market-row-heading" role="row">
+                    <span role="columnheader">物品</span>
+                    <span role="columnheader">库存</span>
+                    <span role="columnheader">持有</span>
+                    <span role="columnheader">买价</span>
+                    <span role="columnheader">卖价</span>
+                    <span role="columnheader">操作</span>
+                  </div>
+                  {market.items.map((item) => (
+                    <div className="market-row" role="row" key={item.itemId}>
+                      <span role="cell">{item.name}</span>
+                      <span role="cell">{item.stockQuantity}</span>
+                      <span role="cell">{item.playerQuantity}</span>
+                      <span role="cell">
+                        {moneyText(item.buyPrice)} + 税 {item.buyTax.totalCopper} 铜
+                      </span>
+                      <span role="cell">
+                        {moneyText(item.sellPrice)} - 税 {item.sellTax.totalCopper} 铜
+                      </span>
+                      <span role="cell" className="market-actions">
+                        <button
+                          type="button"
+                          className="game-secondary-button"
+                          disabled={item.stockQuantity < 1 || isBusy}
+                          onClick={() =>
+                            void runMarketTrade(() =>
+                              buyMarketItem({ itemId: item.itemId, quantity: 1 }, csrfToken)
+                            )
+                          }
+                        >
+                          购买 {item.name}
+                        </button>
+                        <button
+                          type="button"
+                          className="game-secondary-button"
+                          disabled={item.playerQuantity < 1 || isBusy}
+                          onClick={() =>
+                            void runMarketTrade(() =>
+                              sellMarketItem({ itemId: item.itemId, quantity: 1 }, csrfToken)
+                            )
+                          }
+                        >
+                          出售 {item.name}
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="dialog-actions">
+                  <button type="button" className="game-primary-button" onClick={closeModal}>
+                    关闭
+                  </button>
+                </div>
+              </section>
+            );
+          }
 
-      {activeModal?.type === "combat" && state.currentAction?.actionType === "combat" ? (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setActiveModal(null)}>
-          <section
-            className="item-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="战斗详情"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <p className="game-kicker">Combat Timeline</p>
-            <h2>战斗详情</h2>
-            <ol className="combat-log">
-              {state.currentAction.combatLog.map((message) => (
-                <li key={message}>{message}</li>
-              ))}
-            </ol>
-            <div className="dialog-actions">
-              <button
-                type="button"
-                className="game-primary-button"
-                onClick={() => setActiveModal(null)}
+          if (modal.type === "dialogue") {
+            return (
+              <section
+                className="dialogue-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label="附近 NPC 对话"
               >
-                关闭
-              </button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+                <p className="game-kicker">NPC Dialogue</p>
+                <div className="panel-heading">
+                  <h2>{dialogue ? dialogue.target.name : "附近 NPC"}</h2>
+                  <span>{dialogue?.ai.status ?? "列表"}</span>
+                </div>
+
+                <div className="dialogue-layout">
+                  <aside className="dialogue-target-list" aria-label="附近 NPC">
+                    {dialogueTargets.length === 0 ? <p className="empty-copy">暂无 NPC</p> : null}
+                    {dialogueTargets.map((target) => (
+                      <button
+                        type="button"
+                        className={
+                          target.npcActorId === dialogue?.target.npcActorId ? "is-selected" : ""
+                        }
+                        key={target.npcActorId}
+                        disabled={isBusy}
+                        onClick={() => void openNpcDialogue(target.npcActorId)}
+                      >
+                        <strong>
+                          {target.hasTask ? "! " : ""}
+                          {target.name}
+                        </strong>
+                        <span>{target.statusLine}</span>
+                        {dialogueTaskHint(target) ? (
+                          <span className="dialogue-task-hint">{dialogueTaskHint(target)}</span>
+                        ) : null}
+                      </button>
+                    ))}
+                  </aside>
+
+                  <section className="dialogue-thread" aria-label="对话记录">
+                    {dialogue ? (
+                      <>
+                        {dialogueTaskHint(dialogue.target) ? (
+                          <p className="dialogue-task-summary">
+                            {dialogueTaskHint(dialogue.target)}。请在 NPC 任务面板接取或提交。
+                          </p>
+                        ) : null}
+                        <ol>
+                          {dialogue.messages.length === 0 ? <li>还没有交谈记录。</li> : null}
+                          {dialogue.messages.map((message) => (
+                            <li className={`speaker-${message.speakerType}`} key={message.id}>
+                              <span>
+                                {message.speakerType === "player"
+                                  ? state.character?.name
+                                  : dialogue.target.name}
+                              </span>
+                              <p>{message.message}</p>
+                            </li>
+                          ))}
+                        </ol>
+                        <form
+                          className="dialogue-input-row"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void submitDialogueMessage();
+                          }}
+                        >
+                          <input
+                            aria-label="对 NPC 说"
+                            value={dialogueInput}
+                            maxLength={300}
+                            disabled={isBusy}
+                            onChange={(event) => setDialogueInput(event.target.value)}
+                          />
+                          <button
+                            type="submit"
+                            className="game-primary-button"
+                            disabled={isBusy || !dialogueInput.trim()}
+                          >
+                            发送
+                          </button>
+                        </form>
+                      </>
+                    ) : (
+                      <p className="empty-copy">选择一个 NPC 开始交谈。</p>
+                    )}
+                  </section>
+                </div>
+
+                {dialogueStatus ? (
+                  <p role="status" aria-live="polite" className="dialogue-status">
+                    {dialogueStatus}
+                  </p>
+                ) : null}
+
+                <div className="dialog-actions">
+                  <button type="button" className="game-primary-button" onClick={closeModal}>
+                    关闭
+                  </button>
+                </div>
+              </section>
+            );
+          }
+
+          if (modal.type === "combat" && state.currentAction?.actionType === "combat") {
+            return (
+              <section
+                className="item-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label="战斗详情"
+              >
+                <p className="game-kicker">Combat Timeline</p>
+                <h2>战斗详情</h2>
+                <ol className="combat-log">
+                  {state.currentAction.combatLog.map((message) => (
+                    <li key={message}>{message}</li>
+                  ))}
+                </ol>
+                <div className="dialog-actions">
+                  <button type="button" className="game-primary-button" onClick={closeModal}>
+                    关闭
+                  </button>
+                </div>
+              </section>
+            );
+          }
+
+          return null;
+        }}
+      </ModalManager>
     </main>
   );
 }

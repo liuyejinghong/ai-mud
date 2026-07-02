@@ -342,6 +342,25 @@ describe("GameShell", () => {
     );
   });
 
+  it("blocks movement shortcuts while a dialogue text input is focused", async () => {
+    const fetchMock = mockFetchWithStates([villageState, dialogueTargets, emptyDialogue]);
+    render(<GameShell csrfToken="csrf" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "附近 NPC" }));
+    fireEvent.click(await screen.findByRole("button", { name: /伯林/ }));
+    const dialogueInput = await screen.findByLabelText("对 NPC 说");
+    fireEvent.change(dialogueInput, { target: { value: "w" } });
+    fireEvent.keyDown(dialogueInput, { key: "w" });
+
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "http://127.0.0.1:3000/game/move",
+      expect.objectContaining({
+        body: JSON.stringify({ direction: "north" }),
+        method: "POST"
+      })
+    );
+  });
+
   it("shows money and trades through the municipal market", async () => {
     const fetchMock = mockFetchWithStates([villageState, marketState, villageState]);
     render(<GameShell csrfToken="csrf" />);
@@ -651,6 +670,64 @@ describe("GameShell", () => {
     expect(screen.getByRole("dialog", { name: "战斗详情" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "撤离" }));
 
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "战斗详情" })).toBeNull();
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:3000/game/action/cancel",
+      expect.objectContaining({ method: "POST" })
+    );
+  });
+
+  it("resets stale combat dialog when currentAction changes away from combat", async () => {
+    const activeCombatState: GameStateDto = {
+      ...forestState,
+      currentAction: {
+        id: "action-1",
+        actionType: "combat",
+        status: "active",
+        description: "正在与腐化野狼群战斗",
+        startedAt: "2026-07-01T00:00:00.000Z",
+        endsAt: "2026-07-01T00:02:00.000Z",
+        progressPct: 20,
+        cycleProgressPct: null,
+        completedCycles: null,
+        settledCycles: null,
+        plannedCycles: null,
+        expectedYield: [],
+        combatLog: ["Zichen 攻击腐化野狼，造成 16 点伤害。"]
+      },
+      availableActions: ["cancel_action"]
+    };
+    const activeGatheringState: GameStateDto = {
+      ...forestState,
+      currentAction: {
+        id: "action-2",
+        actionType: "gathering",
+        status: "active",
+        description: "正在采集野莓灌木",
+        startedAt: "2026-07-01T00:00:00.000Z",
+        endsAt: "2026-07-01T00:10:00.000Z",
+        progressPct: 50,
+        cycleProgressPct: 25,
+        completedCycles: 5,
+        settledCycles: 4,
+        plannedCycles: 10,
+        expectedYield: [{ itemId: "wild_berry", name: "野莓", quantity: 10 }],
+        combatLog: []
+      },
+      availableActions: ["cancel_action"]
+    };
+    const fetchMock = mockFetchWithStates([activeCombatState, activeGatheringState]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByText("正在与腐化野狼群战斗")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "查看战斗" }));
+    expect(screen.getByRole("dialog", { name: "战斗详情" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "撤离" }));
+
+    expect(await screen.findByText("正在采集野莓灌木")).toBeTruthy();
     await waitFor(() => {
       expect(screen.queryByRole("dialog", { name: "战斗详情" })).toBeNull();
     });
