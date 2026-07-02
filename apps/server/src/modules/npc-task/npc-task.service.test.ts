@@ -1,8 +1,8 @@
-import type { ItemId } from "@ai-mud/shared";
+import type { AiCallStatus, ItemId } from "@ai-mud/shared";
 import { describe, expect, it } from "vitest";
 import type { CharacterRecord, InventoryRecord } from "../game/game.repository.js";
 import type { NpcActorRecord, NpcInventoryRecord } from "../npc/npc.service.js";
-import { NpcTaskService, type NpcTaskCopywriterInput } from "./npc-task.service.js";
+import { NpcTaskService, type NpcTaskProposalInput } from "./npc-task.service.js";
 import type {
   CreateNpcTaskInput,
   NpcTaskRecord,
@@ -99,6 +99,8 @@ class FakeNpcTaskRepo {
       status: "open",
       title: input.title,
       description: input.description,
+      proposalSource: input.proposalSource,
+      proposalReason: input.proposalReason,
       requestedItemId: input.requestedItemId,
       requestedQuantity: input.requestedQuantity,
       rewardCopper: input.rewardCopper,
@@ -187,18 +189,20 @@ describe("NpcTaskService", () => {
     expect([...repo.tasks.values()][0]?.escrowCopper).toBe(36);
   });
 
-  it("uses AI-polished task copy without changing rule-owned item quantity or reward", async () => {
+  it("uses AI task proposal text without changing rule-owned item quantity or reward", async () => {
     const repo = new FakeNpcTaskRepo();
     repo.actors.set("npc-blacksmith", actor({ copperBalance: 120 }));
     repo.npcInventory.set("npc-blacksmith", []);
     repo.characters.set("character-1", character());
-    const copyInputs: NpcTaskCopywriterInput[] = [];
+    const proposalInputs: NpcTaskProposalInput[] = [];
     const service = new NpcTaskService(repo, undefined, {
-      polishTaskCopy: async (input) => {
-        copyInputs.push(input);
+      proposeNpcTask: async (input) => {
+        proposalInputs.push(input);
         return {
-          title: "炉火待矿",
-          description: "伯林把空矿箱推到炉边，催你带回基础铁矿石，免得修理活全压到夜里。"
+          title: "炉火等矿",
+          description: "伯林把空矿箱推到你面前，请你带回三块基础铁矿石。",
+          npcReason: "没有矿石，哨站的修理活会拖到深夜。",
+          status: "success" as AiCallStatus
         };
       }
     });
@@ -209,26 +213,32 @@ describe("NpcTaskService", () => {
     );
     const created = [...repo.tasks.values()][0];
 
-    expect(tasks[0]?.title).toBe("炉火待矿");
+    expect(tasks[0]?.title).toBe("炉火等矿");
     expect(tasks[0]?.description).toContain("空矿箱");
+    expect(tasks[0]?.proposalSource).toBe("ai");
+    expect(tasks[0]?.proposalReason).toContain("修理活");
     expect(created?.requestedItemId).toBe("iron_ore");
     expect(created?.requestedQuantity).toBe(3);
     expect(created?.rewardCopper).toBe(36);
     expect(created?.escrowCopper).toBe(36);
+    expect(created?.proposalSource).toBe("ai");
+    expect(created?.proposalReason).toContain("修理活");
     expect(repo.actors.get("npc-blacksmith")?.copperBalance).toBe(84);
-    expect(copyInputs[0]?.rewardCopper).toBe(36);
-    expect(copyInputs[0]?.requestedItemId).toBe("iron_ore");
+    expect(proposalInputs[0]?.rewardCopper).toBe(36);
+    expect(proposalInputs[0]?.requestedItemId).toBe("iron_ore");
   });
 
-  it("falls back to deterministic task copy when AI copy is invalid or unavailable", async () => {
+  it("falls back to deterministic task proposal when AI proposal is invalid or unavailable", async () => {
     const repo = new FakeNpcTaskRepo();
     repo.actors.set("npc-blacksmith", actor({ copperBalance: 120 }));
     repo.npcInventory.set("npc-blacksmith", []);
     repo.characters.set("character-1", character());
     const service = new NpcTaskService(repo, undefined, {
-      polishTaskCopy: async () => ({
+      proposeNpcTask: async () => ({
         title: "这个标题明显超过十八个中文字符所以必须回退",
-        description: ""
+        description: "",
+        npcReason: "",
+        status: "rejected" as AiCallStatus
       })
     });
 
@@ -239,13 +249,26 @@ describe("NpcTaskService", () => {
 
     expect(tasks[0]?.title).toBe("炉火缺矿");
     expect(tasks[0]?.description).toContain("缺少基础铁矿石");
+    expect(tasks[0]?.proposalSource).toBe("template");
+    expect(tasks[0]?.proposalReason).toContain("基础铁矿石");
   });
 
-  it("does not create a task when the NPC cannot escrow the reward", async () => {
+  it("does not create a task or call AI proposal when the NPC cannot escrow the reward", async () => {
     const repo = new FakeNpcTaskRepo();
     repo.actors.set("npc-blacksmith", actor({ copperBalance: 20 }));
     repo.characters.set("character-1", character());
-    const service = new NpcTaskService(repo);
+    let proposalCalls = 0;
+    const service = new NpcTaskService(repo, undefined, {
+      proposeNpcTask: async () => {
+        proposalCalls += 1;
+        return {
+          title: "炉火等矿",
+          description: "伯林需要矿。",
+          npcReason: "矿箱空了。",
+          status: "success"
+        };
+      }
+    });
 
     const tasks = await service.listTasksForAccount(
       "account-1",
@@ -254,6 +277,7 @@ describe("NpcTaskService", () => {
 
     expect(tasks).toEqual([]);
     expect(repo.actors.get("npc-blacksmith")?.copperBalance).toBe(20);
+    expect(proposalCalls).toBe(0);
   });
 
   it("accepts and completes tasks by transferring submitted goods and escrowed copper", async () => {

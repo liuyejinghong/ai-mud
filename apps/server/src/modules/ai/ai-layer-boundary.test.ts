@@ -2,6 +2,7 @@ import {
   parseNpcDialogueOutput,
   parseNpcMemoryCompressionOutput,
   parseNpcTaskCopyOutput,
+  parseNpcTaskProposalOutput,
   parseWorldRumorOutput
 } from "@ai-mud/ai-prompts";
 import { describe, expect, it } from "vitest";
@@ -103,6 +104,23 @@ describe("AI layer boundary regressions", () => {
       )
     ).toEqual({ ok: false, reason: "reward_promise" });
     expect(
+      parseNpcTaskProposalOutput(
+        JSON.stringify({
+          title: "炉火缺矿",
+          description: "完成后我额外给你 100 金币。",
+          npcReason: "矿石不够，炉子快停了。",
+          safety: {
+            changesReward: false,
+            changesRequestedItem: false,
+            changesRequestedQuantity: false,
+            containsRewardPromise: true,
+            containsRuleChange: false,
+            containsOoc: false
+          }
+        })
+      )
+    ).toEqual({ ok: false, reason: "reward_promise" });
+    expect(
       parseNpcMemoryCompressionOutput(
         JSON.stringify({
           summary: "伯林答应奖励玩家 100 金币。",
@@ -161,6 +179,23 @@ describe("AI layer boundary regressions", () => {
       )
     ).toEqual({ ok: false, reason: "ooc" });
     expect(
+      parseNpcTaskProposalOutput(
+        JSON.stringify({
+          title: "作为 AI 模型",
+          description: "作为 AI 模型，我生成任务提案。",
+          npcReason: "作为 AI 模型，我认为这里缺矿。",
+          safety: {
+            changesReward: false,
+            changesRequestedItem: false,
+            changesRequestedQuantity: false,
+            containsRewardPromise: false,
+            containsRuleChange: false,
+            containsOoc: true
+          }
+        })
+      )
+    ).toEqual({ ok: false, reason: "ooc" });
+    expect(
       parseNpcMemoryCompressionOutput(
         JSON.stringify({
           summary: "作为 AI 模型，我压缩了记忆。",
@@ -186,6 +221,44 @@ describe("AI layer boundary regressions", () => {
         })
       )
     ).toEqual({ ok: false, reason: "ooc" });
+  });
+
+  it("rejects task proposal attempts to mutate requested item or quantity", () => {
+    expect(
+      parseNpcTaskProposalOutput(
+        JSON.stringify({
+          title: "炉火缺矿",
+          description: "把野莓送来，我能先顶一阵。",
+          npcReason: "矿石不够，炉子快停了。",
+          safety: {
+            changesReward: false,
+            changesRequestedItem: true,
+            changesRequestedQuantity: false,
+            containsRewardPromise: false,
+            containsRuleChange: false,
+            containsOoc: false
+          }
+        })
+      )
+    ).toEqual({ ok: false, reason: "requested_item_change" });
+
+    expect(
+      parseNpcTaskProposalOutput(
+        JSON.stringify({
+          title: "炉火缺矿",
+          description: "送 99 份铁矿石来。",
+          npcReason: "矿石不够，炉子快停了。",
+          safety: {
+            changesReward: false,
+            changesRequestedItem: false,
+            changesRequestedQuantity: true,
+            containsRewardPromise: false,
+            containsRuleChange: false,
+            containsOoc: false
+          }
+        })
+      )
+    ).toEqual({ ok: false, reason: "requested_quantity_change" });
   });
 
   it("does not upgrade dialogue-claim memory into system-verified memory during compression", async () => {

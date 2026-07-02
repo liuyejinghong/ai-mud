@@ -93,6 +93,7 @@ describe("AiGovernanceService", () => {
       "npc_dialogue",
       "npc_memory_compression",
       "npc_task_copy",
+      "npc_task_proposal",
       "world_rumor"
     ]);
     expect(status.purposes.every((purpose) => purpose.mutatesWorldState === false)).toBe(true);

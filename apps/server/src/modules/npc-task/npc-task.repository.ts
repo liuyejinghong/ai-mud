@@ -1,4 +1,9 @@
-import type { ItemId, NpcTaskNeedType, NpcTaskStatus } from "@ai-mud/shared";
+import type {
+  ItemId,
+  NpcTaskNeedType,
+  NpcTaskProposalSource,
+  NpcTaskStatus
+} from "@ai-mud/shared";
 import { and, desc, eq, or } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import { characterItems, characters, npcItems, npcTasks, worldActors } from "../../db/schema.js";
@@ -15,6 +20,8 @@ export interface NpcTaskRecord {
   status: NpcTaskStatus;
   title: string;
   description: string;
+  proposalSource: NpcTaskProposalSource;
+  proposalReason: string | null;
   requestedItemId: ItemId;
   requestedQuantity: number;
   rewardCopper: number;
@@ -32,6 +39,8 @@ export interface CreateNpcTaskInput {
   needType: NpcTaskNeedType;
   title: string;
   description: string;
+  proposalSource: NpcTaskProposalSource;
+  proposalReason: string | null;
   requestedItemId: ItemId;
   requestedQuantity: number;
   rewardCopper: number;
@@ -98,6 +107,8 @@ function toTask(row: typeof npcTasks.$inferSelect): NpcTaskRecord {
     status: row.status as NpcTaskStatus,
     title: row.title,
     description: row.description,
+    proposalSource: row.proposalSource as NpcTaskProposalSource,
+    proposalReason: row.proposalReason,
     requestedItemId: row.requestedItemId as ItemId,
     requestedQuantity: row.requestedQuantity,
     rewardCopper: row.rewardCopper,
@@ -256,6 +267,8 @@ export class NpcTaskRepository {
         needType: input.needType,
         title: input.title,
         description: input.description,
+        proposalSource: input.proposalSource,
+        proposalReason: input.proposalReason,
         requestedItemId: input.requestedItemId,
         requestedQuantity: input.requestedQuantity,
         rewardCopper: input.rewardCopper,

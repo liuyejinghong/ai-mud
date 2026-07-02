@@ -180,7 +180,8 @@ export type AiCallPurpose =
   | "npc_dialogue"
   | "npc_task_copy"
   | "npc_memory_compression"
-  | "world_rumor";
+  | "world_rumor"
+  | "npc_task_proposal";
 export type AiAuthorityClass = "presentation" | "summary" | "classification";
 export type NpcDialogueSpeakerType = "player" | "npc" | "system";
 
@@ -324,6 +325,7 @@ export interface NpcMemoryFragmentDto {
 
 export type NpcTaskNeedType = "food_shortage" | "ore_shortage";
 export type NpcTaskStatus = "open" | "accepted" | "completed" | "expired" | "cancelled";
+export type NpcTaskProposalSource = "template" | "ai";
 
 export interface NpcTaskDto {
   id: string;
@@ -333,6 +335,8 @@ export interface NpcTaskDto {
   status: NpcTaskStatus;
   title: string;
   description: string;
+  proposalSource: NpcTaskProposalSource;
+  proposalReason: string | null;
   requestedItem: InventoryItemDto;
   rewardCopper: MoneyDto;
   acceptedByCharacterId: string | null;

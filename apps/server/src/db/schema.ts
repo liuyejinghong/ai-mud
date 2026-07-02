@@ -500,6 +500,8 @@ export const npcTasks = pgTable(
     status: text("status").notNull().default("open"),
     title: text("title").notNull(),
     description: text("description").notNull(),
+    proposalSource: text("proposal_source").notNull().default("template"),
+    proposalReason: text("proposal_reason"),
     requestedItemId: text("requested_item_id").notNull(),
     requestedQuantity: integer("requested_quantity").notNull(),
     rewardCopper: integer("reward_copper").notNull(),

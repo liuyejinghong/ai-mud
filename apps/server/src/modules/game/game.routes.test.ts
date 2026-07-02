@@ -514,6 +514,8 @@ describe("registerGameRoutes", () => {
               status: "accepted",
               title: "炉火缺矿",
               description: "伯林缺少基础铁矿石。",
+              proposalSource: "template",
+              proposalReason: "基础铁矿石不足，修理炉火和补强装备都会被拖慢。",
               requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
               rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 },
               acceptedByCharacterId: "character-1",

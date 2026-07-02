@@ -41,14 +41,14 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.6.9 AI layer closeout compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.6.9");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(18);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(11);
+  it("exposes v0.7.0 AI task proposal compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.7.0");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(19);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(12);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(10);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(7);
-    expect(WORLD_COMPATIBILITY.promptVersion).toBe(6);
+    expect(WORLD_COMPATIBILITY.promptVersion).toBe(7);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
   });
 
@@ -501,6 +501,8 @@ describe("game contract", () => {
       status: "open",
       title: "炉火缺矿",
       description: "伯林需要基础铁矿石维持修理炉火。",
+      proposalSource: "ai",
+      proposalReason: "没有矿石，哨站的修理活会拖到深夜。",
       requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
       rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 },
       acceptedByCharacterId: null,
@@ -511,6 +513,8 @@ describe("game contract", () => {
     };
 
     expect(task.needType).toBe("ore_shortage");
+    expect(task.proposalSource).toBe("ai");
+    expect(task.proposalReason).toContain("修理活");
     expect(task.requestedItem.itemId).toBe("iron_ore");
     expect(task.rewardCopper.totalCopper).toBe(36);
   });

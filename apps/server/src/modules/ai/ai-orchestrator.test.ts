@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { NpcDialoguePromptContext, WorldRumorPromptContext } from "@ai-mud/ai-prompts";
+import type {
+  NpcDialoguePromptContext,
+  NpcTaskProposalPromptContext,
+  WorldRumorPromptContext
+} from "@ai-mud/ai-prompts";
 import type { AiJsonCompletionInput, AiProvider } from "./ai-provider.js";
 import { AiOrchestrator } from "./ai-orchestrator.js";
 
@@ -41,6 +45,35 @@ const taskCopyContext = {
     rewardCopper: 36,
     deterministicTitle: "炉火缺矿",
     deterministicDescription: "伯林缺少基础铁矿石，修理炉火和补强装备都会被拖慢。"
+  },
+  world: {
+    settlement: "黑松哨站",
+    marketSummary: "基础铁矿石库存偏低。"
+  }
+};
+
+const taskProposalContext: NpcTaskProposalPromptContext = {
+  npc: {
+    name: "伯林",
+    profession: "blacksmith",
+    personality: "务实、重视等价交换。",
+    currentState: "基础铁矿石库存偏低。"
+  },
+  candidate: {
+    needType: "ore_shortage",
+    requestedItemName: "基础铁矿石",
+    requestedItemId: "iron_ore",
+    requestedQuantity: 3,
+    rewardCopper: 36,
+    expiresInHours: 24
+  },
+  economy: {
+    npcCopperBalance: 120,
+    npcCopperReserve: 5,
+    canEscrowReward: true
+  },
+  relationship: {
+    summary: "阿岚完成过一次炉火缺矿任务。"
   },
   world: {
     settlement: "黑松哨站",
@@ -233,6 +266,116 @@ describe("AiOrchestrator", () => {
     expect(copy.status).toBe("fallback");
     expect(copy.title).toBe("炉火缺矿");
     expect(provider.lastInput).toBeNull();
+  });
+
+  it("uses deterministic task proposal when AI is disabled", async () => {
+    const provider = new FakeProvider("{}");
+    const orchestrator = new AiOrchestrator({
+      enabled: false,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      maxOutputTokens: 400,
+      timeoutMs: 8000,
+      provider
+    });
+
+    const proposal = await orchestrator.proposeNpcTask({ context: taskProposalContext });
+
+    expect(proposal.status).toBe("fallback");
+    expect(proposal.provider).toBe("template");
+    expect(proposal.title).toBe("炉火缺矿");
+    expect(proposal.description).toContain("缺少基础铁矿石");
+    expect(proposal.npcReason).toContain("基础铁矿石");
+    expect(provider.lastInput).toBeNull();
+  });
+
+  it("parses valid task proposal from the provider", async () => {
+    const provider = new FakeProvider(
+      JSON.stringify({
+        title: "炉火等矿",
+        description: "伯林把空矿箱推到你面前，请你带回三块基础铁矿石。",
+        npcReason: "没有矿石，哨站的修理活会拖到深夜。",
+        safety: {
+          changesReward: false,
+          changesRequestedItem: false,
+          changesRequestedQuantity: false,
+          containsRewardPromise: false,
+          containsRuleChange: false,
+          containsOoc: false
+        }
+      })
+    );
+    const orchestrator = new AiOrchestrator({
+      enabled: true,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      maxOutputTokens: 400,
+      timeoutMs: 8000,
+      provider
+    });
+
+    const proposal = await orchestrator.proposeNpcTask({ context: taskProposalContext });
+
+    expect(proposal.status).toBe("success");
+    expect(proposal.title).toBe("炉火等矿");
+    expect(proposal.npcReason).toContain("修理活");
+    expect(provider.lastInput?.responseFormat).toEqual({ type: "json_object" });
+    expect(provider.lastInput?.maxTokens).toBe(220);
+  });
+
+  it("rejects task proposal reward promises", async () => {
+    const provider = new FakeProvider(
+      JSON.stringify({
+        title: "炉火等矿",
+        description: "带矿回来，我额外奖励你 100 金币。",
+        npcReason: "矿箱空了。",
+        safety: {
+          changesReward: false,
+          changesRequestedItem: false,
+          changesRequestedQuantity: false,
+          containsRewardPromise: true,
+          containsRuleChange: false,
+          containsOoc: false
+        }
+      })
+    );
+    const orchestrator = new AiOrchestrator({
+      enabled: true,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      maxOutputTokens: 400,
+      timeoutMs: 8000,
+      provider
+    });
+
+    const proposal = await orchestrator.proposeNpcTask({ context: taskProposalContext });
+
+    expect(proposal.status).toBe("rejected");
+    expect(proposal.fallbackReason).toBe("reward_promise");
+    expect(proposal.title).toBe("炉火缺矿");
+    expect(proposal.description).not.toContain("100 金币");
+  });
+
+  it("falls back when task proposal provider throws", async () => {
+    const provider: AiProvider = {
+      async completeJson() {
+        throw new Error("provider timeout");
+      }
+    };
+    const orchestrator = new AiOrchestrator({
+      enabled: true,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      maxOutputTokens: 400,
+      timeoutMs: 8000,
+      provider
+    });
+
+    const proposal = await orchestrator.proposeNpcTask({ context: taskProposalContext });
+
+    expect(proposal.status).toBe("error");
+    expect(proposal.fallbackReason).toBe("provider_error");
+    expect(proposal.title).toBe("炉火缺矿");
   });
 
   it("parses valid task copy from the provider", async () => {

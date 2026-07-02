@@ -118,6 +118,8 @@ const taskVillageState: GameStateDto = {
       status: "open",
       title: "炉火缺矿",
       description: "伯林缺少基础铁矿石，修理炉火和补强装备都会被拖慢。",
+      proposalSource: "ai",
+      proposalReason: "没有矿石，哨站的修理活会拖到深夜。",
       requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
       rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 },
       acceptedByCharacterId: null,
@@ -451,6 +453,7 @@ describe("GameShell", () => {
 
     expect(await screen.findByRole("heading", { name: "NPC 任务" })).toBeTruthy();
     expect(screen.getByText("! 炉火缺矿")).toBeTruthy();
+    expect(screen.getByText("没有矿石，哨站的修理活会拖到深夜。")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "接取" }));
 
     expect(await screen.findByText("进行中")).toBeTruthy();

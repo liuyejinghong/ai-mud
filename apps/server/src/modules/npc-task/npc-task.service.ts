@@ -1,6 +1,12 @@
 import { FIRST_ITEMS, getItemById } from "@ai-mud/content";
 import { addInventoryItem, formatMoney } from "@ai-mud/game-rules";
-import type { ItemId, NpcTaskDto, NpcTaskNeedType } from "@ai-mud/shared";
+import type {
+  AiCallStatus,
+  ItemId,
+  NpcTaskDto,
+  NpcTaskNeedType,
+  NpcTaskProposalSource
+} from "@ai-mud/shared";
 import type { CharacterRecord, InventoryRecord } from "../game/game.repository.js";
 import type { NpcActorRecord, NpcInventoryRecord } from "../npc/npc.service.js";
 import type { NpcTaskRecord, NpcTaskRepository } from "./npc-task.repository.js";
@@ -61,9 +67,10 @@ interface TaskProposal {
   rewardCopper: number;
   title: string;
   description: string;
+  proposalReason: string;
 }
 
-export interface NpcTaskCopywriterInput {
+export interface NpcTaskProposalInput {
   actor: NpcActorRecord;
   needType: NpcTaskNeedType;
   requestedItemId: ItemId;
@@ -71,19 +78,22 @@ export interface NpcTaskCopywriterInput {
   rewardCopper: number;
   title: string;
   description: string;
+  proposalReason: string;
   inventory: NpcInventoryRecord[];
   now: Date;
 }
 
-export interface NpcTaskCopywriterPort {
-  polishTaskCopy(input: NpcTaskCopywriterInput): Promise<Pick<TaskProposal, "title" | "description">>;
+export interface NpcTaskProposalPort {
+  proposeNpcTask(input: NpcTaskProposalInput): Promise<
+    Pick<TaskProposal, "title" | "description"> & { npcReason: string; status: AiCallStatus }
+  >;
 }
 
 export class NpcTaskService {
   constructor(
     private readonly repo: NpcTaskRepositoryPort,
     private readonly memory?: NpcTaskMemoryPort,
-    private readonly copywriter?: NpcTaskCopywriterPort
+    private readonly proposalPort?: NpcTaskProposalPort
   ) {}
 
   async syncOpenTasks(now: Date) {
@@ -99,7 +109,7 @@ export class NpcTaskService {
       if (!proposal) continue;
 
       if (actor.copperBalance < proposal.rewardCopper + NPC_COPPER_RESERVE) continue;
-      const copy = await this.polishProposal(actor, inventory, proposal, now);
+      const presentation = await this.presentProposal(actor, inventory, proposal, now);
 
       await this.repo.updateNpcCopper({
         actorId: actor.id,
@@ -108,8 +118,10 @@ export class NpcTaskService {
       await this.repo.createTask({
         npcActorId: actor.id,
         needType: proposal.needType,
-        title: copy.title,
-        description: copy.description,
+        title: presentation.title,
+        description: presentation.description,
+        proposalSource: presentation.proposalSource,
+        proposalReason: presentation.proposalReason,
         requestedItemId: proposal.requestedItemId,
         requestedQuantity: proposal.requestedQuantity,
         rewardCopper: proposal.rewardCopper,
@@ -241,7 +253,8 @@ export class NpcTaskService {
         requestedQuantity: 2,
         rewardCopper: 16,
         title: `${actor.name}的空粮袋`,
-        description: `${actor.name}的口粮已经见底，需要有人送来野莓维持今天的行动。`
+        description: `${actor.name}的口粮已经见底，需要有人送来野莓维持今天的行动。`,
+        proposalReason: `${actor.name}缺少食物，今天的行动会受影响。`
       };
     }
 
@@ -254,7 +267,8 @@ export class NpcTaskService {
           requestedQuantity: 3,
           rewardCopper: 36,
           title: "炉火缺矿",
-          description: `${actor.name}缺少基础铁矿石，修理炉火和补强装备都会被拖慢。`
+          description: `${actor.name}缺少基础铁矿石，修理炉火和补强装备都会被拖慢。`,
+          proposalReason: "基础铁矿石不足，修理炉火和补强装备都会被拖慢。"
         };
       }
     }
@@ -262,16 +276,16 @@ export class NpcTaskService {
     return null;
   }
 
-  private async polishProposal(
+  private async presentProposal(
     actor: NpcActorRecord,
     inventory: NpcInventoryRecord[],
     proposal: TaskProposal,
     now: Date
-  ): Promise<Pick<TaskProposal, "title" | "description">> {
-    if (!this.copywriter) return { title: proposal.title, description: proposal.description };
+  ): Promise<Pick<TaskProposal, "title" | "description" | "proposalReason"> & { proposalSource: NpcTaskProposalSource }> {
+    if (!this.proposalPort) return this.templatePresentation(proposal);
 
     try {
-      const polished = await this.copywriter.polishTaskCopy({
+      const aiProposal = await this.proposalPort.proposeNpcTask({
         actor,
         needType: proposal.needType,
         requestedItemId: proposal.requestedItemId,
@@ -279,32 +293,47 @@ export class NpcTaskService {
         rewardCopper: proposal.rewardCopper,
         title: proposal.title,
         description: proposal.description,
+        proposalReason: proposal.proposalReason,
         inventory,
         now
       });
 
-      if (!this.isValidTaskCopy(polished)) {
-        return { title: proposal.title, description: proposal.description };
+      if (aiProposal.status !== "success" || !this.isValidTaskPresentation(aiProposal)) {
+        return this.templatePresentation(proposal);
       }
 
       return {
-        title: polished.title.trim(),
-        description: polished.description.trim()
+        title: aiProposal.title.trim(),
+        description: aiProposal.description.trim(),
+        proposalReason: aiProposal.npcReason.trim(),
+        proposalSource: "ai"
       };
     } catch {
-      return { title: proposal.title, description: proposal.description };
+      return this.templatePresentation(proposal);
     }
   }
 
-  private isValidTaskCopy(value: Pick<TaskProposal, "title" | "description">) {
+  private isValidTaskPresentation(value: Pick<TaskProposal, "title" | "description"> & { npcReason: string }) {
     const title = value.title.trim();
     const description = value.description.trim();
+    const proposalReason = value.npcReason.trim();
     return (
       title.length > 0 &&
       description.length > 0 &&
+      proposalReason.length > 0 &&
       [...title].length <= TASK_TITLE_MAX_CHARS &&
-      [...description].length <= TASK_DESCRIPTION_MAX_CHARS
+      [...description].length <= TASK_DESCRIPTION_MAX_CHARS &&
+      [...proposalReason].length <= 72
     );
+  }
+
+  private templatePresentation(proposal: TaskProposal) {
+    return {
+      title: proposal.title,
+      description: proposal.description,
+      proposalReason: proposal.proposalReason,
+      proposalSource: "template" as const
+    };
   }
 
   private async requireCharacter(accountId: string) {
@@ -331,6 +360,8 @@ export class NpcTaskService {
       status: task.status,
       title: task.title,
       description: task.description,
+      proposalSource: task.proposalSource,
+      proposalReason: task.proposalReason,
       requestedItem: {
         itemId: task.requestedItemId,
         name: item?.name ?? task.requestedItemId,

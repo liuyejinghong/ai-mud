@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import { PRODUCT_VERSION, WORLD_COMPATIBILITY } from "./version.js";
 
 describe("version constants", () => {
-  it("exposes the v0.6.9 AI layer closeout product line and compatibility versions", () => {
-    expect(PRODUCT_VERSION).toBe("0.6.9");
+  it("exposes the v0.7.0 AI task proposal product line and compatibility versions", () => {
+    expect(PRODUCT_VERSION).toBe("0.7.0");
     expect(WORLD_COMPATIBILITY).toEqual({
-      schemaVersion: 11,
-      apiVersion: 18,
+      schemaVersion: 12,
+      apiVersion: 19,
       engineVersion: 1,
       rulesetVersion: 10,
       contentVersion: 7,
-      promptVersion: 6,
+      promptVersion: 7,
       economyVersion: 2,
       worldSeedVersion: 1
     });

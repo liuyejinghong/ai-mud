@@ -535,6 +535,9 @@ export function GameShell({ csrfToken }: GameShellProps) {
                     <span>{taskStatusText(task.status)}</span>
                   </div>
                   <p>{task.description}</p>
+                  {task.proposalReason ? (
+                    <p className="npc-task-reason">{task.proposalReason}</p>
+                  ) : null}
                   <dl className="npc-task-meta">
                     <div>
                       <dt>发布者</dt>

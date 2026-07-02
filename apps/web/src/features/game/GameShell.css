@@ -334,6 +334,10 @@
   line-height: 1.6;
 }
 
+.npc-task-item .npc-task-reason {
+  color: #f3d67d;
+}
+
 .npc-task-meta {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

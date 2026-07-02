@@ -151,6 +151,8 @@ describe("foundation schema", () => {
     expect(npcTasks.requestedQuantity.getSQLType()).toBe("integer");
     expect(npcTasks.rewardCopper.getSQLType()).toBe("integer");
     expect(npcTasks.escrowCopper.getSQLType()).toBe("integer");
+    expect(npcTasks.proposalSource.getSQLType()).toBe("text");
+    expect(npcTasks.proposalReason.getSQLType()).toBe("text");
     expect(npcTasks.acceptedByCharacterId.getSQLType()).toBe("uuid");
     expect(npcTasks.expiresAt.getSQLType()).toBe("timestamp with time zone");
   });

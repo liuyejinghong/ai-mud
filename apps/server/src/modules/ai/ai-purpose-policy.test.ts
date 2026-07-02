@@ -6,7 +6,8 @@ const knownPurposes: AiCallPurpose[] = [
   "npc_dialogue",
   "npc_task_copy",
   "npc_memory_compression",
-  "world_rumor"
+  "world_rumor",
+  "npc_task_proposal"
 ];
 
 describe("AI purpose policy registry", () => {
@@ -25,6 +26,19 @@ describe("AI purpose policy registry", () => {
   it("defines a short NPC dialogue cooldown", () => {
     expect(AI_PURPOSE_POLICIES.npc_dialogue.cooldownMs).toBe(5000);
     expect(AI_PURPOSE_POLICIES.npc_dialogue.maxOutputTokens).toBe(180);
+  });
+
+  it("defines read-only NPC task proposal policy", () => {
+    expect(AI_PURPOSE_POLICIES.npc_task_proposal).toMatchObject({
+      purpose: "npc_task_proposal",
+      authorityClass: "classification",
+      mutatesWorldState: false,
+      maxOutputTokens: 220,
+      cooldownMs: 0,
+      fallbackRequired: true,
+      promptVersion: 7,
+      allowedStateEffects: "none"
+    });
   });
 }
 );

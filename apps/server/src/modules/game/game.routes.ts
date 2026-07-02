@@ -1,9 +1,9 @@
 import {
   NPC_DIALOGUE_MAX_PLAYER_CHARS,
   NPC_MEMORY_COMPRESSION_PROMPT_VERSION,
-  NPC_TASK_COPY_PROMPT_VERSION,
+  NPC_TASK_PROPOSAL_PROMPT_VERSION,
   type NpcMemoryCompressionPromptContext,
-  type NpcTaskCopyPromptContext,
+  type NpcTaskProposalPromptContext,
   type WorldRumorPromptContext
 } from "@ai-mud/ai-prompts";
 import { getItemById } from "@ai-mud/content";
@@ -44,7 +44,7 @@ import { NpcTaskRepository } from "../npc-task/npc-task.repository.js";
 import {
   NpcTaskService,
   NpcTaskServiceError,
-  type NpcTaskCopywriterInput
+  type NpcTaskProposalInput
 } from "../npc-task/npc-task.service.js";
 import { RumorRepository } from "../rumor/rumor.repository.js";
 import { RumorService } from "../rumor/rumor.service.js";
@@ -223,7 +223,7 @@ function createNpcTaskService(app: FastifyInstance) {
   return new NpcTaskService(
     new NpcTaskRepository(app.di.db),
     createNpcMemoryService(app),
-    createNpcTaskCopywriter(app)
+    createNpcTaskProposalPort(app)
   );
 }
 
@@ -261,54 +261,68 @@ function createAiOrchestrator(app: FastifyInstance) {
   });
 }
 
-function createNpcTaskCopywriter(app: FastifyInstance) {
+function createNpcTaskProposalPort(app: FastifyInstance) {
   const ai = createAiOrchestrator(app);
   const dialogueRepo = new DialogueRepository(app.di.db);
 
   return {
-    polishTaskCopy: async (input: NpcTaskCopywriterInput) => {
+    proposeNpcTask: async (input: NpcTaskProposalInput) => {
       const item = getItemById(input.requestedItemId);
-      const context: NpcTaskCopyPromptContext = {
+      const itemName = item?.name ?? input.requestedItemId;
+      const context: NpcTaskProposalPromptContext = {
         npc: {
           name: input.actor.name,
           profession: describeNpcProfession(input.actor.profession),
           personality: describeNpcPersonality(input.actor.npcKey),
           currentState: describeNpcTaskState(input)
         },
-        task: {
+        candidate: {
           needType: input.needType,
-          requestedItemName: item?.name ?? input.requestedItemId,
+          requestedItemName: itemName,
+          requestedItemId: input.requestedItemId,
           requestedQuantity: input.requestedQuantity,
           rewardCopper: input.rewardCopper,
-          deterministicTitle: input.title,
-          deterministicDescription: input.description
+          expiresInHours: 24
+        },
+        economy: {
+          npcCopperBalance: input.actor.copperBalance,
+          npcCopperReserve: 5,
+          canEscrowReward: input.actor.copperBalance >= input.rewardCopper + 5
+        },
+        relationship: {
+          summary: "首版 AI 任务提案只读取真实需求，不使用关系调整奖励。"
         },
         world: {
           settlement: "黑松哨站",
-          marketSummary: "任务文案只使用 NPC 当前库存和合法任务草案，不读取或改变集市价格。"
+          marketSummary: "任务提案只使用 NPC 当前库存和合法任务草案，不读取或改变集市价格。"
         }
       };
-      const result = await ai.polishNpcTaskCopy({ context });
+      const result = await ai.proposeNpcTask({ context });
 
       await dialogueRepo.createAiCallLog({
-        purpose: "npc_task_copy",
+        purpose: "npc_task_proposal",
         status: result.status,
         provider: result.provider,
         model: result.model,
-        promptVersion: NPC_TASK_COPY_PROMPT_VERSION,
+        promptVersion: NPC_TASK_PROPOSAL_PROMPT_VERSION,
         accountId: null,
         characterId: null,
         npcActorId: input.actor.id,
-        requestHash: hashNpcTaskCopyRequest(input),
-        inputSummary: summarizeNpcTaskCopyInput(input, item?.name ?? input.requestedItemId),
-        outputSummary: truncateSummary(`${result.title}：${result.description}`),
+        requestHash: hashNpcTaskProposalRequest(input),
+        inputSummary: summarizeNpcTaskProposalInput(input, itemName),
+        outputSummary: truncateSummary(`${result.title}：${result.description}｜${result.npcReason}`),
         latencyMs: result.latencyMs,
         inputTokens: result.inputTokens,
         outputTokens: result.outputTokens,
         errorCode: result.fallbackReason
       });
 
-      return { title: result.title, description: result.description };
+      return {
+        title: result.title,
+        description: result.description,
+        npcReason: result.npcReason,
+        status: result.status
+      };
     }
   };
 }
@@ -400,14 +414,14 @@ function describeNpcPersonality(npcKey: string) {
   return "谨慎、只根据自己真实需求发布请求。";
 }
 
-function describeNpcTaskState(input: NpcTaskCopywriterInput) {
+function describeNpcTaskState(input: NpcTaskProposalInput) {
   const inventoryLine = input.inventory.length
-    ? input.inventory.map((item) => `${item.itemId} x${item.quantity}`).join("，")
+    ? input.inventory.map((entry) => `${entry.itemId} x${entry.quantity}`).join("，")
     : "库存为空";
   return `饱腹度 ${input.actor.hunger}/5，铜币 ${input.actor.copperBalance}，库存：${inventoryLine}。`;
 }
 
-function hashNpcTaskCopyRequest(input: NpcTaskCopywriterInput) {
+function hashNpcTaskProposalRequest(input: NpcTaskProposalInput) {
   return createHash("sha256")
     .update(
       JSON.stringify({
@@ -417,7 +431,8 @@ function hashNpcTaskCopyRequest(input: NpcTaskCopywriterInput) {
         requestedQuantity: input.requestedQuantity,
         rewardCopper: input.rewardCopper,
         title: input.title,
-        description: input.description
+        description: input.description,
+        proposalReason: input.proposalReason
       })
     )
     .digest("hex");
@@ -440,7 +455,7 @@ function hashNpcMemoryCompressionRequest(input: Parameters<NpcMemoryCompressorPo
     .digest("hex");
 }
 
-function summarizeNpcTaskCopyInput(input: NpcTaskCopywriterInput, itemName: string) {
+function summarizeNpcTaskProposalInput(input: NpcTaskProposalInput, itemName: string) {
   return truncateSummary(
     `${input.actor.name}:${input.needType}:${itemName}x${input.requestedQuantity}:${input.rewardCopper}铜`
   );

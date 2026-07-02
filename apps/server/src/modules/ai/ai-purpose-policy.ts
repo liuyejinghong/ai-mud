@@ -1,6 +1,7 @@
 import {
   NPC_DIALOGUE_PROMPT_VERSION,
   NPC_MEMORY_COMPRESSION_PROMPT_VERSION,
+  NPC_TASK_PROPOSAL_PROMPT_VERSION,
   NPC_TASK_COPY_PROMPT_VERSION,
   WORLD_RUMOR_PROMPT_VERSION
 } from "@ai-mud/ai-prompts";
@@ -57,6 +58,16 @@ export const AI_PURPOSE_POLICIES: Record<AiCallPurpose, AiPurposePolicy> = {
     fallbackRequired: true,
     promptVersion: WORLD_RUMOR_PROMPT_VERSION,
     allowedStateEffects: "none"
+  },
+  npc_task_proposal: {
+    purpose: "npc_task_proposal",
+    authorityClass: "classification",
+    mutatesWorldState: false,
+    maxOutputTokens: 220,
+    cooldownMs: 0,
+    fallbackRequired: true,
+    promptVersion: NPC_TASK_PROPOSAL_PROMPT_VERSION,
+    allowedStateEffects: "none"
   }
 };
 
@@ -64,5 +75,6 @@ export const AI_PURPOSE_ORDER: AiCallPurpose[] = [
   "npc_dialogue",
   "npc_task_copy",
   "npc_memory_compression",
-  "world_rumor"
+  "world_rumor",
+  "npc_task_proposal"
 ];

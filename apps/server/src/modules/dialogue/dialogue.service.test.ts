@@ -98,6 +98,8 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
       status: "open",
       title: "炉火缺矿",
       description: "伯林缺少基础铁矿石。",
+      proposalSource: "template",
+      proposalReason: "基础铁矿石不足，修理炉火和补强装备都会被拖慢。",
       requestedItemId: "iron_ore",
       requestedQuantity: 3,
       rewardCopper: 36,
