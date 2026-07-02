@@ -10,7 +10,6 @@ import { getItemById } from "@ai-mud/content";
 import {
   CHARACTER_CLASS_IDS,
   DIRECTIONS,
-  ITEM_IDS,
   type CreateCharacterRequestDto,
   type Direction,
   type EatFoodRequestDto,
@@ -69,8 +68,13 @@ const gatherSchema = z.object({
   plannedMinutes: z.union([z.literal(10), z.literal(30), z.literal(120)]).default(10)
 });
 
+const knownItemIdSchema = z
+  .string()
+  .min(1)
+  .refine((itemId) => getItemById(itemId) !== null, "Unknown item id");
+
 const marketTradeSchema = z.object({
-  itemId: z.enum(ITEM_IDS),
+  itemId: knownItemIdSchema,
   quantity: z.number().int().min(1).max(999)
 });
 
@@ -79,7 +83,10 @@ const repairEquipmentSchema = z.object({
 });
 
 const eatFoodSchema = z.object({
-  itemId: z.enum(ITEM_IDS)
+  itemId: knownItemIdSchema.refine(
+    (itemId) => getItemById(itemId)?.category === "food",
+    "Item is not food"
+  )
 });
 
 const dialogueMessageSchema = z.object({

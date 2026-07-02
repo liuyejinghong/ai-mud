@@ -3,8 +3,10 @@ import {
   CORRUPT_FOREST,
   FIRST_NPCS,
   FIRST_ITEMS,
+  getFoodItemById,
   getNpcByKey,
   getResourceById,
+  isFoodDefinition,
   type NpcDefinition
 } from "@ai-mud/content";
 import {
@@ -500,7 +502,7 @@ export class NpcService {
     if (intent.intent === "none") return false;
 
     if (intent.intent === "eat_food") {
-      const item = FIRST_ITEMS.find((entry) => entry.id === intent.itemId);
+      const item = getFoodItemById(intent.itemId);
       await this.addNpcInventoryItem(actor.id, intent.itemId, -1);
       await this.repo.updateNpcActor({
         actorId: actor.id,
@@ -521,7 +523,7 @@ export class NpcService {
       });
       if (actor.copperBalance < quote.totalCopper) return true;
 
-      const item = FIRST_ITEMS.find((entry) => entry.id === marketFood.itemId);
+      const item = getFoodItemById(marketFood.itemId);
       await this.repo.updateNpcActor({
         actorId: actor.id,
         copperBalance: actor.copperBalance - quote.totalCopper,
@@ -646,7 +648,7 @@ export class NpcService {
   }
 
   private isFoodItem(itemId: ItemId | string) {
-    return FIRST_ITEMS.some((item) => item.id === itemId && item.category === "food");
+    return getFoodItemById(itemId) !== null;
   }
 
   private findAvailableMarketFood(marketInventory: NpcMarketInventoryRecord[]) {
@@ -700,10 +702,10 @@ export class NpcService {
           typeof item.itemId === "string" && this.isKnownItem(item.itemId)
         )
         .map((item) => ({ itemId: item.itemId, quantity: item.quantity })),
-      foods: FIRST_ITEMS.filter((item) => item.category === "food").map((item) => ({
+      foods: FIRST_ITEMS.filter(isFoodDefinition).map((item) => ({
         itemId: item.id,
         itemLevel: item.itemLevel,
-        satietyRestore: item.satietyRestore ?? 1
+        satietyRestore: item.satietyRestore
       }))
     });
 

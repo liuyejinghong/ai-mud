@@ -1,8 +1,6 @@
 import type { GameLocationId, GridPositionDto, ItemId, NpcProfession } from "@ai-mud/shared";
-import { ITEM_DEFINITIONS } from "./items.js";
-import type { FoodDefinition, MaterialDefinition, OreDefinition } from "./items.js";
-
-type MarketItemDefinition = FoodDefinition | MaterialDefinition | OreDefinition;
+import { listMarketItemDefinitions } from "./items.js";
+import type { MarketItemDefinition } from "./items.js";
 
 export interface ResourceDefinition {
   id: string;
@@ -63,9 +61,7 @@ export interface NpcDefinition {
   paysWages: boolean;
 }
 
-export const FIRST_ITEMS = ITEM_DEFINITIONS.filter(
-  (item) => item.category !== "equipment"
-) as MarketItemDefinition[];
+export const FIRST_ITEMS: MarketItemDefinition[] = listMarketItemDefinitions();
 
 export const FIRST_MONSTERS: MonsterDefinition[] = [
   {

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { AFFIX_POOLS, EQUIPMENT_SLOTS, ITEM_DEFINITIONS, getItemById } from "./items.js";
+import {
+  AFFIX_POOLS,
+  EQUIPMENT_SLOTS,
+  ITEM_DEFINITIONS,
+  getFoodItemById,
+  getItemById,
+  getMarketItemById,
+  listMarketItemDefinitions
+} from "./items.js";
 import { CORRUPT_FOREST, FIRST_MONSTERS, FIRST_NPCS } from "./world.js";
 
 const itemIds = ITEM_DEFINITIONS.map((item) => item.id);
@@ -36,6 +44,14 @@ describe("item registry", () => {
     for (const itemId of referencedIds) {
       expect(registeredIds.has(itemId), itemId).toBe(true);
     }
+  });
+
+  it("narrows market and food item lookups without leaking equipment into markets", () => {
+    expect(listMarketItemDefinitions().map((item) => item.id)).not.toContain("training_sword");
+    expect(getMarketItemById("training_sword")).toBeNull();
+    expect(getMarketItemById("iron_ore")).toMatchObject({ category: "ore" });
+    expect(getFoodItemById("iron_ore")).toBeNull();
+    expect(getFoodItemById("wild_berry")).toMatchObject({ category: "food" });
   });
 
   it("migrates starter equipment with existing combat values", () => {

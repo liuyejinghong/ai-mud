@@ -49,6 +49,8 @@ export type ItemDefinition =
   | OreDefinition
   | EquipmentDefinition;
 
+export type MarketItemDefinition = FoodDefinition | MaterialDefinition | OreDefinition;
+
 export type ItemId = (typeof ITEM_DEFINITIONS)[number]["id"];
 
 export type AffixStat =
@@ -221,4 +223,31 @@ export const AFFIX_POOLS = [
 
 export function getItemById(itemId: string): ItemDefinition | null {
   return ITEM_DEFINITIONS.find((item) => item.id === itemId) ?? null;
+}
+
+export function listMarketItemDefinitions(): MarketItemDefinition[] {
+  return ITEM_DEFINITIONS.flatMap((item) => {
+    if (item.category === "food" || item.category === "material" || item.category === "ore") {
+      return [item];
+    }
+    return [];
+  });
+}
+
+export function isMarketItemDefinition(item: ItemDefinition): item is MarketItemDefinition {
+  return item.category === "food" || item.category === "material" || item.category === "ore";
+}
+
+export function isFoodDefinition(item: ItemDefinition): item is FoodDefinition {
+  return item.category === "food";
+}
+
+export function getMarketItemById(itemId: string): MarketItemDefinition | null {
+  const item = getItemById(itemId);
+  return item && isMarketItemDefinition(item) ? item : null;
+}
+
+export function getFoodItemById(itemId: string): FoodDefinition | null {
+  const item = getItemById(itemId);
+  return item && isFoodDefinition(item) ? item : null;
 }

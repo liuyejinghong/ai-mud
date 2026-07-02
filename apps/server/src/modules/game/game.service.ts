@@ -3,8 +3,11 @@ import {
   CORRUPT_FOREST,
   FIRST_ITEMS,
   getEncounterById,
+  getFoodItemById,
   getItemById,
-  getMonsterById
+  getMarketItemById,
+  getMonsterById,
+  isFoodDefinition
 } from "@ai-mud/content";
 import {
   addInventoryItem,
@@ -733,8 +736,8 @@ export class GameService {
         throw new GameServiceError("VALIDATION_ERROR", "你现在不饿。");
       }
 
-      const item = getItemById(input.itemId);
-      if (!item || item.category !== "food" || !item.satietyRestore) {
+      const item = getFoodItemById(input.itemId);
+      if (!item || !item.satietyRestore) {
         throw new GameServiceError("VALIDATION_ERROR", "这个物品不能食用。");
       }
 
@@ -812,7 +815,7 @@ export class GameService {
       settlementName: "黑松哨站市政集市",
       items: marketInventory
         .map((marketItem) => {
-          const item = getItemById(marketItem.itemId);
+          const item = getMarketItemById(marketItem.itemId);
           if (!item) return null;
           const buyQuote = calculateMarketQuote({
             direction: "buy",
@@ -829,7 +832,7 @@ export class GameService {
             quantity: 1
           });
 
-          return {
+          const dto: MarketDto["items"][number] = {
             itemId: item.id,
             name: item.name,
             category: item.category,
@@ -842,6 +845,7 @@ export class GameService {
             buyTax: formatMoney(buyQuote.taxCopper),
             sellTax: formatMoney(sellQuote.taxCopper)
           };
+          return dto;
         })
         .filter((item): item is MarketDto["items"][number] => item !== null)
     };
@@ -861,7 +865,7 @@ export class GameService {
   }
 
   private foodDefinitions() {
-    return FIRST_ITEMS.filter((item) => item.category === "food" && item.satietyRestore).map(
+    return FIRST_ITEMS.filter(isFoodDefinition).filter((item) => item.satietyRestore).map(
       (item) => ({
         itemId: item.id,
         itemLevel: item.itemLevel,
