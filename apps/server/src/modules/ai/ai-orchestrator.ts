@@ -16,6 +16,8 @@ import type { AiCallStatus } from "@ai-mud/shared";
 import type { AiProvider } from "./ai-provider.js";
 import { buildTemplateNpcReply } from "./template-ai-provider.js";
 
+type AiProviderCallStatus = Exclude<AiCallStatus, "disabled">;
+
 export interface AiOrchestratorOptions {
   enabled: boolean;
   providerName: string;
@@ -27,7 +29,7 @@ export interface AiOrchestratorOptions {
 
 export interface AiDialogueReply {
   reply: string;
-  status: AiCallStatus;
+  status: AiProviderCallStatus;
   provider: string;
   model: string;
   fallbackReason: string | null;
@@ -39,7 +41,7 @@ export interface AiDialogueReply {
 export interface AiTaskCopyResult {
   title: string;
   description: string;
-  status: AiCallStatus;
+  status: AiProviderCallStatus;
   provider: string;
   model: string;
   fallbackReason: string | null;
@@ -50,7 +52,7 @@ export interface AiTaskCopyResult {
 
 export interface AiMemoryCompressionResult {
   summary: string;
-  status: AiCallStatus;
+  status: AiProviderCallStatus;
   provider: string;
   model: string;
   fallbackReason: string | null;
@@ -61,7 +63,7 @@ export interface AiMemoryCompressionResult {
 
 export interface AiWorldRumorResult {
   message: string;
-  status: AiCallStatus;
+  status: AiProviderCallStatus;
   provider: string;
   model: string;
   fallbackReason: string | null;
@@ -268,7 +270,7 @@ export class AiOrchestrator {
   private templateReply(
     context: NpcDialoguePromptContext,
     fallbackReason: string,
-    status: Exclude<AiCallStatus, "success">
+    status: Exclude<AiProviderCallStatus, "success">
   ): AiDialogueReply {
     return {
       reply: buildTemplateNpcReply(context),
@@ -285,7 +287,7 @@ export class AiOrchestrator {
   private templateTaskCopy(
     context: NpcTaskCopyPromptContext,
     fallbackReason: string,
-    status: Exclude<AiCallStatus, "success">
+    status: Exclude<AiProviderCallStatus, "success">
   ): AiTaskCopyResult {
     return {
       title: context.task.deterministicTitle,
@@ -303,7 +305,7 @@ export class AiOrchestrator {
   private templateMemoryCompression(
     context: NpcMemoryCompressionPromptContext,
     fallbackReason: string,
-    status: Exclude<AiCallStatus, "success">
+    status: Exclude<AiProviderCallStatus, "success">
   ): AiMemoryCompressionResult {
     return {
       summary: context.fallbackSummary,
@@ -320,7 +322,7 @@ export class AiOrchestrator {
   private templateWorldRumor(
     context: WorldRumorPromptContext,
     fallbackReason: string,
-    status: Exclude<AiCallStatus, "success">
+    status: Exclude<AiProviderCallStatus, "success">
   ): AiWorldRumorResult {
     return {
       message: context.fallbackMessage,

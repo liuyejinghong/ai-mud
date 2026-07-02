@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import type {
   AiCallLogDto,
+  AiLayerStatusDto,
   EconomySnapshotDto,
   NpcMemoryEntryDto,
   NpcMemoryFragmentDto,
@@ -133,6 +134,36 @@ const aiCallLogs: AiCallLogDto[] = [
   }
 ];
 
+const aiLayerStatus: AiLayerStatusDto = {
+  providerEnabled: true,
+  providerName: "deepseek",
+  model: "deepseek-v4-flash",
+  promptVersion: 6,
+  purposes: [
+    {
+      purpose: "npc_dialogue",
+      authorityClass: "presentation",
+      enabled: true,
+      mutatesWorldState: false,
+      maxOutputTokens: 180,
+      cooldownMs: 5000,
+      fallbackRequired: true,
+      promptVersion: 1,
+      callCount24h: 2,
+      successCount24h: 1,
+      fallbackCount24h: 0,
+      rejectedCount24h: 0,
+      errorCount24h: 0,
+      disabledCount24h: 1,
+      totalInputTokens24h: 120,
+      totalOutputTokens24h: 36,
+      averageLatencyMs24h: 240,
+      latestStatus: "disabled",
+      latestAt: "2026-07-01T12:04:00.000Z"
+    }
+  ]
+};
+
 const npcMemoryEntries: NpcMemoryEntryDto[] = [
   {
     id: "mem-1",
@@ -186,6 +217,7 @@ function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
     }),
     getWorldRuntimeStatus: async () => worldRuntimeStatus,
     listAiCallLogs: async () => aiCallLogs,
+    getAiLayerStatus: async () => aiLayerStatus,
     listNpcMemory: async () => ({
       entries: npcMemoryEntries,
       fragments: npcMemoryFragments
@@ -607,6 +639,42 @@ describe("registerAdminRoutes", () => {
       generatedAt: "2026-07-01T12:05:00.000Z",
       aiCalls: aiCallLogs
     });
+  });
+
+  it("guards AI layer status behind an admin session", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => null
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/ai-layer/status"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: { code: "UNAUTHENTICATED", message: "Admin session required" }
+    });
+  });
+
+  it("returns AI layer governance status for admins", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      getAiLayerStatus: async () => aiLayerStatus
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/ai-layer/status"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(aiLayerStatus);
+    expect(response.json().purposes[0].mutatesWorldState).toBe(false);
   });
 
   it("guards NPC memory behind an admin session", async () => {

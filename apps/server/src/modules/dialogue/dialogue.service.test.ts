@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { AiCallLogDto } from "@ai-mud/shared";
 import type { AiDialogueReply } from "../ai/ai-orchestrator.js";
 import { DialogueService, DialogueServiceError } from "./dialogue.service.js";
 import type { InventoryRecord } from "../game/game.repository.js";
@@ -78,6 +79,7 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
   const memoryEvents: string[] = [];
   const systemMemoryEvents: string[] = [];
   const aiContexts: unknown[] = [];
+  let latestAiCallLog: AiCallLogDto | null = null;
   let playerCopper = character.copperBalance;
   let npcCopper = npcs[0]!.copperBalance;
   let playerInventory: InventoryRecord[] = [{ itemId: "wild_berry", quantity: 1 }];
@@ -133,6 +135,7 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
       createAiCallLog: async (input: CreateAiCallLogInput) => {
         aiLogs.push(input);
       },
+      findLatestAiCallLog: async () => latestAiCallLog,
       listAiCallLogs: async () => []
     },
     gameRepo: {
@@ -232,6 +235,9 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
     },
     setVerifiedFavorProfile: (next: VerifiedFavorProfile) => {
       verifiedFavorProfile = next;
+    },
+    setLatestAiCallLog: (next: AiCallLogDto | null) => {
+      latestAiCallLog = next;
     },
     getPlayerInventory: () => playerInventory,
     getNpcInventory: () => npcInventory,
@@ -340,6 +346,95 @@ describe("DialogueService", () => {
     expect(response.ai.fallbackReason).toBe("reward_promise");
     expect(response.messages.at(-1)?.message).not.toContain("金币");
     expect(aiLogs[0]).toMatchObject({ status: "rejected", errorCode: "reward_promise" });
+  });
+
+  it("skips free-text AI calls during NPC dialogue cooldown", async () => {
+    const { service, aiLogs, aiContexts, messages, setLatestAiCallLog } = buildService();
+    setLatestAiCallLog({
+      id: "ai-call-previous",
+      purpose: "npc_dialogue",
+      status: "success",
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      promptVersion: 1,
+      accountId: "account-1",
+      characterId: "character-1",
+      npcActorId: "npc-blacksmith",
+      inputSummary: "刚刚聊过",
+      outputSummary: "刚刚回复过",
+      latencyMs: 80,
+      inputTokens: 40,
+      outputTokens: 20,
+      errorCode: null,
+      createdAt: "2026-07-01T11:59:58.000Z"
+    });
+
+    const response = await service.sendDialogueMessage("account-1", "npc-blacksmith", "最近怎么样？");
+
+    expect(aiContexts).toEqual([]);
+    expect(response.ai).toEqual({
+      status: "disabled",
+      provider: "cooldown",
+      model: "npc-dialogue-cooldown",
+      fallbackReason: "cooldown"
+    });
+    expect(response.messages.at(-1)?.message).toBe("我需要想一想，稍后再说。");
+    expect(messages).toHaveLength(2);
+    expect(aiLogs).toEqual([
+      expect.objectContaining({
+        purpose: "npc_dialogue",
+        status: "disabled",
+        inputSummary: "cooldown",
+        outputSummary: "我需要想一想，稍后再说。"
+      })
+    ]);
+  });
+
+  it("does not apply dialogue cooldown to deterministic resource requests", async () => {
+    const {
+      service,
+      aiLogs,
+      aiContexts,
+      setLatestAiCallLog,
+      setRelationship,
+      getNpcInventory,
+      getPlayerInventory
+    } = buildService();
+    setLatestAiCallLog({
+      id: "ai-call-previous",
+      purpose: "npc_dialogue",
+      status: "success",
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      promptVersion: 1,
+      accountId: "account-1",
+      characterId: "character-1",
+      npcActorId: "npc-blacksmith",
+      inputSummary: "刚刚聊过",
+      outputSummary: "刚刚回复过",
+      latencyMs: 80,
+      inputTokens: 40,
+      outputTokens: 20,
+      errorCode: null,
+      createdAt: "2026-07-01T11:59:58.000Z"
+    });
+    setRelationship(relationship({ familiarity: 2, trust: 0 }));
+
+    const response = await service.sendDialogueMessage(
+      "account-1",
+      "npc-blacksmith",
+      "能不能给我一块基础铁矿石？"
+    );
+
+    expect(response.ai.provider).toBe("rules");
+    expect(response.ai.fallbackReason).toBe("rule_verified");
+    expect(getNpcInventory()).toEqual([{ itemId: "iron_ore", quantity: 4 }]);
+    expect(getPlayerInventory()).toEqual([
+      { itemId: "wild_berry", quantity: 1 },
+      { itemId: "iron_ore", quantity: 1 }
+    ]);
+    expect(aiLogs).toEqual([]);
+    expect(aiContexts).toEqual([]);
   });
 
   it("grants a small requested item only from real NPC inventory and skips AI authority", async () => {

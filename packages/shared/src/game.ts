@@ -175,12 +175,13 @@ export interface WorldRuntimeStatusDto {
   leaseUntil: string | null;
 }
 
-export type AiCallStatus = "success" | "fallback" | "rejected" | "error";
+export type AiCallStatus = "success" | "fallback" | "rejected" | "error" | "disabled";
 export type AiCallPurpose =
   | "npc_dialogue"
   | "npc_task_copy"
   | "npc_memory_compression"
   | "world_rumor";
+export type AiAuthorityClass = "presentation" | "summary" | "classification";
 export type NpcDialogueSpeakerType = "player" | "npc" | "system";
 
 export type RumorSourceType =
@@ -251,6 +252,36 @@ export interface AiCallLogDto {
   outputTokens: number | null;
   errorCode: string | null;
   createdAt: string;
+}
+
+export interface AiPurposeStatusDto {
+  purpose: AiCallPurpose;
+  authorityClass: AiAuthorityClass;
+  enabled: boolean;
+  mutatesWorldState: false;
+  maxOutputTokens: number;
+  cooldownMs: number;
+  fallbackRequired: true;
+  promptVersion: number;
+  callCount24h: number;
+  successCount24h: number;
+  fallbackCount24h: number;
+  rejectedCount24h: number;
+  errorCount24h: number;
+  disabledCount24h: number;
+  totalInputTokens24h: number;
+  totalOutputTokens24h: number;
+  averageLatencyMs24h: number | null;
+  latestStatus: AiCallStatus | null;
+  latestAt: string | null;
+}
+
+export interface AiLayerStatusDto {
+  providerEnabled: boolean;
+  providerName: string;
+  model: string | null;
+  promptVersion: number;
+  purposes: AiPurposeStatusDto[];
 }
 
 export type NpcMemorySourceType = "dialogue" | "system";

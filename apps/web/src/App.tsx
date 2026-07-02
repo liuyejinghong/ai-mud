@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { AiCallAdmin } from "./features/admin/AiCallAdmin";
+import { AiLayerStatusAdmin } from "./features/admin/AiLayerStatusAdmin";
 import { ActivationCodeAdmin } from "./features/admin/ActivationCodeAdmin";
 import { EconomyAdmin } from "./features/admin/EconomyAdmin";
 import { NpcAdmin } from "./features/admin/NpcAdmin";
@@ -41,6 +42,7 @@ export function App() {
           <ActivationCodeAdmin csrfToken={session.csrfToken} />
           <EconomyAdmin />
           <NpcAdmin csrfToken={session.csrfToken} />
+          <AiLayerStatusAdmin />
           <AiCallAdmin />
           <NpcMemoryAdmin />
         </>

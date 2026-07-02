@@ -4,9 +4,10 @@ import type {
   AiCallStatus,
   NpcDialogueSpeakerType
 } from "@ai-mud/shared";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import { aiCallLogs, npcDialogueMessages, npcRelationships } from "../../db/schema.js";
+import { summarizeAiCallLogs, type AiPurposeSummaryRow } from "../ai/ai-governance.service.js";
 
 type DialogueDb = Pick<Db, "insert" | "select" | "update">;
 
@@ -218,5 +219,36 @@ export class DialogueRepository {
       .limit(input.limit);
 
     return rows.map(toAiCallLog);
+  }
+
+  async findLatestAiCallLog(input: {
+    accountId: string;
+    npcActorId: string;
+    purpose: AiCallPurpose;
+  }): Promise<AiCallLogDto | null> {
+    const [row] = await this.db
+      .select()
+      .from(aiCallLogs)
+      .where(
+        and(
+          eq(aiCallLogs.accountId, input.accountId),
+          eq(aiCallLogs.npcActorId, input.npcActorId),
+          eq(aiCallLogs.purpose, input.purpose)
+        )
+      )
+      .orderBy(desc(aiCallLogs.createdAt))
+      .limit(1);
+
+    return row ? toAiCallLog(row) : null;
+  }
+
+  async summarizeByPurposeSince(since: Date): Promise<AiPurposeSummaryRow[]> {
+    const rows = await this.db
+      .select()
+      .from(aiCallLogs)
+      .where(gte(aiCallLogs.createdAt, since))
+      .orderBy(desc(aiCallLogs.createdAt));
+
+    return summarizeAiCallLogs(rows.map(toAiCallLog));
   }
 }

@@ -19,6 +19,7 @@ import {
 } from "@ai-mud/shared";
 import { createHash } from "node:crypto";
 import type { AiDialogueReply } from "../ai/ai-orchestrator.js";
+import { AI_PURPOSE_POLICIES } from "../ai/ai-purpose-policy.js";
 import type { CharacterRecord, InventoryRecord, MarketInventoryRecord } from "../game/game.repository.js";
 import type { VerifiedFavorProfile } from "../npc-memory/npc-memory.service.js";
 import type {
@@ -66,6 +67,11 @@ export interface DialogueRepositoryPort {
   }): Promise<RelationshipRecord | null>;
   upsertRelationship(input: UpsertRelationshipInput): Promise<void>;
   createAiCallLog(input: CreateAiCallLogInput): Promise<void>;
+  findLatestAiCallLog(input: {
+    accountId: string;
+    npcActorId: string;
+    purpose: "npc_dialogue";
+  }): Promise<AiCallLogDto | null>;
   listAiCallLogs(input: { limit: number }): Promise<AiCallLogDto[]>;
 }
 
@@ -219,6 +225,15 @@ export class DialogueService {
       now
     });
     if (resourceReply) return resourceReply;
+
+    const cooldownReply = await this.tryHandleDialogueCooldown({
+      accountId,
+      resolved,
+      playerMessage,
+      playerRecordId: playerRecord.id,
+      now
+    });
+    if (cooldownReply) return cooldownReply;
 
     const promptContext = await this.buildPromptContext(resolved, playerMessage);
     const aiReply = await this.options.ai.replyToNpcDialogue({
@@ -539,6 +554,98 @@ export class DialogueService {
         provider: "rules",
         model: "npc-resource-request",
         fallbackReason: decision.reason
+      }
+    };
+  }
+
+  private async tryHandleDialogueCooldown(input: {
+    accountId: string;
+    resolved: ResolvedDialogueTarget;
+    playerMessage: string;
+    playerRecordId: string;
+    now: Date;
+  }): Promise<NpcDialogueResponseDto | null> {
+    const cooldownMs = AI_PURPOSE_POLICIES.npc_dialogue.cooldownMs;
+    if (cooldownMs <= 0) return null;
+
+    const latest = await this.options.dialogueRepo.findLatestAiCallLog({
+      accountId: input.accountId,
+      npcActorId: input.resolved.npc.id,
+      purpose: "npc_dialogue"
+    });
+    if (!latest) return null;
+
+    const elapsedMs = input.now.getTime() - new Date(latest.createdAt).getTime();
+    if (elapsedMs < 0 || elapsedMs >= cooldownMs) return null;
+
+    const reply = "我需要想一想，稍后再说。";
+    const npcRecord = await this.options.dialogueRepo.createDialogueMessage({
+      accountId: input.accountId,
+      characterId: input.resolved.character.id,
+      npcActorId: input.resolved.npc.id,
+      speakerType: "npc",
+      message: reply,
+      safetyFlags: ["cooldown"],
+      createdAt: input.now
+    });
+
+    await this.options.memory.recordDialogueExchange({
+      npcActorId: input.resolved.npc.id,
+      characterId: input.resolved.character.id,
+      playerName: input.resolved.character.name,
+      playerMessage: input.playerMessage,
+      npcReply: reply,
+      occurredAt: input.now,
+      sourceIds: [input.playerRecordId, npcRecord.id]
+    });
+    await this.options.dialogueRepo.upsertRelationship({
+      characterId: input.resolved.character.id,
+      npcActorId: input.resolved.npc.id,
+      familiarityDelta: 1,
+      trustDelta: 0,
+      shortSummary: `${input.resolved.character.name} 与 ${input.resolved.npc.name} 短时间内连续交谈。`,
+      interactedAt: input.now
+    });
+    await this.options.dialogueRepo.createAiCallLog({
+      purpose: "npc_dialogue",
+      status: "disabled",
+      provider: "cooldown",
+      model: "npc-dialogue-cooldown",
+      promptVersion: NPC_DIALOGUE_PROMPT_VERSION,
+      accountId: input.accountId,
+      characterId: input.resolved.character.id,
+      npcActorId: input.resolved.npc.id,
+      requestHash: hashDialogueRequest({
+        accountId: input.accountId,
+        characterId: input.resolved.character.id,
+        npcActorId: input.resolved.npc.id,
+        message: input.playerMessage,
+        createdAt: input.now.toISOString(),
+        reason: "cooldown"
+      }),
+      inputSummary: "cooldown",
+      outputSummary: reply,
+      latencyMs: null,
+      inputTokens: null,
+      outputTokens: null,
+      errorCode: "cooldown",
+      createdAt: input.now
+    });
+
+    const messages = await this.options.dialogueRepo.listDialogueMessages({
+      characterId: input.resolved.character.id,
+      npcActorId: input.resolved.npc.id,
+      limit: RECENT_DIALOGUE_LIMIT
+    });
+
+    return {
+      target: input.resolved.target,
+      messages: messages.map(toMessageDto),
+      ai: {
+        status: "disabled",
+        provider: "cooldown",
+        model: "npc-dialogue-cooldown",
+        fallbackReason: "cooldown"
       }
     };
   }

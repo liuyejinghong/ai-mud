@@ -3,6 +3,7 @@ import { formatMoney } from "@ai-mud/game-rules";
 import type {
   ActivationCodeDto,
   AiCallLogDto,
+  AiLayerStatusDto,
   EconomySnapshotDto,
   ErrorCode,
   MoneyDto,
@@ -12,11 +13,13 @@ import type {
   NpcSummaryDto,
   WorldRuntimeStatusDto
 } from "@ai-mud/shared";
+import { WORLD_COMPATIBILITY } from "@ai-mud/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { DrizzleActivationCodeRepository } from "../activation-code/activation-code.repository.js";
 import { ActivationCodeService } from "../activation-code/activation-code.service.js";
 import { DrizzleAuditWriter } from "../audit/audit.repository.js";
+import { AiGovernanceService } from "../ai/ai-governance.service.js";
 import type { AuditWriter } from "../audit/audit.service.js";
 import { AuthRepository } from "../auth/auth.repository.js";
 import { AuthService } from "../auth/auth.service.js";
@@ -54,6 +57,7 @@ export interface AdminRouteDependencies {
   getNpcSnapshot(): Promise<NpcSnapshotResponse>;
   getWorldRuntimeStatus(): Promise<WorldRuntimeStatusDto>;
   listAiCallLogs(): Promise<AiCallLogDto[]>;
+  getAiLayerStatus(): Promise<AiLayerStatusDto>;
   listNpcMemory(): Promise<{
     entries: NpcMemoryEntryDto[];
     fragments: NpcMemoryFragmentDto[];
@@ -280,6 +284,16 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
       const repo = new DialogueRepository(app.di.db);
       return repo.listAiCallLogs({ limit: 50 });
     },
+    getAiLayerStatus: async () => {
+      const repo = new DialogueRepository(app.di.db);
+      const service = new AiGovernanceService(repo, {
+        providerEnabled: app.config.AI_NPC_DIALOGUE_ENABLED,
+        providerName: app.config.AI_PROVIDER,
+        model: app.config.AI_NPC_DIALOGUE_ENABLED ? app.config.DEEPSEEK_MODEL : null,
+        promptVersion: WORLD_COMPATIBILITY.promptVersion
+      });
+      return service.getStatus(now());
+    },
     listNpcMemory: async () => {
       const memory = new NpcMemoryService(new NpcMemoryRepository(app.di.db));
       return memory.listAdminMemory({ limit: 50 });
@@ -390,6 +404,15 @@ export async function registerAdminRoutes(
       generatedAt: deps.now().toISOString(),
       aiCalls: await deps.listAiCallLogs()
     };
+  });
+
+  app.get("/admin/ai-layer/status", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+
+    return deps.getAiLayerStatus();
   });
 
   app.get("/admin/npc-memory", async (request, reply) => {

@@ -12,7 +12,8 @@ function statusText(status: AiCallLogDto["status"]) {
     success: "成功",
     fallback: "回退",
     rejected: "拒绝",
-    error: "错误"
+    error: "错误",
+    disabled: "跳过"
   };
   return labels[status];
 }

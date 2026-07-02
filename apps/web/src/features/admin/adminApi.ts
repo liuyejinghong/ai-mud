@@ -1,5 +1,6 @@
 import type {
   AiCallLogDto,
+  AiLayerStatusDto,
   CreateActivationCodeResponseDto,
   EconomySnapshotDto,
   MoneyDto,
@@ -94,6 +95,18 @@ export async function getAiCallLogs(): Promise<AiCallLogResponse> {
   }
 
   return response.json() as Promise<AiCallLogResponse>;
+}
+
+export async function getAiLayerStatus(): Promise<AiLayerStatusDto> {
+  const response = await fetch(`${API_BASE}/admin/ai-layer/status`, {
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to load AI layer status");
+  }
+
+  return response.json() as Promise<AiLayerStatusDto>;
 }
 
 export async function getNpcMemory(): Promise<NpcMemoryResponse> {

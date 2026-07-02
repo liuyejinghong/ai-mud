@@ -12,7 +12,10 @@ import {
   type GameStateDto,
   type MoneyDto,
   type NeedsDto,
+  type AiCallStatus,
+  type AiLayerStatusDto,
   type AiCallLogDto,
+  type AiPurposeStatusDto,
   type NpcDialogueMessageDto,
   type NpcDialogueResponseDto,
   type NpcDialogueTargetDto,
@@ -38,9 +41,9 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.6.8 GenerateRumor compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.6.8");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(17);
+  it("exposes v0.6.9 AI layer closeout compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.6.9");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(18);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(11);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(10);
@@ -414,6 +417,44 @@ describe("game contract", () => {
       outputSummary: "伯林记得阿岚多次提到基础铁矿石。"
     };
     expect(memoryCompressionAudit.purpose).toBe("npc_memory_compression");
+  });
+
+  it("describes AI layer purpose status for admin governance", () => {
+    const cooldownStatus: AiCallStatus = "disabled";
+    expect(cooldownStatus).toBe("disabled");
+
+    const purpose: AiPurposeStatusDto = {
+      purpose: "npc_dialogue",
+      authorityClass: "presentation",
+      enabled: true,
+      mutatesWorldState: false,
+      maxOutputTokens: 180,
+      cooldownMs: 5000,
+      fallbackRequired: true,
+      promptVersion: 1,
+      callCount24h: 3,
+      successCount24h: 1,
+      fallbackCount24h: 1,
+      rejectedCount24h: 0,
+      errorCount24h: 0,
+      disabledCount24h: 1,
+      totalInputTokens24h: 80,
+      totalOutputTokens24h: 40,
+      averageLatencyMs24h: 120,
+      latestStatus: "disabled",
+      latestAt: "2026-07-02T12:00:00.000Z"
+    };
+    const status: AiLayerStatusDto = {
+      providerEnabled: true,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      promptVersion: 6,
+      purposes: [purpose]
+    };
+
+    expect(status.purposes[0]?.mutatesWorldState).toBe(false);
+    expect(status.purposes[0]?.disabledCount24h).toBe(1);
+    expect(status.purposes[0]?.latestStatus).toBe("disabled");
   });
 
   it("describes NPC memory entries and compressed fragments", () => {
