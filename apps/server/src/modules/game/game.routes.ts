@@ -15,6 +15,7 @@ import {
   type EatFoodRequestDto,
   type ErrorCode,
   type GameStateDto,
+  type GameSyncResponseDto,
   type MarketDto,
   type MarketTradeRequestDto,
   type NpcDialogueResponseDto,
@@ -93,11 +94,16 @@ const dialogueMessageSchema = z.object({
   message: z.string().trim().min(1).max(NPC_DIALOGUE_MAX_PLAYER_CHARS)
 });
 
+const gameSyncQuerySchema = z.object({
+  cursor: z.coerce.number().int().min(0).optional()
+});
+
 export interface GameRouteDependencies {
   getCurrentAccount(request: FastifyRequest): Promise<PublicAccountRecord | null>;
   verifyGameMutation(request: FastifyRequest): Promise<boolean>;
   settleWorldIfDue(): Promise<void>;
   getState(accountId: string): Promise<GameStateDto>;
+  syncGame(accountId: string, cursor?: number): Promise<GameSyncResponseDto>;
   createCharacter(accountId: string, input: CreateCharacterRequestDto): Promise<GameStateDto>;
   enterCorruptForest(accountId: string): Promise<GameStateDto>;
   move(accountId: string, direction: Direction): Promise<GameStateDto>;
@@ -186,6 +192,7 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
       await app.di.worldRuntime.settleDue(new Date());
     },
     getState: async (accountId) => withNpcTasksAndRumors(accountId, await game.getState(accountId)),
+    syncGame: (accountId, cursor) => game.getSync(accountId, cursor),
     createCharacter: async (accountId, input) =>
       withNpcTasksAndRumors(accountId, await game.createCharacter(accountId, input)),
     enterCorruptForest: async (accountId) =>
@@ -532,6 +539,18 @@ export async function registerGameRoutes(app: FastifyInstance, maybeDependencies
     if (!account) return reply;
     await deps.settleWorldIfDue();
     return deps.getState(account.id);
+  });
+
+  app.get("/game/sync", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+
+    const parsed = gameSyncQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid sync cursor");
+    }
+
+    return deps.syncGame(account.id, parsed.data.cursor);
   });
 
   app.post("/game/characters", async (request, reply) => {

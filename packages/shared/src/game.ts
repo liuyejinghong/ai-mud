@@ -125,6 +125,22 @@ export interface GameLogEntryDto {
   createdAt: string;
 }
 
+export interface GameSyncEventDto {
+  id: number;
+  eventType: string;
+  stateDirty: boolean;
+  payload: Record<string, unknown>;
+  source: string;
+  createdAt: string;
+}
+
+export interface GameSyncResponseDto {
+  stateVersion: number;
+  state: GameStateDto | null;
+  events: GameSyncEventDto[];
+  nextCursor: number;
+}
+
 export interface NpcActionSummaryDto {
   actionType: "travel" | "gathering" | "market_buy" | "market_sell" | "eat" | "wage";
   description: string;

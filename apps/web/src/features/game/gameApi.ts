@@ -2,6 +2,7 @@ import type {
   CreateCharacterRequestDto,
   EatFoodRequestDto,
   GameStateDto,
+  GameSyncResponseDto,
   MarketDto,
   MarketTradeRequestDto,
   MoveRequestDto,
@@ -33,6 +34,11 @@ async function requestGame<T>(path: string, options?: RequestInit): Promise<T> {
 
 export function getGameState() {
   return requestGame<GameStateDto>("/game/state");
+}
+
+export function getGameSync(cursor?: number) {
+  const query = cursor === undefined ? "" : `?cursor=${encodeURIComponent(String(cursor))}`;
+  return requestGame<GameSyncResponseDto>(`/game/sync${query}`);
 }
 
 export function createCharacter(input: CreateCharacterRequestDto, csrfToken: string) {

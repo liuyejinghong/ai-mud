@@ -125,6 +125,12 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
     verifyGameMutation: async () => true,
     settleWorldIfDue: async () => undefined,
     getState: async () => baseState,
+    syncGame: async (_accountId, cursor = 0) => ({
+      stateVersion: cursor,
+      state: cursor > 0 ? null : baseState,
+      events: [],
+      nextCursor: cursor
+    }),
     createCharacter: async () => baseState,
     enterCorruptForest: async () => ({
       ...baseState,
@@ -216,6 +222,57 @@ describe("registerGameRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(calls).toEqual(["settled", "state"]);
+  });
+
+  it("returns initial sync state without settling the world", async () => {
+    const calls: string[] = [];
+    const app = buildGameRouteTestApp({
+      settleWorldIfDue: async () => {
+        calls.push("settled");
+      },
+      syncGame: async (accountId, cursor) => {
+        calls.push(`sync:${accountId}:${cursor ?? 0}`);
+        return {
+          stateVersion: 0,
+          state: baseState,
+          events: [],
+          nextCursor: 0
+        };
+      }
+    });
+
+    const response = await app.inject({ method: "GET", url: "/game/sync" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().state.locationTitle).toBe("黑松哨站");
+    expect(calls).toEqual(["sync:account-1:0"]);
+  });
+
+  it("passes sync cursors through without forcing full state", async () => {
+    const app = buildGameRouteTestApp({
+      syncGame: async (_accountId, cursor) => ({
+        stateVersion: 9,
+        state: null,
+        events: [
+          {
+            id: 9,
+            eventType: "ui.toast",
+            stateDirty: false,
+            payload: { message: "ok" },
+            source: "server",
+            createdAt: "2026-07-02T00:00:00.000Z"
+          }
+        ],
+        nextCursor: cursor ?? 9
+      })
+    });
+
+    const response = await app.inject({ method: "GET", url: "/game/sync?cursor=8" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().state).toBeNull();
+    expect(response.json().events[0].eventType).toBe("ui.toast");
+    expect(response.json().nextCursor).toBe(8);
   });
 
   it("creates one character and returns Blackpine Outpost state", async () => {

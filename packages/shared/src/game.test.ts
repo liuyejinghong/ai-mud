@@ -9,6 +9,7 @@ import {
   type EconomySnapshotDto,
   type EquipmentItemDto,
   type GameStateDto,
+  type GameSyncResponseDto,
   type MoneyDto,
   type NeedsDto,
   type AiCallStatus,
@@ -42,7 +43,7 @@ describe("game contract", () => {
 
   it("exposes v0.7.1 critical debt repair compatibility", () => {
     expect(PRODUCT_VERSION).toBe("0.7.1");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(20);
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(21);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(15);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(11);
@@ -65,6 +66,27 @@ describe("game contract", () => {
     const money: MoneyDto = { gold: 1, silver: 23, copper: 45, totalCopper: 12345 };
 
     expect(money).toEqual({ gold: 1, silver: 23, copper: 45, totalCopper: 12345 });
+  });
+
+  it("describes incremental game sync responses", () => {
+    const response: GameSyncResponseDto = {
+      stateVersion: 12,
+      state: null,
+      nextCursor: 12,
+      events: [
+        {
+          id: 12,
+          eventType: "inventory.changed",
+          stateDirty: true,
+          payload: { itemId: "iron_ore" },
+          source: "server",
+          createdAt: "2026-07-02T00:00:00.000Z"
+        }
+      ]
+    };
+
+    expect(response.events[0]?.stateDirty).toBe(true);
+    expect(response.state).toBeNull();
   });
 
   it("describes player hunger needs", () => {

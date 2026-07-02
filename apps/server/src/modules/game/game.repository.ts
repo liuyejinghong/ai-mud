@@ -6,7 +6,7 @@ import type {
   GridPositionDto,
   ItemId
 } from "@ai-mud/shared";
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gt, or } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import {
   characterActions,
@@ -16,7 +16,8 @@ import {
   gameEvents,
   marketInventory,
   marketTransactions,
-  mapInstances
+  mapInstances,
+  syncEvents
 } from "../../db/schema.js";
 
 type GameDb = Pick<Db, "insert" | "select" | "update">;
@@ -108,6 +109,15 @@ export interface MarketTransactionRecord {
   grossCopper: number;
   taxCopper: number;
   netCopper: number;
+  createdAt: Date;
+}
+
+export interface SyncEventRecord {
+  id: number;
+  eventType: string;
+  stateDirty: boolean;
+  payload: Record<string, unknown>;
+  source: string;
   createdAt: Date;
 }
 
@@ -218,6 +228,11 @@ function parseResourceCharges(value: unknown): Record<string, number> {
       (entry): entry is [string, number] => typeof entry[1] === "number"
     )
   );
+}
+
+function parseJsonObject(value: unknown): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
 }
 
 function isItemQuantity(value: unknown): value is { itemId: ItemId; quantity: number } {
@@ -658,6 +673,32 @@ export class GameRepository {
       .where(eq(marketTransactions.settlementId, settlementId));
 
     return rows.map(serializeMarketTransaction);
+  }
+
+  async listSyncEvents(input: {
+    accountId: string;
+    characterId: string | null;
+    cursor: number;
+    limit: number;
+  }): Promise<SyncEventRecord[]> {
+    const audiencePredicate = input.characterId
+      ? or(eq(syncEvents.accountId, input.accountId), eq(syncEvents.characterId, input.characterId))
+      : eq(syncEvents.accountId, input.accountId);
+    const rows = await this.db
+      .select()
+      .from(syncEvents)
+      .where(and(gt(syncEvents.id, input.cursor), audiencePredicate))
+      .orderBy(asc(syncEvents.id))
+      .limit(input.limit);
+
+    return rows.map((row) => ({
+      id: row.id,
+      eventType: row.eventType,
+      stateDirty: row.stateDirty,
+      payload: parseJsonObject(row.payload),
+      source: row.source,
+      createdAt: row.createdAt
+    }));
   }
 
   async findMapInstance(

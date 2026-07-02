@@ -39,6 +39,7 @@ import {
   type EquipmentItemDto,
   type RepairEquipmentRequestDto,
   type GameStateDto,
+  type GameSyncResponseDto,
   type GridPositionDto,
   type InventoryItemDto,
   type MarketDto,
@@ -259,15 +260,49 @@ function equipmentDefenseBonus(equipment: EquipmentRecord[]) {
 export class GameService {
   constructor(private readonly db: Db) {}
 
-  async getState(accountId: string): Promise<GameStateDto> {
+  async getState(
+    accountId: string,
+    options: { settle?: boolean } = { settle: true }
+  ): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
       const now = new Date();
-      await this.settleDueAction(repo, accountId, now);
-      await this.healExpiredInjury(repo, accountId, now);
-      const character = await repo.findCharacterByAccountId(accountId);
-      if (character) await this.settleHungerForCharacter(repo, character, now);
+      if (options.settle !== false) {
+        await this.settleDueAction(repo, accountId, now);
+        await this.healExpiredInjury(repo, accountId, now);
+        const character = await repo.findCharacterByAccountId(accountId);
+        if (character) await this.settleHungerForCharacter(repo, character, now);
+      }
       return this.buildState(repo, accountId, now);
+    });
+  }
+
+  async getSync(accountId: string, cursor = 0): Promise<GameSyncResponseDto> {
+    return this.db.transaction(async (tx) => {
+      const repo = new GameRepository(tx);
+      const character = await repo.findCharacterByAccountId(accountId);
+      const events = await repo.listSyncEvents({
+        accountId,
+        characterId: character?.id ?? null,
+        cursor,
+        limit: 100
+      });
+      const nextCursor = events.at(-1)?.id ?? cursor;
+      const includeState = cursor <= 0 || events.some((event) => event.stateDirty);
+
+      return {
+        stateVersion: nextCursor,
+        state: includeState ? await this.buildState(repo, accountId, new Date()) : null,
+        events: events.map((event) => ({
+          id: event.id,
+          eventType: event.eventType,
+          stateDirty: event.stateDirty,
+          payload: event.payload,
+          source: event.source,
+          createdAt: event.createdAt.toISOString()
+        })),
+        nextCursor
+      };
     });
   }
 
