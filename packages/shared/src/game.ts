@@ -176,6 +176,7 @@ export interface WorldRuntimeStatusDto {
 }
 
 export type AiCallStatus = "success" | "fallback" | "rejected" | "error";
+export type AiCallPurpose = "npc_dialogue" | "npc_task_copy";
 export type NpcDialogueSpeakerType = "player" | "npc" | "system";
 
 export interface NpcDialogueTargetDto {
@@ -211,7 +212,7 @@ export interface NpcDialogueResponseDto {
 
 export interface AiCallLogDto {
   id: string;
-  purpose: "npc_dialogue";
+  purpose: AiCallPurpose;
   status: AiCallStatus;
   provider: string;
   model: string;

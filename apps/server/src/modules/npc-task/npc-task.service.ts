@@ -9,6 +9,8 @@ const TASK_TTL_MS = 24 * 60 * 60 * 1000;
 const FOOD_ITEM_ID = "wild_berry" as const;
 const ORE_ITEM_ID = "iron_ore" as const;
 const NPC_COPPER_RESERVE = 5;
+const TASK_TITLE_MAX_CHARS = 18;
+const TASK_DESCRIPTION_MAX_CHARS = 96;
 
 export class NpcTaskServiceError extends Error {
   constructor(
@@ -61,10 +63,27 @@ interface TaskProposal {
   description: string;
 }
 
+export interface NpcTaskCopywriterInput {
+  actor: NpcActorRecord;
+  needType: NpcTaskNeedType;
+  requestedItemId: ItemId;
+  requestedQuantity: number;
+  rewardCopper: number;
+  title: string;
+  description: string;
+  inventory: NpcInventoryRecord[];
+  now: Date;
+}
+
+export interface NpcTaskCopywriterPort {
+  polishTaskCopy(input: NpcTaskCopywriterInput): Promise<Pick<TaskProposal, "title" | "description">>;
+}
+
 export class NpcTaskService {
   constructor(
     private readonly repo: NpcTaskRepositoryPort,
-    private readonly memory?: NpcTaskMemoryPort
+    private readonly memory?: NpcTaskMemoryPort,
+    private readonly copywriter?: NpcTaskCopywriterPort
   ) {}
 
   async syncOpenTasks(now: Date) {
@@ -80,6 +99,7 @@ export class NpcTaskService {
       if (!proposal) continue;
 
       if (actor.copperBalance < proposal.rewardCopper + NPC_COPPER_RESERVE) continue;
+      const copy = await this.polishProposal(actor, inventory, proposal, now);
 
       await this.repo.updateNpcCopper({
         actorId: actor.id,
@@ -88,8 +108,8 @@ export class NpcTaskService {
       await this.repo.createTask({
         npcActorId: actor.id,
         needType: proposal.needType,
-        title: proposal.title,
-        description: proposal.description,
+        title: copy.title,
+        description: copy.description,
         requestedItemId: proposal.requestedItemId,
         requestedQuantity: proposal.requestedQuantity,
         rewardCopper: proposal.rewardCopper,
@@ -240,6 +260,51 @@ export class NpcTaskService {
     }
 
     return null;
+  }
+
+  private async polishProposal(
+    actor: NpcActorRecord,
+    inventory: NpcInventoryRecord[],
+    proposal: TaskProposal,
+    now: Date
+  ): Promise<Pick<TaskProposal, "title" | "description">> {
+    if (!this.copywriter) return { title: proposal.title, description: proposal.description };
+
+    try {
+      const polished = await this.copywriter.polishTaskCopy({
+        actor,
+        needType: proposal.needType,
+        requestedItemId: proposal.requestedItemId,
+        requestedQuantity: proposal.requestedQuantity,
+        rewardCopper: proposal.rewardCopper,
+        title: proposal.title,
+        description: proposal.description,
+        inventory,
+        now
+      });
+
+      if (!this.isValidTaskCopy(polished)) {
+        return { title: proposal.title, description: proposal.description };
+      }
+
+      return {
+        title: polished.title.trim(),
+        description: polished.description.trim()
+      };
+    } catch {
+      return { title: proposal.title, description: proposal.description };
+    }
+  }
+
+  private isValidTaskCopy(value: Pick<TaskProposal, "title" | "description">) {
+    const title = value.title.trim();
+    const description = value.description.trim();
+    return (
+      title.length > 0 &&
+      description.length > 0 &&
+      [...title].length <= TASK_TITLE_MAX_CHARS &&
+      [...description].length <= TASK_DESCRIPTION_MAX_CHARS
+    );
   }
 
   private async requireCharacter(accountId: string) {

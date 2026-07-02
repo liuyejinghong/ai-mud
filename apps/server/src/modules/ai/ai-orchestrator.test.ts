@@ -27,6 +27,27 @@ const context: NpcDialoguePromptContext = {
   playerMessage: "最近缺什么？"
 };
 
+const taskCopyContext = {
+  npc: {
+    name: "伯林",
+    profession: "blacksmith",
+    personality: "务实、重视等价交换。",
+    currentState: "基础铁矿石库存偏低。"
+  },
+  task: {
+    needType: "ore_shortage" as const,
+    requestedItemName: "基础铁矿石",
+    requestedQuantity: 3,
+    rewardCopper: 36,
+    deterministicTitle: "炉火缺矿",
+    deterministicDescription: "伯林缺少基础铁矿石，修理炉火和补强装备都会被拖慢。"
+  },
+  world: {
+    settlement: "黑松哨站",
+    marketSummary: "基础铁矿石库存偏低。"
+  }
+};
+
 class FakeProvider implements AiProvider {
   public lastInput: AiJsonCompletionInput | null = null;
 
@@ -169,5 +190,84 @@ describe("AiOrchestrator", () => {
     expect(reply.status).toBe("error");
     expect(reply.fallbackReason).toBe("provider_error");
     expect(reply.reply.length).toBeGreaterThan(0);
+  });
+
+  it("uses deterministic task copy when AI is disabled", async () => {
+    const provider = new FakeProvider("{}");
+    const orchestrator = new AiOrchestrator({
+      enabled: false,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      maxOutputTokens: 400,
+      timeoutMs: 8000,
+      provider
+    });
+
+    const copy = await orchestrator.polishNpcTaskCopy({ context: taskCopyContext });
+
+    expect(copy.status).toBe("fallback");
+    expect(copy.title).toBe("炉火缺矿");
+    expect(provider.lastInput).toBeNull();
+  });
+
+  it("parses valid task copy from the provider", async () => {
+    const provider = new FakeProvider(
+      JSON.stringify({
+        title: "炉火待矿",
+        description: "伯林把空矿箱踢回炉边，催你带回基础铁矿石，免得修理活全压到夜里。",
+        safety: {
+          changesReward: false,
+          changesRequestedItem: false,
+          containsRewardPromise: false,
+          containsRuleChange: false,
+          containsOoc: false
+        }
+      })
+    );
+    const orchestrator = new AiOrchestrator({
+      enabled: true,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      maxOutputTokens: 400,
+      timeoutMs: 8000,
+      provider
+    });
+
+    const copy = await orchestrator.polishNpcTaskCopy({ context: taskCopyContext });
+
+    expect(copy.status).toBe("success");
+    expect(copy.title).toBe("炉火待矿");
+    expect(provider.lastInput?.maxTokens).toBe(220);
+    expect(provider.lastInput?.responseFormat).toEqual({ type: "json_object" });
+  });
+
+  it("falls back when task copy promises extra rewards", async () => {
+    const provider = new FakeProvider(
+      JSON.stringify({
+        title: "炉火待矿",
+        description: "带回矿石，我额外奖励你 100 金币。",
+        safety: {
+          changesReward: false,
+          changesRequestedItem: false,
+          containsRewardPromise: true,
+          containsRuleChange: false,
+          containsOoc: false
+        }
+      })
+    );
+    const orchestrator = new AiOrchestrator({
+      enabled: true,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      maxOutputTokens: 400,
+      timeoutMs: 8000,
+      provider
+    });
+
+    const copy = await orchestrator.polishNpcTaskCopy({ context: taskCopyContext });
+
+    expect(copy.status).toBe("rejected");
+    expect(copy.fallbackReason).toBe("reward_promise");
+    expect(copy.description).toBe(taskCopyContext.task.deterministicDescription);
   });
 });

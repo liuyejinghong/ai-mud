@@ -1,6 +1,9 @@
 import {
-  NPC_DIALOGUE_MAX_PLAYER_CHARS
+  NPC_DIALOGUE_MAX_PLAYER_CHARS,
+  NPC_TASK_COPY_PROMPT_VERSION,
+  type NpcTaskCopyPromptContext
 } from "@ai-mud/ai-prompts";
+import { getItemById } from "@ai-mud/content";
 import {
   CHARACTER_CLASS_IDS,
   DIRECTIONS,
@@ -19,6 +22,7 @@ import {
   type StartGatheringRequestDto
 } from "@ai-mud/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { AiOrchestrator } from "../ai/ai-orchestrator.js";
 import type { AiProvider } from "../ai/ai-provider.js";
@@ -31,7 +35,11 @@ import { NpcRepository } from "../npc/npc.repository.js";
 import { NpcMemoryRepository } from "../npc-memory/npc-memory.repository.js";
 import { NpcMemoryService } from "../npc-memory/npc-memory.service.js";
 import { NpcTaskRepository } from "../npc-task/npc-task.repository.js";
-import { NpcTaskService, NpcTaskServiceError } from "../npc-task/npc-task.service.js";
+import {
+  NpcTaskService,
+  NpcTaskServiceError,
+  type NpcTaskCopywriterInput
+} from "../npc-task/npc-task.service.js";
 import { GameRepository } from "./game.repository.js";
 import { GameService, GameServiceError } from "./game.service.js";
 
@@ -187,11 +195,12 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
 function createNpcTaskService(app: FastifyInstance) {
   return new NpcTaskService(
     new NpcTaskRepository(app.di.db),
-    new NpcMemoryService(new NpcMemoryRepository(app.di.db))
+    new NpcMemoryService(new NpcMemoryRepository(app.di.db)),
+    createNpcTaskCopywriter(app)
   );
 }
 
-function createDialogueService(app: FastifyInstance) {
+function createAiOrchestrator(app: FastifyInstance) {
   const hasDeepSeekKey =
     app.config.AI_NPC_DIALOGUE_ENABLED &&
     app.config.AI_PROVIDER === "deepseek" &&
@@ -207,21 +216,127 @@ function createDialogueService(app: FastifyInstance) {
         }
       };
 
+  return new AiOrchestrator({
+    enabled: hasDeepSeekKey,
+    providerName: hasDeepSeekKey ? "deepseek" : "template",
+    model: hasDeepSeekKey ? app.config.DEEPSEEK_MODEL : "template",
+    maxOutputTokens: app.config.AI_DIALOGUE_MAX_OUTPUT_TOKENS,
+    timeoutMs: app.config.AI_DIALOGUE_TIMEOUT_MS,
+    provider
+  });
+}
+
+function createNpcTaskCopywriter(app: FastifyInstance) {
+  const ai = createAiOrchestrator(app);
+  const dialogueRepo = new DialogueRepository(app.di.db);
+
+  return {
+    polishTaskCopy: async (input: NpcTaskCopywriterInput) => {
+      const item = getItemById(input.requestedItemId);
+      const context: NpcTaskCopyPromptContext = {
+        npc: {
+          name: input.actor.name,
+          profession: describeNpcProfession(input.actor.profession),
+          personality: describeNpcPersonality(input.actor.npcKey),
+          currentState: describeNpcTaskState(input)
+        },
+        task: {
+          needType: input.needType,
+          requestedItemName: item?.name ?? input.requestedItemId,
+          requestedQuantity: input.requestedQuantity,
+          rewardCopper: input.rewardCopper,
+          deterministicTitle: input.title,
+          deterministicDescription: input.description
+        },
+        world: {
+          settlement: "黑松哨站",
+          marketSummary: "任务文案只使用 NPC 当前库存和合法任务草案，不读取或改变集市价格。"
+        }
+      };
+      const result = await ai.polishNpcTaskCopy({ context });
+
+      await dialogueRepo.createAiCallLog({
+        purpose: "npc_task_copy",
+        status: result.status,
+        provider: result.provider,
+        model: result.model,
+        promptVersion: NPC_TASK_COPY_PROMPT_VERSION,
+        accountId: null,
+        characterId: null,
+        npcActorId: input.actor.id,
+        requestHash: hashNpcTaskCopyRequest(input),
+        inputSummary: summarizeNpcTaskCopyInput(input, item?.name ?? input.requestedItemId),
+        outputSummary: truncateSummary(`${result.title}：${result.description}`),
+        latencyMs: result.latencyMs,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        errorCode: result.fallbackReason
+      });
+
+      return { title: result.title, description: result.description };
+    }
+  };
+}
+
+function createDialogueService(app: FastifyInstance) {
   return new DialogueService({
     dialogueRepo: new DialogueRepository(app.di.db),
     gameRepo: new GameRepository(app.di.db),
     npcRepo: new NpcRepository(app.di.db),
     taskRepo: new NpcTaskRepository(app.di.db),
     memory: new NpcMemoryService(new NpcMemoryRepository(app.di.db)),
-    ai: new AiOrchestrator({
-      enabled: hasDeepSeekKey,
-      providerName: hasDeepSeekKey ? "deepseek" : "template",
-      model: hasDeepSeekKey ? app.config.DEEPSEEK_MODEL : "template",
-      maxOutputTokens: app.config.AI_DIALOGUE_MAX_OUTPUT_TOKENS,
-      timeoutMs: app.config.AI_DIALOGUE_TIMEOUT_MS,
-      provider
-    })
+    ai: createAiOrchestrator(app)
   });
+}
+
+function describeNpcProfession(profession: string) {
+  switch (profession) {
+    case "blacksmith":
+      return "铁匠，负责修理和打造基础装备";
+    case "farmer":
+      return "农民，负责采集和供应基础食物";
+    default:
+      return profession;
+  }
+}
+
+function describeNpcPersonality(npcKey: string) {
+  if (npcKey.includes("blacksmith")) return "直率、重视材料库存，不喜欢空口承诺。";
+  if (npcKey.includes("farmer")) return "务实、关心食物储备，愿意感谢真正帮忙的人。";
+  return "谨慎、只根据自己真实需求发布请求。";
+}
+
+function describeNpcTaskState(input: NpcTaskCopywriterInput) {
+  const inventoryLine = input.inventory.length
+    ? input.inventory.map((item) => `${item.itemId} x${item.quantity}`).join("，")
+    : "库存为空";
+  return `饱腹度 ${input.actor.hunger}/5，铜币 ${input.actor.copperBalance}，库存：${inventoryLine}。`;
+}
+
+function hashNpcTaskCopyRequest(input: NpcTaskCopywriterInput) {
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        actorId: input.actor.id,
+        needType: input.needType,
+        requestedItemId: input.requestedItemId,
+        requestedQuantity: input.requestedQuantity,
+        rewardCopper: input.rewardCopper,
+        title: input.title,
+        description: input.description
+      })
+    )
+    .digest("hex");
+}
+
+function summarizeNpcTaskCopyInput(input: NpcTaskCopywriterInput, itemName: string) {
+  return truncateSummary(
+    `${input.actor.name}:${input.needType}:${itemName}x${input.requestedQuantity}:${input.rewardCopper}铜`
+  );
+}
+
+function truncateSummary(value: string) {
+  return value.length <= 120 ? value : `${value.slice(0, 117)}...`;
 }
 
 async function requireAccount(

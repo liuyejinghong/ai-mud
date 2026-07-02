@@ -1,5 +1,6 @@
 import type {
   AiCallLogDto,
+  AiCallPurpose,
   AiCallStatus,
   NpcDialogueSpeakerType
 } from "@ai-mud/shared";
@@ -80,7 +81,7 @@ function toRelationship(row: typeof npcRelationships.$inferSelect): Relationship
 function toAiCallLog(row: typeof aiCallLogs.$inferSelect): AiCallLogDto {
   return {
     id: row.id,
-    purpose: "npc_dialogue",
+    purpose: row.purpose as AiCallPurpose,
     status: row.status as AiCallStatus,
     provider: row.provider,
     model: row.model,

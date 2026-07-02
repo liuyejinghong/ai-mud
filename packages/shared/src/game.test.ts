@@ -37,14 +37,14 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.6.3 dialogue task bridge compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.6.3");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(12);
+  it("exposes v0.6.4 AI task copy compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.6.4");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(13);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(10);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(1);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(8);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(7);
-    expect(WORLD_COMPATIBILITY.promptVersion).toBe(3);
+    expect(WORLD_COMPATIBILITY.promptVersion).toBe(4);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
   });
 
@@ -352,7 +352,7 @@ describe("game contract", () => {
       status: "success",
       provider: "deepseek",
       model: "deepseek-v4-flash",
-      promptVersion: 3,
+      promptVersion: 4,
       accountId: "account-1",
       characterId: "character-1",
       npcActorId: target.npcActorId,
@@ -371,7 +371,18 @@ describe("game contract", () => {
     expect(reply.messages[0]?.speakerType).toBe("npc");
     expect(reply.ai.model).toBe("deepseek-v4-flash");
     expect(audit.status).toBe("success");
-    expect(audit.promptVersion).toBe(3);
+    expect(audit.promptVersion).toBe(4);
+
+    const taskCopyAudit: AiCallLogDto = {
+      ...audit,
+      id: "ai-call-2",
+      purpose: "npc_task_copy",
+      accountId: null,
+      characterId: null,
+      inputSummary: "伯林缺少基础铁矿石。",
+      outputSummary: "炉火缺矿。"
+    };
+    expect(taskCopyAudit.purpose).toBe("npc_task_copy");
   });
 
   it("describes NPC memory entries and compressed fragments", () => {

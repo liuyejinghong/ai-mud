@@ -2,7 +2,7 @@ import type { ItemId } from "@ai-mud/shared";
 import { describe, expect, it } from "vitest";
 import type { CharacterRecord, InventoryRecord } from "../game/game.repository.js";
 import type { NpcActorRecord, NpcInventoryRecord } from "../npc/npc.service.js";
-import { NpcTaskService } from "./npc-task.service.js";
+import { NpcTaskService, type NpcTaskCopywriterInput } from "./npc-task.service.js";
 import type {
   CreateNpcTaskInput,
   NpcTaskRecord,
@@ -185,6 +185,60 @@ describe("NpcTaskService", () => {
     expect(tasks[0]?.rewardCopper.totalCopper).toBe(36);
     expect(repo.actors.get("npc-blacksmith")?.copperBalance).toBe(84);
     expect([...repo.tasks.values()][0]?.escrowCopper).toBe(36);
+  });
+
+  it("uses AI-polished task copy without changing rule-owned item quantity or reward", async () => {
+    const repo = new FakeNpcTaskRepo();
+    repo.actors.set("npc-blacksmith", actor({ copperBalance: 120 }));
+    repo.npcInventory.set("npc-blacksmith", []);
+    repo.characters.set("character-1", character());
+    const copyInputs: NpcTaskCopywriterInput[] = [];
+    const service = new NpcTaskService(repo, undefined, {
+      polishTaskCopy: async (input) => {
+        copyInputs.push(input);
+        return {
+          title: "炉火待矿",
+          description: "伯林把空矿箱推到炉边，催你带回基础铁矿石，免得修理活全压到夜里。"
+        };
+      }
+    });
+
+    const tasks = await service.listTasksForAccount(
+      "account-1",
+      new Date("2026-07-02T08:00:00.000Z")
+    );
+    const created = [...repo.tasks.values()][0];
+
+    expect(tasks[0]?.title).toBe("炉火待矿");
+    expect(tasks[0]?.description).toContain("空矿箱");
+    expect(created?.requestedItemId).toBe("iron_ore");
+    expect(created?.requestedQuantity).toBe(3);
+    expect(created?.rewardCopper).toBe(36);
+    expect(created?.escrowCopper).toBe(36);
+    expect(repo.actors.get("npc-blacksmith")?.copperBalance).toBe(84);
+    expect(copyInputs[0]?.rewardCopper).toBe(36);
+    expect(copyInputs[0]?.requestedItemId).toBe("iron_ore");
+  });
+
+  it("falls back to deterministic task copy when AI copy is invalid or unavailable", async () => {
+    const repo = new FakeNpcTaskRepo();
+    repo.actors.set("npc-blacksmith", actor({ copperBalance: 120 }));
+    repo.npcInventory.set("npc-blacksmith", []);
+    repo.characters.set("character-1", character());
+    const service = new NpcTaskService(repo, undefined, {
+      polishTaskCopy: async () => ({
+        title: "这个标题明显超过十八个中文字符所以必须回退",
+        description: ""
+      })
+    });
+
+    const tasks = await service.listTasksForAccount(
+      "account-1",
+      new Date("2026-07-02T08:00:00.000Z")
+    );
+
+    expect(tasks[0]?.title).toBe("炉火缺矿");
+    expect(tasks[0]?.description).toContain("缺少基础铁矿石");
   });
 
   it("does not create a task when the NPC cannot escrow the reward", async () => {
