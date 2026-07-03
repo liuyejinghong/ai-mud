@@ -1,22 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { NpcDefinition } from "@ai-mud/content";
 import { CORRUPT_FOREST, FIRST_NPCS } from "@ai-mud/content";
-import { NpcService, type NpcRepositoryPort } from "./npc.service.js";
+import {
+  NpcService,
+  type MapInstanceResourceRecord,
+  type NpcActorRecord,
+  type NpcRepositoryPort
+} from "./npc.service.js";
 
 class InMemoryNpcRepository implements NpcRepositoryPort {
-  actors: Array<{
-    id: string;
-    actorType: "npc";
-    npcKey: string;
-    name: string;
-    profession: string;
-    currentLocation: "blackpine_outpost" | "corrupt_forest";
-    position: { x: number; y: number } | null;
-    copperBalance: number;
-    hunger: number;
-    lastHungerSettledAt: Date;
-    status: "active";
-  }> = [];
+  actors: NpcActorRecord[] = [];
 
   items = new Map<string, Array<{ itemId: string; quantity: number }>>();
 
@@ -28,12 +21,7 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
     lastRefreshedAt: Date;
   }> = [];
 
-  mapInstances: Array<{
-    id: string;
-    zoneId: "corrupt_forest";
-    resourceCharges: Record<string, number>;
-    resourcesRefreshedAt: Date;
-  }> = [];
+  mapInstances: MapInstanceResourceRecord[] = [];
 
   treasury: { settlementId: "blackpine_outpost"; copperBalance: number } | null = null;
   actions: Array<{

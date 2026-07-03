@@ -29,7 +29,9 @@ export const CHARACTER_CLASSES: Array<{
 
 export const GAME_LOCATIONS = {
   blackpineOutpost: "blackpine_outpost",
-  corruptForest: "corrupt_forest"
+  corruptForest: "corrupt_forest",
+  oldMine: "old_mine",
+  ashWatch: "ash_watch"
 } as const;
 
 export type GameLocationId = (typeof GAME_LOCATIONS)[keyof typeof GAME_LOCATIONS];

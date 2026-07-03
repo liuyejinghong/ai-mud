@@ -34,6 +34,8 @@ describe("game contract", () => {
     expect(CHARACTER_CLASSES.map((entry) => entry.id)).toEqual(["warrior", "ranger", "warlock"]);
     expect(GAME_LOCATIONS.blackpineOutpost).toBe("blackpine_outpost");
     expect(GAME_LOCATIONS.corruptForest).toBe("corrupt_forest");
+    expect(GAME_LOCATIONS.oldMine).toBe("old_mine");
+    expect(GAME_LOCATIONS.ashWatch).toBe("ash_watch");
   });
 
   it("guards movement directions", () => {
@@ -41,13 +43,13 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.8.1 loot slice compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.8.1");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(23);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(16);
+  it("exposes v0.8.2 zone registry compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.8.2");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(24);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(17);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(13);
-    expect(WORLD_COMPATIBILITY.contentVersion).toBe(10);
+    expect(WORLD_COMPATIBILITY.contentVersion).toBe(11);
     expect(WORLD_COMPATIBILITY.promptVersion).toBe(7);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
   });

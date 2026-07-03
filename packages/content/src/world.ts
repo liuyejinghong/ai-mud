@@ -197,8 +197,60 @@ export const CORRUPT_FOREST: ZoneDefinition = {
   encounters: FIRST_ENCOUNTERS
 };
 
+export const OLD_MINE: ZoneDefinition = {
+  id: "old_mine",
+  title: "旧矿坑",
+  description: "废弃矿道向山腹深处倾斜，潮湿木梁在黑暗里发出细碎呻吟。",
+  width: 5,
+  height: 5,
+  entry: { x: 2, y: 4 },
+  exits: [{ id: "mine_mouth", position: { x: 2, y: 4 }, toLocation: "blackpine_outpost" }],
+  resources: [
+    {
+      id: "old_mine_iron_vein_01",
+      name: "旧矿坑铁矿脉",
+      position: { x: 1, y: 2 },
+      charges: 80,
+      cycleSeconds: 75,
+      gatherResult: { itemId: "iron_ore", quantity: 1 }
+    }
+  ],
+  encounters: []
+};
+
+export const ASH_WATCH: ZoneDefinition = {
+  id: "ash_watch",
+  title: "灰烬哨路",
+  description: "一条被焦灰覆盖的哨路贴着山脊延伸，远处能看到旧王国的断墙。",
+  width: 3,
+  height: 3,
+  entry: { x: 1, y: 2 },
+  exits: [{ id: "watch_return", position: { x: 1, y: 2 }, toLocation: "blackpine_outpost" }],
+  resources: [],
+  encounters: []
+};
+
+export const WORLD_ZONES: ZoneDefinition[] = [CORRUPT_FOREST, OLD_MINE, ASH_WATCH];
+
+export function getZoneById(zoneId: GameLocationId) {
+  return WORLD_ZONES.find((zone) => zone.id === zoneId) ?? null;
+}
+
+export function listWorldZones() {
+  return [...WORLD_ZONES];
+}
+
 export function getResourceById(resourceId: string) {
-  return CORRUPT_FOREST.resources.find((resource) => resource.id === resourceId) ?? null;
+  return WORLD_ZONES.flatMap((zone) => zone.resources).find(
+    (resource) => resource.id === resourceId
+  ) ?? null;
+}
+
+export function getZoneByResourceId(resourceId: string) {
+  return (
+    WORLD_ZONES.find((zone) => zone.resources.some((resource) => resource.id === resourceId)) ??
+    null
+  );
 }
 
 export function getMonsterById(monsterId: string) {
@@ -206,7 +258,15 @@ export function getMonsterById(monsterId: string) {
 }
 
 export function getEncounterById(encounterId: string) {
-  return FIRST_ENCOUNTERS.find((encounter) => encounter.id === encounterId) ?? null;
+  return WORLD_ZONES.flatMap((zone) => zone.encounters).find(
+    (encounter) => encounter.id === encounterId
+  ) ?? null;
+}
+
+export function getZoneByEncounterId(encounterId: string) {
+  return WORLD_ZONES.find((zone) =>
+    zone.encounters.some((encounter) => encounter.id === encounterId)
+  ) ?? null;
 }
 
 export function getNpcByKey(npcKey: string) {

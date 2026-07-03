@@ -6,7 +6,7 @@ import {
   type NpcTaskProposalPromptContext,
   type WorldRumorPromptContext
 } from "@ai-mud/ai-prompts";
-import { getItemById } from "@ai-mud/content";
+import { getItemById, getZoneById } from "@ai-mud/content";
 import {
   CHARACTER_CLASS_IDS,
   DIRECTIONS,
@@ -17,6 +17,7 @@ import {
   type ErrorCode,
   type GameStateDto,
   type GameSyncResponseDto,
+  type GameLocationId,
   type MarketDto,
   type MarketTradeRequestDto,
   type NpcDialogueResponseDto,
@@ -60,7 +61,10 @@ const createCharacterSchema = z.object({
 });
 
 const enterZoneSchema = z.object({
-  zoneId: z.literal("corrupt_forest")
+  zoneId: z
+    .string()
+    .min(1)
+    .refine((zoneId) => getZoneById(zoneId as GameLocationId) !== null, "Unknown zone id")
 });
 
 const moveSchema = z.object({
@@ -111,7 +115,7 @@ export interface GameRouteDependencies {
   getState(accountId: string): Promise<GameStateDto>;
   syncGame(accountId: string, cursor?: number): Promise<GameSyncResponseDto>;
   createCharacter(accountId: string, input: CreateCharacterRequestDto): Promise<GameStateDto>;
-  enterCorruptForest(accountId: string): Promise<GameStateDto>;
+  enterZone(accountId: string, zoneId: GameLocationId): Promise<GameStateDto>;
   move(accountId: string, direction: Direction): Promise<GameStateDto>;
   startGathering(accountId: string, input: StartGatheringRequestDto): Promise<GameStateDto>;
   startCombat(accountId: string): Promise<GameStateDto>;
@@ -202,8 +206,8 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
     syncGame: (accountId, cursor) => game.getSync(accountId, cursor),
     createCharacter: async (accountId, input) =>
       withNpcTasksAndRumors(accountId, await game.createCharacter(accountId, input)),
-    enterCorruptForest: async (accountId) =>
-      withNpcTasksAndRumors(accountId, await game.enterCorruptForest(accountId)),
+    enterZone: async (accountId, zoneId) =>
+      withNpcTasksAndRumors(accountId, await game.enterZone(accountId, zoneId)),
     move: async (accountId, direction) =>
       withNpcTasksAndRumors(accountId, await game.move(accountId, direction)),
     startGathering: async (accountId, input) =>
@@ -593,7 +597,7 @@ export async function registerGameRoutes(app: FastifyInstance, maybeDependencies
     }
 
     try {
-      return await deps.enterCorruptForest(account.id);
+      return await deps.enterZone(account.id, parsed.data.zoneId as GameLocationId);
     } catch (error) {
       return handleGameError(reply, error);
     }

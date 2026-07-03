@@ -1,15 +1,17 @@
 import {
   AFFIX_POOLS,
   BLACKPINE_OUTPOST,
-  CORRUPT_FOREST,
   FIRST_ITEMS,
   getEncounterById,
   getFoodItemById,
   getItemById,
   getMarketItemById,
   getMonsterById,
+  getZoneById,
+  getZoneByResourceId,
   isFoodDefinition
 } from "@ai-mud/content";
+import type { ZoneDefinition } from "@ai-mud/content";
 import {
   applyCombatDurabilityLoss,
   buildMapCells,
@@ -44,6 +46,7 @@ import {
   type RepairEquipmentRequestDto,
   type GameStateDto,
   type GameSyncResponseDto,
+  type GameLocationId,
   type GridPositionDto,
   type InventoryItemDto,
   type MarketDto,
@@ -131,15 +134,17 @@ function classAgility(classId: CharacterClassId) {
   return characterClass.baseStats.agility;
 }
 
-function initialResourceCharges() {
-  return Object.fromEntries(
-    CORRUPT_FOREST.resources.map((resource) => [resource.id, resource.charges])
-  );
+function initialResourceCharges(zone: ZoneDefinition) {
+  return Object.fromEntries(zone.resources.map((resource) => [resource.id, resource.charges]));
 }
 
-function findLiveResourceAt(position: GridPositionDto, resourceCharges: Record<string, number>) {
+function findLiveResourceAt(
+  zone: ZoneDefinition,
+  position: GridPositionDto,
+  resourceCharges: Record<string, number>
+) {
   return (
-    CORRUPT_FOREST.resources.find(
+    zone.resources.find(
       (resource) =>
         resource.position.x === position.x &&
         resource.position.y === position.y &&
@@ -148,9 +153,9 @@ function findLiveResourceAt(position: GridPositionDto, resourceCharges: Record<s
   );
 }
 
-function findEncounterAt(position: GridPositionDto) {
+function findEncounterAt(zone: ZoneDefinition, position: GridPositionDto) {
   return (
-    CORRUPT_FOREST.encounters.find(
+    zone.encounters.find(
       (encounter) => encounter.position.x === position.x && encounter.position.y === position.y
     ) ?? null
   );
@@ -437,59 +442,72 @@ export class GameService {
     });
   }
 
-  async enterCorruptForest(accountId: string): Promise<GameStateDto> {
+  async enterZone(accountId: string, zoneId: GameLocationId): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
       const now = new Date();
       const character = await this.requireSettledCharacter(repo, accountId, now);
+      const zone = getZoneById(zoneId);
+      if (!zone) {
+        throw new GameServiceError("VALIDATION_ERROR", "未知区域。");
+      }
       await this.requireNoActiveAction(repo, character.id);
       this.requireCanLeaveVillage(character);
-      const existingMap = await repo.findMapInstance(character.id, CORRUPT_FOREST.id);
+      const existingMap = await repo.findMapInstance(character.id, zone.id);
 
       if (!existingMap) {
         await repo.createMapInstance({
           characterId: character.id,
-          zoneId: CORRUPT_FOREST.id,
-          resourceCharges: initialResourceCharges()
+          zoneId: zone.id,
+          resourceCharges: initialResourceCharges(zone)
         });
       }
 
       await repo.updateCharacterLocation({
         characterId: character.id,
-        currentLocation: CORRUPT_FOREST.id,
-        position: CORRUPT_FOREST.entry
+        currentLocation: zone.id,
+        position: zone.entry
       });
       await repo.writeEvent({
         characterId: character.id,
         eventType: "zone.enter",
-        message: "你穿过南侧木门，踏入腐林。"
+        message: `你离开黑松哨站，进入${zone.title}。`,
+        metadata: { zoneId: zone.id }
       });
 
       return this.buildState(repo, accountId, now);
     });
   }
 
+  async enterCorruptForest(accountId: string): Promise<GameStateDto> {
+    return this.enterZone(accountId, "corrupt_forest");
+  }
+
   async move(accountId: string, direction: Direction): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
-      const character = await this.requireReadyCharacterInForest(repo, accountId, new Date());
+      const { character, zone } = await this.requireReadyExploringCharacter(
+        repo,
+        accountId,
+        new Date()
+      );
       await this.requireNoActiveAction(repo, character.id);
-      const result = movePosition(CORRUPT_FOREST, character.position, direction);
+      const result = movePosition(zone, character.position, direction);
 
       if (!result.ok) {
-        throw new GameServiceError("VALIDATION_ERROR", "边界被倒伏的黑木挡住。");
+        throw new GameServiceError("VALIDATION_ERROR", "前方道路无法通行。");
       }
 
       await repo.updateCharacterLocation({
         characterId: character.id,
-        currentLocation: CORRUPT_FOREST.id,
+        currentLocation: zone.id,
         position: result.position
       });
       await repo.writeEvent({
         characterId: character.id,
         eventType: "character.move",
-        message: `你向${directionLabel(direction)}移动，树影遮住了回路。`,
-        metadata: { direction, position: result.position }
+        message: `你向${directionLabel(direction)}移动，继续探索${zone.title}。`,
+        metadata: { direction, position: result.position, zoneId: zone.id }
       });
 
       return this.buildState(repo, accountId, new Date());
@@ -503,10 +521,10 @@ export class GameService {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
       const now = new Date();
-      const character = await this.requireReadyCharacterInForest(repo, accountId, now);
+      const { character, zone } = await this.requireReadyExploringCharacter(repo, accountId, now);
       await this.requireNoActiveAction(repo, character.id);
-      const map = await this.requireCorruptForestMap(repo, character);
-      const resource = findLiveResourceAt(character.position, map.resourceCharges);
+      const map = await this.requireZoneMap(repo, character, zone);
+      const resource = findLiveResourceAt(zone, character.position, map.resourceCharges);
 
       if (!resource) {
         throw new GameServiceError("VALIDATION_ERROR", "这里没有可采集的资源。");
@@ -550,9 +568,9 @@ export class GameService {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
       const now = new Date();
-      const character = await this.requireReadyCharacterInForest(repo, accountId, now);
+      const { character, zone } = await this.requireReadyExploringCharacter(repo, accountId, now);
       await this.requireNoActiveAction(repo, character.id);
-      const encounter = findEncounterAt(character.position);
+      const encounter = findEncounterAt(zone, character.position);
 
       if (!encounter) {
         throw new GameServiceError("VALIDATION_ERROR", "这里没有可攻击的敌人。");
@@ -1222,11 +1240,11 @@ export class GameService {
     });
   }
 
-  private async requireReadyCharacterInForest(
+  private async requireReadyExploringCharacter(
     repo: GameRepository,
     accountId: string,
     now: Date
-  ) {
+  ): Promise<{ character: CharacterRecord & { position: GridPositionDto }; zone: ZoneDefinition }> {
     const character = await this.requireSettledCharacter(repo, accountId, now);
     if (character.injuryUntil && character.injuryUntil.getTime() > now.getTime()) {
       throw new GameServiceError("VALIDATION_ERROR", "你正在养伤，暂时不能出城。");
@@ -1234,17 +1252,22 @@ export class GameService {
     if (character.hunger <= 0) {
       throw new GameServiceError("VALIDATION_ERROR", "你已经饿到虚弱，不能出城。");
     }
-    if (character.currentLocation !== CORRUPT_FOREST.id || !character.position) {
+    if (!character.position) {
       throw new GameServiceError("VALIDATION_ERROR", "Character is not exploring");
     }
-    return character as CharacterRecord & { position: GridPositionDto };
+    const zone = getZoneById(character.currentLocation);
+    if (!zone) {
+      throw new GameServiceError("VALIDATION_ERROR", "Unknown current zone");
+    }
+    return { character: character as CharacterRecord & { position: GridPositionDto }, zone };
   }
 
-  private async requireCorruptForestMap(
+  private async requireZoneMap(
     repo: GameRepository,
-    character: CharacterRecord
+    character: CharacterRecord,
+    zone: ZoneDefinition
   ) {
-    const map = await repo.findMapInstance(character.id, CORRUPT_FOREST.id);
+    const map = await repo.findMapInstance(character.id, zone.id);
     if (!map) {
       throw new GameServiceError("VALIDATION_ERROR", "Map state required");
     }
@@ -1287,9 +1310,11 @@ export class GameService {
     options: { completeAction: boolean }
   ) {
     const payload = action.payload as GatheringActionPayload;
-    const resource = CORRUPT_FOREST.resources.find((entry) => entry.id === payload.resourceId);
+    const zone = getZoneByResourceId(payload.resourceId);
+    if (!zone) throw new GameServiceError("VALIDATION_ERROR", "资源区域配置无效。");
+    const resource = zone.resources.find((entry) => entry.id === payload.resourceId);
     if (!resource) throw new GameServiceError("VALIDATION_ERROR", "资源配置无效。");
-    const map = await repo.findMapInstance(action.characterId, CORRUPT_FOREST.id);
+    const map = await repo.findMapInstance(action.characterId, zone.id);
     if (!map) throw new GameServiceError("VALIDATION_ERROR", "Map state required");
 
     const remainingCharges = map.resourceCharges[resource.id] ?? resource.charges;
@@ -1585,7 +1610,9 @@ export class GameService {
     const activeAction = await repo.findActiveActionByCharacterId(character.id);
     const currentAction = activeAction ? this.toCurrentActionDto(activeAction, now) : null;
 
-    if (character.currentLocation !== CORRUPT_FOREST.id || !character.position) {
+    const currentZone = character.position ? getZoneById(character.currentLocation) : null;
+
+    if (!currentZone || !character.position) {
       const availableActions: GameStateDto["availableActions"] = currentAction
         ? ["cancel_action"]
         : ["enter_corrupt_forest", "open_market"];
@@ -1621,29 +1648,29 @@ export class GameService {
       };
     }
 
-    const map = await repo.findMapInstance(character.id, CORRUPT_FOREST.id);
-    const resourceCharges = map?.resourceCharges ?? initialResourceCharges();
+    const map = await repo.findMapInstance(character.id, currentZone.id);
+    const resourceCharges = map?.resourceCharges ?? initialResourceCharges(currentZone);
     const availableActions: GameStateDto["availableActions"] = currentAction
       ? ["cancel_action"]
       : ["move", "return_to_village"];
 
-    if (!currentAction && findLiveResourceAt(character.position, resourceCharges)) {
+    if (!currentAction && findLiveResourceAt(currentZone, character.position, resourceCharges)) {
       availableActions.push("start_gathering");
     }
 
-    if (!currentAction && findEncounterAt(character.position)) {
+    if (!currentAction && findEncounterAt(currentZone, character.position)) {
       availableActions.push("start_combat");
     }
 
     return {
       character: toCharacterDto(character, now),
-      locationTitle: CORRUPT_FOREST.title,
-      locationDescription: CORRUPT_FOREST.description,
+      locationTitle: currentZone.title,
+      locationDescription: currentZone.description,
       map: {
-        zoneId: CORRUPT_FOREST.id,
-        width: CORRUPT_FOREST.width,
-        height: CORRUPT_FOREST.height,
-        cells: buildMapCells(CORRUPT_FOREST, character.position, resourceCharges)
+        zoneId: currentZone.id,
+        width: currentZone.width,
+        height: currentZone.height,
+        cells: buildMapCells(currentZone, character.position, resourceCharges)
       },
       inventory: inventoryDto,
       equipment: equipmentDto,

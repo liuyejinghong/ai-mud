@@ -23,7 +23,12 @@ export const activationCodeStatus = pgEnum("activation_code_status", [
   "revoked"
 ]);
 export const characterClass = pgEnum("character_class", ["warrior", "ranger", "warlock"]);
-export const gameLocation = pgEnum("game_location", ["blackpine_outpost", "corrupt_forest"]);
+export const gameLocation = pgEnum("game_location", [
+  "blackpine_outpost",
+  "corrupt_forest",
+  "old_mine",
+  "ash_watch"
+]);
 export const characterActionType = pgEnum("character_action_type", ["gathering", "combat"]);
 export const characterActionStatus = pgEnum("character_action_status", [
   "active",

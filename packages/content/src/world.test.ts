@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
   BLACKPINE_OUTPOST,
+  ASH_WATCH,
   CORRUPT_FOREST,
   FIRST_ENCOUNTERS,
   FIRST_ITEMS,
   FIRST_MONSTERS,
   FIRST_NPCS,
+  OLD_MINE,
+  WORLD_ZONES,
   getEncounterById,
   getMonsterById,
   getNpcByKey,
-  getResourceById
+  getResourceById,
+  getZoneById,
+  getZoneByResourceId
 } from "./world.js";
 import { getItemById } from "./items.js";
 
@@ -21,6 +26,19 @@ describe("first world content", () => {
     expect(CORRUPT_FOREST.entry).toEqual({ x: 2, y: 4 });
   });
 
+  it("registers every explorable zone through the world zone registry", () => {
+    expect(WORLD_ZONES.map((zone) => zone.id)).toEqual([
+      "corrupt_forest",
+      "old_mine",
+      "ash_watch"
+    ]);
+    expect(getZoneById("corrupt_forest")).toBe(CORRUPT_FOREST);
+    expect(getZoneById("old_mine")).toBe(OLD_MINE);
+    expect(getZoneById("ash_watch")).toBe(ASH_WATCH);
+    expect(OLD_MINE.resources.map((resource) => resource.id)).toEqual(["old_mine_iron_vein_01"]);
+    expect(ASH_WATCH.width).toBe(3);
+  });
+
   it("defines fixed resources with timed gathering cycles", () => {
     expect(FIRST_ITEMS.map((item) => item.id)).toEqual([
       "wild_berry",
@@ -29,6 +47,8 @@ describe("first world content", () => {
       "iron_ore"
     ]);
     expect(getResourceById("forest_berry_patch_01")?.cycleSeconds).toBe(30);
+    expect(getZoneByResourceId("forest_berry_patch_01")?.id).toBe("corrupt_forest");
+    expect(getZoneByResourceId("old_mine_iron_vein_01")?.id).toBe("old_mine");
     expect(getResourceById("fallen_carcass_01")?.cycleSeconds).toBe(45);
     expect(getResourceById("discarded_hide_01")?.cycleSeconds).toBe(60);
     expect(getResourceById("abandoned_iron_vein_01")?.cycleSeconds).toBe(60);

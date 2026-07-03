@@ -137,7 +137,7 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
       nextCursor: cursor
     }),
     createCharacter: async () => baseState,
-    enterCorruptForest: async () => ({
+    enterZone: async () => ({
       ...baseState,
       character: {
         ...baseState.character!,
@@ -306,7 +306,20 @@ describe("registerGameRoutes", () => {
   });
 
   it("enters Corrupt Forest at the configured entry position", async () => {
-    const app = buildGameRouteTestApp();
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      enterZone: async (accountId, zoneId) => {
+        calls.push({ accountId, zoneId });
+        return {
+          ...baseState,
+          character: {
+            ...baseState.character!,
+            currentLocation: zoneId,
+            position: { x: 2, y: 4 }
+          }
+        };
+      }
+    });
     const response = await app.inject({
       method: "POST",
       url: "/game/enter-zone",
@@ -316,6 +329,54 @@ describe("registerGameRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().character.position).toEqual({ x: 2, y: 4 });
+    expect(calls).toEqual([{ accountId: "account-1", zoneId: "corrupt_forest" }]);
+  });
+
+  it("passes registered non-forest zones through the generic zone endpoint", async () => {
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      enterZone: async (accountId, zoneId) => {
+        calls.push({ accountId, zoneId });
+        return {
+          ...baseState,
+          character: {
+            ...baseState.character!,
+            currentLocation: zoneId,
+            position: { x: 2, y: 4 }
+          },
+          locationTitle: "旧矿坑"
+        };
+      }
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/enter-zone",
+      headers: { "x-csrf-token": "csrf" },
+      payload: { zoneId: "old_mine" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().locationTitle).toBe("旧矿坑");
+    expect(calls).toEqual([{ accountId: "account-1", zoneId: "old_mine" }]);
+  });
+
+  it("rejects unknown zone ids before calling the game service", async () => {
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      enterZone: async (accountId, zoneId) => {
+        calls.push({ accountId, zoneId });
+        return baseState;
+      }
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/enter-zone",
+      headers: { "x-csrf-token": "csrf" },
+      payload: { zoneId: "missing_zone" }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(calls).toEqual([]);
   });
 
   it("moves north by delegating to MapRules", async () => {

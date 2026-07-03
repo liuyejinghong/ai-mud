@@ -8,7 +8,7 @@ import {
   getMarketItemById,
   listMarketItemDefinitions
 } from "./items.js";
-import { CORRUPT_FOREST, FIRST_MONSTERS, FIRST_NPCS } from "./world.js";
+import { FIRST_MONSTERS, FIRST_NPCS, WORLD_ZONES } from "./world.js";
 
 const itemIds = ITEM_DEFINITIONS.map((item) => item.id);
 
@@ -33,7 +33,9 @@ describe("item registry", () => {
   it("keeps all world item references backed by registered item definitions", () => {
     const registeredIds = new Set<string>(itemIds);
     const referencedIds = [
-      ...CORRUPT_FOREST.resources.map((resource) => resource.gatherResult.itemId),
+      ...WORLD_ZONES.flatMap((zone) =>
+        zone.resources.map((resource) => resource.gatherResult.itemId)
+      ),
       ...FIRST_MONSTERS.flatMap((monster) => monster.lootTable.map((loot) => loot.itemId)),
       ...FIRST_NPCS.flatMap((npc) => [
         ...(npc.producesItemId ? [npc.producesItemId] : []),
