@@ -793,8 +793,12 @@ export class GameRepository {
     limit: number;
   }): Promise<SyncEventRecord[]> {
     const audiencePredicate = input.characterId
-      ? or(eq(syncEvents.accountId, input.accountId), eq(syncEvents.characterId, input.characterId))
-      : eq(syncEvents.accountId, input.accountId);
+      ? or(
+          eq(syncEvents.accountId, input.accountId),
+          eq(syncEvents.characterId, input.characterId),
+          eq(syncEvents.audience, "public")
+        )
+      : or(eq(syncEvents.accountId, input.accountId), eq(syncEvents.audience, "public"));
     const rows = await this.db
       .select()
       .from(syncEvents)

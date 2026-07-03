@@ -10,6 +10,9 @@ import {
   type EquipmentItemDto,
   type GameStateDto,
   type GameSyncResponseDto,
+  type ChatMessageDto,
+  type PresenceDto,
+  type LeaderboardEntryDto,
   type MoneyDto,
   type NeedsDto,
   type AiCallStatus,
@@ -43,10 +46,10 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.8.2 zone registry compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.8.2");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(26);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(18);
+  it("exposes v0.9.0 lobby foundation compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.9.0");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(27);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(19);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(14);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(12);
@@ -71,6 +74,29 @@ describe("game contract", () => {
   });
 
   it("describes incremental game sync responses", () => {
+    const chat: ChatMessageDto = {
+      id: "chat-1",
+      characterId: "character-2",
+      characterName: "Borin",
+      channel: "lobby",
+      body: "有人在矿坑捡到蓝装了。",
+      createdAt: "2026-07-02T00:00:01.000Z"
+    };
+    const presence: PresenceDto = {
+      accountId: "account-2",
+      characterId: "character-2",
+      characterName: "Borin",
+      currentLocation: "blackpine_outpost",
+      lastSeenAt: "2026-07-02T00:00:02.000Z"
+    };
+    const leaderboard: LeaderboardEntryDto = {
+      rank: 1,
+      characterId: "character-2",
+      characterName: "Borin",
+      level: 8,
+      xp: 120,
+      wealthCopper: 3500
+    };
     const response: GameSyncResponseDto = {
       stateVersion: 12,
       state: null,
@@ -84,11 +110,20 @@ describe("game contract", () => {
           source: "server",
           createdAt: "2026-07-02T00:00:00.000Z"
         }
-      ]
+      ],
+      chat: [chat],
+      presence: [presence],
+      leaderboards: {
+        level: [leaderboard],
+        wealth: [leaderboard]
+      }
     };
 
     expect(response.events[0]?.stateDirty).toBe(true);
     expect(response.state).toBeNull();
+    expect(response.chat?.[0]?.channel).toBe("lobby");
+    expect(response.presence?.[0]?.currentLocation).toBe("blackpine_outpost");
+    expect(response.leaderboards?.level?.[0]?.rank).toBe(1);
   });
 
   it("describes player hunger needs", () => {

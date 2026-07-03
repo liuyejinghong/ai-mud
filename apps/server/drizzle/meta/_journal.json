@@ -127,6 +127,13 @@
       "when": 1783075600000,
       "tag": "0017_encounter_cooldowns",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1783080000000,
+      "tag": "0018_lobby_chat_presence",
+      "breakpoints": true
     }
   ]
 }

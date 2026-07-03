@@ -9,7 +9,9 @@ import {
   characterActionType,
   characterEquipment,
   characterItems,
+  characterPresence,
   characters,
+  chatMessages,
   gameEvents,
   itemInstances,
   itemLedger,
@@ -181,6 +183,17 @@ describe("foundation schema", () => {
     expect(syncEvents.characterId.getSQLType()).toBe("uuid");
     expect(syncEvents.stateDirty.getSQLType()).toBe("boolean");
     expect(syncEvents.payload.getSQLType()).toBe("jsonb");
+  });
+
+  it("defines lobby chat and presence tables for v0.9 sync", () => {
+    expect(getDrizzleTableName(chatMessages)).toBe("chat_messages");
+    expect(chatMessages.channel.getSQLType()).toBe("text");
+    expect(chatMessages.body.getSQLType()).toBe("text");
+    expect(chatMessages.deletedAt.getSQLType()).toBe("timestamp with time zone");
+    expect(getDrizzleTableName(characterPresence)).toBe("character_presence");
+    expect(characterPresence.accountId.getSQLType()).toBe("uuid");
+    expect(characterPresence.characterId.getSQLType()).toBe("uuid");
+    expect(characterPresence.lastSeenAt.getSQLType()).toBe("timestamp with time zone");
   });
 
   it("stores audit metadata as structured jsonb", () => {

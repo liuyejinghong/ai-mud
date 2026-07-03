@@ -157,10 +157,42 @@ export interface GameSyncEventDto {
   createdAt: string;
 }
 
+export interface ChatMessageDto {
+  id: string;
+  characterId: string;
+  characterName: string;
+  channel: "lobby";
+  body: string;
+  createdAt: string;
+}
+
+export interface PresenceDto {
+  accountId: string;
+  characterId: string;
+  characterName: string;
+  currentLocation: GameLocationId;
+  lastSeenAt: string;
+}
+
+export interface LeaderboardEntryDto {
+  rank: number;
+  characterId: string;
+  characterName: string;
+  level: number;
+  xp: number;
+  wealthCopper: number;
+}
+
 export interface GameSyncResponseDto {
   stateVersion: number;
   state: GameStateDto | null;
   events: GameSyncEventDto[];
+  chat?: ChatMessageDto[];
+  presence?: PresenceDto[];
+  leaderboards?: {
+    level?: LeaderboardEntryDto[];
+    wealth?: LeaderboardEntryDto[];
+  };
   nextCursor: number;
 }
 

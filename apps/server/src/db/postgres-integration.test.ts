@@ -26,7 +26,9 @@ const requiredColumns: RequiredColumn[] = [
   { tableName: "map_instances", columnName: "resources_refreshed_at" },
   { tableName: "item_instances", columnName: "owner_type" },
   { tableName: "item_ledger", columnName: "operation" },
-  { tableName: "sync_events", columnName: "state_dirty" }
+  { tableName: "sync_events", columnName: "state_dirty" },
+  { tableName: "chat_messages", columnName: "body" },
+  { tableName: "character_presence", columnName: "last_seen_at" }
 ];
 
 function quoteIdentifier(value: string) {

@@ -10,6 +10,7 @@ import { getItemById, getZoneById } from "@ai-mud/content";
 import {
   CHARACTER_CLASS_IDS,
   DIRECTIONS,
+  type ChatMessageDto,
   type CreateCharacterRequestDto,
   type Direction,
   type EatFoodRequestDto,
@@ -38,6 +39,8 @@ import { DialogueRepository } from "../dialogue/dialogue.repository.js";
 import { DialogueResourceTransferRepository } from "../dialogue/dialogue-resource-transfer.repository.js";
 import { DialogueService, DialogueServiceError } from "../dialogue/dialogue.service.js";
 import { ItemServiceError } from "../item/item.service.js";
+import { LobbyRepository } from "../lobby/lobby.repository.js";
+import { LobbyService, LobbyServiceError } from "../lobby/lobby.service.js";
 import { NpcRepository } from "../npc/npc.repository.js";
 import { NpcMemoryRepository } from "../npc-memory/npc-memory.repository.js";
 import {
@@ -104,6 +107,10 @@ const dialogueMessageSchema = z.object({
   message: z.string().trim().min(1).max(NPC_DIALOGUE_MAX_PLAYER_CHARS)
 });
 
+const lobbyChatSchema = z.object({
+  body: z.string().trim().min(1).max(240)
+});
+
 const gameSyncQuerySchema = z.object({
   cursor: z.coerce.number().int().min(0).optional()
 });
@@ -114,6 +121,8 @@ export interface GameRouteDependencies {
   settleWorldIfDue(): Promise<void>;
   getState(accountId: string): Promise<GameStateDto>;
   syncGame(accountId: string, cursor?: number): Promise<GameSyncResponseDto>;
+  sendLobbyChat(accountId: string, body: string): Promise<ChatMessageDto>;
+  heartbeatPresence(accountId: string): Promise<void>;
   createCharacter(accountId: string, input: CreateCharacterRequestDto): Promise<GameStateDto>;
   enterZone(accountId: string, zoneId: GameLocationId): Promise<GameStateDto>;
   move(accountId: string, direction: Direction): Promise<GameStateDto>;
@@ -157,6 +166,7 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
   const auth = new AuthService();
   const authRepo = new AuthRepository(app.di.db);
   const game = new GameService(app.di.db);
+  const lobby = new LobbyService(new LobbyRepository(app.di.db));
   const dialogue = createDialogueService(app);
   const task = createNpcTaskService(app);
   const rumor = createRumorService(app);
@@ -204,6 +214,8 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
     },
     getState: async (accountId) => withNpcTasksAndRumors(accountId, await game.getState(accountId)),
     syncGame: (accountId, cursor) => game.getSync(accountId, cursor),
+    sendLobbyChat: (accountId, body) => lobby.sendLobbyChat(accountId, body),
+    heartbeatPresence: (accountId) => lobby.heartbeat(accountId),
     createCharacter: async (accountId, input) =>
       withNpcTasksAndRumors(accountId, await game.createCharacter(accountId, input)),
     enterZone: async (accountId, zoneId) =>
@@ -539,6 +551,9 @@ function handleGameError(reply: FastifyReply, error: unknown) {
   if (error instanceof GameServiceError) {
     return sendError(reply, 400, error.code, error.message);
   }
+  if (error instanceof LobbyServiceError) {
+    return sendError(reply, 400, error.code, error.message);
+  }
   if (error instanceof ItemServiceError) {
     return sendError(reply, 400, error.code, error.message);
   }
@@ -567,6 +582,36 @@ export async function registerGameRoutes(app: FastifyInstance, maybeDependencies
     }
 
     return deps.syncGame(account.id, parsed.data.cursor);
+  });
+
+  app.post("/game/chat", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    const parsed = lobbyChatSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid chat input");
+    }
+
+    try {
+      return await deps.sendLobbyChat(account.id, parsed.data.body);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/presence/heartbeat", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    try {
+      await deps.heartbeatPresence(account.id);
+      return { ok: true };
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
   });
 
   app.post("/game/characters", async (request, reply) => {

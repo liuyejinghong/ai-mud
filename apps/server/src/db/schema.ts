@@ -132,6 +132,42 @@ export const characters = pgTable(
   })
 );
 
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id").notNull().references(() => accounts.id),
+    characterId: uuid("character_id").notNull().references(() => characters.id),
+    channel: text("channel").notNull().default("lobby"),
+    body: text("body").notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    channelIdIdx: index("chat_messages_channel_id_idx").on(table.channel, table.id),
+    characterCreatedAtIdx: index("chat_messages_character_created_at_idx").on(
+      table.characterId,
+      table.createdAt
+    ),
+    channelCheck: check("chat_messages_channel_check", sql`${table.channel} IN ('lobby')`)
+  })
+);
+
+export const characterPresence = pgTable(
+  "character_presence",
+  {
+    accountId: uuid("account_id").primaryKey().references(() => accounts.id),
+    characterId: uuid("character_id").notNull().references(() => characters.id),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    characterIdx: index("character_presence_character_id_idx").on(table.characterId),
+    lastSeenIdx: index("character_presence_last_seen_at_idx").on(table.lastSeenAt)
+  })
+);
+
 export const characterItems = pgTable(
   "character_items",
   {

@@ -1,5 +1,7 @@
 import type {
+  ChatMessageDto,
   GameStateDto,
+  GameSyncResponseDto,
   MarketDto,
   NpcDialogueResponseDto,
   NpcDialogueTargetDto
@@ -124,6 +126,15 @@ const dialogueResponse: NpcDialogueResponseDto = {
   }
 };
 
+const lobbyChatMessage: ChatMessageDto = {
+  id: "chat-1",
+  characterId: "character-1",
+  characterName: "Zichen",
+  channel: "lobby",
+  body: "黑松哨站有人吗？",
+  createdAt: "2026-07-02T00:00:00.000Z"
+};
+
 function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
   const deps: GameRouteDependencies = {
     getCurrentAccount: async () => activeAccount,
@@ -134,8 +145,13 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
       stateVersion: cursor,
       state: cursor > 0 ? null : baseState,
       events: [],
+      chat: [],
+      presence: [],
+      leaderboards: { level: [], wealth: [] },
       nextCursor: cursor
     }),
+    sendLobbyChat: async () => lobbyChatMessage,
+    heartbeatPresence: async () => undefined,
     createCharacter: async () => baseState,
     enterZone: async () => ({
       ...baseState,
@@ -256,7 +272,7 @@ describe("registerGameRoutes", () => {
 
   it("passes sync cursors through without forcing full state", async () => {
     const app = buildGameRouteTestApp({
-      syncGame: async (_accountId, cursor) => ({
+      syncGame: async (_accountId, cursor): Promise<GameSyncResponseDto> => ({
         stateVersion: 9,
         state: null,
         events: [
@@ -269,6 +285,29 @@ describe("registerGameRoutes", () => {
             createdAt: "2026-07-02T00:00:00.000Z"
           }
         ],
+        chat: [lobbyChatMessage],
+        presence: [
+          {
+            accountId: "account-1",
+            characterId: "character-1",
+            characterName: "Zichen",
+            currentLocation: "blackpine_outpost",
+            lastSeenAt: "2026-07-02T00:00:00.000Z"
+          }
+        ],
+        leaderboards: {
+          level: [
+            {
+              rank: 1,
+              characterId: "character-1",
+              characterName: "Zichen",
+              level: 9,
+              xp: 1802,
+              wealthCopper: 4409
+            }
+          ],
+          wealth: []
+        },
         nextCursor: cursor ?? 9
       })
     });
@@ -278,7 +317,64 @@ describe("registerGameRoutes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().state).toBeNull();
     expect(response.json().events[0].eventType).toBe("ui.toast");
+    expect(response.json().chat[0].body).toBe("黑松哨站有人吗？");
+    expect(response.json().presence[0].characterName).toBe("Zichen");
+    expect(response.json().leaderboards.level[0].rank).toBe(1);
     expect(response.json().nextCursor).toBe(8);
+  });
+
+  it("sends lobby chat through an authenticated game mutation", async () => {
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      sendLobbyChat: async (accountId, body) => {
+        calls.push({ accountId, body });
+        return lobbyChatMessage;
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/chat",
+      headers: { "x-csrf-token": "csrf" },
+      payload: { body: " 黑松哨站有人吗？ " }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().body).toBe("黑松哨站有人吗？");
+    expect(calls).toEqual([{ accountId: "account-1", body: "黑松哨站有人吗？" }]);
+  });
+
+  it("rejects lobby chat without a mutation token", async () => {
+    const app = buildGameRouteTestApp({
+      verifyGameMutation: async () => false
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/chat",
+      payload: { body: "hello" }
+    });
+
+    expect(response.statusCode).toBe(403);
+  });
+
+  it("records lobby presence through a heartbeat mutation", async () => {
+    const calls: string[] = [];
+    const app = buildGameRouteTestApp({
+      heartbeatPresence: async (accountId) => {
+        calls.push(accountId);
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/presence/heartbeat",
+      headers: { "x-csrf-token": "csrf" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+    expect(calls).toEqual(["account-1"]);
   });
 
   it("creates one character and returns Blackpine Outpost state", async () => {

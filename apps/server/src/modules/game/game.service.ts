@@ -59,6 +59,8 @@ import {
 import type { Db } from "../../db/client.js";
 import { ItemRepository, type ItemInstanceRecord } from "../item/item.repository.js";
 import { ItemService } from "../item/item.service.js";
+import { LobbyRepository } from "../lobby/lobby.repository.js";
+import { LobbyService } from "../lobby/lobby.service.js";
 import {
   GameRepository,
   type CharacterActionRecord,
@@ -416,6 +418,7 @@ export class GameService {
   async getSync(accountId: string, cursor = 0): Promise<GameSyncResponseDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
+      const lobby = new LobbyService(new LobbyRepository(tx));
       const character = await repo.findCharacterByAccountId(accountId);
       const events = await repo.listSyncEvents({
         accountId,
@@ -423,12 +426,20 @@ export class GameService {
         cursor,
         limit: 100
       });
+      const now = new Date();
       const nextCursor = events.at(-1)?.id ?? cursor;
       const includeState = cursor <= 0 || events.some((event) => event.stateDirty);
+      const lobbyPayload = await lobby.buildSyncPayload({
+        events: events.map((event) => ({
+          eventType: event.eventType,
+          payload: event.payload
+        })),
+        now
+      });
 
       return {
         stateVersion: nextCursor,
-        state: includeState ? await this.buildState(repo, accountId, new Date()) : null,
+        state: includeState ? await this.buildState(repo, accountId, now) : null,
         events: events.map((event) => ({
           id: event.id,
           eventType: event.eventType,
@@ -437,6 +448,7 @@ export class GameService {
           source: event.source,
           createdAt: event.createdAt.toISOString()
         })),
+        ...lobbyPayload,
         nextCursor
       };
     });
