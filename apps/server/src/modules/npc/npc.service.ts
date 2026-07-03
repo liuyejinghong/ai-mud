@@ -3,9 +3,11 @@ import {
   CORRUPT_FOREST,
   FIRST_NPCS,
   FIRST_ITEMS,
+  WORLD_ZONES,
   getFoodItemById,
   getNpcByKey,
   getResourceById,
+  getZoneById,
   isFoodDefinition,
   type NpcDefinition
 } from "@ai-mud/content";
@@ -96,14 +98,14 @@ export interface NpcRepositoryPort {
   listNpcActors(): Promise<NpcActorRecord[]>;
   createNpcActor(npc: NpcDefinition, now: Date): Promise<NpcActorRecord>;
   listWorldResourceNodes(): Promise<Array<{
-    zoneId: typeof CORRUPT_FOREST.id;
+    zoneId: GameLocationId;
     resourceId: string;
     position: GridPositionDto;
     charges: number;
     lastRefreshedAt: Date;
   }>>;
   createWorldResourceNode(input: {
-    zoneId: typeof CORRUPT_FOREST.id;
+    zoneId: GameLocationId;
     resourceId: string;
     position: GridPositionDto;
     charges: number;
@@ -334,17 +336,22 @@ export class NpcService {
         this.repo.listMarketInventory(BLACKPINE_MARKET_ID),
         this.repo.countNpcMarketTransactions()
       ]);
+    const activeActions = actions.filter((action) => action.status === "active");
+    const completedActionCount = actions.filter((action) => action.status === "completed").length;
+    const marketStockQuantity = marketInventory.reduce((sum, item) => sum + item.quantity, 0);
+    const totalNpcCopper = actors.reduce((sum, actor) => sum + actor.copperBalance, 0);
+    const npcHungers = actors.map((actor) => actor.hunger);
     const health = validateNpcSimulationHealth({
       balances: [...actors.map((actor) => actor.copperBalance), treasury?.copperBalance ?? 0],
+      npcHungers,
       stockQuantities: marketInventory.map((item) => item.quantity),
       resourceCharges: resources.map((resource) => resource.charges),
-      activeActions: actions
-        .filter((action) => action.status === "active")
-        .map((action) => ({
-          id: action.id,
-          endsAtMs: action.endsAt.getTime(),
-          nowMs: endedAt.getTime()
-        }))
+      completedActionCount,
+      activeActions: activeActions.map((action) => ({
+        id: action.id,
+        endsAtMs: action.endsAt.getTime(),
+        nowMs: endedAt.getTime()
+      }))
     });
 
     return {
@@ -356,11 +363,30 @@ export class NpcService {
       npcCount: actors.length,
       actionCount: actions.length,
       marketTransactionCount,
+      metrics: {
+        minNpcHunger: npcHungers.length > 0 ? Math.min(...npcHungers) : 0,
+        hungryNpcCount: npcHungers.filter((hunger) => hunger <= 2).length,
+        starvingNpcCount: npcHungers.filter((hunger) => hunger <= 0).length,
+        totalNpcCopper,
+        marketStockQuantity,
+        activeActionCount: activeActions.length,
+        completedActionCount
+      },
       resourceSnapshots: resources.map((resource) => ({
+        zoneId: resource.zoneId,
         resourceId: resource.resourceId,
         name: getResourceById(resource.resourceId)?.name ?? resource.resourceId,
         remainingCharges: resource.charges
       })),
+      mapResourceSnapshots: (await this.repo.listMapInstances()).map((map) => {
+        const values = Object.values(map.resourceCharges);
+        return {
+          zoneId: map.zoneId,
+          resourceCount: values.length,
+          depletedResourceCount: values.filter((charges) => charges <= 0).length,
+          refreshedAt: map.resourcesRefreshedAt.toISOString()
+        };
+      }),
       health
     };
   }
@@ -381,16 +407,18 @@ export class NpcService {
       existing.map((resource) => `${resource.zoneId}:${resource.resourceId}`)
     );
 
-    for (const resource of CORRUPT_FOREST.resources) {
-      const key = `${CORRUPT_FOREST.id}:${resource.id}`;
-      if (existingKeys.has(key)) continue;
-      await this.repo.createWorldResourceNode({
-        zoneId: CORRUPT_FOREST.id,
-        resourceId: resource.id,
-        position: resource.position,
-        charges: resource.charges,
-        lastRefreshedAt: now
-      });
+    for (const zone of WORLD_ZONES) {
+      for (const resource of zone.resources) {
+        const key = `${zone.id}:${resource.id}`;
+        if (existingKeys.has(key)) continue;
+        await this.repo.createWorldResourceNode({
+          zoneId: zone.id,
+          resourceId: resource.id,
+          position: resource.position,
+          charges: resource.charges,
+          lastRefreshedAt: now
+        });
+      }
     }
   }
 
@@ -798,11 +826,10 @@ export class NpcService {
   }
 
   private initialResourceChargesForZone(zoneId: GameLocationId) {
-    if (zoneId !== CORRUPT_FOREST.id) return null;
+    const zone = getZoneById(zoneId);
+    if (!zone) return null;
 
-    return Object.fromEntries(
-      CORRUPT_FOREST.resources.map((resource) => [resource.id, resource.charges])
-    );
+    return Object.fromEntries(zone.resources.map((resource) => [resource.id, resource.charges]));
   }
 
   private async settleNpcAction(actor: NpcActorRecord, action: NpcActionRecord, now: Date) {

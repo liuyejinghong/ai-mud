@@ -193,10 +193,26 @@ export interface NpcSimulationReportDto {
   npcCount: number;
   actionCount: number;
   marketTransactionCount: number;
+  metrics: {
+    minNpcHunger: number;
+    hungryNpcCount: number;
+    starvingNpcCount: number;
+    totalNpcCopper: number;
+    marketStockQuantity: number;
+    activeActionCount: number;
+    completedActionCount: number;
+  };
   resourceSnapshots: Array<{
+    zoneId: GameLocationId;
     resourceId: string;
     name: string;
     remainingCharges: number;
+  }>;
+  mapResourceSnapshots: Array<{
+    zoneId: GameLocationId;
+    resourceCount: number;
+    depletedResourceCount: number;
+    refreshedAt: string;
   }>;
   health: {
     ok: boolean;

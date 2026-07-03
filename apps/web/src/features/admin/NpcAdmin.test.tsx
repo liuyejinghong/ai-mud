@@ -46,7 +46,31 @@ const simulationReport: NpcSimulationReportDto = {
   npcCount: 4,
   actionCount: 12,
   marketTransactionCount: 3,
-  resourceSnapshots: [{ resourceId: "forest_berry_patch_01", name: "野莓灌木", remainingCharges: 2 }],
+  metrics: {
+    minNpcHunger: 4,
+    hungryNpcCount: 0,
+    starvingNpcCount: 0,
+    totalNpcCopper: 410,
+    marketStockQuantity: 18,
+    activeActionCount: 1,
+    completedActionCount: 11
+  },
+  resourceSnapshots: [
+    {
+      zoneId: "corrupt_forest",
+      resourceId: "forest_berry_patch_01",
+      name: "野莓灌木",
+      remainingCharges: 2
+    }
+  ],
+  mapResourceSnapshots: [
+    {
+      zoneId: "old_mine",
+      resourceCount: 2,
+      depletedResourceCount: 0,
+      refreshedAt: "2026-07-02T00:00:00.000Z"
+    }
+  ],
   health: { ok: true, issues: [] }
 };
 

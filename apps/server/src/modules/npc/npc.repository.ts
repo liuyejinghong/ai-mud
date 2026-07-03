@@ -119,7 +119,7 @@ export class NpcRepository implements NpcRepositoryPort {
     const rows = await this.db.select().from(worldResourceNodes);
 
     return rows.map((row) => ({
-      zoneId: row.zoneId as "corrupt_forest",
+      zoneId: row.zoneId,
       resourceId: row.resourceId,
       position: parsePosition(row.position) ?? { x: 0, y: 0 },
       charges: row.charges,
@@ -128,7 +128,7 @@ export class NpcRepository implements NpcRepositoryPort {
   }
 
   async createWorldResourceNode(input: {
-    zoneId: "corrupt_forest";
+    zoneId: GameLocationId;
     resourceId: string;
     position: GridPositionDto;
     charges: number;

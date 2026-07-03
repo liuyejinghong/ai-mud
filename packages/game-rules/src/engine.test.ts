@@ -402,16 +402,20 @@ describe("v0.3 engine rules", () => {
     expect(
       validateNpcSimulationHealth({
         balances: [100, 0],
+        npcHungers: [5, 2],
         stockQuantities: [10, 0],
         resourceCharges: [5],
+        completedActionCount: 1,
         activeActions: []
       })
     ).toEqual({ ok: true, issues: [] });
     expect(
       validateNpcSimulationHealth({
         balances: [100, -1],
+        npcHungers: [6, 0],
         stockQuantities: [10, -2],
         resourceCharges: [-1],
+        completedActionCount: 0,
         activeActions: [
           {
             id: "action-1",
@@ -424,8 +428,11 @@ describe("v0.3 engine rules", () => {
       ok: false,
       issues: [
         "negative_balance",
+        "invalid_hunger",
+        "starving_npc",
         "negative_stock",
         "negative_resource_charge",
+        "no_completed_actions",
         "overdue_active_action:action-1"
       ]
     });

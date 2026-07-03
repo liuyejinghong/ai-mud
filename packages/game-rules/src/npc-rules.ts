@@ -88,8 +88,10 @@ export function calculateNpcWagePayment(input: {
 
 export interface NpcSimulationHealthInput {
   balances: number[];
+  npcHungers: number[];
   stockQuantities: number[];
   resourceCharges: number[];
+  completedActionCount: number;
   activeActions: Array<{
     id: string;
     endsAtMs: number;
@@ -101,10 +103,15 @@ export function validateNpcSimulationHealth(input: NpcSimulationHealthInput) {
   const issues: string[] = [];
 
   if (input.balances.some((balance) => balance < 0)) issues.push("negative_balance");
+  if (input.npcHungers.some((hunger) => hunger < 0 || hunger > 5)) {
+    issues.push("invalid_hunger");
+  }
+  if (input.npcHungers.some((hunger) => hunger <= 0)) issues.push("starving_npc");
   if (input.stockQuantities.some((quantity) => quantity < 0)) issues.push("negative_stock");
   if (input.resourceCharges.some((charges) => charges < 0)) {
     issues.push("negative_resource_charge");
   }
+  if (input.completedActionCount <= 0) issues.push("no_completed_actions");
 
   for (const action of input.activeActions) {
     if (action.endsAtMs < action.nowMs) {

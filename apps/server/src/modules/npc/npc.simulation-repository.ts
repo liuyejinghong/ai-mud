@@ -1,4 +1,4 @@
-import { CORRUPT_FOREST, type NpcDefinition } from "@ai-mud/content";
+import type { NpcDefinition } from "@ai-mud/content";
 import type { GameLocationId, GridPositionDto, ItemId } from "@ai-mud/shared";
 import type {
   NpcActionRecord,
@@ -104,7 +104,7 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
   }
 
   async createWorldResourceNode(input: {
-    zoneId: typeof CORRUPT_FOREST.id;
+    zoneId: GameLocationId;
     resourceId: string;
     position: GridPositionDto;
     charges: number;

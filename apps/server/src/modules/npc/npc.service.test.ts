@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { GameLocationId } from "@ai-mud/shared";
 import type { NpcDefinition } from "@ai-mud/content";
-import { CORRUPT_FOREST, FIRST_NPCS } from "@ai-mud/content";
+import { CORRUPT_FOREST, FIRST_NPCS, OLD_MINE, WORLD_ZONES } from "@ai-mud/content";
 import {
   NpcService,
   type MapInstanceResourceRecord,
@@ -14,7 +15,7 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
   items = new Map<string, Array<{ itemId: string; quantity: number }>>();
 
   resources: Array<{
-    zoneId: "corrupt_forest";
+    zoneId: GameLocationId;
     resourceId: string;
     position: { x: number; y: number };
     charges: number;
@@ -91,7 +92,7 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
   }
 
   async createWorldResourceNode(input: {
-    zoneId: "corrupt_forest";
+    zoneId: GameLocationId;
     resourceId: string;
     position: { x: number; y: number };
     charges: number;
@@ -146,7 +147,7 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
 
   async updateNpcActor(input: {
     actorId: string;
-    currentLocation?: "blackpine_outpost" | "corrupt_forest";
+    currentLocation?: GameLocationId;
     position?: { x: number; y: number } | null;
     copperBalance?: number;
     hunger?: number;
@@ -293,8 +294,10 @@ describe("NpcService", () => {
 
     expect(repo.actors.map((actor) => actor.npcKey)).toEqual(FIRST_NPCS.map((npc) => npc.key));
     expect(repo.actors.every((actor) => actor.actorType === "npc")).toBe(true);
-    expect(repo.resources.map((resource) => resource.resourceId)).toEqual(
-      CORRUPT_FOREST.resources.map((resource) => resource.id)
+    expect(repo.resources.map((resource) => `${resource.zoneId}:${resource.resourceId}`)).toEqual(
+      WORLD_ZONES.flatMap((zone) =>
+        zone.resources.map((resource) => `${zone.id}:${resource.id}`)
+      )
     );
     expect(repo.treasury).toEqual({
       settlementId: "blackpine_outpost",
@@ -310,7 +313,9 @@ describe("NpcService", () => {
     await service.ensureWorldSeeded(new Date("2026-07-01T01:00:00.000Z"));
 
     expect(repo.actors).toHaveLength(FIRST_NPCS.length);
-    expect(repo.resources).toHaveLength(CORRUPT_FOREST.resources.length);
+    expect(repo.resources).toHaveLength(
+      WORLD_ZONES.reduce((sum, zone) => sum + zone.resources.length, 0)
+    );
   });
 
   it("rejects NPC inventory decrements below zero", async () => {
@@ -463,6 +468,15 @@ describe("NpcService", () => {
       },
       resourcesRefreshedAt: seededAt
     });
+    repo.mapInstances.push({
+      id: "map-2",
+      zoneId: "old_mine",
+      resourceCharges: {
+        old_mine_iron_vein_01: 0,
+        old_mine_coppery_iron_vein_01: 0
+      },
+      resourcesRefreshedAt: seededAt
+    });
 
     await service.settleNpcWorld(refreshedAt);
 
@@ -473,6 +487,11 @@ describe("NpcService", () => {
       abandoned_iron_vein_01: 120
     });
     expect(repo.mapInstances[0]?.resourcesRefreshedAt).toBe(refreshedAt);
+    expect(repo.mapInstances[1]?.resourceCharges).toMatchObject({
+      old_mine_iron_vein_01: 80,
+      old_mine_coppery_iron_vein_01: 50
+    });
+    expect(repo.mapInstances[1]?.resourcesRefreshedAt).toBe(refreshedAt);
   });
 
   it("pays scheduled NPC wages from the municipal treasury on the daily tick", async () => {
@@ -699,9 +718,12 @@ describe("NpcService", () => {
       health: { ok: true, issues: [] }
     });
     expect(report.actionCount).toBeGreaterThan(0);
+    expect(report.metrics.completedActionCount).toBeGreaterThan(0);
+    expect(report.metrics.starvingNpcCount).toBe(0);
     expect(report.resourceSnapshots).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          zoneId: "corrupt_forest",
           resourceId: "forest_berry_patch_01",
           name: "野莓灌木"
         })
@@ -734,6 +756,7 @@ describe("NpcService", () => {
     const report = await service.runNpcSimulation(1, startAt);
 
     expect(report.days).toBe(1);
+    expect(report.metrics.completedActionCount).toBeGreaterThan(0);
     expect(report.actionCount).toBeGreaterThan(0);
     expect(repo.actors).toEqual(before.actors);
     expect(repo.actions).toEqual(before.actions);
@@ -741,5 +764,80 @@ describe("NpcService", () => {
     expect([...repo.items.entries()]).toEqual(before.items);
     expect(repo.treasury).toEqual(before.treasury);
     expect(repo.transactions).toEqual(before.transactions);
+  });
+
+  it("runs the v0.8.2 seven day economy regression without degrading world activity", async () => {
+    const repo = new InMemoryNpcRepository();
+    const service = new NpcService(repo);
+    const startAt = new Date("2026-07-01T00:00:00.000Z");
+
+    await service.ensureWorldSeeded(startAt);
+    repo.seedMarketItem({
+      itemId: "wild_berry",
+      quantity: 160,
+      targetQuantity: 100,
+      baseBuyPriceCopper: 5,
+      baseSellPriceCopper: 8
+    });
+    repo.seedMarketItem({
+      itemId: "beast_meat",
+      quantity: 90,
+      targetQuantity: 60,
+      baseBuyPriceCopper: 12,
+      baseSellPriceCopper: 20
+    });
+    repo.seedMarketItem({
+      itemId: "iron_ore",
+      quantity: 20,
+      targetQuantity: 80,
+      baseBuyPriceCopper: 18,
+      baseSellPriceCopper: 30
+    });
+    const blacksmith = repo.actors.find(
+      (actor) => actor.npcKey === "blackpine_blacksmith_borin"
+    )!;
+    await service.addNpcInventoryItem(blacksmith.id, "iron_ore", 7);
+    repo.mapInstances.push({
+      id: "map-old-mine",
+      zoneId: OLD_MINE.id,
+      resourceCharges: {
+        old_mine_iron_vein_01: 0,
+        old_mine_coppery_iron_vein_01: 0
+      },
+      resourcesRefreshedAt: startAt
+    });
+
+    const report = await service.runNpcSimulation(7, startAt);
+
+    expect(report).toMatchObject({
+      days: 7,
+      health: { ok: true, issues: [] },
+      npcCount: FIRST_NPCS.length
+    });
+    expect(report.actionCount).toBeGreaterThan(20);
+    expect(report.marketTransactionCount).toBeGreaterThan(0);
+    expect(report.metrics.completedActionCount).toBeGreaterThan(20);
+    expect(report.metrics.starvingNpcCount).toBe(0);
+    expect(report.metrics.minNpcHunger).toBeGreaterThan(0);
+    expect(report.metrics.marketStockQuantity).toBeGreaterThan(0);
+    expect(report.resourceSnapshots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          zoneId: OLD_MINE.id,
+          resourceId: "old_mine_iron_vein_01",
+          remainingCharges: 80
+        })
+      ])
+    );
+    expect(report.mapResourceSnapshots).toEqual(
+      expect.arrayContaining([
+        {
+          zoneId: OLD_MINE.id,
+          resourceCount: OLD_MINE.resources.length,
+          depletedResourceCount: 0,
+          refreshedAt: "2026-07-08T00:00:00.000Z"
+        }
+      ])
+    );
   });
 });

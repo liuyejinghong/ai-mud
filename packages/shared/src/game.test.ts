@@ -45,10 +45,10 @@ describe("game contract", () => {
 
   it("exposes v0.8.2 zone registry compatibility", () => {
     expect(PRODUCT_VERSION).toBe("0.8.2");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(25);
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(26);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(18);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
-    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(13);
+    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(14);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(12);
     expect(WORLD_COMPATIBILITY.promptVersion).toBe(7);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
@@ -353,11 +353,29 @@ describe("game contract", () => {
       npcCount: 4,
       actionCount: 96,
       marketTransactionCount: 18,
+      metrics: {
+        minNpcHunger: 3,
+        hungryNpcCount: 0,
+        starvingNpcCount: 0,
+        totalNpcCopper: 420,
+        marketStockQuantity: 88,
+        activeActionCount: 2,
+        completedActionCount: 94
+      },
       resourceSnapshots: [
         {
+          zoneId: "corrupt_forest",
           resourceId: "forest_berry_patch_01",
           name: "野莓灌木",
           remainingCharges: 72
+        }
+      ],
+      mapResourceSnapshots: [
+        {
+          zoneId: "old_mine",
+          resourceCount: 2,
+          depletedResourceCount: 0,
+          refreshedAt: "2026-07-08T00:00:00.000Z"
         }
       ],
       health: {
@@ -368,7 +386,9 @@ describe("game contract", () => {
 
     expect(report.days).toBe(7);
     expect(report.health.ok).toBe(true);
+    expect(report.metrics.starvingNpcCount).toBe(0);
     expect(report.resourceSnapshots[0]?.remainingCharges).toBeGreaterThan(0);
+    expect(report.mapResourceSnapshots[0]?.depletedResourceCount).toBe(0);
   });
 
   it("describes NPC world runtime status", () => {
