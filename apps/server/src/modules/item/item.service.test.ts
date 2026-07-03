@@ -59,6 +59,18 @@ class FakeItemRepo {
     return this.instances.get(instanceId) ?? null;
   }
 
+  async findEquippedInstanceBySlot(owner: ItemOwner, slot: string) {
+    return (
+      [...this.instances.values()].find(
+        (instance) =>
+          instance.ownerType === owner.ownerType &&
+          instance.ownerId === owner.ownerId &&
+          instance.locationType === "equipped" &&
+          instance.slot === slot
+      ) ?? null
+    );
+  }
+
   async moveItemInstance(input: {
     instanceId: string;
     fromOwner: ItemOwner;
@@ -244,5 +256,47 @@ describe("ItemService", () => {
     ).rejects.toBeInstanceOf(ItemServiceError);
     expect(repo.instances.get(instance.id)?.locationType).toBe("equipped");
     expect(repo.ledger.filter((entry) => entry.operation === "equip")).toHaveLength(1);
+  });
+
+  it("replaces an equipped instance in the same slot inside one transaction", async () => {
+    const repo = new FakeItemRepo();
+    const service = new ItemService(repo);
+    const oldInstance = await service.grantInstance({
+      owner: characterOwner,
+      itemDefId: "training_sword",
+      rarity: "common",
+      seed: "old-equip-seed",
+      reason: "test.instance"
+    });
+    const newInstance = await service.grantInstance({
+      owner: characterOwner,
+      itemDefId: "wolfbone_shiv",
+      rarity: "rare",
+      seed: "new-equip-seed",
+      reason: "test.instance"
+    });
+
+    await service.equip({
+      owner: characterOwner,
+      instanceId: oldInstance.id,
+      targetSlot: "weapon",
+      reason: "test.equip"
+    });
+    await service.equip({
+      owner: characterOwner,
+      instanceId: newInstance.id,
+      targetSlot: "weapon",
+      reason: "test.equip"
+    });
+
+    expect(repo.instances.get(oldInstance.id)?.locationType).toBe("inventory");
+    expect(repo.instances.get(newInstance.id)?.locationType).toBe("equipped");
+    expect(repo.ledger.map((entry) => entry.operation)).toEqual([
+      "grant",
+      "grant",
+      "equip",
+      "unequip",
+      "equip"
+    ]);
   });
 });

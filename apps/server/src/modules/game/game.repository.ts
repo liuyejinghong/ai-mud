@@ -1,6 +1,7 @@
 import type {
   ActionStatus,
   ActionType,
+  EquipmentAffixDto,
   EquipmentSlot,
   GameLocationId,
   GridPositionDto,
@@ -14,16 +15,17 @@ import {
   characterItems,
   characters,
   gameEvents,
+  itemInstances,
   marketInventory,
   marketTransactions,
   mapInstances,
   syncEvents
 } from "../../db/schema.js";
 import { ItemRepository } from "../item/item.repository.js";
-import type { ItemRarity } from "../item/item.repository.js";
+import type { ItemInstanceRecord, ItemLocationType, ItemRarity } from "../item/item.repository.js";
 import { ItemService } from "../item/item.service.js";
 
-type GameDb = Pick<Db, "insert" | "select" | "update">;
+type GameDb = Pick<Db, "delete" | "insert" | "select" | "update">;
 
 export interface CharacterRecord {
   id: string;
@@ -53,9 +55,18 @@ export interface EquipmentRecord {
   slot: EquipmentSlot;
   itemKey: string;
   name: string;
+  rarity?: ItemRarity;
   itemLevel: number;
   attackBonus: number;
   defenseBonus: number;
+  agilityBonus?: number;
+  maxHpBonus?: number;
+  affixes?: Array<{
+    affixId: EquipmentAffixDto["affixId"];
+    name: EquipmentAffixDto["name"];
+    stat: EquipmentAffixDto["stat"];
+    value: EquipmentAffixDto["value"];
+  }>;
   maxDurability: number;
   currentDurability: number;
 }
@@ -547,6 +558,39 @@ export class GameRepository {
     }));
   }
 
+  async listItemInstances(input: {
+    characterId: string;
+    locationType: ItemLocationType;
+  }): Promise<ItemInstanceRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(itemInstances)
+      .where(
+        and(
+          eq(itemInstances.ownerType, "character"),
+          eq(itemInstances.ownerId, input.characterId),
+          eq(itemInstances.locationType, input.locationType)
+        )
+      )
+      .orderBy(asc(itemInstances.createdAt));
+
+    return rows.map((row) => ({
+      id: row.id,
+      itemDefId: row.itemDefId,
+      ownerType: row.ownerType as ItemInstanceRecord["ownerType"],
+      ownerId: row.ownerId,
+      locationType: row.locationType as ItemInstanceRecord["locationType"],
+      locationId: row.locationId,
+      slot: row.slot,
+      rarity: row.rarity as ItemInstanceRecord["rarity"],
+      itemLevel: row.itemLevel,
+      baseStats: row.baseStats,
+      affixes: row.affixes,
+      maxDurability: row.maxDurability,
+      currentDurability: row.currentDurability
+    }));
+  }
+
   async findEquipmentById(
     characterId: string,
     equipmentId: string
@@ -586,14 +630,38 @@ export class GameRepository {
     maxDurability: number;
   }): Promise<void> {
     const durability = serializeEquipmentDurability(input);
-    await this.db
+    const legacyRows = await this.db
       .update(characterEquipment)
       .set({
         currentDurability: durability.currentDurability,
         maxDurability: durability.maxDurability,
         updatedAt: new Date()
       })
-      .where(eq(characterEquipment.id, input.equipmentId));
+      .where(eq(characterEquipment.id, input.equipmentId))
+      .returning({ id: characterEquipment.id });
+    if (legacyRows.length > 0) return;
+
+    await this.db
+      .update(itemInstances)
+      .set({
+        currentDurability: durability.currentDurability,
+        maxDurability: durability.maxDurability,
+        updatedAt: new Date()
+      })
+      .where(eq(itemInstances.id, input.equipmentId));
+  }
+
+  async deleteLegacyEquipmentBySlot(input: {
+    characterId: string;
+    slot: EquipmentSlot;
+  }): Promise<boolean> {
+    const rows = await this.db
+      .delete(characterEquipment)
+      .where(
+        and(eq(characterEquipment.characterId, input.characterId), eq(characterEquipment.slot, input.slot))
+      )
+      .returning({ id: characterEquipment.id });
+    return rows.length > 0;
   }
 
   async listMarketInventory(settlementId: string): Promise<MarketInventoryRecord[]> {

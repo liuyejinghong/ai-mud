@@ -98,14 +98,35 @@ export interface InventoryItemDto {
   quantity: number;
 }
 
+export type EquipmentRarityDto = "common" | "uncommon" | "rare" | "epic";
+
+export interface EquipmentAffixDto {
+  affixId: string;
+  name: string;
+  stat:
+    | "attack"
+    | "defense"
+    | "agility"
+    | "maxHp"
+    | "gatherSpeedPct"
+    | "repairDiscountPct"
+    | "durabilityBonusPct"
+    | "injuryRecoveryPct";
+  value: number;
+}
+
 export interface EquipmentItemDto {
   id: string;
   slot: EquipmentSlot;
   itemKey: string;
   name: string;
+  rarity: EquipmentRarityDto;
   itemLevel: number;
   attackBonus: number;
   defenseBonus: number;
+  agilityBonus: number;
+  maxHpBonus: number;
+  affixes: EquipmentAffixDto[];
   maxDurability: number;
   currentDurability: number;
   durabilityPct: number;
@@ -465,6 +486,7 @@ export interface GameStateDto {
   } | null;
   inventory: InventoryItemDto[];
   equipment: EquipmentItemDto[];
+  backpackEquipment: EquipmentItemDto[];
   market: MarketDto | null;
   npcTasks: NpcTaskDto[];
   currentAction: CurrentActionDto | null;
@@ -501,6 +523,10 @@ export interface StartGatheringRequestDto {
 
 export interface RepairEquipmentRequestDto {
   equipmentId: string;
+}
+
+export interface EquipEquipmentRequestDto {
+  instanceId: string;
 }
 
 export interface EatFoodRequestDto {

@@ -211,6 +211,28 @@ export class ItemRepository {
     return row ? toItemInstance(row) : null;
   }
 
+  async findEquippedInstanceBySlot(
+    owner: ItemOwner,
+    slot: string
+  ): Promise<ItemInstanceRecord | null> {
+    if (!owner.ownerId) return null;
+
+    const [row] = await this.db
+      .select()
+      .from(itemInstances)
+      .where(
+        and(
+          eq(itemInstances.ownerType, owner.ownerType),
+          eq(itemInstances.ownerId, owner.ownerId),
+          eq(itemInstances.locationType, "equipped"),
+          eq(itemInstances.slot, slot)
+        )
+      )
+      .limit(1);
+
+    return row ? toItemInstance(row) : null;
+  }
+
   async moveItemInstance(input: {
     instanceId: string;
     fromOwner: ItemOwner;

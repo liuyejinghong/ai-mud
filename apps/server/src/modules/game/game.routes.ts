@@ -13,6 +13,7 @@ import {
   type CreateCharacterRequestDto,
   type Direction,
   type EatFoodRequestDto,
+  type EquipEquipmentRequestDto,
   type ErrorCode,
   type GameStateDto,
   type GameSyncResponseDto,
@@ -84,6 +85,10 @@ const repairEquipmentSchema = z.object({
   equipmentId: z.string().min(1)
 });
 
+const equipEquipmentSchema = z.object({
+  instanceId: z.string().min(1)
+});
+
 const eatFoodSchema = z.object({
   itemId: knownItemIdSchema.refine(
     (itemId) => getItemById(itemId)?.category === "food",
@@ -118,6 +123,7 @@ export interface GameRouteDependencies {
   getRepairQuote(accountId: string, input: RepairEquipmentRequestDto): Promise<RepairQuoteDto>;
   repairEquipment(accountId: string, input: RepairEquipmentRequestDto): Promise<GameStateDto>;
   repairAllEquipment(accountId: string): Promise<GameStateDto>;
+  equipEquipment(accountId: string, input: EquipEquipmentRequestDto): Promise<GameStateDto>;
   eatFood(accountId: string, input: EatFoodRequestDto): Promise<GameStateDto>;
   acceptNpcTask(accountId: string, taskId: string): Promise<GameStateDto>;
   completeNpcTask(accountId: string, taskId: string): Promise<GameStateDto>;
@@ -218,6 +224,8 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
       withNpcTasksAndRumors(accountId, await game.repairEquipment(accountId, input)),
     repairAllEquipment: async (accountId) =>
       withNpcTasksAndRumors(accountId, await game.repairAllEquipment(accountId)),
+    equipEquipment: async (accountId, input) =>
+      withNpcTasksAndRumors(accountId, await game.equipEquipment(accountId, input)),
     eatFood: async (accountId, input) =>
       withNpcTasksAndRumors(accountId, await game.eatFood(accountId, input)),
     acceptNpcTask: async (accountId, taskId) => {
@@ -832,6 +840,23 @@ export async function registerGameRoutes(app: FastifyInstance, maybeDependencies
 
     try {
       return await deps.repairAllEquipment(account.id);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/equipment/equip", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    const parsed = equipEquipmentSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid equipment input");
+    }
+
+    try {
+      return await deps.equipEquipment(account.id, parsed.data);
     } catch (error) {
       return handleGameError(reply, error);
     }

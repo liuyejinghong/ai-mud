@@ -210,6 +210,10 @@
   color: #ffb26f;
 }
 
+.equipment-affixes {
+  color: #9ee6ff;
+}
+
 .durability-bar {
   height: 8px;
   border: 1px solid rgba(216, 167, 53, 0.65);
@@ -226,6 +230,53 @@
 .repair-all-button {
   width: 100%;
   margin-top: 10px;
+}
+
+.inventory-equipment-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.inventory-equipment {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid rgba(119, 184, 160, 0.34);
+  background: rgba(3, 14, 9, 0.82);
+  color: #d8f5df;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.inventory-equipment strong,
+.inventory-equipment span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inventory-equipment strong {
+  color: #f3d67d;
+}
+
+.inventory-equipment span {
+  color: #b8c9bd;
+  font-size: 12px;
+}
+
+.rarity-uncommon {
+  border-color: rgba(112, 244, 155, 0.58);
+}
+
+.rarity-rare {
+  border-color: rgba(94, 186, 255, 0.7);
+}
+
+.rarity-epic {
+  border-color: rgba(205, 128, 255, 0.74);
 }
 
 .inventory-item-row {
@@ -477,6 +528,53 @@
   background: #06100b;
   box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
   padding: 16px;
+}
+
+.equipment-dialog {
+  width: min(720px, 100%);
+  max-height: min(680px, calc(100vh - 32px));
+  overflow: auto;
+  border: 1px solid #d8a735;
+  background: #06100b;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  padding: 16px;
+}
+
+.equipment-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.equipment-compare-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(119, 184, 160, 0.3);
+  background: rgba(3, 14, 9, 0.76);
+  padding: 12px;
+}
+
+.equipment-compare-card h3 {
+  margin: 0;
+  color: #f3d67d;
+  font-size: 16px;
+}
+
+.equipment-delta {
+  margin: 12px 0 0;
+  border: 1px solid rgba(119, 184, 160, 0.28);
+  background: rgba(1, 8, 5, 0.68);
+  padding: 9px 10px;
+  font-size: 13px;
+}
+
+.equipment-delta.is-positive {
+  color: #70f49b;
+}
+
+.equipment-delta.is-negative {
+  color: #ff8f8f;
 }
 
 .market-dialog {

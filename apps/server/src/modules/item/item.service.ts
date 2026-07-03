@@ -31,6 +31,7 @@ interface ItemRepositoryLike {
   consumeStackable(input: { owner: ItemOwner; itemId: ItemId; quantity: number }): Promise<boolean>;
   createItemInstance(input: CreateItemInstanceInput): Promise<ItemInstanceRecord>;
   findItemInstance(instanceId: string): Promise<ItemInstanceRecord | null>;
+  findEquippedInstanceBySlot(owner: ItemOwner, slot: string): Promise<ItemInstanceRecord | null>;
   moveItemInstance(input: {
     instanceId: string;
     fromOwner: ItemOwner;
@@ -287,6 +288,30 @@ export class ItemService {
       });
       if (!result.ok) {
         throw new ItemServiceError("VALIDATION_ERROR", "装备不能穿戴到这个栏位。");
+      }
+
+      const equipped = await repo.findEquippedInstanceBySlot(input.owner, input.targetSlot);
+      if (equipped && equipped.id !== input.instanceId) {
+        const unequipped = await repo.moveItemInstance({
+          instanceId: equipped.id,
+          fromOwner: input.owner,
+          expectedLocationType: "equipped",
+          toOwner: input.owner,
+          locationType: "inventory",
+          slot: equipped.slot
+        });
+        if (!unequipped) {
+          throw new ItemServiceError("VALIDATION_ERROR", "原装备状态已变化。");
+        }
+        await repo.writeLedger({
+          operation: "unequip",
+          itemDefId: equipped.itemDefId,
+          itemInstanceId: equipped.id,
+          fromOwner: input.owner,
+          toOwner: input.owner,
+          reason: input.reason,
+          metadata: { ...(input.metadata ?? {}), replacedByInstanceId: input.instanceId }
+        });
       }
 
       const moved = await repo.moveItemInstance({

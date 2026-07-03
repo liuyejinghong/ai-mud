@@ -3,6 +3,7 @@ import {
   CHARACTER_CLASSES,
   type CharacterClassId,
   type Direction,
+  type EquipmentItemDto,
   type GameStateDto,
   type GameSyncEventDto,
   type HungerStatus,
@@ -21,6 +22,7 @@ import {
   createCharacter,
   eatFood,
   enterCorruptForest,
+  equipEquipment,
   GameApiError,
   getGameSync,
   getMarket,
@@ -53,6 +55,7 @@ const initialState: GameStateDto = {
   map: null,
   inventory: [],
   equipment: [],
+  backpackEquipment: [],
   market: null,
   npcTasks: [],
   currentAction: null,
@@ -82,6 +85,40 @@ function moneyText(money: MoneyDto) {
 
 function isFoodItem(item: InventoryItemDto) {
   return item.itemId === "wild_berry" || item.itemId === "beast_meat";
+}
+
+const slotLabels: Record<EquipmentItemDto["slot"], string> = {
+  weapon: "武器",
+  chest: "胸甲",
+  head: "头部",
+  accessory: "饰品"
+};
+
+const rarityLabels: Record<EquipmentItemDto["rarity"], string> = {
+  common: "普通",
+  uncommon: "优良",
+  rare: "稀有",
+  epic: "史诗"
+};
+
+function equipmentPower(item: EquipmentItemDto) {
+  return item.attackBonus + item.defenseBonus + item.agilityBonus + item.maxHpBonus;
+}
+
+function equipmentStatLine(item: EquipmentItemDto | null) {
+  if (!item) return "无";
+  const stats = [
+    item.attackBonus ? `攻 +${item.attackBonus}` : null,
+    item.defenseBonus ? `防 +${item.defenseBonus}` : null,
+    item.agilityBonus ? `敏 +${item.agilityBonus}` : null,
+    item.maxHpBonus ? `生命 +${item.maxHpBonus}` : null
+  ].filter((entry): entry is string => entry !== null);
+  return stats.length ? stats.join(" / ") : "无属性";
+}
+
+function equipmentAffixLine(item: EquipmentItemDto) {
+  if (item.affixes.length === 0) return "无词缀";
+  return item.affixes.map((affix) => `${affix.name} +${affix.value}`).join(" / ");
 }
 
 function hungerWarningText(status: HungerStatus) {
@@ -119,6 +156,7 @@ function syncEventText(event: GameSyncEventDto) {
 
 type ActiveModal =
   | { type: "item"; item: InventoryItemDto }
+  | { type: "equipment"; item: EquipmentItemDto }
   | { type: "market" }
   | { type: "dialogue" }
   | { type: "combat" };
@@ -187,6 +225,7 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
     state.availableActions.includes("repair_equipment") && !isBusy && !state.currentAction;
   const canEatFood =
     state.availableActions.includes("eat_food") && !isBusy && !state.currentAction;
+  const canEquipEquipment = !isBusy && !state.currentAction;
   const hungerWarning = hungerWarningText(state.character?.needs.hunger.status ?? "fed");
   const damagedEquipment = state.equipment.filter((item) => item.repairQuote !== null);
   const selectedClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
@@ -199,6 +238,20 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
     } catch (caught) {
       if (isAuthExpired(caught)) onAuthExpired?.();
       setError(gameErrorMessage(caught, "动作失败，请稍后再试。"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function equipBackpackEquipment(instanceId: string, onSuccess: () => void) {
+    setError(null);
+    setIsBusy(true);
+    try {
+      setState(await equipEquipment({ instanceId }, csrfToken));
+      onSuccess();
+    } catch (caught) {
+      if (isAuthExpired(caught)) onAuthExpired?.();
+      setError(gameErrorMessage(caught, "装备失败，请稍后再试。"));
     } finally {
       setIsBusy(false);
     }
@@ -433,7 +486,7 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
               <article className="equipment-item" key={item.id}>
                 <div className="equipment-title">
                   <strong>{item.name}</strong>
-                  <span>{item.slot === "weapon" ? "武器" : "胸甲"}</span>
+                  <span>{slotLabels[item.slot]} · {rarityLabels[item.rarity]}</span>
                 </div>
                 <div className="durability-bar" aria-hidden="true">
                   <span style={{ width: `${item.durabilityPct}%` }} />
@@ -442,6 +495,8 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
                   <span>{item.currentDurability}/{item.maxDurability}</span>
                   <span>装等 {item.itemLevel}</span>
                 </div>
+                <p className="equipment-cost">{equipmentStatLine(item)}</p>
+                <p className="equipment-affixes">{equipmentAffixLine(item)}</p>
                 {item.effectiveStatRatio < 1 ? (
                   <p className="equipment-warning">耐久归零，仅保留 20% 属性。</p>
                 ) : null}
@@ -483,9 +538,28 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
         <section className="game-panel">
           <div className="panel-heading">
             <h2>背包</h2>
-            <span>{state.inventory.length} 类</span>
+            <span>{state.inventory.length + state.backpackEquipment.length} 类</span>
           </div>
-          {state.inventory.length === 0 ? <p className="empty-copy">空</p> : null}
+          {state.inventory.length === 0 && state.backpackEquipment.length === 0 ? (
+            <p className="empty-copy">空</p>
+          ) : null}
+          {state.backpackEquipment.length > 0 ? (
+            <div className="inventory-equipment-list" aria-label="背包装备">
+              {state.backpackEquipment.map((item) => (
+                <button
+                  type="button"
+                  className={`inventory-equipment rarity-${item.rarity}`}
+                  key={item.id}
+                  onClick={() => setActiveModal({ type: "equipment", item })}
+                >
+                  <strong>{item.name}</strong>
+                  <span>
+                    {slotLabels[item.slot]} · {rarityLabels[item.rarity]} · 装等 {item.itemLevel}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="inventory-list">
             {state.inventory.map((item) => (
               <div className="inventory-item-row" key={item.itemId}>
@@ -817,6 +891,80 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
 
       <ModalManager activeModal={activeModal} onClose={() => setActiveModal(null)}>
         {(modal, closeModal) => {
+          if (modal.type === "equipment") {
+            const current = state.equipment.find((item) => item.slot === modal.item.slot) ?? null;
+            const powerDelta = equipmentPower(modal.item) - (current ? equipmentPower(current) : 0);
+            return (
+              <section
+                className="equipment-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label={`${modal.item.name} 装备对比`}
+              >
+                <p className="game-kicker">Equipment Compare</p>
+                <div className="panel-heading">
+                  <h2>{modal.item.name}</h2>
+                  <span>{rarityLabels[modal.item.rarity]}</span>
+                </div>
+                <div className="equipment-compare-grid">
+                  <article className="equipment-compare-card">
+                    <p className="game-kicker">当前</p>
+                    <h3>{current?.name ?? "空槽位"}</h3>
+                    <dl className="stat-list">
+                      <div>
+                        <dt>槽位</dt>
+                        <dd>{slotLabels[modal.item.slot]}</dd>
+                      </div>
+                      <div>
+                        <dt>属性</dt>
+                        <dd>{equipmentStatLine(current)}</dd>
+                      </div>
+                      <div>
+                        <dt>词缀</dt>
+                        <dd>{current ? equipmentAffixLine(current) : "无"}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                  <article className={`equipment-compare-card rarity-${modal.item.rarity}`}>
+                    <p className="game-kicker">背包</p>
+                    <h3>{modal.item.name}</h3>
+                    <dl className="stat-list">
+                      <div>
+                        <dt>槽位</dt>
+                        <dd>{slotLabels[modal.item.slot]}</dd>
+                      </div>
+                      <div>
+                        <dt>属性</dt>
+                        <dd>{equipmentStatLine(modal.item)}</dd>
+                      </div>
+                      <div>
+                        <dt>词缀</dt>
+                        <dd>{equipmentAffixLine(modal.item)}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                </div>
+                <p className={powerDelta >= 0 ? "equipment-delta is-positive" : "equipment-delta is-negative"}>
+                  综合属性差异：{powerDelta >= 0 ? "+" : ""}
+                  {powerDelta}
+                </p>
+                <div className="dialog-actions">
+                  <button
+                    type="button"
+                    className="game-primary-button"
+                    disabled={!canEquipEquipment}
+                    onClick={() => void equipBackpackEquipment(modal.item.id, closeModal)}
+                  >
+                    装备
+                  </button>
+                  <button type="button" className="game-secondary-button" onClick={closeModal}>
+                    关闭
+                  </button>
+                </div>
+              </section>
+            );
+          }
+
           if (modal.type === "item") {
             return (
               <section

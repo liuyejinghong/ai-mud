@@ -1,4 +1,5 @@
 import {
+  AFFIX_POOLS,
   BLACKPINE_OUTPOST,
   CORRUPT_FOREST,
   FIRST_ITEMS,
@@ -36,7 +37,9 @@ import {
   type CurrentActionDto,
   type Direction,
   type EatFoodRequestDto,
+  type EquipEquipmentRequestDto,
   type EquipmentItemDto,
+  type EquipmentSlot,
   type RepairEquipmentRequestDto,
   type GameStateDto,
   type GameSyncResponseDto,
@@ -49,6 +52,8 @@ import {
   type StartGatheringRequestDto
 } from "@ai-mud/shared";
 import type { Db } from "../../db/client.js";
+import { ItemRepository, type ItemInstanceRecord } from "../item/item.repository.js";
+import { ItemService } from "../item/item.service.js";
 import {
   GameRepository,
   type CharacterActionRecord,
@@ -223,6 +228,95 @@ function toInventoryDto(items: Array<{ itemId: InventoryItemDto["itemId"]; quant
   }));
 }
 
+const EQUIPMENT_AFFIX_STATS = new Set([
+  "attack",
+  "defense",
+  "agility",
+  "maxHp",
+  "gatherSpeedPct",
+  "repairDiscountPct",
+  "durabilityBonusPct",
+  "injuryRecoveryPct"
+]);
+
+function readNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function readBaseStats(value: unknown) {
+  const stats = typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+  return {
+    attack: readNumber(stats.attack),
+    defense: readNumber(stats.defense),
+    agility: readNumber(stats.agility),
+    maxHp: readNumber(stats.maxHp)
+  };
+}
+
+function affixName(affixId: string) {
+  return AFFIX_POOLS.find((affix) => affix.id === affixId)?.name ?? affixId;
+}
+
+function readAffixes(value: unknown): EquipmentItemDto["affixes"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const record = entry as Record<string, unknown>;
+    if (
+      typeof record.affixId !== "string" ||
+      typeof record.stat !== "string" ||
+      !EQUIPMENT_AFFIX_STATS.has(record.stat) ||
+      typeof record.value !== "number"
+    ) {
+      return [];
+    }
+    return [
+      {
+        affixId: record.affixId,
+        name: affixName(record.affixId),
+        stat: record.stat as EquipmentItemDto["affixes"][number]["stat"],
+        value: record.value
+      }
+    ];
+  });
+}
+
+function equipmentRecordFromInstance(
+  characterId: string,
+  instance: ItemInstanceRecord
+): EquipmentRecord {
+  const definition = getItemById(instance.itemDefId);
+  const stats = readBaseStats(instance.baseStats);
+  const affixes = readAffixes(instance.affixes);
+  const affixStats = affixes.reduce(
+    (sum, affix) => {
+      if (affix.stat === "attack") sum.attack += affix.value;
+      if (affix.stat === "defense") sum.defense += affix.value;
+      if (affix.stat === "agility") sum.agility += affix.value;
+      if (affix.stat === "maxHp") sum.maxHp += affix.value;
+      return sum;
+    },
+    { attack: 0, defense: 0, agility: 0, maxHp: 0 }
+  );
+
+  return {
+    id: instance.id,
+    characterId,
+    slot: (instance.slot ?? "weapon") as EquipmentSlot,
+    itemKey: instance.itemDefId,
+    name: definition?.name ?? instance.itemDefId,
+    rarity: instance.rarity,
+    itemLevel: instance.itemLevel,
+    attackBonus: stats.attack + affixStats.attack,
+    defenseBonus: stats.defense + affixStats.defense,
+    agilityBonus: stats.agility + affixStats.agility,
+    maxHpBonus: stats.maxHp + affixStats.maxHp,
+    affixes,
+    maxDurability: instance.maxDurability,
+    currentDurability: instance.currentDurability
+  };
+}
+
 function toEquipmentDto(equipment: EquipmentRecord): EquipmentItemDto {
   const quote = calculateEquipmentRepairQuote(equipment);
   return {
@@ -230,9 +324,13 @@ function toEquipmentDto(equipment: EquipmentRecord): EquipmentItemDto {
     slot: equipment.slot,
     itemKey: equipment.itemKey,
     name: equipment.name,
+    rarity: equipment.rarity ?? "common",
     itemLevel: equipment.itemLevel,
     attackBonus: equipment.attackBonus,
     defenseBonus: equipment.defenseBonus,
+    agilityBonus: equipment.agilityBonus ?? 0,
+    maxHpBonus: equipment.maxHpBonus ?? 0,
+    affixes: equipment.affixes ?? [],
     maxDurability: equipment.maxDurability,
     currentDurability: equipment.currentDurability,
     durabilityPct: calculateDurabilityPct(equipment),
@@ -474,13 +572,13 @@ export class GameService {
           attack:
             Math.floor(
               (classAttack(character.classId) +
-                equipmentAttackBonus(await repo.listEquipment(character.id))) *
+                equipmentAttackBonus(await this.listEquippedEquipment(repo, character.id))) *
                 calculateHungerCombatMultiplier(character.hunger)
             ),
           defense:
             Math.floor(
               (classDefense(character.classId) +
-                equipmentDefenseBonus(await repo.listEquipment(character.id))) *
+                equipmentDefenseBonus(await this.listEquippedEquipment(repo, character.id))) *
                 calculateHungerCombatMultiplier(character.hunger)
             ),
           agility: classAgility(character.classId)
@@ -751,13 +849,47 @@ export class GameService {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
       const character = await this.requireRepairContext(repo, accountId);
-      const equipment = await repo.listEquipment(character.id);
+      const equipment = await this.listEquippedEquipment(repo, character.id);
       await this.repairEquipmentRecords(
         repo,
         character,
         equipment.filter((item) => calculateEquipmentRepairQuote(item) !== null)
       );
       return this.buildState(repo, accountId, new Date());
+    });
+  }
+
+  async equipEquipment(
+    accountId: string,
+    input: EquipEquipmentRequestDto
+  ): Promise<GameStateDto> {
+    return this.db.transaction(async (tx) => {
+      const repo = new GameRepository(tx);
+      const now = new Date();
+      const character = await this.requireSettledCharacter(repo, accountId, now);
+      await this.requireNoActiveAction(repo, character.id);
+
+      const backpackEquipment = await this.listBackpackEquipment(repo, character.id);
+      const equipment = backpackEquipment.find((item) => item.id === input.instanceId);
+      if (!equipment) {
+        throw new GameServiceError("VALIDATION_ERROR", "背包里没有这件装备。");
+      }
+
+      await repo.deleteLegacyEquipmentBySlot({ characterId: character.id, slot: equipment.slot });
+      await new ItemService(new ItemRepository(tx, false)).equip({
+        owner: { ownerType: "character", ownerId: character.id },
+        instanceId: input.instanceId,
+        targetSlot: equipment.slot,
+        reason: "character.equip"
+      });
+      await repo.writeEvent({
+        characterId: character.id,
+        eventType: "equipment.equip",
+        message: `你装备了${equipment.name}。`,
+        metadata: { itemInstanceId: input.instanceId, slot: equipment.slot }
+      });
+
+      return this.buildState(repo, accountId, now);
     });
   }
 
@@ -1007,12 +1139,30 @@ export class GameService {
     return character;
   }
 
+  private async listEquippedEquipment(repo: GameRepository, characterId: string) {
+    const [legacyEquipment, instanceEquipment] = await Promise.all([
+      repo.listEquipment(characterId),
+      repo.listItemInstances({ characterId, locationType: "equipped" })
+    ]);
+    return [
+      ...legacyEquipment,
+      ...instanceEquipment.map((instance) => equipmentRecordFromInstance(characterId, instance))
+    ];
+  }
+
+  private async listBackpackEquipment(repo: GameRepository, characterId: string) {
+    const instances = await repo.listItemInstances({ characterId, locationType: "inventory" });
+    return instances.map((instance) => equipmentRecordFromInstance(characterId, instance));
+  }
+
   private async requireEquipment(
     repo: GameRepository,
     characterId: string,
     equipmentId: string
   ) {
-    const equipment = await repo.findEquipmentById(characterId, equipmentId);
+    const equipment = (await this.listEquippedEquipment(repo, characterId)).find(
+      (item) => item.id === equipmentId
+    );
     if (!equipment) {
       throw new GameServiceError("VALIDATION_ERROR", "装备不存在。");
     }
@@ -1201,7 +1351,7 @@ export class GameService {
         hp: Math.max(1, character.hp - damageTaken)
       });
 
-      const equipment = await repo.listEquipment(character.id);
+      const equipment = await this.listEquippedEquipment(repo, character.id);
       const damagedEquipment = applyCombatDurabilityLoss(equipment);
       for (const item of damagedEquipment) {
         const previous = equipment.find((entry) => entry.id === item.id);
@@ -1254,7 +1404,7 @@ export class GameService {
       });
     }
 
-    const equipment = await repo.listEquipment(character.id);
+    const equipment = await this.listEquippedEquipment(repo, character.id);
     const damagedEquipment = applyCombatDurabilityLoss(equipment);
     for (const item of damagedEquipment) {
       const previous = equipment.find((entry) => entry.id === item.id);
@@ -1395,6 +1545,7 @@ export class GameService {
         map: null,
         inventory: [],
         equipment: [],
+        backpackEquipment: [],
         market: null,
         npcTasks: [],
         currentAction: null,
@@ -1405,10 +1556,12 @@ export class GameService {
     }
 
     const inventory = await repo.listInventory(character.id);
-    const equipment = await repo.listEquipment(character.id);
+    const equipment = await this.listEquippedEquipment(repo, character.id);
+    const backpackEquipment = await this.listBackpackEquipment(repo, character.id);
     const log = await repo.listRecentEvents(character.id);
     const inventoryDto = toInventoryDto(inventory);
     const equipmentDto = equipment.map(toEquipmentDto);
+    const backpackEquipmentDto = backpackEquipment.map(toEquipmentDto);
     const activeAction = await repo.findActiveActionByCharacterId(character.id);
     const currentAction = activeAction ? this.toCurrentActionDto(activeAction, now) : null;
 
@@ -1434,6 +1587,7 @@ export class GameService {
         map: null,
         inventory: inventoryDto,
         equipment: equipmentDto,
+        backpackEquipment: backpackEquipmentDto,
         market: null,
         npcTasks: [],
         currentAction,
@@ -1473,6 +1627,7 @@ export class GameService {
       },
       inventory: inventoryDto,
       equipment: equipmentDto,
+      backpackEquipment: backpackEquipmentDto,
       market: null,
       npcTasks: [],
       currentAction,

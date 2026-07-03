@@ -43,7 +43,7 @@ describe("game contract", () => {
 
   it("exposes v0.8.1 loot slice compatibility", () => {
     expect(PRODUCT_VERSION).toBe("0.8.1");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(22);
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(23);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(16);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(12);
@@ -131,9 +131,13 @@ describe("game contract", () => {
       slot: "weapon",
       itemKey: "training_sword",
       name: "训练短剑",
+      rarity: "common",
       itemLevel: 5,
       attackBonus: 2,
       defenseBonus: 0,
+      agilityBonus: 0,
+      maxHpBonus: 0,
+      affixes: [],
       maxDurability: 100,
       currentDurability: 60,
       durabilityPct: 60,
@@ -151,7 +155,13 @@ describe("game contract", () => {
   it("allows v0.4.2 action commands in game state", () => {
     const state: Pick<
       GameStateDto,
-      "availableActions" | "currentAction" | "market" | "equipment" | "npcTasks" | "rumors"
+      | "availableActions"
+      | "currentAction"
+      | "market"
+      | "equipment"
+      | "backpackEquipment"
+      | "npcTasks"
+      | "rumors"
     > = {
       rumors: [],
       availableActions: [
@@ -172,9 +182,13 @@ describe("game contract", () => {
           slot: "weapon",
           itemKey: "training_sword",
           name: "训练短剑",
+          rarity: "common",
           itemLevel: 5,
           attackBonus: 2,
           defenseBonus: 0,
+          agilityBonus: 0,
+          maxHpBonus: 0,
+          affixes: [],
           maxDurability: 100,
           currentDurability: 100,
           durabilityPct: 100,
@@ -182,6 +196,7 @@ describe("game contract", () => {
           repairQuote: null
         }
       ],
+      backpackEquipment: [],
       currentAction: null,
       market: {
         settlementId: "blackpine_outpost",

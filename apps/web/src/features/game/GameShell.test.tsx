@@ -24,6 +24,7 @@ const createCharacterState: GameStateDto = {
   map: null,
   inventory: [],
   equipment: [],
+  backpackEquipment: [],
   market: null,
   npcTasks: [],
   currentAction: null,
@@ -57,9 +58,13 @@ const villageState: GameStateDto = {
       slot: "weapon",
       itemKey: "training_sword",
       name: "训练短剑",
+      rarity: "common",
       itemLevel: 5,
       attackBonus: 2,
       defenseBonus: 0,
+      agilityBonus: 0,
+      maxHpBonus: 0,
+      affixes: [],
       maxDurability: 100,
       currentDurability: 60,
       durabilityPct: 60,
@@ -70,6 +75,7 @@ const villageState: GameStateDto = {
       }
     }
   ],
+  backpackEquipment: [],
   market: null,
   npcTasks: [],
   currentAction: null,
@@ -621,6 +627,55 @@ describe("GameShell", () => {
         "http://127.0.0.1:3000/game/repair",
         expect.objectContaining({
           body: JSON.stringify({ equipmentId: "equipment-1" }),
+          method: "POST"
+        })
+      );
+    });
+  });
+
+  it("opens backpack equipment compare and equips the selected instance", async () => {
+    const backpackState: GameStateDto = {
+      ...villageState,
+      backpackEquipment: [
+        {
+          id: "instance-1",
+          slot: "weapon",
+          itemKey: "wolfbone_shiv",
+          name: "狼骨短刃",
+          rarity: "rare",
+          itemLevel: 3,
+          attackBonus: 4,
+          defenseBonus: 0,
+          agilityBonus: 1,
+          maxHpBonus: 0,
+          affixes: [{ affixId: "sharp", name: "锋利", stat: "attack", value: 1 }],
+          maxDurability: 70,
+          currentDurability: 70,
+          durabilityPct: 100,
+          effectiveStatRatio: 1,
+          repairQuote: null
+        }
+      ]
+    };
+    const equippedState: GameStateDto = {
+      ...backpackState,
+      equipment: [backpackState.backpackEquipment[0]!],
+      backpackEquipment: []
+    };
+    const fetchMock = mockFetchWithStates([backpackState, equippedState]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /狼骨短刃/ }));
+    expect(screen.getByRole("dialog", { name: "狼骨短刃 装备对比" })).toBeTruthy();
+    expect(screen.getByText("综合属性差异：+3")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "装备" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:3000/game/equipment/equip",
+        expect.objectContaining({
+          body: JSON.stringify({ instanceId: "instance-1" }),
           method: "POST"
         })
       );

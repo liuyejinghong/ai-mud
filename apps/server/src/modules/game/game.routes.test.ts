@@ -48,9 +48,13 @@ const baseState: GameStateDto = {
       slot: "weapon",
       itemKey: "training_sword",
       name: "训练短剑",
+      rarity: "common",
       itemLevel: 5,
       attackBonus: 2,
       defenseBonus: 0,
+      agilityBonus: 0,
+      maxHpBonus: 0,
+      affixes: [],
       maxDurability: 100,
       currentDurability: 60,
       durabilityPct: 60,
@@ -61,6 +65,7 @@ const baseState: GameStateDto = {
       }
     }
   ],
+  backpackEquipment: [],
   market: null,
   npcTasks: [],
   currentAction: null,
@@ -163,6 +168,7 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
     }),
     repairEquipment: async () => baseState,
     repairAllEquipment: async () => baseState,
+    equipEquipment: async () => baseState,
     eatFood: async () => ({
       ...baseState,
       character: {
@@ -756,6 +762,41 @@ describe("registerGameRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(calls).toEqual([{ accountId: "account-1" }]);
+  });
+
+  it("equips a backpack equipment instance through a CSRF-protected mutation", async () => {
+    const calls: unknown[] = [];
+    const app = buildGameRouteTestApp({
+      equipEquipment: async (accountId, input) => {
+        calls.push({ accountId, input });
+        return {
+          ...baseState,
+          equipment: [
+            {
+              ...baseState.equipment[0]!,
+              id: input.instanceId,
+              itemKey: "wolfbone_shiv",
+              name: "狼骨短刃",
+              rarity: "rare",
+              attackBonus: 4,
+              agilityBonus: 1,
+              affixes: [{ affixId: "sharp", name: "锋利", stat: "attack", value: 1 }]
+            }
+          ],
+          backpackEquipment: []
+        };
+      }
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/equipment/equip",
+      headers: { "x-csrf-token": "csrf" },
+      payload: { instanceId: "instance-1" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(calls).toEqual([{ accountId: "account-1", input: { instanceId: "instance-1" } }]);
+    expect(response.json().equipment[0].name).toBe("狼骨短刃");
   });
 
   it("eats a food item through a CSRF-protected mutation", async () => {

@@ -1,6 +1,7 @@
 import type {
   CreateCharacterRequestDto,
   EatFoodRequestDto,
+  EquipEquipmentRequestDto,
   GameStateDto,
   GameSyncResponseDto,
   MarketDto,
@@ -211,5 +212,13 @@ export function repairAllEquipment(csrfToken: string) {
     method: "POST",
     headers: { "x-csrf-token": csrfToken },
     body: JSON.stringify({})
+  });
+}
+
+export function equipEquipment(input: EquipEquipmentRequestDto, csrfToken: string) {
+  return requestGame<GameStateDto>("/game/equipment/equip", {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify(input)
   });
 }

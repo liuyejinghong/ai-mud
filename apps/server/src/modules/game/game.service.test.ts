@@ -87,6 +87,10 @@ describe("GameService action settlement", () => {
         calls.push("listEquipment");
         return [];
       },
+      listItemInstances: async () => {
+        calls.push("listItemInstances");
+        return [];
+      },
       updateEquipmentDurability: async () => {
         calls.push("updateEquipmentDurability");
       },
@@ -143,6 +147,7 @@ describe("GameService action settlement", () => {
       },
       writeEvent: async () => {},
       listEquipment: async () => [],
+      listItemInstances: async () => [],
       updateEquipmentDurability: async () => {},
       updateCharacterVitals: async () => {},
       updateCharacterLocation: async () => {}
@@ -211,6 +216,10 @@ describe("GameService action settlement", () => {
           }
         ];
       },
+      listItemInstances: async () => {
+        calls.push("listItemInstances");
+        return [];
+      },
       updateEquipmentDurability: async (input: {
         equipmentId: string;
         currentDurability: number;
@@ -253,6 +262,11 @@ describe("GameService action settlement", () => {
     expect(durabilityUpdates).toEqual([
       { equipmentId: "weapon-1", currentDurability: 8, maxDurability: 10 }
     ]);
-    expect(calls).toEqual(["updateCharacterVitals", "listEquipment", "updateEquipmentDurability"]);
+    expect(calls).toEqual([
+      "updateCharacterVitals",
+      "listEquipment",
+      "listItemInstances",
+      "updateEquipmentDurability"
+    ]);
   });
 });
