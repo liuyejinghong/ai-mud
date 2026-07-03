@@ -143,13 +143,53 @@ function dialogueTaskHint(target: NpcDialogueTargetDto) {
   return `${status}：${target.taskTitle}`;
 }
 
-function syncEventText(event: GameSyncEventDto) {
+interface FeedbackNotice {
+  id: string;
+  tone: "loot" | "rare" | "level";
+  text: string;
+}
+
+function readPayloadString(payload: Record<string, unknown>, key: string) {
+  return typeof payload[key] === "string" ? payload[key] : null;
+}
+
+function readPayloadNumber(payload: Record<string, unknown>, key: string) {
+  return typeof payload[key] === "number" ? payload[key] : null;
+}
+
+function syncEventNotice(event: GameSyncEventDto): FeedbackNotice | null {
   const itemId = typeof event.payload.itemId === "string" ? event.payload.itemId : null;
-  const quantity = typeof event.payload.quantity === "number" ? event.payload.quantity : null;
-  if (event.eventType === "item.grant" && itemId && quantity) return `获得 ${itemId} x${quantity}`;
-  if (event.eventType === "item.consume" && itemId && quantity) return `消耗 ${itemId} x${quantity}`;
+  const itemName = readPayloadString(event.payload, "itemName") ?? itemId;
+  const quantity = readPayloadNumber(event.payload, "quantity");
+  if (event.eventType === "item.grant" && itemName && quantity) {
+    return { id: String(event.id), tone: "loot", text: `获得 ${itemName} x${quantity}` };
+  }
+  if (event.eventType === "item.instance.grant") {
+    const equipmentName =
+      readPayloadString(event.payload, "itemName") ??
+      readPayloadString(event.payload, "itemDefId") ??
+      "未知装备";
+    const rarity = readPayloadString(event.payload, "rarity");
+    const rarityText =
+      rarity && rarity in rarityLabels
+        ? rarityLabels[rarity as EquipmentItemDto["rarity"]]
+        : "装备";
+    return {
+      id: String(event.id),
+      tone: rarity === "common" ? "loot" : "rare",
+      text: `获得${rarityText}装备：${equipmentName}`
+    };
+  }
+  if (event.eventType === "character.level_up") {
+    const level = readPayloadNumber(event.payload, "level");
+    if (!level) return null;
+    return { id: String(event.id), tone: "level", text: `等级提升至 ${level}` };
+  }
+  if (event.eventType === "item.consume" && itemName && quantity) {
+    return { id: String(event.id), tone: "loot", text: `消耗 ${itemName} x${quantity}` };
+  }
   if (event.eventType === "item.transfer.in" && itemId && quantity) {
-    return `收到 ${itemId} x${quantity}`;
+    return { id: String(event.id), tone: "loot", text: `收到 ${itemName} x${quantity}` };
   }
   return null;
 }
@@ -188,16 +228,16 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
   const [dialogue, setDialogue] = useState<NpcDialogueResponseDto | null>(null);
   const [dialogueInput, setDialogueInput] = useState("");
   const [dialogueStatus, setDialogueStatus] = useState("");
-  const [syncNotices, setSyncNotices] = useState<string[]>([]);
+  const [syncNotices, setSyncNotices] = useState<FeedbackNotice[]>([]);
   const [plannedMinutes, setPlannedMinutes] =
     useState<StartGatheringRequestDto["plannedMinutes"]>(10);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
   const handleSyncEvents = useCallback((events: GameSyncEventDto[]) => {
-    const notices = events.map(syncEventText).filter((entry): entry is string => entry !== null);
+    const notices = events.map(syncEventNotice).filter((entry): entry is FeedbackNotice => entry !== null);
     if (notices.length === 0) return;
-    setSyncNotices((current) => [...notices, ...current].slice(0, 3));
+    setSyncNotices((current) => [...notices, ...current].slice(0, 4));
   }, []);
 
   const sync = useGameSync({
@@ -799,8 +839,10 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
 
         {syncNotices.length > 0 ? (
           <ul className="sync-feedback-list" aria-live="polite" aria-label="同步事件提示">
-            {syncNotices.map((notice, index) => (
-              <li key={`${notice}:${index}`}>{notice}</li>
+            {syncNotices.map((notice) => (
+              <li className={`sync-feedback-item is-${notice.tone}`} key={notice.id}>
+                {notice.text}
+              </li>
             ))}
           </ul>
         ) : null}

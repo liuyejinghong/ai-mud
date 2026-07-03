@@ -190,6 +190,60 @@ describe("GameService action settlement", () => {
     ]);
   });
 
+  it("levels up from combat xp and writes a sync feedback event", async () => {
+    const service = new GameService({} as Db);
+    const vitals: Array<{ level?: number; xp?: number }> = [];
+    const syncEvents: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
+    const repo = {
+      markActionCompleted: async () => true,
+      writeEvent: async () => {},
+      writeSyncEvent: async (input: { eventType: string; payload: Record<string, unknown> }) => {
+        syncEvents.push(input);
+      },
+      listEquipment: async () => [],
+      listItemInstances: async () => [],
+      updateEquipmentDurability: async () => {},
+      updateCharacterVitals: async (input: { level?: number; xp?: number }) => {
+        vitals.push(input);
+      },
+      updateCharacterLocation: async () => {}
+    };
+    const payload: CombatActionPayload = {
+      encounterId: "forest_wolf_pack",
+      combatLog: [],
+      combatTimeline: [],
+      expectedEndsAtMs: new Date("2026-07-02T08:01:00.000Z").getTime(),
+      outcome: "victory",
+      playerRemainingHp: 64,
+      xp: 48,
+      loot: []
+    };
+
+    await (service as unknown as {
+      settleCombatAction(
+        repo: object,
+        character: CharacterRecord,
+        action: CharacterActionRecord,
+        now: Date
+      ): Promise<void>;
+    }).settleCombatAction(
+      repo,
+      character({ level: 1, xp: 0 }),
+      combatAction(payload),
+      new Date("2026-07-02T08:01:00.000Z")
+    );
+
+    expect(vitals).toMatchObject([{ level: 2, xp: 48 }]);
+    expect(syncEvents).toMatchObject([
+      {
+        eventType: "character.level_up",
+        owner: { ownerType: "character", ownerId: "character-1" },
+        stateDirty: true,
+        payload: { previousLevel: 1, level: 2, xp: 48 }
+      }
+    ]);
+  });
+
   it("applies played combat damage and durability loss when escaping", async () => {
     const service = new GameService({} as Db);
     const calls: string[] = [];

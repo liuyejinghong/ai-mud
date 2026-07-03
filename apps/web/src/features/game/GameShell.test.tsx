@@ -358,6 +358,48 @@ describe("GameShell", () => {
     expect(screen.getByRole("button", { name: "关闭" })).toBeTruthy();
   });
 
+  it("renders loot and level feedback from the sync event stream", async () => {
+    mockFetchWithStates([
+      {
+        stateVersion: 4,
+        state: forestState,
+        nextCursor: 4,
+        events: [
+          {
+            id: 1,
+            eventType: "item.grant",
+            stateDirty: true,
+            payload: { itemId: "rough_hide", itemName: "粗糙皮革", quantity: 2 },
+            source: "item-service",
+            createdAt: "2026-07-02T08:00:00.000Z"
+          },
+          {
+            id: 2,
+            eventType: "item.instance.grant",
+            stateDirty: true,
+            payload: { itemDefId: "wolfbone_shiv", itemName: "狼骨短刃", rarity: "rare" },
+            source: "item-service",
+            createdAt: "2026-07-02T08:00:01.000Z"
+          },
+          {
+            id: 3,
+            eventType: "character.level_up",
+            stateDirty: true,
+            payload: { previousLevel: 1, level: 2, xp: 48 },
+            source: "game-service",
+            createdAt: "2026-07-02T08:00:02.000Z"
+          }
+        ]
+      }
+    ]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByText("获得 粗糙皮革 x2")).toBeTruthy();
+    expect(screen.getByText("获得稀有装备：狼骨短刃")).toBeTruthy();
+    expect(screen.getByText("等级提升至 2")).toBeTruthy();
+  });
+
   it("blocks movement shortcuts while an item dialog is open", async () => {
     const fetchMock = mockFetchWithStates([forestState]);
     render(<GameShell csrfToken="csrf" />);

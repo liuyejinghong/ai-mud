@@ -8,7 +8,7 @@ describe("version constants", () => {
       schemaVersion: 16,
       apiVersion: 23,
       engineVersion: 2,
-      rulesetVersion: 12,
+      rulesetVersion: 13,
       contentVersion: 10,
       promptVersion: 7,
       economyVersion: 2,

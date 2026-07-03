@@ -307,7 +307,8 @@ describe("NpcMemoryService", () => {
 
     const context = await service.getDialogueMemoryContext({
       npcActorId: "npc-blacksmith",
-      characterId: "char-1"
+      characterId: "char-1",
+      now: new Date("2026-07-02T12:00:00.000Z")
     });
 
     expect(context.split("\n")[0]).toContain("记忆碎片");

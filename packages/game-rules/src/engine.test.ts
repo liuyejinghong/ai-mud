@@ -13,6 +13,7 @@ import {
   calculateGatheringSettlement,
   calculateHungerCombatMultiplier,
   calculateHungerStatus,
+  calculateLevelFromXp,
   countUnsettledMeals,
   calculateNpcWagePayment,
   chooseNpcMealIntent,
@@ -21,8 +22,10 @@ import {
   formatMoney,
   movePosition,
   nextNpcTravelStep,
+  rollRarity,
   selectAutoEatFood,
   settleHunger,
+  settleLevelProgression,
   simulateCombat,
   validateNpcSimulationHealth
 } from "./engine.js";
@@ -108,6 +111,48 @@ describe("v0.3 engine rules", () => {
     expect(result.loot.every((item) => item.itemId !== ("gold" as never))).toBe(true);
   });
 
+  it("keeps the first 30 minutes rewarding enough for a new combat character", () => {
+    let elapsedMs = 0;
+    let xp = 0;
+    let combatCount = 0;
+    let uncommonOrBetterEquipment = 0;
+    const thirtyMinutesMs = 30 * 60_000;
+    const betweenCombatBufferMs = 60_000;
+
+    while (elapsedMs < thirtyMinutesMs) {
+      const combatSeed = `newbie-loop-${combatCount}`;
+      const result = simulateCombat({
+        seed: combatSeed,
+        player: {
+          name: "Zichen",
+          hp: 100,
+          maxHp: 100,
+          attack: 18,
+          defense: 6,
+          agility: 14
+        },
+        monsters: FIRST_MONSTERS
+      });
+
+      expect(result.outcome).toBe("victory");
+      xp += result.xp;
+
+      for (const [dropIndex, drop] of result.loot.entries()) {
+        if (drop.itemId !== "wolfbone_shiv") continue;
+
+        const rarity = rollRarity(`${combatSeed}:wolfbone_shiv`, dropIndex);
+        if (rarity !== "common") uncommonOrBetterEquipment += drop.quantity;
+      }
+
+      elapsedMs += result.durationMs + betweenCombatBufferMs;
+      combatCount += 1;
+    }
+
+    expect(combatCount).toBeGreaterThanOrEqual(3);
+    expect(calculateLevelFromXp(xp)).toBeGreaterThanOrEqual(2);
+    expect(uncommonOrBetterEquipment).toBeGreaterThanOrEqual(1);
+  });
+
   it("lets high agility attack more often than low agility", () => {
     const slow = simulateCombat({
       seed: "slow",
@@ -180,6 +225,21 @@ describe("v0.3 engine rules", () => {
       { slot: "weapon", currentDurability: 8, maxDurability: 100 },
       { slot: "chest", currentDurability: 9, maxDurability: 100 }
     ]);
+  });
+
+  it("derives character level from cumulative xp thresholds", () => {
+    expect(calculateLevelFromXp(0)).toBe(1);
+    expect(calculateLevelFromXp(47)).toBe(1);
+    expect(calculateLevelFromXp(48)).toBe(2);
+    expect(calculateLevelFromXp(108)).toBe(3);
+    expect(settleLevelProgression({ currentLevel: 2, nextXp: 200 })).toEqual({
+      level: 4,
+      leveledUp: true
+    });
+    expect(settleLevelProgression({ currentLevel: 4, nextXp: 1 })).toEqual({
+      level: 4,
+      leveledUp: false
+    });
   });
 
   it("quotes equipment repair only when durability is missing", () => {

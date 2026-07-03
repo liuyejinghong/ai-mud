@@ -144,7 +144,12 @@ describe("ItemService", () => {
         owner: characterOwner,
         eventType: "item.grant",
         stateDirty: true,
-        payload: { itemId: "iron_ore", quantity: 3, reason: "test.grant" },
+        payload: {
+          itemId: "iron_ore",
+          itemName: "基础铁矿石",
+          quantity: 3,
+          reason: "test.grant"
+        },
         source: "item-service"
       }
     ]);
@@ -171,6 +176,16 @@ describe("ItemService", () => {
       operation: "grant",
       itemInstanceId: instance.id,
       toOwner: characterOwner
+    });
+    expect(repo.syncEvents[0]).toMatchObject({
+      eventType: "item.instance.grant",
+      payload: {
+        itemDefId: "training_sword",
+        itemName: "训练短剑",
+        itemInstanceId: instance.id,
+        rarity: "rare",
+        reason: "test.instance"
+      }
     });
   });
 

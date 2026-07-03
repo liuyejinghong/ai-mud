@@ -80,7 +80,12 @@ export class ItemService {
       await this.writeOwnerSyncEvent(repo, input.owner, {
         eventType: "item.grant",
         stateDirty: true,
-        payload: { itemId: input.itemId, quantity: input.quantity, reason: input.reason }
+        payload: {
+          itemId: input.itemId,
+          itemName: item.name,
+          quantity: input.quantity,
+          reason: input.reason
+        }
       });
     });
   }
@@ -94,6 +99,7 @@ export class ItemService {
     metadata?: Record<string, unknown>;
   }): Promise<ItemInstanceRecord> {
     const equipment = rollEquipment(input.seed, input.itemDefId, input.rarity as EquipmentRarity);
+    const definition = getItemById(input.itemDefId);
     if (!equipment) {
       throw new ItemServiceError("VALIDATION_ERROR", "这个物品不能生成装备实例。");
     }
@@ -125,6 +131,7 @@ export class ItemService {
         stateDirty: true,
         payload: {
           itemDefId: input.itemDefId,
+          itemName: definition?.name ?? input.itemDefId,
           itemInstanceId: instance.id,
           rarity: input.rarity,
           reason: input.reason

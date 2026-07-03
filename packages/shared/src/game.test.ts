@@ -46,7 +46,7 @@ describe("game contract", () => {
     expect(WORLD_COMPATIBILITY.apiVersion).toBe(23);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(16);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
-    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(12);
+    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(13);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(10);
     expect(WORLD_COMPATIBILITY.promptVersion).toBe(7);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);

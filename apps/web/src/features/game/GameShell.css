@@ -777,9 +777,23 @@
   padding: 8px 10px;
   border: 1px solid rgba(65, 255, 124, 0.26);
   background: rgba(65, 255, 124, 0.06);
-  color: #aef2c1;
   font-size: 12px;
   list-style-position: inside;
+}
+
+.sync-feedback-item {
+  color: #aef2c1;
+}
+
+.sync-feedback-item.is-rare {
+  color: #9ee6ff;
+}
+
+.sync-feedback-item.is-level {
+  border-left: 3px solid #f3d67d;
+  color: #f3d67d;
+  list-style: none;
+  padding-left: 8px;
 }
 
 @media (max-width: 900px) {

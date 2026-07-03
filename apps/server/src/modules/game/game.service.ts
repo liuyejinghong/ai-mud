@@ -26,6 +26,7 @@ import {
   formatMoney,
   movePosition,
   rollRarity,
+  settleLevelProgression,
   settleHunger,
   simulateCombat
 } from "@ai-mud/game-rules";
@@ -1389,6 +1390,24 @@ export class GameService {
       });
     }
 
+    const levelProgression = settleLevelProgression({
+      currentLevel: character.level,
+      nextXp
+    });
+    if (levelProgression.leveledUp) {
+      await repo.writeSyncEvent({
+        owner: { ownerType: "character", ownerId: character.id },
+        eventType: "character.level_up",
+        stateDirty: true,
+        payload: {
+          previousLevel: character.level,
+          level: levelProgression.level,
+          xp: nextXp
+        },
+        source: "game-service"
+      });
+    }
+
     if (payload.outcome === "injury") {
       nextHp = 1;
       injuryUntil = new Date(now.getTime() + 30 * 60_000);
@@ -1419,6 +1438,7 @@ export class GameService {
     await repo.updateCharacterVitals({
       characterId: character.id,
       hp: nextHp,
+      level: levelProgression.level,
       xp: nextXp,
       ...(injuryUntil === undefined ? {} : { injuryUntil })
     });

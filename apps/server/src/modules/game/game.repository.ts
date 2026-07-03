@@ -135,6 +135,14 @@ export interface SyncEventRecord {
   createdAt: Date;
 }
 
+export interface WriteSyncEventInput {
+  owner: { ownerType: "character"; ownerId: string | null };
+  eventType: string;
+  stateDirty: boolean;
+  payload: Record<string, unknown>;
+  source: string;
+}
+
 export interface GatheringActionPayload {
   resourceId: string;
   itemId: ItemId;
@@ -446,6 +454,7 @@ export class GameRepository {
   async updateCharacterVitals(input: {
     characterId: string;
     hp: number;
+    level?: number;
     xp?: number;
     injuryUntil?: Date | null;
   }): Promise<void> {
@@ -453,6 +462,7 @@ export class GameRepository {
       .update(characters)
       .set({
         hp: input.hp,
+        ...(input.level === undefined ? {} : { level: input.level }),
         ...(input.xp === undefined ? {} : { xp: input.xp }),
         ...(input.injuryUntil === undefined ? {} : { injuryUntil: input.injuryUntil })
       })
@@ -779,6 +789,19 @@ export class GameRepository {
       source: row.source,
       createdAt: row.createdAt
     }));
+  }
+
+  async writeSyncEvent(input: WriteSyncEventInput): Promise<void> {
+    if (!input.owner.ownerId) return;
+
+    await this.db.insert(syncEvents).values({
+      audience: "character",
+      characterId: input.owner.ownerId,
+      eventType: input.eventType,
+      stateDirty: input.stateDirty,
+      payload: input.payload,
+      source: input.source
+    });
   }
 
   async findMapInstance(
