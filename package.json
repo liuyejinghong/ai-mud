@@ -8,7 +8,12 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:migrate": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server db:migrate",
+    "db:verify-migrations": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server db:verify-migrations",
+    "test:postgres": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server test:integration:postgres"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
