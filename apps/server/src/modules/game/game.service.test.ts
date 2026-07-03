@@ -44,7 +44,7 @@ describe("GameService action settlement", () => {
     }).toCurrentActionDto(
       {
         ...combatAction({
-          encounterId: "forest_wolf_pack",
+          encounterId: "corrupt_wolf_pack_01",
           combatLog: ["旧日志不应直接透出"],
           combatTimeline: [
             { atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。" },
@@ -102,7 +102,7 @@ describe("GameService action settlement", () => {
       }
     };
     const payload: CombatActionPayload = {
-      encounterId: "forest_wolf_pack",
+      encounterId: "corrupt_wolf_pack_01",
       combatLog: ["Zichen 攻击腐化野狼，造成 16 点伤害。"],
       combatTimeline: [{ atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。" }],
       expectedEndsAtMs: new Date("2026-07-02T08:01:00.000Z").getTime(),
@@ -133,6 +133,7 @@ describe("GameService action settlement", () => {
     const service = new GameService({} as Db);
     const stackGrants: Array<{ itemId: string; quantity: number }> = [];
     const instanceGrants: Array<{ itemDefId: string; seed: string; reason: string }> = [];
+    const cooldowns: Array<Record<string, string>> = [];
     const repo = {
       markActionCompleted: async () => true,
       grantCharacterItem: async (input: { itemId: string; quantity: number }) => {
@@ -150,10 +151,20 @@ describe("GameService action settlement", () => {
       listItemInstances: async () => [],
       updateEquipmentDurability: async () => {},
       updateCharacterVitals: async () => {},
-      updateCharacterLocation: async () => {}
+      updateCharacterLocation: async () => {},
+      findMapInstance: async () => ({
+        id: "map-1",
+        characterId: "character-1",
+        zoneId: "corrupt_forest",
+        resourceCharges: {},
+        encounterCooldowns: {}
+      }),
+      updateMapEncounterCooldowns: async (_mapId: string, input: Record<string, string>) => {
+        cooldowns.push(input);
+      }
     };
     const payload: CombatActionPayload = {
-      encounterId: "forest_wolf_pack",
+      encounterId: "corrupt_wolf_pack_01",
       combatLog: ["Zichen 攻击腐化野狼，造成 16 点伤害。"],
       combatTimeline: [{ atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。" }],
       expectedEndsAtMs: new Date("2026-07-02T08:01:00.000Z").getTime(),
@@ -188,12 +199,14 @@ describe("GameService action settlement", () => {
         reason: "action.combat.loot"
       }
     ]);
+    expect(cooldowns[0]?.corrupt_wolf_pack_01).toBe("2026-07-02T08:11:00.000Z");
   });
 
   it("levels up from combat xp and writes a sync feedback event", async () => {
     const service = new GameService({} as Db);
     const vitals: Array<{ level?: number; xp?: number }> = [];
     const syncEvents: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
+    const cooldowns: Array<Record<string, string>> = [];
     const repo = {
       markActionCompleted: async () => true,
       writeEvent: async () => {},
@@ -206,10 +219,20 @@ describe("GameService action settlement", () => {
       updateCharacterVitals: async (input: { level?: number; xp?: number }) => {
         vitals.push(input);
       },
-      updateCharacterLocation: async () => {}
+      updateCharacterLocation: async () => {},
+      findMapInstance: async () => ({
+        id: "map-1",
+        characterId: "character-1",
+        zoneId: "corrupt_forest",
+        resourceCharges: {},
+        encounterCooldowns: {}
+      }),
+      updateMapEncounterCooldowns: async (_mapId: string, input: Record<string, string>) => {
+        cooldowns.push(input);
+      }
     };
     const payload: CombatActionPayload = {
-      encounterId: "forest_wolf_pack",
+      encounterId: "corrupt_wolf_pack_01",
       combatLog: [],
       combatTimeline: [],
       expectedEndsAtMs: new Date("2026-07-02T08:01:00.000Z").getTime(),
@@ -242,6 +265,44 @@ describe("GameService action settlement", () => {
         payload: { previousLevel: 1, level: 2, xp: 48 }
       }
     ]);
+    expect(cooldowns[0]?.corrupt_wolf_pack_01).toBe("2026-07-02T08:11:00.000Z");
+  });
+
+  it("hides cooled down encounters from map state and combat actions", async () => {
+    const service = new GameService({} as Db);
+    const repo = {
+      findCharacterByAccountId: async () =>
+        character({
+          currentLocation: "old_mine",
+          position: { x: 2, y: 2 }
+        }),
+      listInventory: async () => [],
+      listEquipment: async () => [],
+      listItemInstances: async () => [],
+      listRecentEvents: async () => [],
+      findActiveActionByCharacterId: async () => null,
+      findMapInstance: async () => ({
+        id: "map-1",
+        characterId: "character-1",
+        zoneId: "old_mine",
+        resourceCharges: {},
+        encounterCooldowns: {
+          old_mine_rat_pack_01: "2026-07-02T08:10:00.000Z"
+        }
+      })
+    };
+
+    const state = await (service as unknown as {
+      buildState(repo: object, accountId: string, now: Date): Promise<{
+        availableActions: string[];
+        map: { cells: Array<{ x: number; y: number; markers: string[] }> } | null;
+      }>;
+    }).buildState(repo, "account-1", new Date("2026-07-02T08:05:00.000Z"));
+
+    expect(state.availableActions).not.toContain("start_combat");
+    expect(state.map?.cells.find((cell) => cell.x === 2 && cell.y === 2)?.markers).not.toContain(
+      "encounter"
+    );
   });
 
   it("applies played combat damage and durability loss when escaping", async () => {
@@ -284,7 +345,7 @@ describe("GameService action settlement", () => {
     };
     const startedAt = new Date("2026-07-02T08:00:00.000Z");
     const payload: CombatActionPayload = {
-      encounterId: "forest_wolf_pack",
+      encounterId: "corrupt_wolf_pack_01",
       combatLog: [],
       combatTimeline: [
         { atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。" },

@@ -22,6 +22,7 @@ import {
   createCharacter,
   eatFood,
   enterCorruptForest,
+  enterOldMine,
   equipEquipment,
   GameApiError,
   getGameSync,
@@ -256,6 +257,7 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
   const canCancelAction = state.availableActions.includes("cancel_action") && !isBusy;
   const canReturnVillage = state.availableActions.includes("return_to_village") && !isBusy;
   const canEnterForest = state.availableActions.includes("enter_corrupt_forest") && !isBusy;
+  const canEnterOldMine = state.availableActions.includes("enter_old_mine") && !isBusy;
   const canOpenMarket = state.availableActions.includes("open_market") && !isBusy;
   const canOpenDialogue =
     state.character?.currentLocation === "blackpine_outpost" && !isBusy && !state.currentAction;
@@ -642,6 +644,15 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
               onClick={() => void runCommand(() => enterCorruptForest(csrfToken))}
             >
               前往腐林
+            </button>
+          ) : null}
+          {canEnterOldMine ? (
+            <button
+              type="button"
+              className="game-secondary-button"
+              onClick={() => void runCommand(() => enterOldMine(csrfToken))}
+            >
+              前往旧矿坑
             </button>
           ) : null}
           {canOpenMarket ? (

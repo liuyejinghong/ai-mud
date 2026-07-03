@@ -35,7 +35,14 @@ describe("first world content", () => {
     expect(getZoneById("corrupt_forest")).toBe(CORRUPT_FOREST);
     expect(getZoneById("old_mine")).toBe(OLD_MINE);
     expect(getZoneById("ash_watch")).toBe(ASH_WATCH);
-    expect(OLD_MINE.resources.map((resource) => resource.id)).toEqual(["old_mine_iron_vein_01"]);
+    expect(OLD_MINE.resources.map((resource) => resource.id)).toEqual([
+      "old_mine_iron_vein_01",
+      "old_mine_coppery_iron_vein_01"
+    ]);
+    expect(OLD_MINE.encounters.map((encounter) => encounter.id)).toEqual([
+      "old_mine_rat_pack_01",
+      "old_mine_raider_boss_01"
+    ]);
     expect(ASH_WATCH.width).toBe(3);
   });
 
@@ -77,7 +84,11 @@ describe("first world content", () => {
   });
 
   it("defines the first non-currency wolf encounter", () => {
-    expect(FIRST_MONSTERS.map((monster) => monster.id)).toEqual(["corrupted_wolf"]);
+    expect(FIRST_MONSTERS.map((monster) => monster.id)).toEqual([
+      "corrupted_wolf",
+      "mine_rat",
+      "mine_raider_boss"
+    ]);
     expect(getMonsterById("corrupted_wolf")?.lootTable).toEqual([
       { itemId: "beast_meat", quantity: 1, chance: 1 },
       { itemId: "rough_hide", quantity: 1, chance: 0.5 },
@@ -88,6 +99,32 @@ describe("first world content", () => {
       "corrupted_wolf"
     ]);
     expect(FIRST_ENCOUNTERS[0]?.position).toEqual({ x: 3, y: 3 });
+  });
+
+  it("defines Old Mine encounters with stronger monsters and T2 equipment drops", () => {
+    expect(getMonsterById("mine_rat")).toMatchObject({
+      hp: 48,
+      xp: 14
+    });
+    expect(getMonsterById("mine_raider_boss")).toMatchObject({
+      hp: 90,
+      xp: 30
+    });
+    expect(getEncounterById("old_mine_rat_pack_01")?.monsterIds).toEqual([
+      "mine_rat",
+      "mine_rat"
+    ]);
+    expect(getEncounterById("old_mine_raider_boss_01")?.monsterIds).toEqual([
+      "mine_raider_boss"
+    ]);
+    expect(
+      getMonsterById("mine_raider_boss")?.lootTable.filter(
+        (drop) => getItemById(drop.itemId)?.category === "equipment"
+      )
+    ).toEqual([
+      { itemId: "rusted_mine_cleaver", quantity: 1, chance: 0.35 },
+      { itemId: "miner_guard_harness", quantity: 1, chance: 0.25 }
+    ]);
   });
 
   it("gives the first encounter an equipment drop entry", () => {

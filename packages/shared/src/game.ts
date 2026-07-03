@@ -496,6 +496,7 @@ export interface GameStateDto {
   availableActions: Array<
     | "create_character"
     | "enter_corrupt_forest"
+    | "enter_old_mine"
     | "move"
     | "gather"
     | "start_gathering"

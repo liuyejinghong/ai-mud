@@ -76,6 +76,7 @@ export interface MapInstanceRecord {
   characterId: string;
   zoneId: GameLocationId;
   resourceCharges: Record<string, number>;
+  encounterCooldowns: Record<string, string>;
 }
 
 export interface GameEventRecord {
@@ -186,6 +187,15 @@ export function serializeResourceCharges(charges: Record<string, number>) {
   return { ...charges };
 }
 
+export function serializeEncounterCooldowns(cooldowns: Record<string, string>) {
+  return Object.fromEntries(
+    Object.entries(cooldowns).filter((entry): entry is [string, string] => {
+      const [encounterId, expiresAt] = entry;
+      return Boolean(encounterId) && !Number.isNaN(Date.parse(expiresAt));
+    })
+  );
+}
+
 export function serializeEquipmentDurability(input: {
   currentDurability: number;
   maxDurability: number;
@@ -249,6 +259,17 @@ function parseResourceCharges(value: unknown): Record<string, number> {
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).filter(
       (entry): entry is [string, number] => typeof entry[1] === "number"
+    )
+  );
+}
+
+function parseEncounterCooldowns(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null) return {};
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[1] === "string" && !Number.isNaN(Date.parse(entry[1]))
     )
   );
 }
@@ -820,7 +841,8 @@ export class GameRepository {
       id: row.id,
       characterId: row.characterId,
       zoneId: row.zoneId,
-      resourceCharges: parseResourceCharges(row.resourceCharges)
+      resourceCharges: parseResourceCharges(row.resourceCharges),
+      encounterCooldowns: parseEncounterCooldowns(row.encounterCooldowns)
     };
   }
 
@@ -828,13 +850,15 @@ export class GameRepository {
     characterId: string;
     zoneId: GameLocationId;
     resourceCharges: Record<string, number>;
+    encounterCooldowns?: Record<string, string>;
   }): Promise<MapInstanceRecord> {
     const [row] = await this.db
       .insert(mapInstances)
       .values({
         characterId: input.characterId,
         zoneId: input.zoneId,
-        resourceCharges: serializeResourceCharges(input.resourceCharges)
+        resourceCharges: serializeResourceCharges(input.resourceCharges),
+        encounterCooldowns: serializeEncounterCooldowns(input.encounterCooldowns ?? {})
       })
       .returning();
 
@@ -844,7 +868,8 @@ export class GameRepository {
       id: row.id,
       characterId: row.characterId,
       zoneId: row.zoneId,
-      resourceCharges: parseResourceCharges(row.resourceCharges)
+      resourceCharges: parseResourceCharges(row.resourceCharges),
+      encounterCooldowns: parseEncounterCooldowns(row.encounterCooldowns)
     };
   }
 
@@ -855,6 +880,19 @@ export class GameRepository {
     await this.db
       .update(mapInstances)
       .set({ resourceCharges: serializeResourceCharges(resourceCharges), updatedAt: new Date() })
+      .where(eq(mapInstances.id, mapInstanceId));
+  }
+
+  async updateMapEncounterCooldowns(
+    mapInstanceId: string,
+    encounterCooldowns: Record<string, string>
+  ): Promise<void> {
+    await this.db
+      .update(mapInstances)
+      .set({
+        encounterCooldowns: serializeEncounterCooldowns(encounterCooldowns),
+        updatedAt: new Date()
+      })
       .where(eq(mapInstances.id, mapInstanceId));
   }
 

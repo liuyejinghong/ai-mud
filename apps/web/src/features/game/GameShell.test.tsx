@@ -80,7 +80,7 @@ const villageState: GameStateDto = {
   npcTasks: [],
   currentAction: null,
   rumors: [],
-  availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment"],
+  availableActions: ["enter_corrupt_forest", "enter_old_mine", "open_market", "repair_equipment"],
   log: []
 };
 
@@ -100,6 +100,7 @@ const hungryVillageState: GameStateDto = {
   inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 2 }],
   availableActions: [
     "enter_corrupt_forest",
+    "enter_old_mine",
     "open_market",
     "repair_equipment",
     "eat_food"
@@ -111,6 +112,7 @@ const taskVillageState: GameStateDto = {
   inventory: [{ itemId: "iron_ore", name: "基础铁矿石", quantity: 3 }],
   availableActions: [
     "enter_corrupt_forest",
+    "enter_old_mine",
     "open_market",
     "repair_equipment",
     "view_npc_tasks"
@@ -356,6 +358,38 @@ describe("GameShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "野莓 x2" }));
     expect(screen.getByRole("dialog", { name: "野莓" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "关闭" })).toBeTruthy();
+  });
+
+  it("enters Old Mine through the same zone endpoint", async () => {
+    const oldMineState: GameStateDto = {
+      ...forestState,
+      locationTitle: "旧矿坑",
+      locationDescription: "废弃矿道向山腹深处倾斜，潮湿木梁在黑暗里发出细碎呻吟。",
+      character: {
+        ...forestState.character!,
+        currentLocation: "old_mine",
+        position: { x: 2, y: 4 }
+      },
+      map: {
+        ...forestState.map!,
+        zoneId: "old_mine"
+      }
+    };
+    const fetchMock = mockFetchWithStates([villageState, oldMineState]);
+    render(<GameShell csrfToken="csrf" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "前往旧矿坑" }));
+
+    expect(await screen.findByRole("heading", { name: "旧矿坑" })).toBeTruthy();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:3000/game/enter-zone",
+        expect.objectContaining({
+          body: JSON.stringify({ zoneId: "old_mine" }),
+          method: "POST"
+        })
+      );
+    });
   });
 
   it("renders loot and level feedback from the sync event stream", async () => {

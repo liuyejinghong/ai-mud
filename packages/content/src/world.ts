@@ -77,6 +77,34 @@ export const FIRST_MONSTERS: MonsterDefinition[] = [
       { itemId: "rough_hide", quantity: 1, chance: 0.5 },
       { itemId: "wolfbone_shiv", quantity: 1, chance: 0.2 }
     ]
+  },
+  {
+    id: "mine_rat",
+    name: "矿坑巨鼠",
+    hp: 48,
+    attack: 10,
+    defense: 4,
+    agility: 12,
+    xp: 14,
+    lootTable: [
+      { itemId: "beast_meat", quantity: 1, chance: 0.65 },
+      { itemId: "rough_hide", quantity: 1, chance: 0.45 },
+      { itemId: "rusted_mine_cleaver", quantity: 1, chance: 0.14 }
+    ]
+  },
+  {
+    id: "mine_raider_boss",
+    name: "矿道掠夺者头目",
+    hp: 90,
+    attack: 14,
+    defense: 7,
+    agility: 9,
+    xp: 30,
+    lootTable: [
+      { itemId: "iron_ore", quantity: 2, chance: 1 },
+      { itemId: "rusted_mine_cleaver", quantity: 1, chance: 0.35 },
+      { itemId: "miner_guard_harness", quantity: 1, chance: 0.25 }
+    ]
   }
 ];
 
@@ -213,9 +241,30 @@ export const OLD_MINE: ZoneDefinition = {
       charges: 80,
       cycleSeconds: 75,
       gatherResult: { itemId: "iron_ore", quantity: 1 }
+    },
+    {
+      id: "old_mine_coppery_iron_vein_01",
+      name: "含铜铁矿脉",
+      position: { x: 3, y: 1 },
+      charges: 50,
+      cycleSeconds: 90,
+      gatherResult: { itemId: "iron_ore", quantity: 2 }
     }
   ],
-  encounters: []
+  encounters: [
+    {
+      id: "old_mine_rat_pack_01",
+      name: "矿坑巨鼠群",
+      position: { x: 2, y: 2 },
+      monsterIds: ["mine_rat", "mine_rat"]
+    },
+    {
+      id: "old_mine_raider_boss_01",
+      name: "矿道掠夺者头目",
+      position: { x: 4, y: 0 },
+      monsterIds: ["mine_raider_boss"]
+    }
+  ]
 };
 
 export const ASH_WATCH: ZoneDefinition = {

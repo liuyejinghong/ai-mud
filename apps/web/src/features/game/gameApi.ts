@@ -2,6 +2,7 @@ import type {
   CreateCharacterRequestDto,
   EatFoodRequestDto,
   EquipEquipmentRequestDto,
+  GameLocationId,
   GameStateDto,
   GameSyncResponseDto,
   MarketDto,
@@ -83,12 +84,20 @@ export function createCharacter(input: CreateCharacterRequestDto, csrfToken: str
   });
 }
 
-export function enterCorruptForest(csrfToken: string) {
+export function enterZone(zoneId: GameLocationId, csrfToken: string) {
   return requestGame<GameStateDto>("/game/enter-zone", {
     method: "POST",
     headers: { "x-csrf-token": csrfToken },
-    body: JSON.stringify({ zoneId: "corrupt_forest" })
+    body: JSON.stringify({ zoneId })
   });
+}
+
+export function enterCorruptForest(csrfToken: string) {
+  return enterZone("corrupt_forest", csrfToken);
+}
+
+export function enterOldMine(csrfToken: string) {
+  return enterZone("old_mine", csrfToken);
 }
 
 export function move(direction: MoveRequestDto["direction"], csrfToken: string) {

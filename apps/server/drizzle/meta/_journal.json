@@ -120,6 +120,13 @@
       "when": 1783072000000,
       "tag": "0016_zone_registry_locations",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1783075600000,
+      "tag": "0017_encounter_cooldowns",
+      "breakpoints": true
     }
   ]
 }

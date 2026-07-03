@@ -21,6 +21,16 @@ describe("item registry", () => {
       slot: "weapon",
       name: "训练短剑"
     });
+    expect(getItemById("rusted_mine_cleaver")).toMatchObject({
+      category: "equipment",
+      itemLevel: 8,
+      slot: "weapon"
+    });
+    expect(getItemById("miner_guard_harness")).toMatchObject({
+      category: "equipment",
+      itemLevel: 8,
+      slot: "chest"
+    });
     expect(getItemById("missing_item")).toBeNull();
   });
 

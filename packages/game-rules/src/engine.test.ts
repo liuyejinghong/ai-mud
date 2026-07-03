@@ -1,4 +1,4 @@
-import { CORRUPT_FOREST, FIRST_MONSTERS } from "@ai-mud/content";
+import { CORRUPT_FOREST, FIRST_MONSTERS, getMonsterById } from "@ai-mud/content";
 import { describe, expect, it } from "vitest";
 import { addInventoryItem } from "./inventory-rules.js";
 import {
@@ -29,6 +29,12 @@ import {
   simulateCombat,
   validateNpcSimulationHealth
 } from "./engine.js";
+
+const corruptForestMonsters = CORRUPT_FOREST.encounters[0]!.monsterIds.map((monsterId) => {
+  const monster = getMonsterById(monsterId);
+  if (!monster) throw new Error(`Missing monster ${monsterId}`);
+  return monster;
+});
 
 describe("v0.3 engine rules", () => {
   it("moves inside the Corrupt Forest boundaries", () => {
@@ -102,7 +108,7 @@ describe("v0.3 engine rules", () => {
         defense: 6,
         agility: 14
       },
-      monsters: FIRST_MONSTERS
+      monsters: corruptForestMonsters
     });
 
     expect(result.durationMs).toBeGreaterThan(0);
@@ -131,7 +137,7 @@ describe("v0.3 engine rules", () => {
           defense: 6,
           agility: 14
         },
-        monsters: FIRST_MONSTERS
+        monsters: corruptForestMonsters
       });
 
       expect(result.outcome).toBe("victory");

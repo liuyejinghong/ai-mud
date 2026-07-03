@@ -45,11 +45,11 @@ describe("game contract", () => {
 
   it("exposes v0.8.2 zone registry compatibility", () => {
     expect(PRODUCT_VERSION).toBe("0.8.2");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(24);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(17);
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(25);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(18);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(13);
-    expect(WORLD_COMPATIBILITY.contentVersion).toBe(11);
+    expect(WORLD_COMPATIBILITY.contentVersion).toBe(12);
     expect(WORLD_COMPATIBILITY.promptVersion).toBe(7);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
   });
@@ -168,6 +168,7 @@ describe("game contract", () => {
       rumors: [],
       availableActions: [
         "move",
+        "enter_old_mine",
         "start_gathering",
         "start_combat",
         "cancel_action",

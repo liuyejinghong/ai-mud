@@ -126,6 +126,28 @@ export const ITEM_DEFINITIONS = [
     affixable: true
   },
   {
+    id: "rusted_mine_cleaver",
+    name: "锈蚀矿坑砍刀",
+    description: "矿坑匪徒留下的厚背砍刀，刀身锈蚀但重量足够破甲。",
+    category: "equipment",
+    itemLevel: 8,
+    slot: "weapon",
+    baseStats: { attack: 6, defense: 1 },
+    maxDurability: 90,
+    affixable: true
+  },
+  {
+    id: "miner_guard_harness",
+    name: "矿工护具",
+    description: "用旧皮带和薄铁片加固的护具，适合在狭窄矿道里防身。",
+    category: "equipment",
+    itemLevel: 8,
+    slot: "chest",
+    baseStats: { defense: 5, maxHp: 10 },
+    maxDurability: 110,
+    affixable: true
+  },
+  {
     id: "training_sword",
     name: "训练短剑",
     description: "哨站仓库发放的短剑，刃口钝但足够自卫。",

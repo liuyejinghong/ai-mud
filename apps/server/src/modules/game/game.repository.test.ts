@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseActionPayload,
+  serializeEncounterCooldowns,
   serializeEquipmentDurability,
   serializeHunger,
   serializeActionPayload,
@@ -13,6 +14,18 @@ describe("game repository helpers", () => {
   it("serializes resource charges for the map state json", () => {
     expect(serializeResourceCharges({ forest_berry_patch_01: 2 })).toEqual({
       forest_berry_patch_01: 2
+    });
+  });
+
+  it("serializes encounter cooldowns as valid timestamp strings only", () => {
+    expect(
+      serializeEncounterCooldowns({
+        old_mine_rat_pack_01: "2026-07-02T08:10:00.000Z",
+        broken: "not-a-date",
+        "": "2026-07-02T08:10:00.000Z"
+      })
+    ).toEqual({
+      old_mine_rat_pack_01: "2026-07-02T08:10:00.000Z"
     });
   });
 

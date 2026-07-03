@@ -7,6 +7,7 @@ import {
   getItemById,
   getMarketItemById,
   getMonsterById,
+  getZoneByEncounterId,
   getZoneById,
   getZoneByResourceId,
   isFoodDefinition
@@ -69,6 +70,7 @@ import {
 } from "./game.repository.js";
 
 const BLACKPINE_MARKET_ID = "blackpine_outpost";
+const ENCOUNTER_VICTORY_COOLDOWN_MS = 10 * 60_000;
 const STARTER_EQUIPMENT: Array<{
   slot: "weapon" | "chest";
   itemKey: string;
@@ -159,6 +161,36 @@ function findEncounterAt(zone: ZoneDefinition, position: GridPositionDto) {
       (encounter) => encounter.position.x === position.x && encounter.position.y === position.y
     ) ?? null
   );
+}
+
+function encounterCooldownEndsAt(
+  map: { encounterCooldowns: Record<string, string> },
+  encounterId: string
+) {
+  const value = map.encounterCooldowns[encounterId];
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? null : new Date(timestamp);
+}
+
+function isEncounterReady(
+  map: { encounterCooldowns: Record<string, string> },
+  encounterId: string,
+  now: Date
+) {
+  const endsAt = encounterCooldownEndsAt(map, encounterId);
+  return !endsAt || endsAt.getTime() <= now.getTime();
+}
+
+function withReadyEncounters(
+  zone: ZoneDefinition,
+  map: { encounterCooldowns: Record<string, string> },
+  now: Date
+): ZoneDefinition {
+  return {
+    ...zone,
+    encounters: zone.encounters.filter((encounter) => isEncounterReady(map, encounter.id, now))
+  };
 }
 
 function directionLabel(direction: Direction) {
@@ -570,10 +602,20 @@ export class GameService {
       const now = new Date();
       const { character, zone } = await this.requireReadyExploringCharacter(repo, accountId, now);
       await this.requireNoActiveAction(repo, character.id);
+      const map = await this.requireZoneMap(repo, character, zone);
       const encounter = findEncounterAt(zone, character.position);
 
       if (!encounter) {
         throw new GameServiceError("VALIDATION_ERROR", "这里没有可攻击的敌人。");
+      }
+      if (!isEncounterReady(map, encounter.id, now)) {
+        const cooldownEndsAt = encounterCooldownEndsAt(map, encounter.id);
+        throw new GameServiceError(
+          "VALIDATION_ERROR",
+          cooldownEndsAt
+            ? `这处遭遇正在冷却，${cooldownEndsAt.toLocaleTimeString("zh-CN", { hour12: false })} 后再来。`
+            : "这处遭遇正在冷却。"
+        );
       }
 
       const monsters = encounter.monsterIds.map((monsterId) => getMonsterById(monsterId));
@@ -1408,6 +1450,7 @@ export class GameService {
     if (payload.outcome === "victory") {
       nextXp += payload.xp;
       await this.grantCombatLoot(repo, character, action, payload);
+      await this.cooldownEncounterAfterVictory(repo, character, payload.encounterId, now);
       await repo.writeEvent({
         characterId: character.id,
         eventType: "action.combat.victory",
@@ -1505,6 +1548,23 @@ export class GameService {
         });
       }
     }
+  }
+
+  private async cooldownEncounterAfterVictory(
+    repo: GameRepository,
+    character: CharacterRecord,
+    encounterId: string,
+    now: Date
+  ) {
+    const zone = getZoneByEncounterId(encounterId);
+    if (!zone) throw new GameServiceError("VALIDATION_ERROR", "遭遇区域配置无效。");
+    const map = await repo.findMapInstance(character.id, zone.id);
+    if (!map) throw new GameServiceError("VALIDATION_ERROR", "Map state required");
+
+    await repo.updateMapEncounterCooldowns(map.id, {
+      ...map.encounterCooldowns,
+      [encounterId]: new Date(now.getTime() + ENCOUNTER_VICTORY_COOLDOWN_MS).toISOString()
+    });
   }
 
   private async healExpiredInjury(repo: GameRepository, accountId: string, now: Date) {
@@ -1615,7 +1675,7 @@ export class GameService {
     if (!currentZone || !character.position) {
       const availableActions: GameStateDto["availableActions"] = currentAction
         ? ["cancel_action"]
-        : ["enter_corrupt_forest", "open_market"];
+        : ["enter_corrupt_forest", "enter_old_mine", "open_market"];
       if (!currentAction && equipmentDto.some((item) => item.repairQuote !== null)) {
         availableActions.push("repair_equipment");
       }
@@ -1658,7 +1718,9 @@ export class GameService {
       availableActions.push("start_gathering");
     }
 
-    if (!currentAction && findEncounterAt(currentZone, character.position)) {
+    const visibleZone = map ? withReadyEncounters(currentZone, map, now) : currentZone;
+
+    if (!currentAction && findEncounterAt(visibleZone, character.position)) {
       availableActions.push("start_combat");
     }
 
@@ -1670,7 +1732,7 @@ export class GameService {
         zoneId: currentZone.id,
         width: currentZone.width,
         height: currentZone.height,
-        cells: buildMapCells(currentZone, character.position, resourceCharges)
+        cells: buildMapCells(visibleZone, character.position, resourceCharges)
       },
       inventory: inventoryDto,
       equipment: equipmentDto,
