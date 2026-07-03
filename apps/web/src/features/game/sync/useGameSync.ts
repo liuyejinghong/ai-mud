@@ -1,6 +1,22 @@
-import { useEffect, useRef, useState } from "react";
-import type { GameStateDto, GameSyncEventDto, GameSyncResponseDto } from "@ai-mud/shared";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type {
+  ChatMessageDto,
+  GameStateDto,
+  GameSyncEventDto,
+  GameSyncResponseDto,
+  LeaderboardEntryDto,
+  PresenceDto
+} from "@ai-mud/shared";
 import { getGameSync } from "../gameApi";
+
+export interface LobbySyncPayload {
+  chat: ChatMessageDto[];
+  presence: PresenceDto[];
+  leaderboards: {
+    level: LeaderboardEntryDto[];
+    wealth: LeaderboardEntryDto[];
+  };
+}
 
 export interface UseGameSyncOptions {
   enabled?: boolean;
@@ -11,6 +27,7 @@ export interface UseGameSyncOptions {
   fetchSync?: (cursor?: number) => Promise<GameSyncResponseDto>;
   onState?: (state: GameStateDto) => void;
   onEvents?: (events: GameSyncEventDto[]) => void;
+  onLobby?: (payload: LobbySyncPayload) => void;
 }
 
 export function useGameSync(options: UseGameSyncOptions = {}) {
@@ -22,13 +39,35 @@ export function useGameSync(options: UseGameSyncOptions = {}) {
     activeIntervalMs = 3_000,
     fetchSync = getGameSync,
     onState,
-    onEvents
+    onEvents,
+    onLobby
   } = options;
   const cursorRef = useRef(initialCursor);
   const timerRef = useRef<number | null>(null);
   const [cursor, setCursor] = useState(initialCursor);
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+
+  const applyResponse = useCallback(
+    (next: GameSyncResponseDto) => {
+      cursorRef.current = next.nextCursor;
+      setCursor(next.nextCursor);
+      setError(null);
+      if (next.state) onState?.(next.state);
+      if (next.events.length > 0) onEvents?.(next.events);
+      if (next.chat || next.presence || next.leaderboards) {
+        onLobby?.({
+          chat: next.chat ?? [],
+          presence: next.presence ?? [],
+          leaderboards: {
+            level: next.leaderboards?.level ?? [],
+            wealth: next.leaderboards?.wealth ?? []
+          }
+        });
+      }
+    },
+    [onEvents, onLobby, onState]
+  );
 
   useEffect(() => {
     cursorRef.current = initialCursor;
@@ -63,11 +102,7 @@ export function useGameSync(options: UseGameSyncOptions = {}) {
         const next = await fetchSync(cursorRef.current > 0 ? cursorRef.current : undefined);
         if (cancelled) return;
 
-        cursorRef.current = next.nextCursor;
-        setCursor(next.nextCursor);
-        setError(null);
-        if (next.state) onState?.(next.state);
-        if (next.events.length > 0) onEvents?.(next.events);
+        applyResponse(next);
       } catch (caught) {
         if (!cancelled) {
           setError(caught instanceof Error ? caught : new Error("Game sync failed"));
@@ -86,7 +121,7 @@ export function useGameSync(options: UseGameSyncOptions = {}) {
       cancelled = true;
       clearTimer();
     };
-  }, [activeAction, activeIntervalMs, enabled, fetchSync, idleIntervalMs, onEvents, onState]);
+  }, [activeAction, activeIntervalMs, applyResponse, enabled, fetchSync, idleIntervalMs]);
 
-  return { cursor, isSyncing, error };
+  return { cursor, isSyncing, error, applyResponse };
 }

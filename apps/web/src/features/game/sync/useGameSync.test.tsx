@@ -80,4 +80,60 @@ describe("useGameSync", () => {
     expect(fetchSync).toHaveBeenCalled();
     expect(setTimeoutSpy).toHaveBeenLastCalledWith(expect.any(Function), 500);
   });
+
+  it("emits lobby payloads through the same sync poll", async () => {
+    vi.useFakeTimers();
+    const onLobby = vi.fn();
+    const fetchSync = vi.fn().mockResolvedValue(
+      syncResponse({
+        chat: [
+          {
+            id: "chat-1",
+            characterId: "character-1",
+            characterName: "Zichen",
+            channel: "lobby",
+            body: "矿洞有人吗？",
+            createdAt: "2026-07-03T08:00:00.000Z"
+          }
+        ],
+        presence: [
+          {
+            accountId: "account-1",
+            characterId: "character-1",
+            characterName: "Zichen",
+            currentLocation: "blackpine_outpost",
+            lastSeenAt: "2026-07-03T08:00:00.000Z"
+          }
+        ],
+        leaderboards: {
+          level: [
+            {
+              rank: 1,
+              characterId: "character-1",
+              characterName: "Zichen",
+              level: 3,
+              xp: 120,
+              wealthCopper: 1235
+            }
+          ],
+          wealth: []
+        },
+        nextCursor: 9
+      })
+    );
+
+    renderHook(() => useGameSync({ fetchSync, onLobby }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onLobby).toHaveBeenCalledWith({
+      chat: expect.arrayContaining([expect.objectContaining({ body: "矿洞有人吗？" })]),
+      presence: expect.arrayContaining([expect.objectContaining({ characterName: "Zichen" })]),
+      leaderboards: expect.objectContaining({
+        level: expect.arrayContaining([expect.objectContaining({ rank: 1 })])
+      })
+    });
+  });
 });

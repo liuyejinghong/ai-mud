@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CHARACTER_CLASSES,
+  type ChatMessageDto,
   type CharacterClassId,
   type Direction,
   type EquipmentItemDto,
+  type GameLocationId,
   type GameStateDto,
   type GameSyncEventDto,
   type HungerStatus,
   type InventoryItemDto,
+  type LeaderboardEntryDto,
   type MarketDto,
   type MoneyDto,
   type NpcDialogueResponseDto,
   type NpcDialogueTargetDto,
+  type PresenceDto,
   type StartGatheringRequestDto
 } from "@ai-mud/shared";
 import {
@@ -28,12 +32,14 @@ import {
   getGameSync,
   getMarket,
   getNpcDialogue,
+  heartbeatPresence,
   listDialogueTargets,
   move,
   repairAllEquipment,
   repairEquipment,
   returnToVillage,
   sellMarketItem,
+  sendLobbyChat,
   sendNpcDialogueMessage,
   startCombat,
   startGathering
@@ -71,6 +77,16 @@ const directionLabels: Record<Direction, string> = {
   south: "南",
   east: "东"
 };
+
+const locationLabels: Partial<Record<GameLocationId, string>> = {
+  blackpine_outpost: "黑松哨站",
+  corrupt_forest: "腐林",
+  old_mine: "旧矿坑"
+};
+
+function locationText(locationId: GameLocationId) {
+  return locationLabels[locationId] ?? locationId;
+}
 
 function cellText(markers: string[]) {
   if (markers.includes("player")) return "@";
@@ -202,6 +218,23 @@ type ActiveModal =
   | { type: "dialogue" }
   | { type: "combat" };
 
+type LobbyTab = "chat" | "online" | "leaderboard";
+
+interface LobbyState {
+  chat: ChatMessageDto[];
+  presence: PresenceDto[];
+  leaderboards: {
+    level: LeaderboardEntryDto[];
+    wealth: LeaderboardEntryDto[];
+  };
+}
+
+const initialLobbyState: LobbyState = {
+  chat: [],
+  presence: [],
+  leaderboards: { level: [], wealth: [] }
+};
+
 function gameErrorMessage(error: unknown, fallback: string) {
   if (error instanceof GameApiError) {
     if (error.status === 401 || error.code === "UNAUTHENTICATED") {
@@ -229,6 +262,11 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
   const [dialogue, setDialogue] = useState<NpcDialogueResponseDto | null>(null);
   const [dialogueInput, setDialogueInput] = useState("");
   const [dialogueStatus, setDialogueStatus] = useState("");
+  const [lobby, setLobby] = useState<LobbyState>(initialLobbyState);
+  const [lobbyTab, setLobbyTab] = useState<LobbyTab>("chat");
+  const [chatInput, setChatInput] = useState("");
+  const [chatStatus, setChatStatus] = useState("");
+  const [isChatSending, setIsChatSending] = useState(false);
   const [syncNotices, setSyncNotices] = useState<FeedbackNotice[]>([]);
   const [plannedMinutes, setPlannedMinutes] =
     useState<StartGatheringRequestDto["plannedMinutes"]>(10);
@@ -241,10 +279,19 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
     setSyncNotices((current) => [...notices, ...current].slice(0, 4));
   }, []);
 
+  const applyLobbySync = useCallback((next: LobbyState) => {
+    setLobby({
+      chat: next.chat.slice(-30),
+      presence: next.presence,
+      leaderboards: next.leaderboards
+    });
+  }, []);
+
   const sync = useGameSync({
     activeAction: state.currentAction,
     onState: setState,
-    onEvents: handleSyncEvents
+    onEvents: handleSyncEvents,
+    onLobby: applyLobbySync
   });
 
   const isModalOpen = activeModal !== null;
@@ -271,6 +318,27 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
   const hungerWarning = hungerWarningText(state.character?.needs.hunger.status ?? "fed");
   const damagedEquipment = state.equipment.filter((item) => item.repairQuote !== null);
   const selectedClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
+
+  async function submitLobbyChat() {
+    const body = chatInput.trim();
+    if (!body || isChatSending) return;
+
+    setError(null);
+    setChatStatus("发送中...");
+    setIsChatSending(true);
+    try {
+      await sendLobbyChat(body, csrfToken);
+      const refreshed = await getGameSync(sync.cursor > 0 ? sync.cursor : undefined);
+      sync.applyResponse(refreshed);
+      setChatInput("");
+      setChatStatus("");
+    } catch (caught) {
+      if (isAuthExpired(caught)) onAuthExpired?.();
+      setChatStatus(gameErrorMessage(caught, "大厅发言失败，请稍后再试。"));
+    } finally {
+      setIsChatSending(false);
+    }
+  }
 
   async function runCommand(action: () => Promise<GameStateDto>) {
     setError(null);
@@ -427,6 +495,30 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
   useEffect(() => {
     setActiveModal((current) => (current?.type === "combat" ? null : current));
   }, [state.currentAction?.id, state.currentAction?.actionType]);
+
+  useEffect(() => {
+    if (!state.character) return undefined;
+
+    let cancelled = false;
+    const publishHeartbeat = async () => {
+      try {
+        await heartbeatPresence(csrfToken);
+      } catch (caught) {
+        if (cancelled) return;
+        if (isAuthExpired(caught)) onAuthExpired?.();
+      }
+    };
+
+    void publishHeartbeat();
+    const timer = window.setInterval(() => {
+      void publishHeartbeat();
+    }, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [csrfToken, onAuthExpired, state.character?.id]);
 
   const cells = useMemo(() => state.map?.cells ?? [], [state.map]);
 
@@ -626,6 +718,121 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
               </div>
             ))}
           </div>
+        </section>
+
+        <section className="game-panel lobby-panel" aria-labelledby="lobby-title">
+          <div className="panel-heading">
+            <h2 id="lobby-title">大厅</h2>
+            <span>{sync.isSyncing ? "同步中" : "实时"}</span>
+          </div>
+          <div className="lobby-tabs" role="tablist" aria-label="大厅面板">
+            <button
+              type="button"
+              className={lobbyTab === "chat" ? "is-selected" : ""}
+              role="tab"
+              aria-selected={lobbyTab === "chat"}
+              onClick={() => setLobbyTab("chat")}
+            >
+              聊天
+            </button>
+            <button
+              type="button"
+              className={lobbyTab === "online" ? "is-selected" : ""}
+              role="tab"
+              aria-selected={lobbyTab === "online"}
+              onClick={() => setLobbyTab("online")}
+            >
+              在线 {lobby.presence.length}
+            </button>
+            <button
+              type="button"
+              className={lobbyTab === "leaderboard" ? "is-selected" : ""}
+              role="tab"
+              aria-selected={lobbyTab === "leaderboard"}
+              onClick={() => setLobbyTab("leaderboard")}
+            >
+              排行
+            </button>
+          </div>
+
+          {lobbyTab === "chat" ? (
+            <div className="lobby-chat-panel" role="tabpanel">
+              <ol className="lobby-chat-list" aria-label="大厅聊天">
+                {lobby.chat.length === 0 ? <li className="empty-copy">暂时没有大厅发言。</li> : null}
+                {lobby.chat.map((message) => (
+                  <li className="lobby-chat-message" key={message.id}>
+                    <span>{message.characterName}</span>
+                    <p>{message.body}</p>
+                  </li>
+                ))}
+              </ol>
+              <form
+                className="lobby-chat-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submitLobbyChat();
+                }}
+              >
+                <input
+                  aria-label="大厅发言"
+                  value={chatInput}
+                  maxLength={240}
+                  disabled={isChatSending}
+                  onChange={(event) => setChatInput(event.target.value)}
+                />
+                <button
+                  type="submit"
+                  className="game-primary-button"
+                  disabled={isChatSending || !chatInput.trim()}
+                >
+                  发送到大厅
+                </button>
+              </form>
+              {chatStatus ? (
+                <p role="status" aria-live="polite" className="dialogue-status">
+                  {chatStatus}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {lobbyTab === "online" ? (
+            <ul className="lobby-presence-list" role="tabpanel" aria-label="在线角色">
+              {lobby.presence.length === 0 ? <li className="empty-copy">当前没有在线角色。</li> : null}
+              {lobby.presence.map((presence) => (
+                <li key={`${presence.accountId}:${presence.characterId}`}>
+                  {presence.characterName} · {locationText(presence.currentLocation)}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {lobbyTab === "leaderboard" ? (
+            <div className="lobby-leaderboards" role="tabpanel" aria-label="排行榜">
+              <section>
+                <h3>等级榜</h3>
+                <ol className="leaderboard-list">
+                  {lobby.leaderboards.level.length === 0 ? <li className="empty-copy">暂无等级排行。</li> : null}
+                  {lobby.leaderboards.level.map((entry) => (
+                    <li key={entry.characterId}>
+                      {entry.rank}. {entry.characterName} Lv.{entry.level}
+                    </li>
+                  ))}
+                </ol>
+              </section>
+              <section>
+                <h3>财富榜</h3>
+                <ol className="leaderboard-list">
+                  {lobby.leaderboards.wealth.length === 0 ? <li className="empty-copy">暂无财富排行。</li> : null}
+                  {lobby.leaderboards.wealth.map((entry) => (
+                    <li key={entry.characterId}>
+                      {entry.rank}. {entry.characterName} {entry.wealthCopper} 铜
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            </div>
+          ) : null}
         </section>
       </aside>
 

@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type {
+  GameSyncResponseDto,
   GameStateDto,
   MarketDto,
   NpcDialogueResponseDto,
@@ -292,28 +293,48 @@ function isSyncResponse(value: unknown) {
   );
 }
 
+function emptySyncResponse(overrides: Partial<GameSyncResponseDto> = {}): GameSyncResponseDto {
+  return {
+    stateVersion: 1,
+    state: null,
+    events: [],
+    chat: [],
+    presence: [],
+    leaderboards: { level: [], wealth: [] },
+    nextCursor: 1,
+    ...overrides
+  };
+}
+
 function mockFetchWithStates(states: unknown[]) {
   const queue = [...states];
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => ({
     ok: true,
     json: async () => {
       const url = String(input);
-      if (url.includes("/game/sync?cursor=")) {
+      if (url.includes("/game/presence/heartbeat")) {
+        return { ok: true };
+      }
+      if (url.includes("/game/chat")) {
         return {
-          stateVersion: 1,
-          state: null,
-          events: [],
-          nextCursor: 1
+          id: "chat-created",
+          characterId: "character-1",
+          characterName: "Zichen",
+          channel: "lobby",
+          body: "矿洞有人吗？",
+          createdAt: "2026-07-03T08:00:05.000Z"
         };
+      }
+      if (url.includes("/game/sync?cursor=")) {
+        const next = queue[0];
+        if (isSyncResponse(next)) {
+          return queue.shift();
+        }
+        return emptySyncResponse();
       }
       const next = queue.shift() ?? states.at(-1) ?? createCharacterState;
       if (url.includes("/game/sync") && !isSyncResponse(next)) {
-        return {
-          stateVersion: 1,
-          state: next,
-          events: [],
-          nextCursor: 1
-        };
+        return emptySyncResponse({ state: next as GameStateDto });
       }
       return next;
     }
@@ -579,6 +600,132 @@ describe("GameShell", () => {
 
     expect(await screen.findByLabelText("同步事件提示")).toBeTruthy();
     expect(screen.getByText("获得 wild_berry x2")).toBeTruthy();
+  });
+
+  it("renders lobby chat, presence, and leaderboard data from the sync payload", async () => {
+    mockFetchWithStates([
+      emptySyncResponse({
+        state: villageState,
+        nextCursor: 4,
+        chat: [
+          {
+            id: "chat-1",
+            characterId: "character-1",
+            characterName: "Zichen",
+            channel: "lobby",
+            body: "矿洞有人吗？",
+            createdAt: "2026-07-03T08:00:00.000Z"
+          }
+        ],
+        presence: [
+          {
+            accountId: "account-1",
+            characterId: "character-1",
+            characterName: "Zichen",
+            currentLocation: "blackpine_outpost",
+            lastSeenAt: "2026-07-03T08:00:00.000Z"
+          }
+        ],
+        leaderboards: {
+          level: [
+            {
+              rank: 1,
+              characterId: "character-1",
+              characterName: "Zichen",
+              level: 3,
+              xp: 120,
+              wealthCopper: 1235
+            }
+          ],
+          wealth: []
+        }
+      })
+    ]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByRole("heading", { name: "大厅" })).toBeTruthy();
+    expect(screen.getByText("矿洞有人吗？")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "在线 1" }));
+    expect(screen.getByText("Zichen · 黑松哨站")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "排行" }));
+    expect(screen.getByText("等级榜")).toBeTruthy();
+    expect(screen.getByText("1. Zichen Lv.3")).toBeTruthy();
+  });
+
+  it("sends lobby chat and immediately refreshes the shared sync stream", async () => {
+    const fetchMock = mockFetchWithStates([
+      emptySyncResponse({ state: villageState, nextCursor: 4 }),
+      emptySyncResponse({
+        nextCursor: 5,
+        chat: [
+          {
+            id: "chat-2",
+            characterId: "character-1",
+            characterName: "Zichen",
+            channel: "lobby",
+            body: "矿洞有人吗？",
+            createdAt: "2026-07-03T08:00:05.000Z"
+          }
+        ]
+      })
+    ]);
+    render(<GameShell csrfToken="csrf" />);
+
+    const chatInput = await screen.findByLabelText("大厅发言");
+    fireEvent.change(chatInput, { target: { value: "矿洞有人吗？" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送到大厅" }));
+
+    expect(await screen.findByText("矿洞有人吗？")).toBeTruthy();
+    expect(chatInput).toHaveProperty("value", "");
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:3000/game/chat",
+        expect.objectContaining({
+          body: JSON.stringify({ body: "矿洞有人吗？" }),
+          method: "POST"
+        })
+      );
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:3000/game/sync?cursor=4",
+      expect.any(Object)
+    );
+  });
+
+  it("blocks movement shortcuts while the lobby chat input is focused", async () => {
+    const fetchMock = mockFetchWithStates([emptySyncResponse({ state: forestState })]);
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByRole("heading", { name: "腐林" })).toBeTruthy();
+    const chatInput = screen.getByLabelText("大厅发言");
+    fireEvent.change(chatInput, { target: { value: "w" } });
+    fireEvent.keyDown(chatInput, { key: "w" });
+
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      "http://127.0.0.1:3000/game/move",
+      expect.objectContaining({
+        body: JSON.stringify({ direction: "north" }),
+        method: "POST"
+      })
+    );
+  });
+
+  it("publishes presence heartbeat from the active character without another read poller", async () => {
+    const fetchMock = mockFetchWithStates([emptySyncResponse({ state: villageState })]);
+    render(<GameShell csrfToken="csrf" />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:3000/game/presence/heartbeat",
+        expect.objectContaining({
+          body: JSON.stringify({}),
+          method: "POST"
+        })
+      );
+    });
   });
 
   it("refreshes visible inventory after a rule-verified NPC resource grant", async () => {

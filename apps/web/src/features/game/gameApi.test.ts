@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GameApiError, getGameState } from "./gameApi";
+import { GameApiError, getGameState, heartbeatPresence, sendLobbyChat } from "./gameApi";
 
 describe("gameApi", () => {
   afterEach(() => {
@@ -43,5 +43,50 @@ describe("gameApi", () => {
       code: "UNAUTHENTICATED",
       message: "登录已失效，请重新登录。"
     });
+  });
+
+  it("sends bounded lobby chat through the shared API client", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        id: "chat-1",
+        characterId: "character-1",
+        characterName: "Zichen",
+        channel: "lobby",
+        body: "矿洞有人吗？",
+        createdAt: "2026-07-03T08:00:00.000Z"
+      })
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendLobbyChat("矿洞有人吗？", "csrf");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:3000/game/chat",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ body: "矿洞有人吗？" }),
+        headers: expect.objectContaining({ "x-csrf-token": "csrf" })
+      })
+    );
+  });
+
+  it("updates presence without opening a second read poller", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ ok: true })
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await heartbeatPresence("csrf");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:3000/game/presence/heartbeat",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({}),
+        headers: expect.objectContaining({ "x-csrf-token": "csrf" })
+      })
+    );
   });
 });

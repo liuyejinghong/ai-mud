@@ -1,4 +1,5 @@
 import type {
+  ChatMessageDto,
   CreateCharacterRequestDto,
   EatFoodRequestDto,
   EquipEquipmentRequestDto,
@@ -74,6 +75,22 @@ export function getGameState() {
 export function getGameSync(cursor?: number) {
   const query = cursor === undefined ? "" : `?cursor=${encodeURIComponent(String(cursor))}`;
   return requestGame<GameSyncResponseDto>(`/game/sync${query}`);
+}
+
+export function sendLobbyChat(body: string, csrfToken: string) {
+  return requestGame<ChatMessageDto>("/game/chat", {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify({ body })
+  });
+}
+
+export function heartbeatPresence(csrfToken: string) {
+  return requestGame<{ ok: true }>("/game/presence/heartbeat", {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify({})
+  });
 }
 
 export function createCharacter(input: CreateCharacterRequestDto, csrfToken: string) {

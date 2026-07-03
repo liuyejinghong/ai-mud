@@ -162,6 +162,104 @@
   line-height: 1.5;
 }
 
+.lobby-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.lobby-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.lobby-tabs button {
+  min-height: 32px;
+  border: 1px solid rgba(119, 184, 160, 0.42);
+  background: rgba(3, 14, 9, 0.84);
+  color: #b8c9bd;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.lobby-tabs button.is-selected {
+  border-color: #70f49b;
+  background: rgba(7, 55, 26, 0.72);
+  color: #e7ffe8;
+}
+
+.lobby-chat-panel,
+.lobby-leaderboards {
+  display: grid;
+  gap: 10px;
+}
+
+.lobby-chat-list,
+.lobby-presence-list,
+.leaderboard-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lobby-chat-list {
+  max-height: 220px;
+  overflow: auto;
+}
+
+.lobby-chat-message {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(119, 184, 160, 0.22);
+  background: rgba(2, 8, 5, 0.72);
+  padding: 8px 9px;
+}
+
+.lobby-chat-message span,
+.lobby-leaderboards h3 {
+  color: #f3d67d;
+}
+
+.lobby-chat-message span,
+.lobby-presence-list,
+.leaderboard-list {
+  font-size: 12px;
+}
+
+.lobby-chat-message p {
+  margin: 0;
+  color: #d8dce0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.lobby-chat-form {
+  display: grid;
+  gap: 8px;
+}
+
+.lobby-chat-form input {
+  min-height: 36px;
+  border: 1px solid #236c3b;
+  background: #030806;
+  color: #e5ffe9;
+  padding: 0 10px;
+}
+
+.lobby-presence-list,
+.leaderboard-list {
+  color: #d8dce0;
+  line-height: 1.5;
+}
+
+.lobby-leaderboards h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
 .inventory-list {
   display: grid;
   gap: 8px;
