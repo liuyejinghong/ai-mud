@@ -60,13 +60,25 @@ describe("first world content", () => {
     expect(FIRST_MONSTERS.map((monster) => monster.id)).toEqual(["corrupted_wolf"]);
     expect(getMonsterById("corrupted_wolf")?.lootTable).toEqual([
       { itemId: "beast_meat", quantity: 1, chance: 1 },
-      { itemId: "rough_hide", quantity: 1, chance: 0.5 }
+      { itemId: "rough_hide", quantity: 1, chance: 0.5 },
+      { itemId: "wolfbone_shiv", quantity: 1, chance: 0.2 }
     ]);
     expect(getEncounterById("corrupt_wolf_pack_01")?.monsterIds).toEqual([
       "corrupted_wolf",
       "corrupted_wolf"
     ]);
     expect(FIRST_ENCOUNTERS[0]?.position).toEqual({ x: 3, y: 3 });
+  });
+
+  it("gives the first encounter an equipment drop entry", () => {
+    const equipmentDrops =
+      getMonsterById("corrupted_wolf")?.lootTable.filter(
+        (drop) => getItemById(drop.itemId)?.category === "equipment"
+      ) ?? [];
+
+    expect(equipmentDrops).toEqual([
+      { itemId: "wolfbone_shiv", quantity: 1, chance: 0.2 }
+    ]);
   });
 
   it("defines the first persistent Living NPCs", () => {

@@ -115,6 +115,17 @@ export const ITEM_DEFINITIONS = [
     targetMarketQuantity: 80
   },
   {
+    id: "wolfbone_shiv",
+    name: "狼骨短刃",
+    description: "用腐化野狼腿骨磨出的短刃，刃口粗糙但比训练剑更轻。",
+    category: "equipment",
+    itemLevel: 3,
+    slot: "weapon",
+    baseStats: { attack: 3, agility: 1 },
+    maxDurability: 70,
+    affixable: true
+  },
+  {
     id: "training_sword",
     name: "训练短剑",
     description: "哨站仓库发放的短剑，刃口钝但足够自卫。",

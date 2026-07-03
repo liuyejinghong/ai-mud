@@ -74,7 +74,8 @@ export const FIRST_MONSTERS: MonsterDefinition[] = [
     xp: 8,
     lootTable: [
       { itemId: "beast_meat", quantity: 1, chance: 1 },
-      { itemId: "rough_hide", quantity: 1, chance: 0.5 }
+      { itemId: "rough_hide", quantity: 1, chance: 0.5 },
+      { itemId: "wolfbone_shiv", quantity: 1, chance: 0.2 }
     ]
   }
 ];

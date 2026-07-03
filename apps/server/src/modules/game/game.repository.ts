@@ -20,6 +20,7 @@ import {
   syncEvents
 } from "../../db/schema.js";
 import { ItemRepository } from "../item/item.repository.js";
+import type { ItemRarity } from "../item/item.repository.js";
 import { ItemService } from "../item/item.service.js";
 
 type GameDb = Pick<Db, "insert" | "select" | "update">;
@@ -142,6 +143,7 @@ export interface CombatActionPayload {
   encounterId: string;
   combatLog: string[];
   combatTimeline: CombatTimelineEntry[];
+  lootSeed?: string;
   expectedEndsAtMs: number;
   outcome: "victory" | "injury" | "stalemate";
   playerRemainingHp: number;
@@ -307,16 +309,19 @@ export function parseActionPayload(
             atMs: Number.MAX_SAFE_INTEGER,
             message
           }));
-      return {
+      const normalized: CombatActionPayload = {
         encounterId: payload.encounterId,
         combatLog: payload.combatLog,
         combatTimeline,
         expectedEndsAtMs: payload.expectedEndsAtMs,
-        outcome: payload.outcome,
+        outcome: payload.outcome as CombatActionPayload["outcome"],
         playerRemainingHp: payload.playerRemainingHp,
         xp: payload.xp,
         loot: payload.loot
       };
+      return typeof payload.lootSeed === "string"
+        ? { ...normalized, lootSeed: payload.lootSeed }
+        : normalized;
     }
   }
 
@@ -483,6 +488,24 @@ export class GameRepository {
       owner: { ownerType: "character", ownerId: input.characterId },
       itemId: input.itemId,
       quantity: input.quantity,
+      reason: input.reason,
+      ...(input.metadata ? { metadata: input.metadata } : {})
+    });
+  }
+
+  async grantCharacterItemInstance(input: {
+    characterId: string;
+    itemDefId: string;
+    rarity: ItemRarity;
+    seed: string;
+    reason: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    await new ItemService(new ItemRepository(this.db, false)).grantInstance({
+      owner: { ownerType: "character", ownerId: input.characterId },
+      itemDefId: input.itemDefId,
+      rarity: input.rarity,
+      seed: input.seed,
       reason: input.reason,
       ...(input.metadata ? { metadata: input.metadata } : {})
     });

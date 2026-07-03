@@ -24,6 +24,7 @@ import {
   calculateGatheringSettlement,
   formatMoney,
   movePosition,
+  rollRarity,
   settleHunger,
   simulateCombat
 } from "@ai-mud/game-rules";
@@ -463,8 +464,9 @@ export class GameService {
         throw new GameServiceError("VALIDATION_ERROR", "遭遇配置无效。");
       }
 
+      const combatSeed = `${character.id}:${encounter.id}:${now.toISOString()}`;
       const result = simulateCombat({
-        seed: `${character.id}:${encounter.id}:${now.toISOString()}`,
+        seed: combatSeed,
         player: {
           name: character.name,
           hp: character.hp,
@@ -499,6 +501,7 @@ export class GameService {
           encounterId: encounter.id,
           combatLog: result.timeline.map((entry) => entry.message),
           combatTimeline: result.timeline,
+          lootSeed: combatSeed,
           expectedEndsAtMs: now.getTime() + result.durationMs,
           outcome: result.outcome,
           playerRemainingHp: result.playerRemainingHp,
@@ -1228,15 +1231,7 @@ export class GameService {
 
     if (payload.outcome === "victory") {
       nextXp += payload.xp;
-      for (const item of payload.loot) {
-        await repo.grantCharacterItem({
-          characterId: character.id,
-          itemId: item.itemId,
-          quantity: item.quantity,
-          reason: "action.combat.loot",
-          metadata: { actionId: action.id, encounterId: payload.encounterId }
-        });
-      }
+      await this.grantCombatLoot(repo, character, action, payload);
       await repo.writeEvent({
         characterId: character.id,
         eventType: "action.combat.victory",
@@ -1277,6 +1272,44 @@ export class GameService {
       xp: nextXp,
       ...(injuryUntil === undefined ? {} : { injuryUntil })
     });
+  }
+
+  private async grantCombatLoot(
+    repo: GameRepository,
+    character: CharacterRecord,
+    action: CharacterActionRecord,
+    payload: CombatActionPayload
+  ) {
+    for (const item of payload.loot) {
+      const definition = getItemById(item.itemId);
+      if (!definition) {
+        throw new GameServiceError("VALIDATION_ERROR", "掉落配置无效。");
+      }
+
+      const metadata = { actionId: action.id, encounterId: payload.encounterId };
+      if (definition.category !== "equipment") {
+        await repo.grantCharacterItem({
+          characterId: character.id,
+          itemId: item.itemId,
+          quantity: item.quantity,
+          reason: "action.combat.loot",
+          metadata
+        });
+        continue;
+      }
+
+      const seedBase = `${payload.lootSeed ?? action.id}:${item.itemId}`;
+      for (let index = 0; index < item.quantity; index += 1) {
+        await repo.grantCharacterItemInstance({
+          characterId: character.id,
+          itemDefId: item.itemId,
+          rarity: rollRarity(seedBase, index),
+          seed: `${seedBase}:${index}`,
+          reason: "action.combat.loot",
+          metadata: { ...metadata, dropIndex: index }
+        });
+      }
+    }
   }
 
   private async healExpiredInjury(repo: GameRepository, accountId: string, now: Date) {

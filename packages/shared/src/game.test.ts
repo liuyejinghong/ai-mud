@@ -41,13 +41,13 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.8.0 foundation compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.8.0");
+  it("exposes v0.8.1 loot slice compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.8.1");
     expect(WORLD_COMPATIBILITY.apiVersion).toBe(22);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(16);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(12);
-    expect(WORLD_COMPATIBILITY.contentVersion).toBe(9);
+    expect(WORLD_COMPATIBILITY.contentVersion).toBe(10);
     expect(WORLD_COMPATIBILITY.promptVersion).toBe(7);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
   });

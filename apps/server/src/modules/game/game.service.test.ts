@@ -125,6 +125,66 @@ describe("GameService action settlement", () => {
     expect(calls).toEqual(["mark"]);
   });
 
+  it("grants combat equipment loot as item instances instead of stack quantities", async () => {
+    const service = new GameService({} as Db);
+    const stackGrants: Array<{ itemId: string; quantity: number }> = [];
+    const instanceGrants: Array<{ itemDefId: string; seed: string; reason: string }> = [];
+    const repo = {
+      markActionCompleted: async () => true,
+      grantCharacterItem: async (input: { itemId: string; quantity: number }) => {
+        stackGrants.push(input);
+      },
+      grantCharacterItemInstance: async (input: {
+        itemDefId: string;
+        seed: string;
+        reason: string;
+      }) => {
+        instanceGrants.push(input);
+      },
+      writeEvent: async () => {},
+      listEquipment: async () => [],
+      updateEquipmentDurability: async () => {},
+      updateCharacterVitals: async () => {},
+      updateCharacterLocation: async () => {}
+    };
+    const payload: CombatActionPayload = {
+      encounterId: "forest_wolf_pack",
+      combatLog: ["Zichen 攻击腐化野狼，造成 16 点伤害。"],
+      combatTimeline: [{ atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。" }],
+      expectedEndsAtMs: new Date("2026-07-02T08:01:00.000Z").getTime(),
+      outcome: "victory",
+      playerRemainingHp: 64,
+      xp: 12,
+      loot: [
+        { itemId: "rough_hide", quantity: 2 },
+        { itemId: "training_sword", quantity: 1 }
+      ]
+    };
+
+    await (service as unknown as {
+      settleCombatAction(
+        repo: object,
+        character: CharacterRecord,
+        action: CharacterActionRecord,
+        now: Date
+      ): Promise<void>;
+    }).settleCombatAction(
+      repo,
+      character(),
+      combatAction(payload),
+      new Date("2026-07-02T08:01:00.000Z")
+    );
+
+    expect(stackGrants).toMatchObject([{ itemId: "rough_hide", quantity: 2 }]);
+    expect(instanceGrants).toMatchObject([
+      {
+        itemDefId: "training_sword",
+        seed: "action-1:training_sword:0",
+        reason: "action.combat.loot"
+      }
+    ]);
+  });
+
   it("applies played combat damage and durability loss when escaping", async () => {
     const service = new GameService({} as Db);
     const calls: string[] = [];
