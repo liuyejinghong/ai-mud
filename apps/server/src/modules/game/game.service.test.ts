@@ -205,7 +205,11 @@ describe("GameService action settlement", () => {
   it("levels up from combat xp and writes a sync feedback event", async () => {
     const service = new GameService({} as Db);
     const vitals: Array<{ level?: number; xp?: number }> = [];
-    const syncEvents: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
+    const syncEvents: Array<{
+      audience?: "character" | "public";
+      eventType: string;
+      payload: Record<string, unknown>;
+    }> = [];
     const cooldowns: Array<Record<string, string>> = [];
     const repo = {
       markActionCompleted: async () => true,
@@ -263,6 +267,18 @@ describe("GameService action settlement", () => {
         owner: { ownerType: "character", ownerId: "character-1" },
         stateDirty: true,
         payload: { previousLevel: 1, level: 2, xp: 48 }
+      },
+      {
+        audience: "public",
+        eventType: "world.broadcast",
+        owner: { ownerType: "character", ownerId: "character-1" },
+        stateDirty: false,
+        payload: {
+          kind: "level_up",
+          characterId: "character-1",
+          characterName: "Zichen",
+          level: 2
+        }
       }
     ]);
     expect(cooldowns[0]?.corrupt_wolf_pack_01).toBe("2026-07-02T08:11:00.000Z");

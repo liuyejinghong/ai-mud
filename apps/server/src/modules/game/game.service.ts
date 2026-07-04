@@ -1486,6 +1486,19 @@ export class GameService {
         },
         source: "game-service"
       });
+      await repo.writeSyncEvent({
+        owner: { ownerType: "character", ownerId: character.id },
+        audience: "public",
+        eventType: "world.broadcast",
+        stateDirty: false,
+        payload: {
+          kind: "level_up",
+          characterId: character.id,
+          characterName: character.name,
+          level: levelProgression.level
+        },
+        source: "game-service"
+      });
     }
 
     if (payload.outcome === "injury") {
@@ -1536,7 +1549,11 @@ export class GameService {
         throw new GameServiceError("VALIDATION_ERROR", "掉落配置无效。");
       }
 
-      const metadata = { actionId: action.id, encounterId: payload.encounterId };
+      const metadata = {
+        actionId: action.id,
+        encounterId: payload.encounterId,
+        characterName: character.name
+      };
       if (definition.category !== "equipment") {
         await repo.grantCharacterItem({
           characterId: character.id,

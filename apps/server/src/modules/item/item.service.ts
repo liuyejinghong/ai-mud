@@ -45,6 +45,13 @@ interface ItemRepositoryLike {
   writeSyncEvent?(input: WriteSyncEventInput): Promise<void>;
 }
 
+const PUBLIC_DROP_RARITIES = new Set<ItemRarity>(["rare", "epic"]);
+
+function metadataString(metadata: Record<string, unknown> | undefined, key: string) {
+  const value = metadata?.[key];
+  return typeof value === "string" ? value : null;
+}
+
 export class ItemService {
   constructor(private readonly repo: ItemRepositoryLike) {}
 
@@ -136,6 +143,11 @@ export class ItemService {
           rarity: input.rarity,
           reason: input.reason
         }
+      });
+      await this.writePublicDropBroadcast(repo, input.owner, {
+        itemName: definition?.name ?? input.itemDefId,
+        rarity: input.rarity,
+        characterName: metadataString(input.metadata, "characterName")
       });
 
       return instance;
@@ -434,6 +446,34 @@ export class ItemService {
       eventType: input.eventType,
       stateDirty: input.stateDirty,
       payload: input.payload,
+      source: "item-service"
+    });
+  }
+
+  private async writePublicDropBroadcast(
+    repo: ItemRepositoryLike,
+    owner: ItemOwner,
+    input: {
+      itemName: string;
+      rarity: ItemRarity;
+      characterName: string | null;
+    }
+  ) {
+    if (!PUBLIC_DROP_RARITIES.has(input.rarity)) return;
+    if (owner.ownerType !== "character" || !owner.ownerId) return;
+
+    await repo.writeSyncEvent?.({
+      owner,
+      audience: "public",
+      eventType: "world.broadcast",
+      stateDirty: false,
+      payload: {
+        kind: "rare_drop",
+        characterId: owner.ownerId,
+        ...(input.characterName ? { characterName: input.characterName } : {}),
+        itemName: input.itemName,
+        rarity: input.rarity
+      },
       source: "item-service"
     });
   }

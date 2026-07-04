@@ -63,6 +63,7 @@ export interface WriteLedgerInput {
 
 export interface WriteSyncEventInput {
   owner: ItemOwner;
+  audience?: "character" | "public";
   eventType: string;
   stateDirty: boolean;
   payload: Record<string, unknown>;
@@ -283,11 +284,14 @@ export class ItemRepository {
   }
 
   async writeSyncEvent(input: WriteSyncEventInput) {
-    if (input.owner.ownerType !== "character" || !input.owner.ownerId) return;
+    const audience = input.audience ?? "character";
+    if (audience === "character" && (input.owner.ownerType !== "character" || !input.owner.ownerId)) {
+      return;
+    }
 
     await this.db.insert(syncEvents).values({
-      audience: "character",
-      characterId: input.owner.ownerId,
+      audience,
+      characterId: audience === "character" ? input.owner.ownerId : null,
       eventType: input.eventType,
       stateDirty: input.stateDirty,
       payload: input.payload,

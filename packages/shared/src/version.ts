@@ -1,8 +1,8 @@
-export const PRODUCT_VERSION = "0.9.1";
+export const PRODUCT_VERSION = "0.9.2";
 
 export const WORLD_COMPATIBILITY = {
   schemaVersion: 19,
-  apiVersion: 27,
+  apiVersion: 28,
   engineVersion: 2,
   rulesetVersion: 14,
   contentVersion: 12,

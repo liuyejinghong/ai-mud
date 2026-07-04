@@ -455,6 +455,65 @@ describe("GameShell", () => {
     expect(screen.getByText("等级提升至 2")).toBeTruthy();
   });
 
+  it("renders public world broadcasts from other characters and skips self duplicates", async () => {
+    mockFetchWithStates([
+      {
+        stateVersion: 5,
+        state: forestState,
+        nextCursor: 6,
+        events: [
+          {
+            id: 4,
+            eventType: "world.broadcast",
+            stateDirty: false,
+            payload: {
+              kind: "rare_drop",
+              characterId: "character-2",
+              characterName: "Alden",
+              itemName: "狼骨短刃",
+              rarity: "rare"
+            },
+            source: "item-service",
+            createdAt: "2026-07-02T08:00:03.000Z"
+          },
+          {
+            id: 5,
+            eventType: "world.broadcast",
+            stateDirty: false,
+            payload: {
+              kind: "level_up",
+              characterId: "character-3",
+              characterName: "Mira",
+              level: 7
+            },
+            source: "game-service",
+            createdAt: "2026-07-02T08:00:04.000Z"
+          },
+          {
+            id: 6,
+            eventType: "world.broadcast",
+            stateDirty: false,
+            payload: {
+              kind: "rare_drop",
+              characterId: "character-1",
+              characterName: "Zichen",
+              itemName: "狼骨短刃",
+              rarity: "rare"
+            },
+            source: "item-service",
+            createdAt: "2026-07-02T08:00:05.000Z"
+          }
+        ]
+      }
+    ]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByText("Alden 获得稀有装备：狼骨短刃")).toBeTruthy();
+    expect(screen.getByText("Mira 升到 7 级")).toBeTruthy();
+    expect(screen.queryByText("Zichen 获得稀有装备：狼骨短刃")).toBeNull();
+  });
+
   it("blocks movement shortcuts while an item dialog is open", async () => {
     const fetchMock = mockFetchWithStates([forestState]);
     render(<GameShell csrfToken="csrf" />);

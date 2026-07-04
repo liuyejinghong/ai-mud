@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CHARACTER_CLASSES,
   type ChatMessageDto,
@@ -174,7 +174,10 @@ function readPayloadNumber(payload: Record<string, unknown>, key: string) {
   return typeof payload[key] === "number" ? payload[key] : null;
 }
 
-function syncEventNotice(event: GameSyncEventDto): FeedbackNotice | null {
+function syncEventNotice(
+  event: GameSyncEventDto,
+  currentCharacterId: string | null
+): FeedbackNotice | null {
   const itemId = typeof event.payload.itemId === "string" ? event.payload.itemId : null;
   const itemName = readPayloadString(event.payload, "itemName") ?? itemId;
   const quantity = readPayloadNumber(event.payload, "quantity");
@@ -201,6 +204,34 @@ function syncEventNotice(event: GameSyncEventDto): FeedbackNotice | null {
     const level = readPayloadNumber(event.payload, "level");
     if (!level) return null;
     return { id: String(event.id), tone: "level", text: `等级提升至 ${level}` };
+  }
+  if (event.eventType === "world.broadcast") {
+    const characterId = readPayloadString(event.payload, "characterId");
+    if (characterId && characterId === currentCharacterId) return null;
+
+    const kind = readPayloadString(event.payload, "kind");
+    const characterName = readPayloadString(event.payload, "characterName") ?? "有冒险者";
+    if (kind === "rare_drop") {
+      const equipmentName =
+        readPayloadString(event.payload, "itemName") ??
+        readPayloadString(event.payload, "itemDefId") ??
+        "未知装备";
+      const rarity = readPayloadString(event.payload, "rarity");
+      const rarityText =
+        rarity && rarity in rarityLabels
+          ? rarityLabels[rarity as EquipmentItemDto["rarity"]]
+          : "稀有";
+      return {
+        id: String(event.id),
+        tone: "rare",
+        text: `${characterName} 获得${rarityText}装备：${equipmentName}`
+      };
+    }
+    if (kind === "level_up") {
+      const level = readPayloadNumber(event.payload, "level");
+      if (!level) return null;
+      return { id: String(event.id), tone: "level", text: `${characterName} 升到 ${level} 级` };
+    }
   }
   if (event.eventType === "item.consume" && itemName && quantity) {
     return { id: String(event.id), tone: "loot", text: `消耗 ${itemName} x${quantity}` };
@@ -254,6 +285,7 @@ function isAuthExpired(error: unknown) {
 
 export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
   const [state, setState] = useState<GameStateDto>(initialState);
+  const currentCharacterIdRef = useRef<string | null>(initialState.character?.id ?? null);
   const [name, setName] = useState("Zichen");
   const [classId, setClassId] = useState<CharacterClassId>("ranger");
   const [activeModal, setActiveModal] = useState<ActiveModal | null>(null);
@@ -273,11 +305,21 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
-  const handleSyncEvents = useCallback((events: GameSyncEventDto[]) => {
-    const notices = events.map(syncEventNotice).filter((entry): entry is FeedbackNotice => entry !== null);
-    if (notices.length === 0) return;
-    setSyncNotices((current) => [...notices, ...current].slice(0, 4));
+  const handleSyncState = useCallback((nextState: GameStateDto) => {
+    currentCharacterIdRef.current = nextState.character?.id ?? null;
+    setState(nextState);
   }, []);
+
+  const handleSyncEvents = useCallback(
+    (events: GameSyncEventDto[]) => {
+      const notices = events
+        .map((event) => syncEventNotice(event, currentCharacterIdRef.current))
+        .filter((entry): entry is FeedbackNotice => entry !== null);
+      if (notices.length === 0) return;
+      setSyncNotices((current) => [...notices, ...current].slice(0, 4));
+    },
+    []
+  );
 
   const applyLobbySync = useCallback((next: LobbyState) => {
     setLobby({
@@ -289,7 +331,7 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
 
   const sync = useGameSync({
     activeAction: state.currentAction,
-    onState: setState,
+    onState: handleSyncState,
     onEvents: handleSyncEvents,
     onLobby: applyLobbySync
   });

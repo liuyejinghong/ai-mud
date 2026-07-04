@@ -165,7 +165,8 @@ describe("ItemService", () => {
       itemDefId: "training_sword",
       rarity: "rare",
       seed: "instance-seed",
-      reason: "test.instance"
+      reason: "test.instance",
+      metadata: { characterName: "Zichen" }
     });
 
     expect(instance.itemDefId).toBe("training_sword");
@@ -187,6 +188,39 @@ describe("ItemService", () => {
         reason: "test.instance"
       }
     });
+    expect(repo.syncEvents[1]).toMatchObject({
+      owner: characterOwner,
+      audience: "public",
+      eventType: "world.broadcast",
+      stateDirty: false,
+      payload: {
+        kind: "rare_drop",
+        characterId: "character-1",
+        characterName: "Zichen",
+        itemName: "训练短剑",
+        rarity: "rare"
+      },
+      source: "item-service"
+    });
+    expect(repo.syncEvents[1]?.payload).not.toHaveProperty("seed");
+    expect(repo.syncEvents[1]?.payload).not.toHaveProperty("itemInstanceId");
+  });
+
+  it("does not publish public broadcasts for non-rare equipment", async () => {
+    const repo = new FakeItemRepo();
+    const service = new ItemService(repo);
+
+    await service.grantInstance({
+      owner: characterOwner,
+      itemDefId: "training_sword",
+      rarity: "uncommon",
+      seed: "instance-seed",
+      reason: "test.instance",
+      metadata: { characterName: "Zichen" }
+    });
+
+    expect(repo.syncEvents).toHaveLength(1);
+    expect(repo.syncEvents[0]?.eventType).toBe("item.instance.grant");
   });
 
   it("rejects a second consume when the conditional debit no longer matches", async () => {
