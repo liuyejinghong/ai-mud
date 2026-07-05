@@ -32,6 +32,7 @@ export interface AiGovernanceConfig {
   providerName: string;
   model: string | null;
   promptVersion: number;
+  dailyTokenBudget: number | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -126,11 +127,31 @@ export class AiGovernanceService {
       (await this.repository.summarizeByPurposeSince(since)).map((row) => [row.purpose, row])
     );
 
+    const rows = [...summaries.values()];
+    const usedTokens24h = rows.reduce(
+      (total, row) => total + row.totalInputTokens24h + row.totalOutputTokens24h,
+      0
+    );
+    const fallbackCount24h = rows.reduce((total, row) => total + row.fallbackCount24h, 0);
+    const exhausted =
+      this.config.dailyTokenBudget !== null && usedTokens24h >= this.config.dailyTokenBudget;
+
     return {
       providerEnabled: this.config.providerEnabled,
       providerName: this.config.providerName,
       model: this.config.model,
       promptVersion: this.config.promptVersion,
+      budget: {
+        dailyTokenBudget: this.config.dailyTokenBudget,
+        usedTokens24h,
+        remainingTokens24h:
+          this.config.dailyTokenBudget === null
+            ? null
+            : Math.max(0, this.config.dailyTokenBudget - usedTokens24h),
+        fallbackCount24h,
+        latestFailureReason: exhausted ? "budget_exhausted" : null,
+        exhausted
+      },
       purposes: AI_PURPOSE_ORDER.map((purpose) =>
         this.buildPurposeStatus(purpose, summaries.get(purpose))
       )

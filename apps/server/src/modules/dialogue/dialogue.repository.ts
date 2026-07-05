@@ -242,6 +242,20 @@ export class DialogueRepository {
     return row ? toAiCallLog(row) : null;
   }
 
+  async findLatestAiCallLogByAccountPurpose(input: {
+    accountId: string;
+    purpose: AiCallPurpose;
+  }): Promise<AiCallLogDto | null> {
+    const [row] = await this.db
+      .select()
+      .from(aiCallLogs)
+      .where(and(eq(aiCallLogs.accountId, input.accountId), eq(aiCallLogs.purpose, input.purpose)))
+      .orderBy(desc(aiCallLogs.createdAt))
+      .limit(1);
+
+    return row ? toAiCallLog(row) : null;
+  }
+
   async summarizeByPurposeSince(since: Date): Promise<AiPurposeSummaryRow[]> {
     const rows = await this.db
       .select()

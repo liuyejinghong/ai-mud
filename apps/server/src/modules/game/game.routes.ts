@@ -53,6 +53,7 @@ import {
   NpcTaskServiceError,
   type NpcTaskProposalInput
 } from "../npc-task/npc-task.service.js";
+import { OfflineReportService } from "../offline-report/offline-report.service.js";
 import { RumorRepository } from "../rumor/rumor.repository.js";
 import { RumorService } from "../rumor/rumor.service.js";
 import { GameRepository } from "./game.repository.js";
@@ -170,6 +171,12 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
   const dialogue = createDialogueService(app);
   const task = createNpcTaskService(app);
   const rumor = createRumorService(app);
+  const offlineReport = new OfflineReportService({
+    ai: createAiOrchestrator(app),
+    gameRepository: new GameRepository(app.di.db),
+    aiLogRepository: new DialogueRepository(app.di.db),
+    dailyTokenBudget: app.config.AI_DAILY_TOKEN_BUDGET
+  });
 
   const withNpcTasksAndRumors = async (
     accountId: string,
@@ -213,7 +220,12 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
       await app.di.worldRuntime.settleDue(new Date());
     },
     getState: async (accountId) => withNpcTasksAndRumors(accountId, await game.getState(accountId)),
-    syncGame: (accountId, cursor) => game.getSync(accountId, cursor),
+    syncGame: async (accountId, cursor) => {
+      const sync = await game.getSync(accountId, cursor);
+      if ((cursor ?? 0) > 0) return sync;
+      const report = await offlineReport.getReport(accountId, new Date());
+      return report ? { ...sync, offlineReport: report } : sync;
+    },
     sendLobbyChat: (accountId, body) => lobby.sendLobbyChat(accountId, body),
     heartbeatPresence: (accountId) => lobby.heartbeat(accountId),
     createCharacter: async (accountId, input) =>

@@ -156,7 +156,15 @@ const aiLayerStatus: AiLayerStatusDto = {
   providerEnabled: true,
   providerName: "deepseek",
   model: "deepseek-v4-flash",
-  promptVersion: 6,
+  promptVersion: 8,
+  budget: {
+    dailyTokenBudget: 1000,
+    usedTokens24h: 156,
+    remainingTokens24h: 844,
+    fallbackCount24h: 0,
+    latestFailureReason: null,
+    exhausted: false
+  },
   purposes: [
     {
       purpose: "npc_dialogue",

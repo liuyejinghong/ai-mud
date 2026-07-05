@@ -15,6 +15,7 @@ import {
   type MoneyDto,
   type NpcDialogueResponseDto,
   type NpcDialogueTargetDto,
+  type OfflineReportDto,
   type PresenceDto,
   type StartGatheringRequestDto
 } from "@ai-mud/shared";
@@ -300,6 +301,7 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
   const [chatStatus, setChatStatus] = useState("");
   const [isChatSending, setIsChatSending] = useState(false);
   const [syncNotices, setSyncNotices] = useState<FeedbackNotice[]>([]);
+  const [offlineReport, setOfflineReport] = useState<OfflineReportDto | null>(null);
   const [plannedMinutes, setPlannedMinutes] =
     useState<StartGatheringRequestDto["plannedMinutes"]>(10);
   const [error, setError] = useState<string | null>(null);
@@ -333,7 +335,8 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
     activeAction: state.currentAction,
     onState: handleSyncState,
     onEvents: handleSyncEvents,
-    onLobby: applyLobbySync
+    onLobby: applyLobbySync,
+    onOfflineReport: setOfflineReport
   });
 
   const isModalOpen = activeModal !== null;
@@ -1049,6 +1052,23 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
             </ul>
           )}
         </section>
+
+        {offlineReport ? (
+          <section className="offline-report-panel" aria-labelledby="offline-report-title">
+            <div className="panel-heading">
+              <h2 id="offline-report-title">{offlineReport.title}</h2>
+              <span>{offlineReport.status === "success" ? "AI" : "模板"}</span>
+            </div>
+            <p>{offlineReport.summary}</p>
+            {offlineReport.highlights.length > 0 ? (
+              <ul>
+                {offlineReport.highlights.map((highlight) => (
+                  <li key={highlight}>{highlight}</li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        ) : null}
 
         {state.currentAction ? (
           <section className="active-action-panel" aria-labelledby="active-action-title">

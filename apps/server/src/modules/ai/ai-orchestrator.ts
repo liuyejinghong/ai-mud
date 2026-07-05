@@ -3,16 +3,19 @@ import {
   buildNpcMemoryCompressionPrompt,
   buildNpcTaskProposalPrompt,
   buildNpcTaskCopyPrompt,
+  buildOfflineSummaryPrompt,
   buildWorldRumorPrompt,
   parseNpcDialogueOutput,
   parseNpcMemoryCompressionOutput,
   parseNpcTaskProposalOutput,
   parseNpcTaskCopyOutput,
+  parseOfflineSummaryOutput,
   parseWorldRumorOutput,
   type NpcDialoguePromptContext,
   type NpcMemoryCompressionPromptContext,
   type NpcTaskProposalPromptContext,
   type NpcTaskCopyPromptContext,
+  type OfflineSummaryPromptContext,
   type WorldRumorPromptContext
 } from "@ai-mud/ai-prompts";
 import type { AiCallStatus } from "@ai-mud/shared";
@@ -79,6 +82,19 @@ export interface AiMemoryCompressionResult {
 
 export interface AiWorldRumorResult {
   message: string;
+  status: AiProviderCallStatus;
+  provider: string;
+  model: string;
+  fallbackReason: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  latencyMs: number | null;
+}
+
+export interface AiOfflineSummaryResult {
+  title: string;
+  summary: string;
+  highlights: string[];
   status: AiProviderCallStatus;
   provider: string;
   model: string;
@@ -332,6 +348,55 @@ export class AiOrchestrator {
     }
   }
 
+  async generateOfflineSummary(input: {
+    context: OfflineSummaryPromptContext;
+  }): Promise<AiOfflineSummaryResult> {
+    if (!this.options.enabled) {
+      return this.templateOfflineSummary(input.context, "disabled", "fallback");
+    }
+
+    const prompt = buildOfflineSummaryPrompt(input.context);
+
+    try {
+      const result = await this.options.provider.completeJson({
+        provider: this.options.providerName,
+        model: this.options.model,
+        messages: [
+          { role: "system", content: prompt.system },
+          { role: "user", content: prompt.user }
+        ],
+        responseFormat: { type: "json_object" },
+        maxTokens: Math.min(this.options.maxOutputTokens, 240),
+        timeoutMs: this.options.timeoutMs
+      });
+      const parsed = parseOfflineSummaryOutput(result.rawContent);
+
+      if (!parsed.ok) {
+        return {
+          ...this.templateOfflineSummary(input.context, parsed.reason, "rejected"),
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          latencyMs: result.latencyMs
+        };
+      }
+
+      return {
+        title: parsed.value.title,
+        summary: parsed.value.summary,
+        highlights: parsed.value.highlights,
+        status: "success",
+        provider: this.options.providerName,
+        model: this.options.model,
+        fallbackReason: null,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+        latencyMs: result.latencyMs
+      };
+    } catch {
+      return this.templateOfflineSummary(input.context, "provider_error", "error");
+    }
+  }
+
   private templateReply(
     context: NpcDialoguePromptContext,
     fallbackReason: string,
@@ -410,6 +475,25 @@ export class AiOrchestrator {
   ): AiWorldRumorResult {
     return {
       message: context.fallbackMessage,
+      status,
+      provider: "template",
+      model: "template",
+      fallbackReason,
+      inputTokens: null,
+      outputTokens: null,
+      latencyMs: null
+    };
+  }
+
+  private templateOfflineSummary(
+    context: OfflineSummaryPromptContext,
+    fallbackReason: string,
+    status: Exclude<AiProviderCallStatus, "success">
+  ): AiOfflineSummaryResult {
+    return {
+      title: context.fallback.title,
+      summary: context.fallback.summary,
+      highlights: context.fallback.highlights,
       status,
       provider: "template",
       model: "template",

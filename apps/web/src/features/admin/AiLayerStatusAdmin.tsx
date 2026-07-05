@@ -33,6 +33,14 @@ function tokenText(purpose: AiPurposeStatusDto) {
   return `${purpose.totalInputTokens24h}/${purpose.totalOutputTokens24h}`;
 }
 
+function budgetText(snapshot: AiLayerStatusDto) {
+  const limit =
+    snapshot.budget.dailyTokenBudget === null ? "不限" : String(snapshot.budget.dailyTokenBudget);
+  const remaining =
+    snapshot.budget.remainingTokens24h === null ? "不限" : String(snapshot.budget.remainingTokens24h);
+  return `预算 ${snapshot.budget.usedTokens24h}/${limit}，剩余 ${remaining}，回退 ${snapshot.budget.fallbackCount24h}`;
+}
+
 export function AiLayerStatusAdmin() {
   const [snapshot, setSnapshot] = useState<AiLayerStatusDto | null>(null);
   const [status, setStatus] = useState("正在读取 AI 状态...");
@@ -74,6 +82,10 @@ export function AiLayerStatusAdmin() {
             <strong>{snapshot.providerEnabled ? "AI 已启用" : "AI 未启用"}</strong>
             <span>{modelText(snapshot)}</span>
             <span>Prompt v{snapshot.promptVersion}</span>
+            <span>{budgetText(snapshot)}</span>
+            {snapshot.budget.latestFailureReason ? (
+              <span>最近失败：{snapshot.budget.latestFailureReason}</span>
+            ) : null}
           </div>
 
           <div className="admin-table ai-layer-table" role="table" aria-label="AI 状态">

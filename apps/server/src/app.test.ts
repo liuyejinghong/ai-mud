@@ -18,7 +18,8 @@ const testEnv = {
   DEEPSEEK_BASE_URL: "https://api.deepseek.com",
   DEEPSEEK_MODEL: "deepseek-v4-flash",
   AI_DIALOGUE_TIMEOUT_MS: 8_000,
-  AI_DIALOGUE_MAX_OUTPUT_TOKENS: 400
+  AI_DIALOGUE_MAX_OUTPUT_TOKENS: 400,
+  AI_DAILY_TOKEN_BUDGET: null
 };
 
 describe("buildApp", () => {

@@ -3,6 +3,7 @@ import {
   NPC_MEMORY_COMPRESSION_PROMPT_VERSION,
   NPC_TASK_PROPOSAL_PROMPT_VERSION,
   NPC_TASK_COPY_PROMPT_VERSION,
+  OFFLINE_SUMMARY_PROMPT_VERSION,
   WORLD_RUMOR_PROMPT_VERSION
 } from "@ai-mud/ai-prompts";
 import type { AiAuthorityClass, AiCallPurpose } from "@ai-mud/shared";
@@ -68,6 +69,16 @@ export const AI_PURPOSE_POLICIES: Record<AiCallPurpose, AiPurposePolicy> = {
     fallbackRequired: true,
     promptVersion: NPC_TASK_PROPOSAL_PROMPT_VERSION,
     allowedStateEffects: "none"
+  },
+  offline_summary: {
+    purpose: "offline_summary",
+    authorityClass: "summary",
+    mutatesWorldState: false,
+    maxOutputTokens: 240,
+    cooldownMs: 0,
+    fallbackRequired: true,
+    promptVersion: OFFLINE_SUMMARY_PROMPT_VERSION,
+    allowedStateEffects: "none"
   }
 };
 
@@ -76,5 +87,6 @@ export const AI_PURPOSE_ORDER: AiCallPurpose[] = [
   "npc_task_copy",
   "npc_memory_compression",
   "world_rumor",
-  "npc_task_proposal"
+  "npc_task_proposal",
+  "offline_summary"
 ];

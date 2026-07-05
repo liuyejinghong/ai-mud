@@ -33,7 +33,15 @@ const envSchema = z.object({
   DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com"),
   DEEPSEEK_MODEL: z.string().default("deepseek-v4-flash"),
   AI_DIALOGUE_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
-  AI_DIALOGUE_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().max(1_000).default(400)
+  AI_DIALOGUE_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().max(1_000).default(400),
+  AI_DAILY_TOKEN_BUDGET: z
+    .string()
+    .optional()
+    .transform((value) => {
+      if (value === undefined || value.trim() === "") return null;
+      const parsed = Number(value);
+      return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+    })
 });
 
 export type Env = z.infer<typeof envSchema>;

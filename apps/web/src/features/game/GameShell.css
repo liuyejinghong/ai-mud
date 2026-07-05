@@ -433,6 +433,26 @@
   padding: 12px;
 }
 
+.offline-report-panel {
+  border: 1px solid rgba(158, 230, 255, 0.46);
+  background: rgba(4, 21, 24, 0.6);
+  margin-bottom: 14px;
+  padding: 12px;
+}
+
+.offline-report-panel p,
+.offline-report-panel ul {
+  margin: 8px 0 0;
+  color: #d8dce0;
+  line-height: 1.6;
+}
+
+.offline-report-panel ul {
+  display: grid;
+  gap: 6px;
+  padding-left: 18px;
+}
+
 .rumor-list {
   display: grid;
   gap: 8px;

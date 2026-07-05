@@ -599,6 +599,32 @@ describe("GameShell", () => {
     expect(screen.getByText("村里有人低声谈起：伯林的矿箱又见了底。")).toBeTruthy();
   });
 
+  it("renders the offline report returned by the first sync", async () => {
+    mockFetchWithStates([
+      emptySyncResponse({
+        state: villageState,
+        offlineReport: {
+          generatedAt: "2026-07-02T10:00:00.000Z",
+          since: "2026-07-02T08:00:00.000Z",
+          until: "2026-07-02T10:00:00.000Z",
+          status: "fallback",
+          provider: "template",
+          model: "template",
+          fallbackReason: "budget_exhausted",
+          title: "离线简报",
+          summary: "Zichen离开期间，黑松哨站留下了1条可核验记录。",
+          highlights: ["集市记录了基础铁矿石成交。"]
+        }
+      })
+    ]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByRole("heading", { name: "离线简报" })).toBeTruthy();
+    expect(screen.getByText("Zichen离开期间，黑松哨站留下了1条可核验记录。")).toBeTruthy();
+    expect(screen.getByText("集市记录了基础铁矿石成交。")).toBeTruthy();
+  });
+
   it("opens NPC dialogue and sends one free-text message", async () => {
     const fetchMock = mockFetchWithStates([
       villageState,

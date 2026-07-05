@@ -136,4 +136,38 @@ describe("useGameSync", () => {
       })
     });
   });
+
+  it("emits offline reports from the initial sync payload", async () => {
+    vi.useFakeTimers();
+    const onOfflineReport = vi.fn();
+    const fetchSync = vi.fn().mockResolvedValue(
+      syncResponse({
+        offlineReport: {
+          generatedAt: "2026-07-02T10:00:00.000Z",
+          since: "2026-07-02T08:00:00.000Z",
+          until: "2026-07-02T10:00:00.000Z",
+          status: "success",
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          fallbackReason: null,
+          title: "离线简报",
+          summary: "黑松哨站记录了一笔基础铁矿石成交。",
+          highlights: ["集市记录了基础铁矿石成交。"]
+        }
+      })
+    );
+
+    renderHook(() => useGameSync({ fetchSync, onOfflineReport }));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onOfflineReport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "离线简报",
+        highlights: ["集市记录了基础铁矿石成交。"]
+      })
+    );
+  });
 });

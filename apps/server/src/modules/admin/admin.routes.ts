@@ -290,7 +290,8 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
         providerEnabled: app.config.AI_NPC_DIALOGUE_ENABLED,
         providerName: app.config.AI_PROVIDER,
         model: app.config.AI_NPC_DIALOGUE_ENABLED ? app.config.DEEPSEEK_MODEL : null,
-        promptVersion: WORLD_COMPATIBILITY.promptVersion
+        promptVersion: WORLD_COMPATIBILITY.promptVersion,
+        dailyTokenBudget: app.config.AI_DAILY_TOKEN_BUDGET
       });
       return service.getStatus(now());
     },

@@ -187,6 +187,7 @@ export interface GameSyncResponseDto {
   stateVersion: number;
   state: GameStateDto | null;
   events: GameSyncEventDto[];
+  offlineReport?: OfflineReportDto;
   chat?: ChatMessageDto[];
   presence?: PresenceDto[];
   leaderboards?: {
@@ -194,6 +195,19 @@ export interface GameSyncResponseDto {
     wealth?: LeaderboardEntryDto[];
   };
   nextCursor: number;
+}
+
+export interface OfflineReportDto {
+  generatedAt: string;
+  since: string;
+  until: string;
+  status: AiCallStatus;
+  provider: string;
+  model: string;
+  fallbackReason: string | null;
+  title: string;
+  summary: string;
+  highlights: string[];
 }
 
 export interface NpcActionSummaryDto {
@@ -267,7 +281,8 @@ export type AiCallPurpose =
   | "npc_task_copy"
   | "npc_memory_compression"
   | "world_rumor"
-  | "npc_task_proposal";
+  | "npc_task_proposal"
+  | "offline_summary";
 export type AiAuthorityClass = "presentation" | "summary" | "classification";
 export type NpcDialogueSpeakerType = "player" | "npc" | "system";
 
@@ -368,6 +383,14 @@ export interface AiLayerStatusDto {
   providerName: string;
   model: string | null;
   promptVersion: number;
+  budget: {
+    dailyTokenBudget: number | null;
+    usedTokens24h: number;
+    remainingTokens24h: number | null;
+    fallbackCount24h: number;
+    latestFailureReason: string | null;
+    exhausted: boolean;
+  };
   purposes: AiPurposeStatusDto[];
 }
 

@@ -46,14 +46,14 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.9.2 world broadcast compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.9.2");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(28);
+  it("exposes v0.9.3 offline report compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.9.3");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(29);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(19);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(14);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(12);
-    expect(WORLD_COMPATIBILITY.promptVersion).toBe(7);
+    expect(WORLD_COMPATIBILITY.promptVersion).toBe(8);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
   });
 
@@ -548,13 +548,22 @@ describe("game contract", () => {
       providerEnabled: true,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
-      promptVersion: 6,
+      promptVersion: 8,
+      budget: {
+        dailyTokenBudget: 1000,
+        usedTokens24h: 120,
+        remainingTokens24h: 880,
+        fallbackCount24h: 1,
+        latestFailureReason: null,
+        exhausted: false
+      },
       purposes: [purpose]
     };
 
     expect(status.purposes[0]?.mutatesWorldState).toBe(false);
     expect(status.purposes[0]?.disabledCount24h).toBe(1);
     expect(status.purposes[0]?.latestStatus).toBe("disabled");
+    expect(status.budget.remainingTokens24h).toBe(880);
   });
 
   it("describes NPC memory entries and compressed fragments", () => {

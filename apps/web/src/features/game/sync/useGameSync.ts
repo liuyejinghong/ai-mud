@@ -5,6 +5,7 @@ import type {
   GameSyncEventDto,
   GameSyncResponseDto,
   LeaderboardEntryDto,
+  OfflineReportDto,
   PresenceDto
 } from "@ai-mud/shared";
 import { getGameSync } from "../gameApi";
@@ -28,6 +29,7 @@ export interface UseGameSyncOptions {
   onState?: (state: GameStateDto) => void;
   onEvents?: (events: GameSyncEventDto[]) => void;
   onLobby?: (payload: LobbySyncPayload) => void;
+  onOfflineReport?: (report: OfflineReportDto) => void;
 }
 
 export function useGameSync(options: UseGameSyncOptions = {}) {
@@ -40,7 +42,8 @@ export function useGameSync(options: UseGameSyncOptions = {}) {
     fetchSync = getGameSync,
     onState,
     onEvents,
-    onLobby
+    onLobby,
+    onOfflineReport
   } = options;
   const cursorRef = useRef(initialCursor);
   const timerRef = useRef<number | null>(null);
@@ -55,6 +58,7 @@ export function useGameSync(options: UseGameSyncOptions = {}) {
       setError(null);
       if (next.state) onState?.(next.state);
       if (next.events.length > 0) onEvents?.(next.events);
+      if (next.offlineReport) onOfflineReport?.(next.offlineReport);
       if (next.chat || next.presence || next.leaderboards) {
         onLobby?.({
           chat: next.chat ?? [],
@@ -66,7 +70,7 @@ export function useGameSync(options: UseGameSyncOptions = {}) {
         });
       }
     },
-    [onEvents, onLobby, onState]
+    [onEvents, onLobby, onOfflineReport, onState]
   );
 
   useEffect(() => {

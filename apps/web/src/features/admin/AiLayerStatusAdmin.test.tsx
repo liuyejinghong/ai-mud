@@ -7,7 +7,15 @@ const snapshot: AiLayerStatusDto = {
   providerEnabled: true,
   providerName: "deepseek",
   model: "deepseek-v4-flash",
-  promptVersion: 6,
+  promptVersion: 8,
+  budget: {
+    dailyTokenBudget: 1000,
+    usedTokens24h: 226,
+    remainingTokens24h: 774,
+    fallbackCount24h: 1,
+    latestFailureReason: null,
+    exhausted: false
+  },
   purposes: [
     {
       purpose: "npc_dialogue",
@@ -68,6 +76,7 @@ describe("AiLayerStatusAdmin", () => {
 
     expect(await screen.findByRole("heading", { name: "AI 状态" })).toBeTruthy();
     expect(screen.getByText("deepseek/deepseek-v4-flash")).toBeTruthy();
+    expect(screen.getByText("预算 226/1000，剩余 774，回退 1")).toBeTruthy();
     expect(screen.getByText("npc_dialogue")).toBeTruthy();
     expect(screen.getByText("world_rumor")).toBeTruthy();
     expect(screen.getByText("5000ms")).toBeTruthy();

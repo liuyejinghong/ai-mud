@@ -81,7 +81,8 @@ describe("AiGovernanceService", () => {
       providerEnabled: true,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
-      promptVersion: 6
+      promptVersion: 8,
+      dailyTokenBudget: 1000
     });
 
     const status: AiLayerStatusDto = await service.getStatus(
@@ -94,8 +95,16 @@ describe("AiGovernanceService", () => {
       "npc_memory_compression",
       "npc_task_copy",
       "npc_task_proposal",
+      "offline_summary",
       "world_rumor"
     ]);
+    expect(status.budget).toMatchObject({
+      dailyTokenBudget: 1000,
+      usedTokens24h: 0,
+      remainingTokens24h: 1000,
+      fallbackCount24h: 0,
+      exhausted: false
+    });
     expect(status.purposes.every((purpose) => purpose.mutatesWorldState === false)).toBe(true);
     expect(status.purposes.every((purpose) => purpose.callCount24h === 0)).toBe(true);
   });
@@ -123,7 +132,8 @@ describe("AiGovernanceService", () => {
       providerEnabled: false,
       providerName: "template",
       model: null,
-      promptVersion: 6
+      promptVersion: 8,
+      dailyTokenBudget: null
     });
 
     const status = await service.getStatus(new Date("2026-07-02T12:00:00.000Z"));
@@ -136,6 +146,45 @@ describe("AiGovernanceService", () => {
       cooldownMs: 5000,
       disabledCount24h: 1,
       latestStatus: "disabled"
+    });
+  });
+
+  it("marks the daily token budget as exhausted when recent usage reaches the cap", async () => {
+    const repo: AiCallLogSummaryRepository = {
+      summarizeByPurposeSince: async () => [
+        {
+          purpose: "npc_dialogue",
+          callCount24h: 2,
+          successCount24h: 1,
+          fallbackCount24h: 1,
+          rejectedCount24h: 0,
+          errorCount24h: 0,
+          disabledCount24h: 0,
+          totalInputTokens24h: 70,
+          totalOutputTokens24h: 30,
+          averageLatencyMs24h: 100,
+          latestStatus: "fallback",
+          latestAt: "2026-07-02T12:00:00.000Z"
+        }
+      ]
+    };
+    const service = new AiGovernanceService(repo, {
+      providerEnabled: true,
+      providerName: "deepseek",
+      model: "deepseek-v4-flash",
+      promptVersion: 8,
+      dailyTokenBudget: 100
+    });
+
+    const status = await service.getStatus(new Date("2026-07-02T12:00:00.000Z"));
+
+    expect(status.budget).toMatchObject({
+      dailyTokenBudget: 100,
+      usedTokens24h: 100,
+      remainingTokens24h: 0,
+      fallbackCount24h: 1,
+      latestFailureReason: "budget_exhausted",
+      exhausted: true
     });
   });
 });

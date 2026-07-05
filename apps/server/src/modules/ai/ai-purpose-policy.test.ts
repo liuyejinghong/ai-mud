@@ -7,7 +7,8 @@ const knownPurposes: AiCallPurpose[] = [
   "npc_task_copy",
   "npc_memory_compression",
   "world_rumor",
-  "npc_task_proposal"
+  "npc_task_proposal",
+  "offline_summary"
 ];
 
 describe("AI purpose policy registry", () => {
@@ -37,6 +38,19 @@ describe("AI purpose policy registry", () => {
       cooldownMs: 0,
       fallbackRequired: true,
       promptVersion: 7,
+      allowedStateEffects: "none"
+    });
+  });
+
+  it("defines read-only offline summary policy", () => {
+    expect(AI_PURPOSE_POLICIES.offline_summary).toMatchObject({
+      purpose: "offline_summary",
+      authorityClass: "summary",
+      mutatesWorldState: false,
+      maxOutputTokens: 240,
+      cooldownMs: 0,
+      fallbackRequired: true,
+      promptVersion: 1,
       allowedStateEffects: "none"
     });
   });
