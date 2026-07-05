@@ -6,7 +6,8 @@ export type ErrorCode =
   | "ACTIVATION_CODE_USED"
   | "ACTIVATION_CODE_EXPIRED"
   | "ACCOUNT_DISABLED"
-  | "RATE_LIMITED";
+  | "RATE_LIMITED"
+  | "INTERNAL_ERROR";
 
 export interface ApiErrorBody {
   error: {

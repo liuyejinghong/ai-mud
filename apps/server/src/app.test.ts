@@ -41,4 +41,22 @@ describe("buildApp", () => {
     expect(allowed.headers["access-control-allow-credentials"]).toBe("true");
     expect(blocked.headers["access-control-allow-origin"]).toBeUndefined();
   });
+
+  it("returns generic API errors for unhandled exceptions", async () => {
+    const app = await buildApp({ env: testEnv, db: {} as Db });
+    app.get("/boom", async () => {
+      throw new Error("database password leaked");
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/boom"
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({
+      error: { code: "INTERNAL_ERROR", message: "Internal server error" }
+    });
+    expect(response.body).not.toContain("database password leaked");
+  });
 });

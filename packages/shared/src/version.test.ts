@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { PRODUCT_VERSION, WORLD_COMPATIBILITY } from "./version.js";
 
 describe("version constants", () => {
-  it("exposes the v0.10.1 account operations product line and compatibility versions", () => {
-    expect(PRODUCT_VERSION).toBe("0.10.1");
+  it("exposes the v0.10.2 security hardening product line and compatibility versions", () => {
+    expect(PRODUCT_VERSION).toBe("0.10.2");
     expect(WORLD_COMPATIBILITY).toEqual({
       schemaVersion: 20,
-      apiVersion: 31,
+      apiVersion: 32,
       engineVersion: 2,
       rulesetVersion: 14,
       contentVersion: 12,

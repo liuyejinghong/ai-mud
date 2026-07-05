@@ -4,10 +4,16 @@ import { z } from "zod";
 import { DrizzleActivationCodeRepository } from "../activation-code/activation-code.repository.js";
 import { ActivationCodeService } from "../activation-code/activation-code.service.js";
 import { DrizzleAuditWriter } from "../audit/audit.repository.js";
+import { InMemoryRateLimitService, type RateLimitResult } from "../rate-limit/rate-limit.service.js";
 import { AuthRepository, type AccountRecord } from "./auth.repository.js";
 import { AuthService } from "./auth.service.js";
 
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 14;
+const LOGIN_RATE_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_RATE_LIMIT = 8;
+const REGISTER_RATE_WINDOW_MS = 60 * 60 * 1000;
+const REGISTER_RATE_LIMIT = 5;
+const REGISTER_FAILURE_MESSAGE = "注册失败，请检查邮箱、密码和激活码。";
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -45,6 +51,11 @@ export interface AuthRouteDependencies {
   revokeSessionByToken(token: string): Promise<void>;
   findAccountBySessionToken(token: string): Promise<Omit<AccountRecord, "passwordHash"> | null>;
   createCsrfToken(token: string): string;
+  checkAuthRateLimit(input: {
+    action: "login" | "register";
+    email: string;
+    ip: string;
+  }): Promise<RateLimitResult>;
 }
 
 class ActivationCodeConsumeError extends Error {
@@ -65,6 +76,7 @@ function hasAuthRouteDependencies(value: unknown): value is AuthRouteDependencie
 function createDefaultDependencies(app: FastifyInstance): AuthRouteDependencies {
   const auth = new AuthService();
   const authRepo = new AuthRepository(app.di.db);
+  const rateLimits = new InMemoryRateLimitService();
 
   return {
     findAccountByEmail: (email) => authRepo.findAccountByEmail(email),
@@ -108,7 +120,13 @@ function createDefaultDependencies(app: FastifyInstance): AuthRouteDependencies 
     },
     revokeSessionByToken: (token) => authRepo.revokeSessionByTokenHash(auth.hashToken(token)),
     findAccountBySessionToken: (token) => authRepo.findAccountBySessionTokenHash(auth.hashToken(token)),
-    createCsrfToken: (token) => auth.createCsrfToken(token, app.config.SESSION_SECRET)
+    createCsrfToken: (token) => auth.createCsrfToken(token, app.config.SESSION_SECRET),
+    checkAuthRateLimit: async (input) =>
+      rateLimits.check({
+        key: `${input.action}:${input.email.toLowerCase()}:${input.ip}`,
+        limit: input.action === "login" ? LOGIN_RATE_LIMIT : REGISTER_RATE_LIMIT,
+        windowMs: input.action === "login" ? LOGIN_RATE_WINDOW_MS : REGISTER_RATE_WINDOW_MS
+      })
   };
 }
 
@@ -120,12 +138,22 @@ export async function registerAuthRoutes(app: FastifyInstance, maybeDependencies
   app.post("/auth/register", async (request, reply) => {
     const parsed = registerSchema.safeParse(request.body);
     if (!parsed.success) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid registration input");
+      return sendError(reply, 400, "VALIDATION_ERROR", REGISTER_FAILURE_MESSAGE);
+    }
+
+    const rateLimit = await deps.checkAuthRateLimit({
+      action: "register",
+      email: parsed.data.email,
+      ip: request.ip
+    });
+    if (!rateLimit.ok) {
+      reply.header("retry-after", String(rateLimit.retryAfterSeconds));
+      return sendError(reply, 429, "RATE_LIMITED", "请求太频繁，请稍后再试。");
     }
 
     const existing = await deps.findAccountByEmail(parsed.data.email);
     if (existing) {
-      return sendError(reply, 400, "VALIDATION_ERROR", "Email is already registered");
+      return sendError(reply, 400, "VALIDATION_ERROR", REGISTER_FAILURE_MESSAGE);
     }
 
     let result: { account: AccountRecord };
@@ -138,7 +166,7 @@ export async function registerAuthRoutes(app: FastifyInstance, maybeDependencies
       });
     } catch (error) {
       if (error instanceof ActivationCodeConsumeError) {
-        return sendError(reply, 400, error.reason, "Activation code cannot be used");
+        return sendError(reply, 400, "VALIDATION_ERROR", REGISTER_FAILURE_MESSAGE);
       }
       throw error;
     }
@@ -157,6 +185,16 @@ export async function registerAuthRoutes(app: FastifyInstance, maybeDependencies
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) {
       return sendError(reply, 400, "VALIDATION_ERROR", "Invalid login input");
+    }
+
+    const rateLimit = await deps.checkAuthRateLimit({
+      action: "login",
+      email: parsed.data.email,
+      ip: request.ip
+    });
+    if (!rateLimit.ok) {
+      reply.header("retry-after", String(rateLimit.retryAfterSeconds));
+      return sendError(reply, 429, "RATE_LIMITED", "请求太频繁，请稍后再试。");
     }
 
     const account = await deps.findAccountByEmail(parsed.data.email);

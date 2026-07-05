@@ -4,7 +4,10 @@ import Fastify from "fastify";
 import { loadEnv, type Env } from "./config/env.js";
 import { createDb, type Db, type DbConnection } from "./db/client.js";
 import { registerAdminRoutes } from "./modules/admin/admin.routes.js";
+import { AdminBootstrapService } from "./modules/auth/admin-bootstrap.service.js";
+import { AuthRepository } from "./modules/auth/auth.repository.js";
 import { registerAuthRoutes } from "./modules/auth/auth.routes.js";
+import { AuthService } from "./modules/auth/auth.service.js";
 import { registerGameRoutes } from "./modules/game/game.routes.js";
 import { NpcRepository } from "./modules/npc/npc.repository.js";
 import { NpcService } from "./modules/npc/npc.service.js";
@@ -82,6 +85,28 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
 
   app.decorate("config", config);
   app.decorate("di", { db, worldRuntime });
+
+  app.setErrorHandler((error, _request, reply) => {
+    app.log.error({ err: error }, "request failed");
+    return reply.code(500).send({
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "Internal server error"
+      }
+    });
+  });
+
+  const adminBootstrap = new AdminBootstrapService({
+    repository: new AuthRepository(db),
+    auth: new AuthService()
+  });
+  const bootstrapResult = await adminBootstrap.ensure({
+    email: config.ADMIN_BOOTSTRAP_EMAIL,
+    password: config.ADMIN_BOOTSTRAP_PASSWORD
+  });
+  if (bootstrapResult.created) {
+    app.log.info({ accountId: bootstrapResult.accountId }, "bootstrap admin account created");
+  }
 
   if (config.WORLD_TICK_ENABLED) {
     worldTickTimer = setInterval(() => {
