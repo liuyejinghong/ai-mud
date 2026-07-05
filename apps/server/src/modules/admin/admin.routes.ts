@@ -15,6 +15,7 @@ import type {
   NpcSummaryDto,
   AccountOperationResponseDto,
   RevokeSessionsResponseDto,
+  WorldResetResponseDto,
   WorldRuntimeStatusDto
 } from "@ai-mud/shared";
 import { WORLD_COMPATIBILITY } from "@ai-mud/shared";
@@ -48,7 +49,11 @@ import {
   NPC_WORLD_RUNTIME_KEY,
   WORLD_RUNTIME_TICK_MS
 } from "../world-runtime/world-runtime.service.js";
-import { WorldResetService } from "../world-reset/world-reset.service.js";
+import { WorldResetRepository } from "../world-reset/world-reset.repository.js";
+import {
+  WorldResetService,
+  WorldResetServiceError
+} from "../world-reset/world-reset.service.js";
 
 export interface AdminAccount {
   id: string;
@@ -112,6 +117,11 @@ export interface AdminRouteDependencies {
     actorAccountId: string;
     reason: string;
   }): Promise<{ activationCodeId: string; status: "revoked" }>;
+  resetWorld(input: {
+    actorAccountId: string;
+    confirmationText: string;
+    reason: string;
+  }): Promise<WorldResetResponseDto>;
   writeAudit(input: Parameters<AuditWriter["write"]>[0]): Promise<void>;
   now(): Date;
 }
@@ -121,7 +131,7 @@ const createActivationCodeSchema = z.object({
   expiresAt: z.string().datetime().optional()
 });
 
-const softResetSchema = z.object({
+const worldResetSchema = z.object({
   confirmationText: z.string(),
   reason: z.string().min(8)
 });
@@ -453,6 +463,15 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
         });
         return { activationCodeId: input.activationCodeId, status: "revoked" };
       }),
+    resetWorld: async (input) =>
+      app.di.db.transaction(async (tx) => {
+        const service = new WorldResetService({
+          repository: new WorldResetRepository(tx),
+          audit: new DrizzleAuditWriter(tx),
+          now
+        });
+        return service.resetWorld(input);
+      }),
     writeAudit: async (input) => {
       const audit = new DrizzleAuditWriter(app.di.db);
       await audit.write(input);
@@ -747,7 +766,7 @@ export async function registerAdminRoutes(
     }
   });
 
-  app.post("/admin/world-reset/soft", async (request, reply) => {
+  app.post("/admin/world-reset", async (request, reply) => {
     const admin = await deps.getCurrentAdmin(request);
     if (!admin) {
       return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
@@ -756,31 +775,22 @@ export async function registerAdminRoutes(
       return sendError(reply, 403, "FORBIDDEN", "Admin mutation token required");
     }
 
-    const parsed = softResetSchema.safeParse(request.body);
+    const parsed = worldResetSchema.safeParse(request.body);
     if (!parsed.success) {
       return sendError(reply, 400, "VALIDATION_ERROR", "Invalid reset input");
     }
 
-    const service = new WorldResetService();
-    const result = await service.requestSoftReset({
-      actorAccountId: admin.id,
-      confirmationText: parsed.data.confirmationText,
-      reason: parsed.data.reason
-    });
-
-    if (!result.ok) {
-      return sendError(reply, 400, "VALIDATION_ERROR", result.reason);
+    try {
+      return await deps.resetWorld({
+        actorAccountId: admin.id,
+        confirmationText: parsed.data.confirmationText,
+        reason: parsed.data.reason
+      });
+    } catch (error) {
+      if (error instanceof WorldResetServiceError) {
+        return sendError(reply, 400, error.code, error.message);
+      }
+      throw error;
     }
-
-    await deps.writeAudit({
-      actorAccountId: admin.id,
-      action: "world_reset.soft.request",
-      targetType: "world",
-      targetId: null,
-      reason: parsed.data.reason,
-      metadata: { mode: result.mode }
-    });
-
-    return result;
   });
 }

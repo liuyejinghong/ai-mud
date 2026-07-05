@@ -13,6 +13,7 @@ import type {
   NpcSimulationReportDto,
   NpcSummaryDto,
   RevokeSessionsResponseDto,
+  WorldResetResponseDto,
   WorldRuntimeStatusDto
 } from "@ai-mud/shared";
 
@@ -178,6 +179,28 @@ export async function publishSystemAnnouncement(
   }
 
   return response.json() as Promise<ChatMessageDto>;
+}
+
+export async function resetWorld(
+  confirmationText: string,
+  reason: string,
+  csrfToken: string
+): Promise<WorldResetResponseDto> {
+  const response = await fetch(`${API_BASE}/admin/world-reset`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-ai-mud-csrf": csrfToken },
+    credentials: "include",
+    body: JSON.stringify({
+      confirmationText: confirmationText.trim(),
+      reason: reason.trim()
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to reset world");
+  }
+
+  return response.json() as Promise<WorldResetResponseDto>;
 }
 
 export async function getEconomySnapshot(): Promise<EconomySnapshotDto> {

@@ -9,6 +9,7 @@ import type {
   NpcMemoryFragmentDto,
   NpcSimulationReportDto,
   NpcSummaryDto,
+  WorldResetResponseDto,
   WorldRuntimeStatusDto
 } from "@ai-mud/shared";
 import { describe, expect, it } from "vitest";
@@ -245,6 +246,14 @@ const adminAccountRows: AdminAccountDto[] = [
   }
 ];
 
+const worldResetResponse: WorldResetResponseDto = {
+  ok: true,
+  mode: "world_reset",
+  resetAt: "2026-07-05T12:00:00.000Z",
+  clearedTables: ["characters", "world_actors"],
+  message: "世界已重置并完成基础初始化。"
+};
+
 function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
   const app = Fastify();
   const baseDeps: AdminRouteDependencies = {
@@ -252,6 +261,9 @@ function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
     verifyAdminMutation: async () => false,
     listActivationCodes: async () => [],
     revokeActivationCodeWithAudit: async () => {
+      throw new Error("not used");
+    },
+    resetWorld: async () => {
       throw new Error("not used");
     },
     createActivationCodeWithAudit: async () => {
@@ -799,26 +811,24 @@ describe("registerAdminRoutes", () => {
     ]);
   });
 
-  it("guards the soft reset route behind an admin session", async () => {
+  it("guards the world reset route behind an admin session", async () => {
+    const resetCalls: unknown[] = [];
     const app = buildAdminRouteTestApp({
       getCurrentAdmin: async () => null,
       verifyAdminMutation: async () => false,
-      listActivationCodes: async () => [],
-      createActivationCodeWithAudit: async () => {
-        throw new Error("not used");
-      },
-      writeAudit: async () => {
-        throw new Error("not used");
+      resetWorld: async (input) => {
+        resetCalls.push(input);
+        return worldResetResponse;
       },
       now: () => new Date("2026-07-01T00:00:00.000Z")
     });
 
     const response = await app.inject({
       method: "POST",
-      url: "/admin/world-reset/soft",
+      url: "/admin/world-reset",
       payload: {
-        confirmationText: "RESET WORLD",
-        reason: "economy test reset"
+        confirmationText: "RESET BLACKPINE",
+        reason: "经济系统崩溃后重置"
       }
     });
 
@@ -826,10 +836,11 @@ describe("registerAdminRoutes", () => {
     expect(response.json()).toEqual({
       error: { code: "UNAUTHENTICATED", message: "Admin session required" }
     });
+    expect(resetCalls).toEqual([]);
   });
 
-  it("accepts a non-destructive soft reset request from an admin", async () => {
-    const auditCalls: unknown[] = [];
+  it("runs a real world reset for admins with a mutation token", async () => {
+    const resetCalls: unknown[] = [];
     const app = buildAdminRouteTestApp({
       getCurrentAdmin: async () => ({
         id: "admin-1",
@@ -837,44 +848,67 @@ describe("registerAdminRoutes", () => {
         role: "admin"
       }),
       verifyAdminMutation: async () => true,
-      listActivationCodes: async () => [],
-      createActivationCodeWithAudit: async () => {
-        throw new Error("not used");
-      },
-      writeAudit: async (input) => {
-        auditCalls.push(input);
+      resetWorld: async (input) => {
+        resetCalls.push(input);
+        return worldResetResponse;
       },
       now: () => new Date("2026-07-01T00:00:00.000Z")
     });
 
     const response = await app.inject({
       method: "POST",
-      url: "/admin/world-reset/soft",
+      url: "/admin/world-reset",
       payload: {
-        confirmationText: "RESET WORLD",
-        reason: "economy test reset"
+        confirmationText: "RESET BLACKPINE",
+        reason: "经济系统崩溃后重置"
       }
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      ok: true,
-      mode: "dry_run",
-      message: "Soft Reset is acknowledged but not destructive in v0.1"
-    });
-    expect(auditCalls).toEqual([
+    expect(response.json()).toEqual(worldResetResponse);
+    expect(resetCalls).toEqual([
       {
         actorAccountId: "admin-1",
-        action: "world_reset.soft.request",
-        targetType: "world",
-        targetId: null,
-        reason: "economy test reset",
-        metadata: { mode: "dry_run" }
+        confirmationText: "RESET BLACKPINE",
+        reason: "经济系统崩溃后重置"
       }
     ]);
   });
 
-  it("does not accept a soft reset when audit logging fails", async () => {
+  it("rejects world reset without an admin mutation token", async () => {
+    const resetCalls: unknown[] = [];
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      verifyAdminMutation: async () => false,
+      resetWorld: async (input) => {
+        resetCalls.push(input);
+        return worldResetResponse;
+      },
+      now: () => new Date("2026-07-01T00:00:00.000Z")
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/world-reset",
+      payload: {
+        confirmationText: "RESET BLACKPINE",
+        reason: "经济系统崩溃后重置"
+      }
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      error: { code: "FORBIDDEN", message: "Admin mutation token required" }
+    });
+    expect(resetCalls).toEqual([]);
+  });
+
+  it("rejects malformed world reset input before calling the service", async () => {
+    const resetCalls: unknown[] = [];
     const app = buildAdminRouteTestApp({
       getCurrentAdmin: async () => ({
         id: "admin-1",
@@ -882,27 +916,26 @@ describe("registerAdminRoutes", () => {
         role: "admin"
       }),
       verifyAdminMutation: async () => true,
-      listActivationCodes: async () => [],
-      createActivationCodeWithAudit: async () => {
-        throw new Error("not used");
-      },
-      writeAudit: async () => {
-        throw new Error("audit insert failed");
-      },
-      now: () => new Date("2026-07-01T00:00:00.000Z")
+      resetWorld: async (input) => {
+        resetCalls.push(input);
+        return worldResetResponse;
+      }
     });
 
     const response = await app.inject({
       method: "POST",
-      url: "/admin/world-reset/soft",
+      url: "/admin/world-reset",
       payload: {
-        confirmationText: "RESET WORLD",
-        reason: "economy test reset"
+        confirmationText: "RESET BLACKPINE",
+        reason: "短"
       }
     });
 
-    expect(response.statusCode).toBe(500);
-    expect(response.body).not.toContain("dry_run");
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: { code: "VALIDATION_ERROR", message: "Invalid reset input" }
+    });
+    expect(resetCalls).toEqual([]);
   });
 
   it("guards the economy snapshot behind an admin session", async () => {

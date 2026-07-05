@@ -7,6 +7,7 @@ import { EconomyAdmin } from "./features/admin/EconomyAdmin";
 import { NpcAdmin } from "./features/admin/NpcAdmin";
 import { NpcMemoryAdmin } from "./features/admin/NpcMemoryAdmin";
 import { SystemAnnouncementAdmin } from "./features/admin/SystemAnnouncementAdmin";
+import { WorldResetAdmin } from "./features/admin/WorldResetAdmin";
 import { AuthPage } from "./features/auth/AuthPage";
 import { getCurrentSession, type AuthSessionDto } from "./features/auth/authApi";
 import { GameShell } from "./features/game/GameShell";
@@ -44,6 +45,7 @@ export function App() {
           <SystemAnnouncementAdmin csrfToken={session.csrfToken} />
           <AccountOpsAdmin csrfToken={session.csrfToken} />
           <ActivationCodeAdmin csrfToken={session.csrfToken} />
+          <WorldResetAdmin csrfToken={session.csrfToken} />
           <EconomyAdmin />
           <NpcAdmin csrfToken={session.csrfToken} />
           <AiLayerStatusAdmin />

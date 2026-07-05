@@ -27,6 +27,19 @@ export interface PublishSystemAnnouncementRequestDto {
   body: string;
 }
 
+export interface WorldResetRequestDto {
+  confirmationText: string;
+  reason: string;
+}
+
+export interface WorldResetResponseDto {
+  ok: true;
+  mode: "world_reset";
+  resetAt: string;
+  clearedTables: string[];
+  message: string;
+}
+
 export interface AdminAccountDto {
   id: string;
   email: string;

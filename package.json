@@ -13,6 +13,7 @@
     "db:down": "docker compose down",
     "db:migrate": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server db:migrate",
     "db:verify-migrations": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server db:verify-migrations",
+    "db:verify-world-reset": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server db:verify-world-reset",
     "test:postgres": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server test:integration:postgres"
   },
   "devDependencies": {

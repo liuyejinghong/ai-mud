@@ -11,6 +11,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:verify-migrations": "tsx scripts/verify-migrations.ts",
+    "db:verify-world-reset": "tsx scripts/verify-world-reset.ts",
     "test:integration:postgres": "pnpm --filter @ai-mud/shared build && pnpm --filter @ai-mud/content build && pnpm --filter @ai-mud/game-rules build && pnpm --filter @ai-mud/ai-prompts build && vitest run src/db/postgres-integration.test.ts"
   },
   "dependencies": {
