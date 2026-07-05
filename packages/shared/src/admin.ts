@@ -1,3 +1,5 @@
+import type { AccountRole, AccountStatus } from "./auth.js";
+
 export type ActivationCodeStatus = "unused" | "used" | "expired" | "revoked";
 
 export interface ActivationCodeDto {
@@ -23,4 +25,23 @@ export interface CreateActivationCodeResponseDto {
 
 export interface PublishSystemAnnouncementRequestDto {
   body: string;
+}
+
+export interface AdminAccountDto {
+  id: string;
+  email: string;
+  role: AccountRole;
+  status: AccountStatus;
+  createdAt: string;
+  lastLoginAt: string | null;
+}
+
+export interface AccountOperationResponseDto {
+  account: AdminAccountDto;
+  revokedSessionCount: number;
+}
+
+export interface RevokeSessionsResponseDto {
+  accountId: string;
+  revokedSessionCount: number;
 }

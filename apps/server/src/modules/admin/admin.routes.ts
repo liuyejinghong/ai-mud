@@ -2,6 +2,7 @@ import { FIRST_ITEMS, getItemById } from "@ai-mud/content";
 import { formatMoney } from "@ai-mud/game-rules";
 import type {
   ActivationCodeDto,
+  AdminAccountDto,
   AiCallLogDto,
   AiLayerStatusDto,
   ChatMessageDto,
@@ -12,6 +13,8 @@ import type {
   NpcMemoryFragmentDto,
   NpcSimulationReportDto,
   NpcSummaryDto,
+  AccountOperationResponseDto,
+  RevokeSessionsResponseDto,
   WorldRuntimeStatusDto
 } from "@ai-mud/shared";
 import { WORLD_COMPATIBILITY } from "@ai-mud/shared";
@@ -19,6 +22,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { DrizzleActivationCodeRepository } from "../activation-code/activation-code.repository.js";
 import { ActivationCodeService } from "../activation-code/activation-code.service.js";
+import { AccountOpsRepository } from "../account-ops/account-ops.repository.js";
+import {
+  AccountOpsService,
+  AccountOpsServiceError
+} from "../account-ops/account-ops.service.js";
 import { AnnouncementRepository } from "../announcement/announcement.repository.js";
 import {
   AnnouncementService,
@@ -64,6 +72,22 @@ export interface AdminRouteDependencies {
   getWorldRuntimeStatus(): Promise<WorldRuntimeStatusDto>;
   listAiCallLogs(): Promise<AiCallLogDto[]>;
   getAiLayerStatus(): Promise<AiLayerStatusDto>;
+  listAccounts(): Promise<AdminAccountDto[]>;
+  disableAccount(input: {
+    actorAccountId: string;
+    targetAccountId: string;
+    reason: string;
+  }): Promise<AccountOperationResponseDto>;
+  restoreAccount(input: {
+    actorAccountId: string;
+    targetAccountId: string;
+    reason: string;
+  }): Promise<AccountOperationResponseDto>;
+  revokeAccountSessions(input: {
+    actorAccountId: string;
+    targetAccountId: string;
+    reason: string;
+  }): Promise<RevokeSessionsResponseDto>;
   listNpcMemory(): Promise<{
     entries: NpcMemoryEntryDto[];
     fragments: NpcMemoryFragmentDto[];
@@ -83,6 +107,11 @@ export interface AdminRouteDependencies {
     expiresAt: Date | null;
     metadata?: Record<string, unknown>;
   }): Promise<{ code: string; activationCode: ActivationCodeDto }>;
+  revokeActivationCodeWithAudit(input: {
+    activationCodeId: string;
+    actorAccountId: string;
+    reason: string;
+  }): Promise<{ activationCodeId: string; status: "revoked" }>;
   writeAudit(input: Parameters<AuditWriter["write"]>[0]): Promise<void>;
   now(): Date;
 }
@@ -104,6 +133,10 @@ const npcSimulationSchema = z.object({
 
 const systemAnnouncementSchema = z.object({
   body: z.string().trim().min(1).max(240)
+});
+
+const adminReasonSchema = z.object({
+  reason: z.string().trim().min(4).max(240)
 });
 
 const BLACKPINE_MARKET_ID = "blackpine_outpost";
@@ -309,6 +342,37 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
       });
       return service.getStatus(now());
     },
+    listAccounts: async () => {
+      const service = new AccountOpsService({
+        repository: new AccountOpsRepository(app.di.db),
+        audit: new DrizzleAuditWriter(app.di.db)
+      });
+      return service.listAccounts();
+    },
+    disableAccount: async (input) =>
+      app.di.db.transaction(async (tx) => {
+        const service = new AccountOpsService({
+          repository: new AccountOpsRepository(tx),
+          audit: new DrizzleAuditWriter(tx)
+        });
+        return service.disableAccount(input);
+      }),
+    restoreAccount: async (input) =>
+      app.di.db.transaction(async (tx) => {
+        const service = new AccountOpsService({
+          repository: new AccountOpsRepository(tx),
+          audit: new DrizzleAuditWriter(tx)
+        });
+        return service.restoreAccount(input);
+      }),
+    revokeAccountSessions: async (input) =>
+      app.di.db.transaction(async (tx) => {
+        const service = new AccountOpsService({
+          repository: new AccountOpsRepository(tx),
+          audit: new DrizzleAuditWriter(tx)
+        });
+        return service.revokeSessions(input);
+      }),
     listNpcMemory: async () => {
       const memory = new NpcMemoryService(new NpcMemoryRepository(app.di.db));
       return memory.listAdminMemory({ limit: 50 });
@@ -366,6 +430,29 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
 
         return { code: created.code, activationCode };
       }),
+    revokeActivationCodeWithAudit: async (input) =>
+      app.di.db.transaction(async (tx) => {
+        const activationCodes = new ActivationCodeService(
+          new DrizzleActivationCodeRepository(tx)
+        );
+        const revoked = await activationCodes.revokeUnused(input.activationCodeId);
+        if (!revoked.ok) {
+          throw new AccountOpsServiceError(
+            "VALIDATION_ERROR",
+            "激活码不存在或已被使用，不能作废。"
+          );
+        }
+        const audit = new DrizzleAuditWriter(tx);
+        await audit.write({
+          actorAccountId: input.actorAccountId,
+          action: "activation_code.revoke",
+          targetType: "activation_code",
+          targetId: input.activationCodeId,
+          reason: input.reason,
+          metadata: { status: "revoked" }
+        });
+        return { activationCodeId: input.activationCodeId, status: "revoked" };
+      }),
     writeAudit: async (input) => {
       const audit = new DrizzleAuditWriter(app.di.db);
       await audit.write(input);
@@ -389,6 +476,15 @@ export async function registerAdminRoutes(
     }
 
     return { activationCodes: await deps.listActivationCodes() };
+  });
+
+  app.get("/admin/accounts", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+
+    return { accounts: await deps.listAccounts() };
   });
 
   app.get("/admin/economy", async (request, reply) => {
@@ -533,6 +629,122 @@ export async function registerAdminRoutes(
     });
 
     return result;
+  });
+
+  app.post("/admin/activation-codes/:activationCodeId/revoke", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+    if (!(await deps.verifyAdminMutation(request))) {
+      return sendError(reply, 403, "FORBIDDEN", "Admin mutation token required");
+    }
+
+    const params = z.object({ activationCodeId: z.string().min(1) }).safeParse(request.params);
+    const body = adminReasonSchema.safeParse(request.body);
+    if (!params.success || !body.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid activation-code revoke input");
+    }
+
+    try {
+      return await deps.revokeActivationCodeWithAudit({
+        activationCodeId: params.data.activationCodeId,
+        actorAccountId: admin.id,
+        reason: body.data.reason
+      });
+    } catch (error) {
+      if (error instanceof AccountOpsServiceError) {
+        return sendError(reply, 400, error.code, error.message);
+      }
+      throw error;
+    }
+  });
+
+  app.post("/admin/accounts/:accountId/disable", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+    if (!(await deps.verifyAdminMutation(request))) {
+      return sendError(reply, 403, "FORBIDDEN", "Admin mutation token required");
+    }
+
+    const params = z.object({ accountId: z.string().min(1) }).safeParse(request.params);
+    const body = adminReasonSchema.safeParse(request.body);
+    if (!params.success || !body.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid account disable input");
+    }
+
+    try {
+      return await deps.disableAccount({
+        actorAccountId: admin.id,
+        targetAccountId: params.data.accountId,
+        reason: body.data.reason
+      });
+    } catch (error) {
+      if (error instanceof AccountOpsServiceError) {
+        return sendError(reply, 400, error.code, error.message);
+      }
+      throw error;
+    }
+  });
+
+  app.post("/admin/accounts/:accountId/restore", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+    if (!(await deps.verifyAdminMutation(request))) {
+      return sendError(reply, 403, "FORBIDDEN", "Admin mutation token required");
+    }
+
+    const params = z.object({ accountId: z.string().min(1) }).safeParse(request.params);
+    const body = adminReasonSchema.safeParse(request.body);
+    if (!params.success || !body.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid account restore input");
+    }
+
+    try {
+      return await deps.restoreAccount({
+        actorAccountId: admin.id,
+        targetAccountId: params.data.accountId,
+        reason: body.data.reason
+      });
+    } catch (error) {
+      if (error instanceof AccountOpsServiceError) {
+        return sendError(reply, 400, error.code, error.message);
+      }
+      throw error;
+    }
+  });
+
+  app.post("/admin/accounts/:accountId/revoke-sessions", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+    if (!(await deps.verifyAdminMutation(request))) {
+      return sendError(reply, 403, "FORBIDDEN", "Admin mutation token required");
+    }
+
+    const params = z.object({ accountId: z.string().min(1) }).safeParse(request.params);
+    const body = adminReasonSchema.safeParse(request.body);
+    if (!params.success || !body.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid session revoke input");
+    }
+
+    try {
+      return await deps.revokeAccountSessions({
+        actorAccountId: admin.id,
+        targetAccountId: params.data.accountId,
+        reason: body.data.reason
+      });
+    } catch (error) {
+      if (error instanceof AccountOpsServiceError) {
+        return sendError(reply, 400, error.code, error.message);
+      }
+      throw error;
+    }
   });
 
   app.post("/admin/world-reset/soft", async (request, reply) => {

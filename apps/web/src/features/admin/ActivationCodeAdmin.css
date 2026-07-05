@@ -102,6 +102,64 @@
   overflow-wrap: anywhere;
 }
 
+.account-ops-body,
+.activation-code-admin-body {
+  display: grid;
+  gap: 14px;
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.account-ops-table-row {
+  grid-template-columns:
+    minmax(190px, 1.3fr)
+    minmax(90px, 0.7fr)
+    minmax(90px, 0.7fr)
+    minmax(160px, 1fr)
+    minmax(175px, 1fr);
+  min-width: 790px;
+}
+
+.activation-code-table-row {
+  grid-template-columns:
+    minmax(190px, 1.3fr)
+    minmax(95px, 0.7fr)
+    minmax(160px, 1fr)
+    minmax(190px, 1.1fr)
+    minmax(96px, 0.6fr);
+  min-width: 770px;
+}
+
+.account-ops-actions,
+.activation-code-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.account-ops-actions button,
+.activation-code-actions button {
+  min-height: 32px;
+  padding: 6px 9px;
+  font-size: 12px;
+}
+
+[data-status="active"],
+[data-status="unused"] {
+  color: #38e96f;
+}
+
+[data-status="disabled"],
+[data-status="revoked"] {
+  color: #ff716d;
+}
+
+[data-status="used"],
+[data-status="expired"] {
+  color: #f0d36b;
+}
+
 .economy-admin-body {
   display: grid;
   gap: 14px;

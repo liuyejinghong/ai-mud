@@ -1,4 +1,7 @@
 import type {
+  AccountOperationResponseDto,
+  ActivationCodeDto,
+  AdminAccountDto,
   AiCallLogDto,
   AiLayerStatusDto,
   ChatMessageDto,
@@ -9,6 +12,7 @@ import type {
   NpcMemoryFragmentDto,
   NpcSimulationReportDto,
   NpcSummaryDto,
+  RevokeSessionsResponseDto,
   WorldRuntimeStatusDto
 } from "@ai-mud/shared";
 
@@ -32,6 +36,26 @@ export interface NpcMemoryResponse {
   fragments: NpcMemoryFragmentDto[];
 }
 
+export interface ActivationCodeListResponse {
+  activationCodes: ActivationCodeDto[];
+}
+
+export interface AdminAccountListResponse {
+  accounts: AdminAccountDto[];
+}
+
+export async function getActivationCodes(): Promise<ActivationCodeListResponse> {
+  const response = await fetch(`${API_BASE}/admin/activation-codes`, {
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to load activation codes");
+  }
+
+  return response.json() as Promise<ActivationCodeListResponse>;
+}
+
 export async function createActivationCode(
   note: string,
   csrfToken: string
@@ -48,6 +72,94 @@ export async function createActivationCode(
   }
 
   return response.json() as Promise<CreateActivationCodeResponseDto>;
+}
+
+export async function revokeActivationCode(
+  activationCodeId: string,
+  reason: string,
+  csrfToken: string
+): Promise<{ activationCodeId: string; status: "revoked" }> {
+  const response = await fetch(`${API_BASE}/admin/activation-codes/${activationCodeId}/revoke`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-ai-mud-csrf": csrfToken },
+    credentials: "include",
+    body: JSON.stringify({ reason: reason.trim() })
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to revoke activation code");
+  }
+
+  return response.json() as Promise<{ activationCodeId: string; status: "revoked" }>;
+}
+
+export async function getAdminAccounts(): Promise<AdminAccountListResponse> {
+  const response = await fetch(`${API_BASE}/admin/accounts`, {
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to load accounts");
+  }
+
+  return response.json() as Promise<AdminAccountListResponse>;
+}
+
+export async function disableAdminAccount(
+  accountId: string,
+  reason: string,
+  csrfToken: string
+): Promise<AccountOperationResponseDto> {
+  const response = await fetch(`${API_BASE}/admin/accounts/${accountId}/disable`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-ai-mud-csrf": csrfToken },
+    credentials: "include",
+    body: JSON.stringify({ reason: reason.trim() })
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to disable account");
+  }
+
+  return response.json() as Promise<AccountOperationResponseDto>;
+}
+
+export async function restoreAdminAccount(
+  accountId: string,
+  reason: string,
+  csrfToken: string
+): Promise<AccountOperationResponseDto> {
+  const response = await fetch(`${API_BASE}/admin/accounts/${accountId}/restore`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-ai-mud-csrf": csrfToken },
+    credentials: "include",
+    body: JSON.stringify({ reason: reason.trim() })
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to restore account");
+  }
+
+  return response.json() as Promise<AccountOperationResponseDto>;
+}
+
+export async function revokeAdminAccountSessions(
+  accountId: string,
+  reason: string,
+  csrfToken: string
+): Promise<RevokeSessionsResponseDto> {
+  const response = await fetch(`${API_BASE}/admin/accounts/${accountId}/revoke-sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-ai-mud-csrf": csrfToken },
+    credentials: "include",
+    body: JSON.stringify({ reason: reason.trim() })
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to revoke account sessions");
+  }
+
+  return response.json() as Promise<RevokeSessionsResponseDto>;
 }
 
 export async function publishSystemAnnouncement(

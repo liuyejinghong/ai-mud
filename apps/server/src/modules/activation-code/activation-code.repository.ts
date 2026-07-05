@@ -57,6 +57,19 @@ export class DrizzleActivationCodeRepository implements ActivationCodeRepository
     return Boolean(updated);
   }
 
+  async revokeUnused(id: string): Promise<boolean> {
+    const [updated] = await this.db
+      .update(activationCodes)
+      .set({
+        status: "revoked",
+        revokedAt: new Date()
+      })
+      .where(and(eq(activationCodes.id, id), eq(activationCodes.status, "unused")))
+      .returning({ id: activationCodes.id });
+
+    return Boolean(updated);
+  }
+
   async listForAdmin() {
     return this.db
       .select({

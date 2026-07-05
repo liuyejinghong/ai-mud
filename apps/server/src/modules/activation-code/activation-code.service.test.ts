@@ -29,7 +29,8 @@ describe("ActivationCodeService", () => {
         records.push(record);
       },
       findByHash: async (codeHash) => records.find((record) => record.codeHash === codeHash) ?? null,
-      markUsed: async () => true
+      markUsed: async () => true,
+      revokeUnused: async () => true
     });
 
     const created = await service.create({ note: "test", createdByAdminId: "admin-1" });
@@ -59,7 +60,8 @@ describe("ActivationCodeService", () => {
         record.status = "used";
         record.usedByAccountId = accountId;
         return true;
-      }
+      },
+      revokeUnused: async () => true
     });
 
     const consumed = await service.consume(code, "account-1");
@@ -84,7 +86,8 @@ describe("ActivationCodeService", () => {
         records.push(record);
       },
       findByHash: async (codeHash) => records.find((record) => record.codeHash === codeHash) ?? null,
-      markUsed: async () => true
+      markUsed: async () => true,
+      revokeUnused: async () => true
     });
 
     await expect(service.consume("MUD–7K3M–9Q2P–6R8T", "account-1")).resolves.toEqual({
@@ -131,7 +134,8 @@ describe("ActivationCodeService", () => {
       markUsed: async (id, accountId) => {
         markedUsed.push({ id, accountId });
         return true;
-      }
+      },
+      revokeUnused: async () => true
     });
 
     await expect(service.consume("missing-code", "account-1")).resolves.toEqual({
@@ -168,12 +172,47 @@ describe("ActivationCodeService", () => {
         records.push(record);
       },
       findByHash: async (codeHash) => records.find((record) => record.codeHash === codeHash) ?? null,
-      markUsed: async () => false
+      markUsed: async () => false,
+      revokeUnused: async () => true
     });
 
     await expect(service.consume(code, "account-1")).resolves.toEqual({
       ok: false,
       reason: "ACTIVATION_CODE_USED"
+    });
+  });
+
+  it("revokes unused activation codes", async () => {
+    const revokedIds: string[] = [];
+    const service = new ActivationCodeService({
+      insert: async (record) => {
+        records.push(record);
+      },
+      findByHash: async (codeHash) => records.find((record) => record.codeHash === codeHash) ?? null,
+      markUsed: async () => true,
+      revokeUnused: async (id) => {
+        revokedIds.push(id);
+        return true;
+      }
+    });
+
+    await expect(service.revokeUnused("code-1")).resolves.toEqual({ ok: true });
+    expect(revokedIds).toEqual(["code-1"]);
+  });
+
+  it("rejects activation-code revoke when the code is already used or missing", async () => {
+    const service = new ActivationCodeService({
+      insert: async (record) => {
+        records.push(record);
+      },
+      findByHash: async (codeHash) => records.find((record) => record.codeHash === codeHash) ?? null,
+      markUsed: async () => true,
+      revokeUnused: async () => false
+    });
+
+    await expect(service.revokeUnused("code-1")).resolves.toEqual({
+      ok: false,
+      reason: "VALIDATION_ERROR"
     });
   });
 });

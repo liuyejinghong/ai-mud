@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import type {
+  AdminAccountDto,
   AiCallLogDto,
   AiLayerStatusDto,
   ChatMessageDto,
@@ -233,12 +234,26 @@ const systemAnnouncement: ChatMessageDto = {
   createdAt: "2026-07-01T12:00:00.000Z"
 };
 
+const adminAccountRows: AdminAccountDto[] = [
+  {
+    id: "account-1",
+    email: "player@example.com",
+    role: "player",
+    status: "active",
+    createdAt: "2026-07-01T00:00:00.000Z",
+    lastLoginAt: null
+  }
+];
+
 function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
   const app = Fastify();
   const baseDeps: AdminRouteDependencies = {
     getCurrentAdmin: async () => null,
     verifyAdminMutation: async () => false,
     listActivationCodes: async () => [],
+    revokeActivationCodeWithAudit: async () => {
+      throw new Error("not used");
+    },
     createActivationCodeWithAudit: async () => {
       throw new Error("not used");
     },
@@ -255,6 +270,16 @@ function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
     getWorldRuntimeStatus: async () => worldRuntimeStatus,
     listAiCallLogs: async () => aiCallLogs,
     getAiLayerStatus: async () => aiLayerStatus,
+    listAccounts: async () => adminAccountRows,
+    disableAccount: async () => {
+      throw new Error("not used");
+    },
+    restoreAccount: async () => {
+      throw new Error("not used");
+    },
+    revokeAccountSessions: async () => {
+      throw new Error("not used");
+    },
     listNpcMemory: async () => ({
       entries: npcMemoryEntries,
       fragments: npcMemoryFragments
@@ -526,6 +551,66 @@ describe("registerAdminRoutes", () => {
     expect(createCalls).toEqual([]);
   });
 
+  it("revokes an unused activation code for admins", async () => {
+    const revokeCalls: unknown[] = [];
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      verifyAdminMutation: async () => true,
+      revokeActivationCodeWithAudit: async (input) => {
+        revokeCalls.push(input);
+        return { activationCodeId: "code-1", status: "revoked" };
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/activation-codes/code-1/revoke",
+      payload: { reason: "内测名额回收" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ activationCodeId: "code-1", status: "revoked" });
+    expect(revokeCalls).toEqual([
+      {
+        activationCodeId: "code-1",
+        actorAccountId: "admin-1",
+        reason: "内测名额回收"
+      }
+    ]);
+  });
+
+  it("rejects activation-code revoke without an admin mutation token", async () => {
+    const revokeCalls: unknown[] = [];
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      verifyAdminMutation: async () => false,
+      revokeActivationCodeWithAudit: async (input) => {
+        revokeCalls.push(input);
+        throw new Error("not used");
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/activation-codes/code-1/revoke",
+      payload: { reason: "内测名额回收" }
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      error: { code: "FORBIDDEN", message: "Admin mutation token required" }
+    });
+    expect(revokeCalls).toEqual([]);
+  });
+
   it("does not return a generated code if the atomic audited operation fails", async () => {
     const app = buildAdminRouteTestApp({
       getCurrentAdmin: async () => ({
@@ -552,6 +637,166 @@ describe("registerAdminRoutes", () => {
 
     expect(response.statusCode).toBe(500);
     expect(response.body).not.toContain("INVITE-CODE");
+  });
+
+  it("lists accounts for admins", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      listAccounts: async () => adminAccountRows
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/accounts"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ accounts: adminAccountRows });
+  });
+
+  it("guards account listing behind an admin session", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => null
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/accounts"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: { code: "UNAUTHENTICATED", message: "Admin session required" }
+    });
+  });
+
+  it("disables an account and revokes active sessions for admins", async () => {
+    const disableCalls: unknown[] = [];
+    const disabledAccount = { ...adminAccountRows[0]!, status: "disabled" as const };
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      verifyAdminMutation: async () => true,
+      disableAccount: async (input) => {
+        disableCalls.push(input);
+        return { account: disabledAccount, revokedSessionCount: 2 };
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/accounts/account-1/disable",
+      payload: { reason: "内测违规处理" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ account: disabledAccount, revokedSessionCount: 2 });
+    expect(disableCalls).toEqual([
+      {
+        actorAccountId: "admin-1",
+        targetAccountId: "account-1",
+        reason: "内测违规处理"
+      }
+    ]);
+  });
+
+  it("rejects account disable without an admin mutation token", async () => {
+    const disableCalls: unknown[] = [];
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      verifyAdminMutation: async () => false,
+      disableAccount: async (input) => {
+        disableCalls.push(input);
+        throw new Error("not used");
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/accounts/account-1/disable",
+      payload: { reason: "内测违规处理" }
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      error: { code: "FORBIDDEN", message: "Admin mutation token required" }
+    });
+    expect(disableCalls).toEqual([]);
+  });
+
+  it("restores a disabled account for admins", async () => {
+    const restoreCalls: unknown[] = [];
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      verifyAdminMutation: async () => true,
+      restoreAccount: async (input) => {
+        restoreCalls.push(input);
+        return { account: adminAccountRows[0]!, revokedSessionCount: 0 };
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/accounts/account-1/restore",
+      payload: { reason: "申诉通过恢复" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ account: adminAccountRows[0], revokedSessionCount: 0 });
+    expect(restoreCalls).toEqual([
+      {
+        actorAccountId: "admin-1",
+        targetAccountId: "account-1",
+        reason: "申诉通过恢复"
+      }
+    ]);
+  });
+
+  it("revokes active sessions for an account", async () => {
+    const revokeCalls: unknown[] = [];
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      verifyAdminMutation: async () => true,
+      revokeAccountSessions: async (input) => {
+        revokeCalls.push(input);
+        return { accountId: "account-1", revokedSessionCount: 3 };
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/accounts/account-1/revoke-sessions",
+      payload: { reason: "强制重新登录" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ accountId: "account-1", revokedSessionCount: 3 });
+    expect(revokeCalls).toEqual([
+      {
+        actorAccountId: "admin-1",
+        targetAccountId: "account-1",
+        reason: "强制重新登录"
+      }
+    ]);
   });
 
   it("guards the soft reset route behind an admin session", async () => {

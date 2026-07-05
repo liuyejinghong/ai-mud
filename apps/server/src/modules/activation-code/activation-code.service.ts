@@ -13,6 +13,7 @@ export interface ActivationCodeRepository {
   insert(record: ActivationCodeRecord & { note?: string | null; createdByAdminId?: string | null }): Promise<void>;
   findByHash(codeHash: string): Promise<ActivationCodeRecord | null>;
   markUsed(id: string, accountId: string): Promise<boolean>;
+  revokeUnused(id: string): Promise<boolean>;
 }
 
 export function normalizeActivationCode(code: string) {
@@ -59,6 +60,12 @@ export class ActivationCodeService {
     }
 
     return { ok: true, activationCodeId: record.id };
+  }
+
+  async revokeUnused(id: string): Promise<{ ok: true } | { ok: false; reason: ErrorCode }> {
+    const revoked = await this.repo.revokeUnused(id);
+    if (!revoked) return { ok: false, reason: "VALIDATION_ERROR" };
+    return { ok: true };
   }
 
   private hash(code: string) {
