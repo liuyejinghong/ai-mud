@@ -305,6 +305,51 @@ describe("DialogueService", () => {
     ).rejects.toBeInstanceOf(DialogueServiceError);
   });
 
+  it("shows a rule-built opener from verified memory before the first dialogue message", async () => {
+    const { service, messages, setVerifiedFavorProfile } = buildService();
+    setVerifiedFavorProfile({
+      score: 2,
+      recentGrantCount: 0,
+      summary: "可信记忆：Zichen 完成了任务「炉火缺矿」。"
+    });
+
+    const response = await service.getDialogue("account-1", "npc-blacksmith");
+
+    expect(messages).toHaveLength(0);
+    expect(response.messages).toEqual([
+      expect.objectContaining({
+        id: "opener:npc-blacksmith:character-1",
+        speakerType: "npc",
+        message: expect.stringContaining("Zichen 完成了任务「炉火缺矿」")
+      })
+    ]);
+    expect(response.ai.provider).toBe("none");
+  });
+
+  it("does not insert an opener when real dialogue history exists", async () => {
+    const { service, messages, setVerifiedFavorProfile } = buildService();
+    setVerifiedFavorProfile({
+      score: 2,
+      recentGrantCount: 0,
+      summary: "可信记忆：Zichen 完成了任务「炉火缺矿」。"
+    });
+    messages.push({
+      id: "msg-existing",
+      accountId: "account-1",
+      characterId: "character-1",
+      npcActorId: "npc-blacksmith",
+      speakerType: "player",
+      message: "最近缺什么？",
+      safetyFlags: [],
+      createdAt: new Date("2026-07-01T11:00:00.000Z")
+    });
+
+    const response = await service.getDialogue("account-1", "npc-blacksmith");
+
+    expect(response.messages).toHaveLength(1);
+    expect(response.messages[0]?.id).toBe("msg-existing");
+  });
+
   it("rejects overlong player input", async () => {
     const { service } = buildService();
 

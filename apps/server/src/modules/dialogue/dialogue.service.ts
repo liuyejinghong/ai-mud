@@ -188,16 +188,43 @@ export class DialogueService {
       npcActorId: resolved.npc.id,
       limit: RECENT_DIALOGUE_LIMIT
     });
+    const visibleMessages =
+      messages.length > 0
+        ? messages.map(toMessageDto)
+        : [await this.buildDialogueOpener(resolved)];
 
     return {
       target: resolved.target,
-      messages: messages.map(toMessageDto),
+      messages: visibleMessages,
       ai: {
         status: "fallback",
         provider: "none",
         model: "none",
         fallbackReason: null
       }
+    };
+  }
+
+  private async buildDialogueOpener(
+    resolved: ResolvedDialogueTarget
+  ): Promise<NpcDialogueMessageDto> {
+    const verifiedFavor = await this.options.memory.getVerifiedFavorProfile({
+      characterId: resolved.character.id,
+      npcActorId: resolved.npc.id,
+      now: this.now()
+    });
+    const memoryLine = firstVerifiedMemoryLine(verifiedFavor.summary);
+    const message =
+      verifiedFavor.score > 0 && memoryLine
+        ? `${resolved.npc.name}认出了你，语气比对陌生人缓和些：“我记得，${memoryLine}。今天想谈什么？”`
+        : `${resolved.npc.name}抬起头：“${resolved.target.statusLine}你想谈什么？”`;
+
+    return {
+      id: `opener:${resolved.npc.id}:${resolved.character.id}`,
+      npcActorId: resolved.npc.id,
+      speakerType: "npc",
+      message: truncate(message, 180),
+      createdAt: this.now().toISOString()
     };
   }
 
@@ -838,6 +865,14 @@ function toMessageDto(record: DialogueMessageRecord): NpcDialogueMessageDto {
     message: record.message,
     createdAt: record.createdAt.toISOString()
   };
+}
+
+function firstVerifiedMemoryLine(summary: string) {
+  const [firstLine] = summary
+    .split(/\n+/)
+    .map((line) => line.replace(/^可信记忆：/, "").trim())
+    .filter(Boolean);
+  return firstLine ? truncate(firstLine, 54) : null;
 }
 
 function truncate(value: string, max: number) {
