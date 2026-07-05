@@ -234,6 +234,9 @@ function syncEventNotice(
       return { id: String(event.id), tone: "level", text: `${characterName} 升到 ${level} 级` };
     }
   }
+  if (event.eventType === "system.announcement") {
+    return { id: String(event.id), tone: "level", text: "系统公告已发布" };
+  }
   if (event.eventType === "item.consume" && itemName && quantity) {
     return { id: String(event.id), tone: "loot", text: `消耗 ${itemName} x${quantity}` };
   }
@@ -805,7 +808,10 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
               <ol className="lobby-chat-list" aria-label="大厅聊天">
                 {lobby.chat.length === 0 ? <li className="empty-copy">暂时没有大厅发言。</li> : null}
                 {lobby.chat.map((message) => (
-                  <li className="lobby-chat-message" key={message.id}>
+                  <li
+                    className={`lobby-chat-message${message.kind === "system" ? " is-system" : ""}`}
+                    key={message.id}
+                  >
                     <span>{message.characterName}</span>
                     <p>{message.body}</p>
                   </li>

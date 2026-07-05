@@ -47,9 +47,9 @@ describe("game contract", () => {
   });
 
   it("exposes v0.9.3 offline report compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.9.3");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(29);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(19);
+    expect(PRODUCT_VERSION).toBe("0.10.0");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(30);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(20);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(14);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(12);

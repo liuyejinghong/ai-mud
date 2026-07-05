@@ -161,6 +161,7 @@ export interface ChatMessageDto {
   id: string;
   characterId: string;
   characterName: string;
+  kind?: "player" | "system";
   channel: "lobby";
   body: string;
   createdAt: string;

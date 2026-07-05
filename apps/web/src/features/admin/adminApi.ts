@@ -1,6 +1,7 @@
 import type {
   AiCallLogDto,
   AiLayerStatusDto,
+  ChatMessageDto,
   CreateActivationCodeResponseDto,
   EconomySnapshotDto,
   MoneyDto,
@@ -47,6 +48,24 @@ export async function createActivationCode(
   }
 
   return response.json() as Promise<CreateActivationCodeResponseDto>;
+}
+
+export async function publishSystemAnnouncement(
+  body: string,
+  csrfToken: string
+): Promise<ChatMessageDto> {
+  const response = await fetch(`${API_BASE}/admin/announcements`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-ai-mud-csrf": csrfToken },
+    credentials: "include",
+    body: JSON.stringify({ body: body.trim() })
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to publish system announcement");
+  }
+
+  return response.json() as Promise<ChatMessageDto>;
 }
 
 export async function getEconomySnapshot(): Promise<EconomySnapshotDto> {

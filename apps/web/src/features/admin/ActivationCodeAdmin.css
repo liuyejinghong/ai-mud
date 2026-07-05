@@ -45,7 +45,8 @@
   font-size: 14px;
 }
 
-.admin-field input {
+.admin-field input,
+.admin-field textarea {
   box-sizing: border-box;
   width: 100%;
   border: 1px solid rgba(31, 208, 91, 0.55);
@@ -53,9 +54,17 @@
   color: #f0fff2;
   padding: 11px 12px;
   outline: none;
+  font: inherit;
 }
 
-.admin-field input:focus {
+.admin-field textarea {
+  resize: vertical;
+  min-height: 96px;
+  line-height: 1.5;
+}
+
+.admin-field input:focus,
+.admin-field textarea:focus {
   border-color: #38e96f;
   box-shadow: 0 0 0 2px rgba(56, 233, 111, 0.18);
 }

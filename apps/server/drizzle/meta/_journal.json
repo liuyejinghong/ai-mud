@@ -134,6 +134,13 @@
       "when": 1783080000000,
       "tag": "0018_lobby_chat_presence",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1783083600000,
+      "tag": "0019_system_announcements",
+      "breakpoints": true
     }
   ]
 }

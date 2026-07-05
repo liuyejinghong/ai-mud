@@ -4,6 +4,7 @@ import type {
   ActivationCodeDto,
   AiCallLogDto,
   AiLayerStatusDto,
+  ChatMessageDto,
   EconomySnapshotDto,
   ErrorCode,
   MoneyDto,
@@ -18,6 +19,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { DrizzleActivationCodeRepository } from "../activation-code/activation-code.repository.js";
 import { ActivationCodeService } from "../activation-code/activation-code.service.js";
+import { AnnouncementRepository } from "../announcement/announcement.repository.js";
+import {
+  AnnouncementService,
+  AnnouncementServiceError
+} from "../announcement/announcement.service.js";
 import { DrizzleAuditWriter } from "../audit/audit.repository.js";
 import { AiGovernanceService } from "../ai/ai-governance.service.js";
 import type { AuditWriter } from "../audit/audit.service.js";
@@ -67,6 +73,10 @@ export interface AdminRouteDependencies {
     days: number;
     startAt: Date;
   }): Promise<NpcSimulationReportDto>;
+  publishSystemAnnouncement(input: {
+    adminAccountId: string;
+    body: string;
+  }): Promise<ChatMessageDto>;
   createActivationCodeWithAudit(input: {
     note?: string;
     createdByAdminId: string;
@@ -90,6 +100,10 @@ const softResetSchema = z.object({
 const npcSimulationSchema = z.object({
   days: z.number().int().min(1).max(7).default(1),
   startAt: z.string().datetime().optional()
+});
+
+const systemAnnouncementSchema = z.object({
+  body: z.string().trim().min(1).max(240)
 });
 
 const BLACKPINE_MARKET_ID = "blackpine_outpost";
@@ -311,6 +325,15 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
       const service = new NpcService(repo);
       return service.runNpcSimulation(input.days, input.startAt);
     },
+    publishSystemAnnouncement: async (input) =>
+      app.di.db.transaction(async (tx) => {
+        const service = new AnnouncementService({
+          repository: new AnnouncementRepository(tx),
+          audit: new DrizzleAuditWriter(tx),
+          now
+        });
+        return service.publish(input);
+      }),
     createActivationCodeWithAudit: async (input) =>
       app.di.db.transaction(async (tx) => {
         const activationCodeRepo = new DrizzleActivationCodeRepository(tx);
@@ -458,6 +481,33 @@ export async function registerAdminRoutes(
       days: parsed.data.days,
       startAt: parsed.data.startAt ? new Date(parsed.data.startAt) : deps.now()
     });
+  });
+
+  app.post("/admin/announcements", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+    if (!(await deps.verifyAdminMutation(request))) {
+      return sendError(reply, 403, "FORBIDDEN", "Admin mutation token required");
+    }
+
+    const parsed = systemAnnouncementSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid announcement input");
+    }
+
+    try {
+      return await deps.publishSystemAnnouncement({
+        adminAccountId: admin.id,
+        body: parsed.data.body
+      });
+    } catch (error) {
+      if (error instanceof AnnouncementServiceError) {
+        return sendError(reply, 400, error.code, error.message);
+      }
+      throw error;
+    }
   });
 
   app.post("/admin/activation-codes", async (request, reply) => {

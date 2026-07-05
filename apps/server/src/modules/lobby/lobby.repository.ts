@@ -1,7 +1,14 @@
 import type { GameLocationId } from "@ai-mud/shared";
 import { and, count, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
-import { characterPresence, characters, chatMessages, syncEvents } from "../../db/schema.js";
+import {
+  characterPresence,
+  characters,
+  chatMessages,
+  syncEvents,
+  systemAnnouncements
+} from "../../db/schema.js";
+import type { SystemAnnouncementRecord } from "../announcement/announcement.service.js";
 import type {
   LobbyCharacterRecord,
   LobbyChatRecord,
@@ -203,6 +210,30 @@ export class LobbyRepository implements LobbyRepositoryPort {
       characterName: row.characterName,
       channel: "lobby",
       body: row.body,
+      createdAt: row.createdAt
+    }));
+  }
+
+  async listSystemAnnouncementsByIds(ids: string[]): Promise<SystemAnnouncementRecord[]> {
+    if (ids.length === 0) return [];
+
+    const rows = await this.db
+      .select({
+        id: systemAnnouncements.id,
+        adminAccountId: systemAnnouncements.adminAccountId,
+        body: systemAnnouncements.body,
+        severity: systemAnnouncements.severity,
+        createdAt: systemAnnouncements.createdAt
+      })
+      .from(systemAnnouncements)
+      .where(inArray(systemAnnouncements.id, ids))
+      .orderBy(systemAnnouncements.createdAt);
+
+    return rows.map((row) => ({
+      id: row.id,
+      adminAccountId: row.adminAccountId,
+      body: row.body,
+      severity: "info",
       createdAt: row.createdAt
     }));
   }

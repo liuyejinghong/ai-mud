@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import type {
   AiCallLogDto,
   AiLayerStatusDto,
+  ChatMessageDto,
   EconomySnapshotDto,
   NpcMemoryEntryDto,
   NpcMemoryFragmentDto,
@@ -222,6 +223,16 @@ const npcMemoryFragments: NpcMemoryFragmentDto[] = [
   }
 ];
 
+const systemAnnouncement: ChatMessageDto = {
+  id: "announcement-1",
+  characterId: "system",
+  characterName: "系统公告",
+  kind: "system",
+  channel: "lobby",
+  body: "今晚 22:00 将进行世界重置演练。",
+  createdAt: "2026-07-01T12:00:00.000Z"
+};
+
 function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
   const app = Fastify();
   const baseDeps: AdminRouteDependencies = {
@@ -255,6 +266,9 @@ function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
       npcs: npcSummaries
     }),
     runNpcSimulation: async () => npcSimulationReport,
+    publishSystemAnnouncement: async () => {
+      throw new Error("not used");
+    },
     now: () => new Date("2026-07-01T00:00:00.000Z")
   };
   void registerAdminRoutes(app, { ...baseDeps, ...deps });
@@ -301,6 +315,117 @@ describe("registerAdminRoutes", () => {
       error: { code: "UNAUTHENTICATED", message: "Admin session required" }
     });
     expect(createCalls).toEqual([]);
+  });
+
+  it("guards system announcements behind an admin session", async () => {
+    const publishCalls: unknown[] = [];
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => null,
+      verifyAdminMutation: async () => false,
+      publishSystemAnnouncement: async (input) => {
+        publishCalls.push(input);
+        return systemAnnouncement;
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/announcements",
+      payload: { body: "今晚 22:00 将进行世界重置演练。" }
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: { code: "UNAUTHENTICATED", message: "Admin session required" }
+    });
+    expect(publishCalls).toEqual([]);
+  });
+
+  it("rejects system announcements without an admin mutation token", async () => {
+    const publishCalls: unknown[] = [];
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      verifyAdminMutation: async () => false,
+      publishSystemAnnouncement: async (input) => {
+        publishCalls.push(input);
+        return systemAnnouncement;
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/announcements",
+      payload: { body: "今晚 22:00 将进行世界重置演练。" }
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({
+      error: { code: "FORBIDDEN", message: "Admin mutation token required" }
+    });
+    expect(publishCalls).toEqual([]);
+  });
+
+  it("publishes a system announcement for admins", async () => {
+    const publishCalls: unknown[] = [];
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      verifyAdminMutation: async () => true,
+      publishSystemAnnouncement: async (input) => {
+        publishCalls.push(input);
+        return systemAnnouncement;
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/announcements",
+      payload: { body: "  今晚 22:00 将进行世界重置演练。  " }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(systemAnnouncement);
+    expect(publishCalls).toEqual([
+      {
+        adminAccountId: "admin-1",
+        body: "今晚 22:00 将进行世界重置演练。"
+      }
+    ]);
+  });
+
+  it("rejects overlong system announcements", async () => {
+    const publishCalls: unknown[] = [];
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      verifyAdminMutation: async () => true,
+      publishSystemAnnouncement: async (input) => {
+        publishCalls.push(input);
+        return systemAnnouncement;
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/announcements",
+      payload: { body: "长".repeat(241) }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: { code: "VALIDATION_ERROR", message: "Invalid announcement input" }
+    });
+    expect(publishCalls).toEqual([]);
   });
 
   it("creates an activation code for admins through one atomic audited operation", async () => {

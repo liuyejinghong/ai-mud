@@ -27,6 +27,7 @@ function makeRepo(overrides: Partial<LobbyRepositoryPort> = {}): LobbyRepository
     listActivePresence: async () => [],
     listLeaderboard: async () => [],
     listChatMessagesByIds: async () => [],
+    listSystemAnnouncementsByIds: async () => [],
     ...overrides
   };
 }
@@ -165,5 +166,42 @@ describe("LobbyService", () => {
     expect(payload.presence[0]?.currentLocation).toBe("old_mine");
     expect(payload.leaderboards.level?.[0]?.rank).toBe(1);
     expect(payload.leaderboards.wealth?.[0]?.characterName).toBe("Zichen");
+  });
+
+  it("adds system announcements from the public sync stream without a fake character row", async () => {
+    const service = new LobbyService(
+      makeRepo({
+        listSystemAnnouncementsByIds: async (ids) =>
+          ids.map((id) => ({
+            id,
+            adminAccountId: "admin-1",
+            body: "今晚 22:00 将进行世界重置演练。",
+            severity: "info",
+            createdAt: new Date("2026-07-05T12:00:00.000Z")
+          }))
+      })
+    );
+
+    const payload = await service.buildSyncPayload({
+      events: [
+        {
+          eventType: "system.announcement",
+          payload: { announcementId: "announcement-1", severity: "info" }
+        }
+      ],
+      now: new Date("2026-07-05T12:00:05.000Z")
+    });
+
+    expect(payload.chat).toEqual([
+      {
+        id: "announcement-1",
+        characterId: "system",
+        characterName: "系统公告",
+        kind: "system",
+        channel: "lobby",
+        body: "今晚 22:00 将进行世界重置演练。",
+        createdAt: "2026-07-05T12:00:00.000Z"
+      }
+    ]);
   });
 });

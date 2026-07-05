@@ -218,6 +218,15 @@
   padding: 8px 9px;
 }
 
+.lobby-chat-message.is-system {
+  border-color: rgba(240, 211, 107, 0.72);
+  background: rgba(34, 27, 8, 0.82);
+}
+
+.lobby-chat-message.is-system span {
+  color: #f0d36b;
+}
+
 .lobby-chat-message span,
 .lobby-leaderboards h3 {
   color: #f3d67d;

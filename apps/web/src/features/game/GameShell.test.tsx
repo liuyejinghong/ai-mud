@@ -514,6 +514,41 @@ describe("GameShell", () => {
     expect(screen.queryByText("Zichen 获得稀有装备：狼骨短刃")).toBeNull();
   });
 
+  it("renders system announcements in the lobby chat stream", async () => {
+    mockFetchWithStates([
+      emptySyncResponse({
+        state: villageState,
+        events: [
+          {
+            id: 7,
+            eventType: "system.announcement",
+            stateDirty: false,
+            payload: { announcementId: "announcement-1", severity: "info" },
+            source: "admin",
+            createdAt: "2026-07-05T12:00:00.000Z"
+          }
+        ],
+        chat: [
+          {
+            id: "announcement-1",
+            characterId: "system",
+            characterName: "系统公告",
+            kind: "system",
+            channel: "lobby",
+            body: "今晚 22:00 将进行世界重置演练。",
+            createdAt: "2026-07-05T12:00:00.000Z"
+          }
+        ]
+      })
+    ]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByText("系统公告")).toBeTruthy();
+    expect(screen.getByText("今晚 22:00 将进行世界重置演练。")).toBeTruthy();
+    expect(screen.getByText("系统公告已发布")).toBeTruthy();
+  });
+
   it("blocks movement shortcuts while an item dialog is open", async () => {
     const fetchMock = mockFetchWithStates([forestState]);
     render(<GameShell csrfToken="csrf" />);

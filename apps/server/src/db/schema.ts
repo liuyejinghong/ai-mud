@@ -153,6 +153,28 @@ export const chatMessages = pgTable(
   })
 );
 
+export const systemAnnouncements = pgTable(
+  "system_announcements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    adminAccountId: uuid("admin_account_id").notNull().references(() => accounts.id),
+    body: text("body").notNull(),
+    severity: text("severity").notNull().default("info"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    createdAtIdx: index("system_announcements_created_at_idx").on(table.createdAt),
+    severityCheck: check(
+      "system_announcements_severity_check",
+      sql`${table.severity} IN ('info')`
+    ),
+    bodyLengthCheck: check(
+      "system_announcements_body_length_check",
+      sql`char_length(${table.body}) BETWEEN 1 AND 240`
+    )
+  })
+);
+
 export const characterPresence = pgTable(
   "character_presence",
   {

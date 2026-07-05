@@ -5,6 +5,7 @@ import type {
   LeaderboardEntryDto,
   PresenceDto
 } from "@ai-mud/shared";
+import { toSystemChatDto, type SystemAnnouncementRecord } from "../announcement/announcement.service.js";
 
 export const LOBBY_CHAT_MAX_CHARS = 240;
 export const LOBBY_CHAT_RATE_WINDOW_MS = 10_000;
@@ -72,6 +73,7 @@ export interface LobbyRepositoryPort {
   listActivePresence(input: { since: Date; limit: number }): Promise<LobbyPresenceRecord[]>;
   listLeaderboard(kind: LobbyLeaderboardKind, limit: number): Promise<LobbyLeaderboardRecord[]>;
   listChatMessagesByIds(ids: string[]): Promise<LobbyChatRecord[]>;
+  listSystemAnnouncementsByIds(ids: string[]): Promise<SystemAnnouncementRecord[]>;
 }
 
 export class LobbyServiceError extends Error {
@@ -149,8 +151,13 @@ export class LobbyService {
       .filter((event) => event.eventType === "lobby.chat")
       .map((event) => event.payload.chatMessageId)
       .filter((value): value is string => typeof value === "string");
-    const [chat, presence, level, wealth] = await Promise.all([
+    const announcementIds = input.events
+      .filter((event) => event.eventType === "system.announcement")
+      .map((event) => event.payload.announcementId)
+      .filter((value): value is string => typeof value === "string");
+    const [chat, announcements, presence, level, wealth] = await Promise.all([
       this.repo.listChatMessagesByIds(Array.from(new Set(chatIds))),
+      this.repo.listSystemAnnouncementsByIds(Array.from(new Set(announcementIds))),
       this.repo.listActivePresence({
         since: new Date((input.now ?? this.now()).getTime() - LOBBY_PRESENCE_WINDOW_MS),
         limit: 50
@@ -160,7 +167,9 @@ export class LobbyService {
     ]);
 
     return {
-      chat: chat.map(toChatDto),
+      chat: [...chat.map(toChatDto), ...announcements.map(toSystemChatDto)].sort(
+        (left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)
+      ),
       presence: presence.map((entry) => ({
         accountId: entry.accountId,
         characterId: entry.characterId,

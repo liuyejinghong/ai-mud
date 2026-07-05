@@ -20,3 +20,7 @@ export interface CreateActivationCodeResponseDto {
   code: string;
   activationCode: ActivationCodeDto;
 }
+
+export interface PublishSystemAnnouncementRequestDto {
+  body: string;
+}
