@@ -248,6 +248,19 @@ export interface NpcSimulationReportDto {
     marketStockQuantity: number;
     activeActionCount: number;
     completedActionCount: number;
+    idleNpcCount: number;
+    idleRate: number;
+    fedNpcCount: number;
+    resourceStartCharges: number;
+    resourceEndCharges: number;
+    resourceDelta: number;
+    marketTransactionsPerDay: number;
+    taskTriggerRate: number;
+    hungerDistribution: {
+      starving: number;
+      hungry: number;
+      fed: number;
+    };
   };
   resourceSnapshots: Array<{
     zoneId: GameLocationId;

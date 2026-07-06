@@ -28,6 +28,14 @@ function runtimeTimeText(value: string | null) {
   return value ? value.slice(0, 16).replace("T", " ") : "未开始";
 }
 
+function percentText(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function deltaText(value: number) {
+  return value > 0 ? `+${value}` : String(value);
+}
+
 export function NpcAdmin({ csrfToken }: { csrfToken: string }) {
   const [snapshot, setSnapshot] = useState<NpcSnapshotResponse | null>(null);
   const [runtimeStatus, setRuntimeStatus] = useState<WorldRuntimeStatusDto | null>(null);
@@ -70,12 +78,12 @@ export function NpcAdmin({ csrfToken }: { csrfToken: string }) {
     }
   }
 
-  async function onSimulate() {
+  async function onSimulate(days: 1 | 3 | 7) {
     setIsMutating(true);
     setStatus("");
     try {
-      setSimulation(await runNpcSimulation(csrfToken, 1));
-      setStatus("NPC 仿真完成。");
+      setSimulation(await runNpcSimulation(csrfToken, days));
+      setStatus(`${days} 天 NPC 仿真完成。`);
     } catch {
       setStatus("NPC 仿真失败。");
     } finally {
@@ -96,8 +104,14 @@ export function NpcAdmin({ csrfToken }: { csrfToken: string }) {
           <button type="button" disabled={isMutating} onClick={() => void onSettle()}>
             推进 NPC 世界
           </button>
-          <button type="button" disabled={isMutating} onClick={() => void onSimulate()}>
+          <button type="button" disabled={isMutating} onClick={() => void onSimulate(1)}>
             运行 1 天仿真
+          </button>
+          <button type="button" disabled={isMutating} onClick={() => void onSimulate(3)}>
+            运行 3 天仿真
+          </button>
+          <button type="button" disabled={isMutating} onClick={() => void onSimulate(7)}>
+            运行 7 天仿真
           </button>
         </div>
       </div>
@@ -170,9 +184,22 @@ export function NpcAdmin({ csrfToken }: { csrfToken: string }) {
 
       {simulation ? (
         <div className="npc-simulation-result" aria-label="NPC 仿真结果">
-          <strong>仿真健康：{simulation.health.ok ? "正常" : "异常"}</strong>
+          <strong>
+            {simulation.days} 天仿真健康：{simulation.health.ok ? "正常" : "异常"}
+          </strong>
           <span>
-            行动 {simulation.actionCount} 次 · 交易 {simulation.marketTransactionCount} 笔
+            行动 {simulation.actionCount} 次 · 空闲 {percentText(simulation.metrics.idleRate)}
+          </span>
+          <span>
+            资源 {simulation.metrics.resourceStartCharges} →{" "}
+            {simulation.metrics.resourceEndCharges}（{deltaText(simulation.metrics.resourceDelta)}）
+          </span>
+          <span>货币流速 {simulation.metrics.marketTransactionsPerDay.toFixed(1)} 笔/天</span>
+          <span>行动触发 {simulation.metrics.taskTriggerRate.toFixed(2)} 次/NPC日</span>
+          <span>
+            饱腹 {simulation.metrics.hungerDistribution.fed} · 饥饿{" "}
+            {simulation.metrics.hungerDistribution.hungry} · 濒危{" "}
+            {simulation.metrics.hungerDistribution.starving}
           </span>
           {simulation.health.issues.length > 0 ? (
             <span>{simulation.health.issues.join("，")}</span>

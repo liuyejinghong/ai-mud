@@ -8,6 +8,7 @@ import { EconomyAdmin } from "./features/admin/EconomyAdmin";
 import { NpcAdmin } from "./features/admin/NpcAdmin";
 import { NpcMemoryAdmin } from "./features/admin/NpcMemoryAdmin";
 import { SystemAnnouncementAdmin } from "./features/admin/SystemAnnouncementAdmin";
+import { WorldHealthAdmin } from "./features/admin/WorldHealthAdmin";
 import { WorldResetAdmin } from "./features/admin/WorldResetAdmin";
 import { AuthPage } from "./features/auth/AuthPage";
 import { getCurrentSession, type AuthSessionDto } from "./features/auth/authApi";
@@ -43,6 +44,7 @@ export function App() {
       <GameShell csrfToken={session.csrfToken} onAuthExpired={() => setSession(null)} />
       {isAdmin ? (
         <>
+          <WorldHealthAdmin />
           <SystemAnnouncementAdmin csrfToken={session.csrfToken} />
           <AccountOpsAdmin csrfToken={session.csrfToken} />
           <ActivationCodeAdmin csrfToken={session.csrfToken} />

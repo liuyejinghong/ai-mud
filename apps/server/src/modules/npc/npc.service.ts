@@ -336,6 +336,21 @@ export class NpcService {
   async runNpcSimulationInPlace(days: number, startAt: Date): Promise<NpcSimulationReportDto> {
     const boundedDays = Math.min(7, Math.max(1, Math.floor(days)));
     const endedAt = new Date(startAt.getTime() + boundedDays * 24 * 60 * 60_000);
+    const [startingResources, startingActions, startingMarketTransactionCount] =
+      await Promise.all([
+        this.repo.listWorldResourceNodes(),
+        this.repo.listNpcActions(),
+        this.repo.countNpcMarketTransactions()
+      ]);
+    const startingResourceCharges = startingResources.reduce(
+      (sum, resource) => sum + resource.charges,
+      0
+    );
+    const startingCompletedActionIds = new Set(
+      startingActions
+        .filter((action) => action.status === "completed")
+        .map((action) => action.id)
+    );
 
     for (
       let timestamp = startAt.getTime();
@@ -356,9 +371,22 @@ export class NpcService {
       ]);
     const activeActions = actions.filter((action) => action.status === "active");
     const completedActionCount = actions.filter((action) => action.status === "completed").length;
+    const newCompletedActionCount = actions.filter(
+      (action) => action.status === "completed" && !startingCompletedActionIds.has(action.id)
+    ).length;
+    const newMarketTransactionCount = Math.max(
+      0,
+      marketTransactionCount - startingMarketTransactionCount
+    );
     const marketStockQuantity = marketInventory.reduce((sum, item) => sum + item.quantity, 0);
     const totalNpcCopper = actors.reduce((sum, actor) => sum + actor.copperBalance, 0);
     const npcHungers = actors.map((actor) => actor.hunger);
+    const idleNpcCount = actors.filter(
+      (actor) => !activeActions.some((action) => action.actorId === actor.id)
+    ).length;
+    const fedNpcCount = npcHungers.filter((hunger) => hunger >= 3).length;
+    const endingResourceCharges = resources.reduce((sum, resource) => sum + resource.charges, 0);
+    const npcDays = Math.max(1, actors.length * boundedDays);
     const health = validateNpcSimulationHealth({
       balances: [...actors.map((actor) => actor.copperBalance), treasury?.copperBalance ?? 0],
       npcHungers,
@@ -388,7 +416,20 @@ export class NpcService {
         totalNpcCopper,
         marketStockQuantity,
         activeActionCount: activeActions.length,
-        completedActionCount
+        completedActionCount,
+        idleNpcCount,
+        idleRate: actors.length > 0 ? idleNpcCount / actors.length : 0,
+        fedNpcCount,
+        resourceStartCharges: startingResourceCharges,
+        resourceEndCharges: endingResourceCharges,
+        resourceDelta: endingResourceCharges - startingResourceCharges,
+        marketTransactionsPerDay: newMarketTransactionCount / boundedDays,
+        taskTriggerRate: newCompletedActionCount / npcDays,
+        hungerDistribution: {
+          starving: npcHungers.filter((hunger) => hunger <= 0).length,
+          hungry: npcHungers.filter((hunger) => hunger > 0 && hunger <= 2).length,
+          fed: fedNpcCount
+        }
       },
       resourceSnapshots: resources.map((resource) => ({
         zoneId: resource.zoneId,

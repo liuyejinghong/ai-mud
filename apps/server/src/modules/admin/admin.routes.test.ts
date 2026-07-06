@@ -125,7 +125,20 @@ const npcSimulationReport: NpcSimulationReportDto = {
     totalNpcCopper: 410,
     marketStockQuantity: 18,
     activeActionCount: 1,
-    completedActionCount: 11
+    completedActionCount: 11,
+    idleNpcCount: 3,
+    idleRate: 0.75,
+    fedNpcCount: 4,
+    resourceStartCharges: 140,
+    resourceEndCharges: 132,
+    resourceDelta: -8,
+    marketTransactionsPerDay: 3,
+    taskTriggerRate: 2.75,
+    hungerDistribution: {
+      starving: 0,
+      hungry: 0,
+      fed: 4
+    }
   },
   resourceSnapshots: [
     {

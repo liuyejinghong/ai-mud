@@ -417,6 +417,32 @@
   color: #f0d36b;
 }
 
+.world-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.world-health-grid div {
+  border: 1px solid rgba(31, 208, 91, 0.32);
+  background: #040905;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.world-health-grid span {
+  color: #99d6a6;
+  font-size: 12px;
+}
+
+.world-health-grid strong {
+  color: #d7f8db;
+  font-size: 16px;
+}
+
 @media (max-width: 720px) {
   .admin-panel {
     padding: 18px 12px;

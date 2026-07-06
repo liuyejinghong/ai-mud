@@ -39,8 +39,8 @@ const npcSnapshot: NpcSnapshotResponse = {
 
 const simulationReport: NpcSimulationReportDto = {
   startedAt: "2026-07-01T00:00:00.000Z",
-  endedAt: "2026-07-02T00:00:00.000Z",
-  days: 1,
+  endedAt: "2026-07-04T00:00:00.000Z",
+  days: 3,
   settlementId: "blackpine_outpost",
   treasury: { gold: 0, silver: 99, copper: 75, totalCopper: 9975 },
   npcCount: 4,
@@ -53,7 +53,20 @@ const simulationReport: NpcSimulationReportDto = {
     totalNpcCopper: 410,
     marketStockQuantity: 18,
     activeActionCount: 1,
-    completedActionCount: 11
+    completedActionCount: 11,
+    idleNpcCount: 3,
+    idleRate: 0.75,
+    fedNpcCount: 4,
+    resourceStartCharges: 140,
+    resourceEndCharges: 132,
+    resourceDelta: -8,
+    marketTransactionsPerDay: 3,
+    taskTriggerRate: 2.75,
+    hungerDistribution: {
+      starving: 0,
+      hungry: 0,
+      fed: 4
+    }
   },
   resourceSnapshots: [
     {
@@ -140,8 +153,23 @@ describe("NpcAdmin", () => {
       );
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "运行 1 天仿真" }));
-    expect(await screen.findByText("仿真健康：正常")).toBeTruthy();
-    expect(screen.getByText("行动 12 次 · 交易 3 笔")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "运行 3 天仿真" }));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:3000/admin/npcs/simulate",
+        expect.objectContaining({
+          method: "POST",
+          credentials: "include",
+          headers: expect.objectContaining({ "x-ai-mud-csrf": "csrf-token" }),
+          body: JSON.stringify({ days: 3 })
+        })
+      );
+    });
+    expect(await screen.findByText("3 天仿真健康：正常")).toBeTruthy();
+    expect(screen.getByText("行动 12 次 · 空闲 75%")).toBeTruthy();
+    expect(screen.getByText("资源 140 → 132（-8）")).toBeTruthy();
+    expect(screen.getByText("货币流速 3.0 笔/天")).toBeTruthy();
+    expect(screen.getByText("行动触发 2.75 次/NPC日")).toBeTruthy();
+    expect(screen.getByText("饱腹 4 · 饥饿 0 · 濒危 0")).toBeTruthy();
   });
 });

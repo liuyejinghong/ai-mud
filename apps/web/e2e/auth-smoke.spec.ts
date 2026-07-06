@@ -94,6 +94,29 @@ const worldRuntimeStatus = {
   leaseUntil: null
 };
 
+const assetLedgerHealth = {
+  generatedAt: "2026-07-01T12:00:00.000Z",
+  status: "ok",
+  totalDrift: { gold: 0, silver: 0, copper: 0, totalCopper: 0 },
+  buckets: []
+};
+
+const aiLayerStatus = {
+  providerEnabled: true,
+  providerName: "deepseek",
+  model: "deepseek-v4-flash",
+  promptVersion: 8,
+  budget: {
+    dailyTokenBudget: 1000,
+    usedTokens24h: 226,
+    remainingTokens24h: 774,
+    fallbackCount24h: 1,
+    latestFailureReason: null,
+    exhausted: false
+  },
+  purposes: []
+};
+
 test("renders closed-test auth without exposing admin invite management", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "AI MUD 内测登录" })).toBeVisible();
@@ -130,9 +153,16 @@ test("renders economy visibility for admins", async ({ page }) => {
   await page.route("**/admin/world-runtime", async (route) =>
     route.fulfill({ json: worldRuntimeStatus })
   );
+  await page.route("**/admin/asset-ledger/health", async (route) =>
+    route.fulfill({ json: assetLedgerHealth })
+  );
+  await page.route("**/admin/ai-layer/status", async (route) =>
+    route.fulfill({ json: aiLayerStatus })
+  );
 
   await page.goto("/");
 
+  await expect(page.getByRole("heading", { name: "世界健康总览" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "激活码管理" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "经济监控" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "NPC 运行监控" })).toBeVisible();

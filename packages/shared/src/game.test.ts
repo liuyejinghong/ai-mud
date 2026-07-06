@@ -46,9 +46,9 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.10.4 asset ledger compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.10.4");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(34);
+  it("exposes v0.10.5 world health compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.10.5");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(35);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(21);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(14);
@@ -395,7 +395,20 @@ describe("game contract", () => {
         totalNpcCopper: 420,
         marketStockQuantity: 88,
         activeActionCount: 2,
-        completedActionCount: 94
+        completedActionCount: 94,
+        idleNpcCount: 2,
+        idleRate: 0.5,
+        fedNpcCount: 4,
+        resourceStartCharges: 120,
+        resourceEndCharges: 88,
+        resourceDelta: -32,
+        marketTransactionsPerDay: 2.5,
+        taskTriggerRate: 3.35,
+        hungerDistribution: {
+          starving: 0,
+          hungry: 0,
+          fed: 4
+        }
       },
       resourceSnapshots: [
         {
@@ -422,6 +435,8 @@ describe("game contract", () => {
     expect(report.days).toBe(7);
     expect(report.health.ok).toBe(true);
     expect(report.metrics.starvingNpcCount).toBe(0);
+    expect(report.metrics.idleRate).toBe(0.5);
+    expect(report.metrics.marketTransactionsPerDay).toBeGreaterThan(0);
     expect(report.resourceSnapshots[0]?.remainingCharges).toBeGreaterThan(0);
     expect(report.mapResourceSnapshots[0]?.depletedResourceCount).toBe(0);
   });

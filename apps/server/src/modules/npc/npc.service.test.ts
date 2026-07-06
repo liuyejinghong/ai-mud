@@ -720,6 +720,11 @@ describe("NpcService", () => {
     expect(report.actionCount).toBeGreaterThan(0);
     expect(report.metrics.completedActionCount).toBeGreaterThan(0);
     expect(report.metrics.starvingNpcCount).toBe(0);
+    expect(report.metrics.idleRate).toBeGreaterThanOrEqual(0);
+    expect(report.metrics.idleRate).toBeLessThanOrEqual(1);
+    expect(report.metrics.resourceStartCharges).toBeGreaterThanOrEqual(0);
+    expect(report.metrics.resourceEndCharges).toBeGreaterThanOrEqual(0);
+    expect(report.metrics.hungerDistribution.fed).toBeGreaterThanOrEqual(0);
     expect(report.resourceSnapshots).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -757,6 +762,8 @@ describe("NpcService", () => {
 
     expect(report.days).toBe(1);
     expect(report.metrics.completedActionCount).toBeGreaterThan(0);
+    expect(report.metrics.marketTransactionsPerDay).toBeGreaterThanOrEqual(0);
+    expect(report.metrics.taskTriggerRate).toBeGreaterThan(0);
     expect(report.actionCount).toBeGreaterThan(0);
     expect(repo.actors).toEqual(before.actors);
     expect(repo.actions).toEqual(before.actions);
@@ -820,6 +827,18 @@ describe("NpcService", () => {
     expect(report.metrics.starvingNpcCount).toBe(0);
     expect(report.metrics.minNpcHunger).toBeGreaterThan(0);
     expect(report.metrics.marketStockQuantity).toBeGreaterThan(0);
+    expect(report.metrics.idleRate).toBeGreaterThanOrEqual(0);
+    expect(report.metrics.idleRate).toBeLessThanOrEqual(1);
+    expect(report.metrics.resourceStartCharges).toBeGreaterThan(0);
+    expect(report.metrics.resourceEndCharges).toBeGreaterThanOrEqual(0);
+    expect(report.metrics.marketTransactionsPerDay).toBeGreaterThan(0);
+    expect(report.metrics.taskTriggerRate).toBeGreaterThan(0);
+    expect(report.metrics.hungerDistribution.starving).toBe(0);
+    expect(
+      report.metrics.hungerDistribution.starving +
+        report.metrics.hungerDistribution.hungry +
+        report.metrics.hungerDistribution.fed
+    ).toBe(FIRST_NPCS.length);
     expect(report.resourceSnapshots).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
