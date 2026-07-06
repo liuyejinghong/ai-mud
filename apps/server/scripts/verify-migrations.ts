@@ -12,6 +12,14 @@ const serverRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const drizzleDir = join(serverRoot, "drizzle");
 const journalPath = join(drizzleDir, "meta", "_journal.json");
 const requiredColumns = ["proposal_source", "proposal_reason"];
+const requiredLedgerColumns = [
+  "asset_type",
+  "operation",
+  "from_bucket",
+  "to_bucket",
+  "amount_copper",
+  "reason"
+];
 
 function quoteIdentifier(value: string) {
   return `"${value.replace(/"/g, '""')}"`;
@@ -90,6 +98,27 @@ async function assertNpcTaskProposalColumns(client: pg.Client) {
   }
 }
 
+async function assertAssetLedgerColumns(client: pg.Client) {
+  const result = await client.query<{ column_name: string }>(
+    `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'asset_ledger'
+        AND column_name = ANY($1)
+      ORDER BY column_name
+    `,
+    [requiredLedgerColumns]
+  );
+  const actual = result.rows.map((row) => row.column_name);
+
+  for (const column of requiredLedgerColumns) {
+    if (!actual.includes(column)) {
+      throw new Error(`Missing asset_ledger.${column} after applying migrations.`);
+    }
+  }
+}
+
 async function dropDatabase(admin: pg.Client, databaseName: string) {
   const databaseIdentifier = quoteIdentifier(databaseName);
 
@@ -130,6 +159,7 @@ async function main() {
     await target.connect();
     await applyMigrations(target, journal);
     await assertNpcTaskProposalColumns(target);
+    await assertAssetLedgerColumns(target);
     console.log(`Migration verification passed in temporary database ${tempDatabase}.`);
   } finally {
     if (target) await target.end();

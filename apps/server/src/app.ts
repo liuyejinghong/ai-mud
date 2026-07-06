@@ -9,6 +9,8 @@ import { AuthRepository } from "./modules/auth/auth.repository.js";
 import { registerAuthRoutes } from "./modules/auth/auth.routes.js";
 import { AuthService } from "./modules/auth/auth.service.js";
 import { registerGameRoutes } from "./modules/game/game.routes.js";
+import { LedgerRepository } from "./modules/ledger/ledger.repository.js";
+import { LedgerService } from "./modules/ledger/ledger.service.js";
 import { NpcRepository } from "./modules/npc/npc.repository.js";
 import { NpcService } from "./modules/npc/npc.service.js";
 import { WorldRuntimeRepository } from "./modules/world-runtime/world-runtime.repository.js";
@@ -55,13 +57,16 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
       maxStepsPerRun: config.WORLD_TICK_MAX_STEPS,
       settleNpcWorld: async (tickAt) => {
         const npcRepo = new NpcRepository(db);
-        const npcService = new NpcService(npcRepo);
+        const npcService = new NpcService(npcRepo, new LedgerService(new LedgerRepository(db)));
         await npcService.settleNpcWorld(tickAt);
       },
       settleTick: async (tickAt, progress) => {
         await db.transaction(async (tx) => {
           const txNpcRepo = new NpcRepository(tx);
-          const txNpcService = new NpcService(txNpcRepo);
+          const txNpcService = new NpcService(
+            txNpcRepo,
+            new LedgerService(new LedgerRepository(tx))
+          );
           const txRuntimeRepo = new WorldRuntimeRepository(tx);
           await txNpcService.settleNpcWorld(tickAt);
           await txRuntimeRepo.saveProgress(progress);

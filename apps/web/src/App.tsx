@@ -3,6 +3,7 @@ import { AiCallAdmin } from "./features/admin/AiCallAdmin";
 import { AiLayerStatusAdmin } from "./features/admin/AiLayerStatusAdmin";
 import { AccountOpsAdmin } from "./features/admin/AccountOpsAdmin";
 import { ActivationCodeAdmin } from "./features/admin/ActivationCodeAdmin";
+import { AssetLedgerHealthAdmin } from "./features/admin/AssetLedgerHealthAdmin";
 import { EconomyAdmin } from "./features/admin/EconomyAdmin";
 import { NpcAdmin } from "./features/admin/NpcAdmin";
 import { NpcMemoryAdmin } from "./features/admin/NpcMemoryAdmin";
@@ -47,6 +48,7 @@ export function App() {
           <ActivationCodeAdmin csrfToken={session.csrfToken} />
           <WorldResetAdmin csrfToken={session.csrfToken} />
           <EconomyAdmin />
+          <AssetLedgerHealthAdmin />
           <NpcAdmin csrfToken={session.csrfToken} />
           <AiLayerStatusAdmin />
           <AiCallAdmin />

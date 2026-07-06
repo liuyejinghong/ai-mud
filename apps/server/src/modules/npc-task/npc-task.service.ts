@@ -8,6 +8,7 @@ import type {
   NpcTaskProposalSource
 } from "@ai-mud/shared";
 import type { CharacterRecord, InventoryRecord } from "../game/game.repository.js";
+import type { CopperLedgerWriter } from "../ledger/ledger.service.js";
 import type { NpcActorRecord, NpcInventoryRecord } from "../npc/npc.service.js";
 import type { NpcTaskRecord, NpcTaskRepository } from "./npc-task.repository.js";
 
@@ -47,6 +48,7 @@ export interface NpcTaskRepositoryPort {
   listNpcInventory(actorId: string): Promise<NpcInventoryRecord[]>;
   findCharacterByAccountId(accountId: string): Promise<CharacterRecord | null>;
   incrementCharacterCopper(input: { characterId: string; delta: number }): Promise<void>;
+  recordCopperTransfer?(input: Parameters<CopperLedgerWriter["recordCopperTransfer"]>[0]): Promise<void>;
   listCharacterInventory(characterId: string): Promise<InventoryRecord[]>;
   transferCharacterItemToNpc(input: {
     characterId: string;
@@ -118,11 +120,7 @@ export class NpcTaskService {
       if (actor.copperBalance < proposal.rewardCopper + NPC_COPPER_RESERVE) continue;
       const presentation = await this.presentProposal(actor, inventory, proposal, now);
 
-      await repo.incrementNpcCopper({
-        actorId: actor.id,
-        delta: -proposal.rewardCopper
-      });
-      await repo.createTask({
+      const task = await repo.createTask({
         npcActorId: actor.id,
         needType: proposal.needType,
         title: presentation.title,
@@ -135,6 +133,25 @@ export class NpcTaskService {
         escrowCopper: proposal.rewardCopper,
         createdAt: now,
         expiresAt: new Date(now.getTime() + TASK_TTL_MS)
+      });
+      await repo.incrementNpcCopper({
+        actorId: actor.id,
+        delta: -proposal.rewardCopper
+      });
+      await repo.recordCopperTransfer?.({
+        operation: "task_escrow",
+        fromBucket: "npc",
+        fromEntityId: actor.id,
+        toBucket: "escrow",
+        toEntityId: task.id,
+        amountCopper: proposal.rewardCopper,
+        reason: "npc_task.escrow",
+        metadata: {
+          needType: proposal.needType,
+          requestedItemId: proposal.requestedItemId,
+          requestedQuantity: proposal.requestedQuantity
+        },
+        createdAt: now
       });
     }
   }
@@ -214,6 +231,17 @@ export class NpcTaskService {
         characterId: character.id,
         delta: task.escrowCopper
       });
+      await repo.recordCopperTransfer?.({
+        operation: "task_reward",
+        fromBucket: "escrow",
+        fromEntityId: task.id,
+        toBucket: "player",
+        toEntityId: character.id,
+        amountCopper: task.escrowCopper,
+        reason: "npc_task.reward",
+        metadata: { npcActorId: task.npcActorId },
+        createdAt: now
+      });
 
       return { character, task };
     });
@@ -255,6 +283,17 @@ export class NpcTaskService {
         await repo.incrementNpcCopper({
           actorId: actor.id,
           delta: task.escrowCopper
+        });
+        await repo.recordCopperTransfer?.({
+          operation: "task_refund",
+          fromBucket: "escrow",
+          fromEntityId: task.id,
+          toBucket: "npc",
+          toEntityId: actor.id,
+          amountCopper: task.escrowCopper,
+          reason: "npc_task.refund",
+          metadata: { status: "expired" },
+          createdAt: now
         });
       }
     }

@@ -15,6 +15,7 @@ import type {
   NpcSummaryDto,
   AccountOperationResponseDto,
   RevokeSessionsResponseDto,
+  AssetLedgerHealthDto,
   WorldResetResponseDto,
   WorldRuntimeStatusDto
 } from "@ai-mud/shared";
@@ -40,6 +41,8 @@ import { AuthRepository } from "../auth/auth.repository.js";
 import { AuthService } from "../auth/auth.service.js";
 import { DialogueRepository } from "../dialogue/dialogue.repository.js";
 import { GameRepository } from "../game/game.repository.js";
+import { LedgerRepository } from "../ledger/ledger.repository.js";
+import { LedgerService } from "../ledger/ledger.service.js";
 import { NpcRepository } from "../npc/npc.repository.js";
 import { NpcMemoryRepository } from "../npc-memory/npc-memory.repository.js";
 import { NpcMemoryService } from "../npc-memory/npc-memory.service.js";
@@ -73,6 +76,7 @@ export interface AdminRouteDependencies {
   verifyAdminMutation(request: FastifyRequest): Promise<boolean>;
   listActivationCodes(): Promise<Array<ActivationCodeDto>>;
   getEconomySnapshot(): Promise<EconomySnapshotDto>;
+  getAssetLedgerHealth(): Promise<AssetLedgerHealthDto>;
   getNpcSnapshot(): Promise<NpcSnapshotResponse>;
   getWorldRuntimeStatus(): Promise<WorldRuntimeStatusDto>;
   listAiCallLogs(): Promise<AiCallLogDto[]>;
@@ -326,9 +330,11 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
       const repo = new GameRepository(app.di.db);
       return buildEconomySnapshot(repo, now());
     },
+    getAssetLedgerHealth: async () =>
+      new LedgerService(new LedgerRepository(app.di.db)).getHealth(now()),
     getNpcSnapshot: async () => {
       const repo = new NpcRepository(app.di.db);
-      const service = new NpcService(repo);
+      const service = new NpcService(repo, new LedgerService(new LedgerRepository(app.di.db)));
       const timestamp = now();
       await app.di.worldRuntime.settleDue(timestamp);
       return buildNpcSnapshot(repo, service, timestamp);
@@ -389,7 +395,7 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
     },
     settleNpcWorld: async () => {
       const repo = new NpcRepository(app.di.db);
-      const service = new NpcService(repo);
+      const service = new NpcService(repo, new LedgerService(new LedgerRepository(app.di.db)));
       const timestamp = now();
       await app.di.worldRuntime.settleDue(timestamp);
       return buildNpcSnapshot(repo, service, timestamp);
@@ -513,6 +519,15 @@ export async function registerAdminRoutes(
     }
 
     return deps.getEconomySnapshot();
+  });
+
+  app.get("/admin/asset-ledger/health", async (request, reply) => {
+    const admin = await deps.getCurrentAdmin(request);
+    if (!admin) {
+      return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
+    }
+
+    return deps.getAssetLedgerHealth();
   });
 
   app.get("/admin/npcs", async (request, reply) => {

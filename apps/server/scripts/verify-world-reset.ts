@@ -3,7 +3,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { createDb } from "../src/db/client.js";
-import { aiCallLogs, characters, municipalTreasury, worldActors, worldResourceNodes } from "../src/db/schema.js";
+import {
+  aiCallLogs,
+  assetLedger,
+  characters,
+  municipalTreasury,
+  worldActors,
+  worldResourceNodes
+} from "../src/db/schema.js";
 import { DrizzleAuditWriter } from "../src/modules/audit/audit.repository.js";
 import { AuthRepository } from "../src/modules/auth/auth.repository.js";
 import { AuthService } from "../src/modules/auth/auth.service.js";
@@ -167,9 +174,14 @@ async function verifyResetFlow(targetDatabaseUrl: string) {
     const npcsAfterReset = await db.select().from(worldActors);
     const resourcesAfterReset = await db.select().from(worldResourceNodes);
     const treasuryAfterReset = await db.select().from(municipalTreasury);
+    const ledgerAfterReset = await db.select().from(assetLedger);
     assertCondition(npcsAfterReset.length > 0, "Expected reset to seed NPC actors.");
     assertCondition(resourcesAfterReset.length > 0, "Expected reset to seed shared resources.");
     assertCondition(treasuryAfterReset.length > 0, "Expected reset to seed municipal treasury.");
+    assertCondition(
+      ledgerAfterReset.some((entry) => entry.operation === "world_seed"),
+      "Expected reset to seed copper asset ledger entries."
+    );
 
     const newAccount = await authRepo.createAccount({
       email: "new-reset-player@example.com",

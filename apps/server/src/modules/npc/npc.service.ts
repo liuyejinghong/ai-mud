@@ -32,6 +32,7 @@ import type {
   NpcSimulationReportDto,
   NpcSummaryDto
 } from "@ai-mud/shared";
+import type { CopperLedgerWriter } from "../ledger/ledger.service.js";
 import { NpcSimulationRepository } from "./npc.simulation-repository.js";
 
 const BLACKPINE_MARKET_ID = "blackpine_outpost" as const;
@@ -139,6 +140,7 @@ export interface NpcRepositoryPort {
     hunger?: number;
     lastHungerSettledAt?: Date;
   }): Promise<void>;
+  incrementNpcCopper?(input: { actorId: string; delta: number }): Promise<void>;
   findActiveNpcAction(actorId: string): Promise<NpcActionRecord | null>;
   listNpcActions(): Promise<NpcActionRecord[]>;
   createNpcAction(input: {
@@ -166,6 +168,10 @@ export interface NpcRepositoryPort {
     settlementId: typeof BLACKPINE_MARKET_ID;
     copperBalance: number;
   }): Promise<void>;
+  incrementMunicipalTreasury?(input: {
+    settlementId: typeof BLACKPINE_MARKET_ID;
+    delta: number;
+  }): Promise<void>;
   listMarketInventory(settlementId: typeof BLACKPINE_MARKET_ID): Promise<NpcMarketInventoryRecord[]>;
   setMarketInventoryQuantity(input: {
     marketInventoryId: string;
@@ -187,7 +193,10 @@ export interface NpcRepositoryPort {
 }
 
 export class NpcService {
-  constructor(private readonly repo: NpcRepositoryPort) {}
+  constructor(
+    private readonly repo: NpcRepositoryPort,
+    private readonly ledger?: CopperLedgerWriter
+  ) {}
 
   async ensureWorldSeeded(now: Date) {
     await this.ensureNpcActors(now);
@@ -256,14 +265,23 @@ export class NpcService {
       treasuryCopper: treasury.copperBalance
     });
 
-    await this.repo.updateMunicipalTreasury({
-      settlementId: BLACKPINE_MARKET_ID,
-      copperBalance: treasury.copperBalance - payment.paidCopper
-    });
-    await this.repo.updateNpcActor({
-      actorId,
-      copperBalance: actor.copperBalance + payment.paidCopper
-    });
+    if (payment.paidCopper > 0) {
+      await this.incrementMunicipalCopper(treasury, -payment.paidCopper);
+      await this.incrementNpcCopper(actor, payment.paidCopper);
+      await this.ledger?.recordCopperTransfer({
+        operation: "npc_wage",
+        fromBucket: "municipal",
+        fromEntityId: BLACKPINE_MARKET_ID,
+        toBucket: "npc",
+        toEntityId: actorId,
+        amountCopper: payment.paidCopper,
+        reason: "npc.wage",
+        metadata: {
+          requestedCopper,
+          shortfallCopper: payment.shortfallCopper
+        }
+      });
+    }
   }
 
   async listNpcSummaries(now: Date): Promise<NpcSummaryDto[]> {
@@ -397,8 +415,49 @@ export class NpcService {
 
     for (const npc of FIRST_NPCS) {
       if (existingKeys.has(npc.key)) continue;
-      await this.repo.createNpcActor(npc, now);
+      const actor = await this.repo.createNpcActor(npc, now);
+      await this.ledger?.recordCopperTransfer({
+        operation: "world_seed",
+        fromBucket: "system_source",
+        fromEntityId: "world_seed",
+        toBucket: "npc",
+        toEntityId: actor.id,
+        amountCopper: actor.copperBalance,
+        reason: "world.seed.npc",
+        metadata: { npcKey: actor.npcKey },
+        createdAt: now
+      });
     }
+  }
+
+  private async incrementNpcCopper(actor: NpcActorRecord, delta: number) {
+    if (this.repo.incrementNpcCopper) {
+      await this.repo.incrementNpcCopper({ actorId: actor.id, delta });
+      return;
+    }
+
+    await this.repo.updateNpcActor({
+      actorId: actor.id,
+      copperBalance: actor.copperBalance + delta
+    });
+  }
+
+  private async incrementMunicipalCopper(
+    treasury: { settlementId: typeof BLACKPINE_MARKET_ID; copperBalance: number },
+    delta: number
+  ) {
+    if (this.repo.incrementMunicipalTreasury) {
+      await this.repo.incrementMunicipalTreasury({
+        settlementId: treasury.settlementId,
+        delta
+      });
+      return;
+    }
+
+    await this.repo.updateMunicipalTreasury({
+      settlementId: treasury.settlementId,
+      copperBalance: treasury.copperBalance + delta
+    });
   }
 
   private async ensureSharedResources(now: Date) {
@@ -429,6 +488,16 @@ export class NpcService {
     await this.repo.createMunicipalTreasury({
       settlementId: BLACKPINE_MARKET_ID,
       copperBalance: INITIAL_TREASURY_COPPER
+    });
+    await this.ledger?.recordCopperTransfer({
+      operation: "world_seed",
+      fromBucket: "system_source",
+      fromEntityId: "world_seed",
+      toBucket: "municipal",
+      toEntityId: BLACKPINE_MARKET_ID,
+      amountCopper: INITIAL_TREASURY_COPPER,
+      reason: "world.seed.municipal",
+      metadata: { settlementId: BLACKPINE_MARKET_ID }
     });
   }
 
@@ -552,19 +621,16 @@ export class NpcService {
       if (actor.copperBalance < quote.totalCopper) return true;
 
       const item = getFoodItemById(marketFood.itemId);
+      await this.incrementNpcCopper(actor, -quote.totalCopper);
       await this.repo.updateNpcActor({
         actorId: actor.id,
-        copperBalance: actor.copperBalance - quote.totalCopper,
         hunger: Math.min(5, actor.hunger + (item?.satietyRestore ?? 1))
       });
       await this.repo.setMarketInventoryQuantity({
         marketInventoryId: marketFood.id,
         quantity: marketFood.quantity - 1
       });
-      await this.repo.updateMunicipalTreasury({
-        settlementId: BLACKPINE_MARKET_ID,
-        copperBalance: treasury.copperBalance + quote.totalCopper
-      });
+      await this.incrementMunicipalCopper(treasury, quote.totalCopper);
       await this.repo.createNpcMarketTransaction({
         actorId: actor.id,
         actorType: "npc",
@@ -576,6 +642,21 @@ export class NpcService {
         grossCopper: quote.grossCopper,
         taxCopper: quote.taxCopper,
         netCopper: quote.totalCopper
+      });
+      await this.ledger?.recordCopperTransfer({
+        operation: "market_buy",
+        fromBucket: "npc",
+        fromEntityId: actor.id,
+        toBucket: "municipal",
+        toEntityId: BLACKPINE_MARKET_ID,
+        amountCopper: quote.totalCopper,
+        reason: "npc.market.buy",
+        metadata: {
+          itemId: marketFood.itemId,
+          quantity: 1,
+          unitPriceCopper: quote.unitPriceCopper,
+          taxCopper: quote.taxCopper
+        }
       });
       return true;
     }
@@ -605,14 +686,8 @@ export class NpcService {
     if (!treasury || treasury.copperBalance < quote.totalCopper) return false;
 
     await this.addNpcInventoryItem(actor.id, item.itemId, -item.quantity);
-    await this.repo.updateNpcActor({
-      actorId: actor.id,
-      copperBalance: actor.copperBalance + quote.totalCopper
-    });
-    await this.repo.updateMunicipalTreasury({
-      settlementId: BLACKPINE_MARKET_ID,
-      copperBalance: treasury.copperBalance - quote.totalCopper
-    });
+    await this.incrementNpcCopper(actor, quote.totalCopper);
+    await this.incrementMunicipalCopper(treasury, -quote.totalCopper);
     await this.repo.setMarketInventoryQuantity({
       marketInventoryId: marketItem.id,
       quantity: marketItem.quantity + item.quantity
@@ -628,6 +703,21 @@ export class NpcService {
       grossCopper: quote.grossCopper,
       taxCopper: quote.taxCopper,
       netCopper: quote.totalCopper
+    });
+    await this.ledger?.recordCopperTransfer({
+      operation: "market_sell",
+      fromBucket: "municipal",
+      fromEntityId: BLACKPINE_MARKET_ID,
+      toBucket: "npc",
+      toEntityId: actor.id,
+      amountCopper: quote.totalCopper,
+      reason: "npc.market.sell",
+      metadata: {
+        itemId: item.itemId,
+        quantity: item.quantity,
+        unitPriceCopper: quote.unitPriceCopper,
+        taxCopper: quote.taxCopper
+      }
     });
     return true;
   }

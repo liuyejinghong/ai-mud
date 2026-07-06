@@ -7,7 +7,7 @@ import type {
   GridPositionDto,
   ItemId
 } from "@ai-mud/shared";
-import { and, asc, desc, eq, gt, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import {
   characterActions,
@@ -19,6 +19,7 @@ import {
   marketInventory,
   marketTransactions,
   mapInstances,
+  municipalTreasury,
   syncEvents
 } from "../../db/schema.js";
 import { ItemRepository } from "../item/item.repository.js";
@@ -459,6 +460,13 @@ export class GameRepository {
       .where(eq(characters.id, input.characterId));
   }
 
+  async incrementCharacterCopper(input: { characterId: string; delta: number }): Promise<void> {
+    await this.db
+      .update(characters)
+      .set({ copperBalance: sql`${characters.copperBalance} + ${input.delta}` })
+      .where(eq(characters.id, input.characterId));
+  }
+
   async updateCharacterNeeds(input: {
     characterId: string;
     hunger: number;
@@ -757,6 +765,28 @@ export class GameRepository {
       .update(marketInventory)
       .set({ quantity: input.quantity, updatedAt: new Date() })
       .where(eq(marketInventory.id, input.marketInventoryId));
+  }
+
+  async findMunicipalTreasury(settlementId: string): Promise<{ copperBalance: number } | null> {
+    const [row] = await this.db
+      .select({ copperBalance: municipalTreasury.copperBalance })
+      .from(municipalTreasury)
+      .where(eq(municipalTreasury.settlementId, settlementId))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async incrementMunicipalTreasury(input: {
+    settlementId: string;
+    delta: number;
+  }): Promise<void> {
+    await this.db
+      .update(municipalTreasury)
+      .set({
+        copperBalance: sql`${municipalTreasury.copperBalance} + ${input.delta}`,
+        updatedAt: new Date()
+      })
+      .where(eq(municipalTreasury.settlementId, input.settlementId));
   }
 
   async createMarketTransaction(input: MarketTransactionInput): Promise<void> {

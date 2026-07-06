@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   accounts,
   activationCodes,
+  assetLedger,
   aiCallLogs,
   auditLogs,
   characterActions,
@@ -93,6 +94,15 @@ describe("foundation schema", () => {
     expect(itemLedger.operation.getSQLType()).toBe("text");
     expect(itemLedger.itemInstanceId.getSQLType()).toBe("uuid");
     expect(itemLedger.metadata.getSQLType()).toBe("jsonb");
+  });
+
+  it("defines the copper asset ledger table for economy conservation checks", () => {
+    expect(getDrizzleTableName(assetLedger)).toBe("asset_ledger");
+    expect(assetLedger.assetType.getSQLType()).toBe("text");
+    expect(assetLedger.fromBucket.getSQLType()).toBe("text");
+    expect(assetLedger.toBucket.getSQLType()).toBe("text");
+    expect(assetLedger.amountCopper.getSQLType()).toBe("integer");
+    expect(assetLedger.metadata.getSQLType()).toBe("jsonb");
   });
 
   it("defines active action enums", () => {

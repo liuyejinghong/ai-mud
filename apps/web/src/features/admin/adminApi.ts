@@ -2,6 +2,7 @@ import type {
   AccountOperationResponseDto,
   ActivationCodeDto,
   AdminAccountDto,
+  AssetLedgerHealthDto,
   AiCallLogDto,
   AiLayerStatusDto,
   ChatMessageDto,
@@ -213,6 +214,18 @@ export async function getEconomySnapshot(): Promise<EconomySnapshotDto> {
   }
 
   return response.json() as Promise<EconomySnapshotDto>;
+}
+
+export async function getAssetLedgerHealth(): Promise<AssetLedgerHealthDto> {
+  const response = await fetch(`${API_BASE}/admin/asset-ledger/health`, {
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to load asset ledger health");
+  }
+
+  return response.json() as Promise<AssetLedgerHealthDto>;
 }
 
 export async function getNpcSnapshot(): Promise<NpcSnapshotResponse> {

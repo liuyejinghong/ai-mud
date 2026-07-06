@@ -326,6 +326,51 @@ export const itemLedger = pgTable(
   })
 );
 
+export const assetLedger = pgTable(
+  "asset_ledger",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    assetType: text("asset_type").notNull(),
+    operation: text("operation").notNull(),
+    fromBucket: text("from_bucket"),
+    fromEntityId: text("from_entity_id"),
+    toBucket: text("to_bucket"),
+    toEntityId: text("to_entity_id"),
+    amountCopper: integer("amount_copper").notNull(),
+    reason: text("reason").notNull(),
+    metadata: jsonb("metadata").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    createdAtIdx: index("asset_ledger_created_at_idx").on(table.createdAt),
+    operationCreatedAtIdx: index("asset_ledger_operation_created_at_idx").on(
+      table.operation,
+      table.createdAt
+    ),
+    fromBucketCreatedAtIdx: index("asset_ledger_from_bucket_created_at_idx").on(
+      table.fromBucket,
+      table.createdAt
+    ),
+    toBucketCreatedAtIdx: index("asset_ledger_to_bucket_created_at_idx").on(
+      table.toBucket,
+      table.createdAt
+    ),
+    assetTypeCheck: check("asset_ledger_asset_type_check", sql`${table.assetType} IN ('copper')`),
+    fromBucketCheck: check(
+      "asset_ledger_from_bucket_check",
+      sql`${table.fromBucket} IS NULL OR ${table.fromBucket} IN ('player', 'npc', 'municipal', 'escrow', 'system_source', 'system_sink')`
+    ),
+    toBucketCheck: check(
+      "asset_ledger_to_bucket_check",
+      sql`${table.toBucket} IS NULL OR ${table.toBucket} IN ('player', 'npc', 'municipal', 'escrow', 'system_source', 'system_sink')`
+    ),
+    positiveAmountCheck: check(
+      "asset_ledger_positive_amount_check",
+      sql`${table.amountCopper} > 0`
+    )
+  })
+);
+
 export const marketInventory = pgTable(
   "market_inventory",
   {

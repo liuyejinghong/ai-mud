@@ -11,6 +11,8 @@ import type { CharacterRecord, InventoryRecord } from "../game/game.repository.j
 import { serializeHunger } from "../game/game.repository.js";
 import { ItemRepository } from "../item/item.repository.js";
 import { ItemService } from "../item/item.service.js";
+import { LedgerRepository } from "../ledger/ledger.repository.js";
+import { LedgerService, type CopperLedgerWriter } from "../ledger/ledger.service.js";
 import type { NpcActorRecord, NpcInventoryRecord } from "../npc/npc.service.js";
 
 type NpcTaskDb = Pick<Db, "insert" | "select" | "update"> & { transaction?: Db["transaction"] };
@@ -183,6 +185,12 @@ export class NpcTaskRepository {
       .update(characters)
       .set({ copperBalance: sql`${characters.copperBalance} + ${input.delta}` })
       .where(eq(characters.id, input.characterId));
+  }
+
+  async recordCopperTransfer(
+    input: Parameters<CopperLedgerWriter["recordCopperTransfer"]>[0]
+  ): Promise<void> {
+    await new LedgerService(new LedgerRepository(this.db)).recordCopperTransfer(input);
   }
 
   async listCharacterInventory(characterId: string): Promise<InventoryRecord[]> {

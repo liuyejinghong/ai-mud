@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import type {
   AdminAccountDto,
+  AssetLedgerHealthDto,
   AiCallLogDto,
   AiLayerStatusDto,
   ChatMessageDto,
@@ -56,6 +57,26 @@ const economySnapshot: EconomySnapshotDto = {
       tax: { gold: 0, silver: 0, copper: 1, totalCopper: 1 },
       net: { gold: 0, silver: 0, copper: 17, totalCopper: 17 },
       createdAt: "2026-07-01T12:00:00.000Z"
+    }
+  ]
+};
+
+const assetLedgerHealth: AssetLedgerHealthDto = {
+  generatedAt: "2026-07-01T12:00:00.000Z",
+  status: "ok",
+  totalDrift: { gold: 0, silver: 0, copper: 0, totalCopper: 0 },
+  buckets: [
+    {
+      bucket: "player",
+      expectedCopper: { gold: 0, silver: 1, copper: 25, totalCopper: 125 },
+      actualCopper: { gold: 0, silver: 1, copper: 25, totalCopper: 125 },
+      driftCopper: { gold: 0, silver: 0, copper: 0, totalCopper: 0 }
+    },
+    {
+      bucket: "system_source",
+      expectedCopper: { gold: 0, silver: 1, copper: 25, totalCopper: 125 },
+      actualCopper: null,
+      driftCopper: null
     }
   ]
 };
@@ -273,6 +294,7 @@ function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
       throw new Error("not used");
     },
     getEconomySnapshot: async () => economySnapshot,
+    getAssetLedgerHealth: async () => assetLedgerHealth,
     getNpcSnapshot: async () => ({
       generatedAt: "2026-07-01T00:00:00.000Z",
       settlementId: "blackpine_outpost",
@@ -971,6 +993,41 @@ describe("registerAdminRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual(economySnapshot);
+  });
+
+  it("guards the asset ledger health behind an admin session", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => null
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/asset-ledger/health"
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({
+      error: { code: "UNAUTHENTICATED", message: "Admin session required" }
+    });
+  });
+
+  it("returns asset ledger health for admins", async () => {
+    const app = buildAdminRouteTestApp({
+      getCurrentAdmin: async () => ({
+        id: "admin-1",
+        email: "admin@example.com",
+        role: "admin"
+      }),
+      getAssetLedgerHealth: async () => assetLedgerHealth
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/admin/asset-ledger/health"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(assetLedgerHealth);
   });
 
   it("guards the NPC snapshot behind an admin session", async () => {

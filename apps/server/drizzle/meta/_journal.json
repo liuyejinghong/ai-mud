@@ -141,6 +141,13 @@
       "when": 1783083600000,
       "tag": "0019_system_announcements",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1783225000000,
+      "tag": "0020_asset_ledger",
+      "breakpoints": true
     }
   ]
 }

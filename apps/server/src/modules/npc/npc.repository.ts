@@ -1,6 +1,6 @@
 import type { NpcDefinition } from "@ai-mud/content";
 import type { GameLocationId, GridPositionDto, ItemId } from "@ai-mud/shared";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import {
   marketInventory,
@@ -255,6 +255,16 @@ export class NpcRepository implements NpcRepositoryPort {
     await this.db.update(worldActors).set(values).where(eq(worldActors.id, input.actorId));
   }
 
+  async incrementNpcCopper(input: { actorId: string; delta: number }): Promise<void> {
+    await this.db
+      .update(worldActors)
+      .set({
+        copperBalance: sql`${worldActors.copperBalance} + ${input.delta}`,
+        updatedAt: new Date()
+      })
+      .where(eq(worldActors.id, input.actorId));
+  }
+
   async findActiveNpcAction(actorId: string): Promise<NpcActionRecord | null> {
     const [row] = await this.db
       .select()
@@ -354,6 +364,19 @@ export class NpcRepository implements NpcRepositoryPort {
     await this.db
       .update(municipalTreasury)
       .set({ copperBalance: input.copperBalance, updatedAt: new Date() })
+      .where(eq(municipalTreasury.settlementId, input.settlementId));
+  }
+
+  async incrementMunicipalTreasury(input: {
+    settlementId: "blackpine_outpost";
+    delta: number;
+  }): Promise<void> {
+    await this.db
+      .update(municipalTreasury)
+      .set({
+        copperBalance: sql`${municipalTreasury.copperBalance} + ${input.delta}`,
+        updatedAt: new Date()
+      })
       .where(eq(municipalTreasury.settlementId, input.settlementId));
   }
 

@@ -1,4 +1,5 @@
 import type { AccountRole, AccountStatus } from "./auth.js";
+import type { MoneyDto } from "./game.js";
 
 export type ActivationCodeStatus = "unused" | "used" | "expired" | "revoked";
 
@@ -38,6 +39,30 @@ export interface WorldResetResponseDto {
   resetAt: string;
   clearedTables: string[];
   message: string;
+}
+
+export type AssetLedgerBucket =
+  | "player"
+  | "npc"
+  | "municipal"
+  | "escrow"
+  | "system_source"
+  | "system_sink";
+
+export type AssetLedgerHealthStatus = "ok" | "drift_detected";
+
+export interface AssetLedgerBucketSnapshotDto {
+  bucket: AssetLedgerBucket;
+  expectedCopper: MoneyDto;
+  actualCopper: MoneyDto | null;
+  driftCopper: MoneyDto | null;
+}
+
+export interface AssetLedgerHealthDto {
+  generatedAt: string;
+  status: AssetLedgerHealthStatus;
+  totalDrift: MoneyDto;
+  buckets: AssetLedgerBucketSnapshotDto[];
 }
 
 export interface AdminAccountDto {

@@ -4,6 +4,8 @@ import type { Db } from "../../db/client.js";
 import { characters, worldActors } from "../../db/schema.js";
 import { ItemRepository } from "../item/item.repository.js";
 import { ItemService, ItemServiceError } from "../item/item.service.js";
+import { LedgerRepository } from "../ledger/ledger.repository.js";
+import { LedgerService } from "../ledger/ledger.service.js";
 
 type DialogueResourceTransferDb = Pick<Db, "transaction">;
 
@@ -41,6 +43,16 @@ export class DialogueResourceTransferRepository {
         .where(eq(characters.id, input.characterId))
         .returning({ id: characters.id });
       if (credited.length === 0) throw new Error("Failed to credit character copper");
+
+      await new LedgerService(new LedgerRepository(tx)).recordCopperTransfer({
+        operation: "dialogue_gift",
+        fromBucket: "npc",
+        fromEntityId: input.npcActorId,
+        toBucket: "player",
+        toEntityId: input.characterId,
+        amountCopper: input.copper,
+        reason: "dialogue.resource_request"
+      });
 
       return true;
     });

@@ -46,15 +46,15 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.10.3 world reset compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.10.3");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(33);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(20);
+  it("exposes v0.10.4 asset ledger compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.10.4");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(34);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(21);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(14);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(12);
     expect(WORLD_COMPATIBILITY.promptVersion).toBe(8);
-    expect(WORLD_COMPATIBILITY.economyVersion).toBe(2);
+    expect(WORLD_COMPATIBILITY.economyVersion).toBe(3);
   });
 
   it("keeps item ids as DTO strings instead of a shared content catalog", () => {

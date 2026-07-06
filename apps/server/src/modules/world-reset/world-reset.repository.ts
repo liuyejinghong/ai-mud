@@ -8,6 +8,7 @@ import {
   characters,
   chatMessages,
   gameEvents,
+  assetLedger,
   itemInstances,
   itemLedger,
   mapInstances,
@@ -31,6 +32,8 @@ import {
 } from "../../db/schema.js";
 import { NpcRepository } from "../npc/npc.repository.js";
 import { NpcService } from "../npc/npc.service.js";
+import { LedgerRepository } from "../ledger/ledger.repository.js";
+import { LedgerService } from "../ledger/ledger.service.js";
 import type { WorldResetRepositoryPort } from "./world-reset.service.js";
 
 type WorldResetDb = Pick<Db, "delete" | "insert" | "select" | "update">;
@@ -47,6 +50,7 @@ const CLEARED_TABLES = [
   "character_actions",
   "map_instances",
   "market_transactions",
+  "asset_ledger",
   "item_ledger",
   "character_equipment",
   "character_items",
@@ -84,6 +88,7 @@ export class WorldResetRepository implements WorldResetRepositoryPort {
     await this.db.delete(characterActions);
     await this.db.delete(mapInstances);
     await this.db.delete(marketTransactions);
+    await this.db.delete(assetLedger);
     await this.db.delete(itemLedger);
     await this.db.delete(characterEquipment);
     await this.db.delete(characterItems);
@@ -105,7 +110,10 @@ export class WorldResetRepository implements WorldResetRepositoryPort {
   }
 
   async seedBaseWorld(input: { resetAt: Date }): Promise<void> {
-    const npcService = new NpcService(new NpcRepository(this.db));
+    const npcService = new NpcService(
+      new NpcRepository(this.db),
+      new LedgerService(new LedgerRepository(this.db))
+    );
     await npcService.ensureWorldSeeded(input.resetAt);
   }
 }
