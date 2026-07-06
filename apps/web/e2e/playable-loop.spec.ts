@@ -43,9 +43,13 @@ const villageState = {
       slot: "weapon",
       itemKey: "training_sword",
       name: "训练短剑",
+      rarity: "common",
       itemLevel: 5,
       attackBonus: 2,
       defenseBonus: 0,
+      agilityBonus: 0,
+      maxHpBonus: 0,
+      affixes: [],
       maxDurability: 100,
       currentDurability: 60,
       durabilityPct: 60,
@@ -56,9 +60,11 @@ const villageState = {
       }
     }
   ],
+  backpackEquipment: [],
   market: null,
   npcTasks: [],
   currentAction: null,
+  rumors: [],
   availableActions: ["enter_corrupt_forest", "open_market", "repair_equipment", "eat_food"],
   log: []
 };
@@ -229,7 +235,24 @@ const activeCombatState = {
   availableActions: ["cancel_action"]
 };
 
+function syncResponse(state = villageState) {
+  return {
+    stateVersion: 1,
+    state,
+    events: [],
+    nextCursor: 1,
+    chat: [],
+    presence: [],
+    leaderboards: {
+      level: [],
+      wealth: []
+    }
+  };
+}
+
 test("player can use the first playable MUD screen", async ({ page }) => {
+  let syncedState = villageState;
+
   await page.route("**/auth/me", async (route) => {
     await route.fulfill({
       json: {
@@ -243,8 +266,17 @@ test("player can use the first playable MUD screen", async ({ page }) => {
       }
     });
   });
-  await page.route("**/game/state", async (route) => route.fulfill({ json: villageState }));
-  await page.route("**/game/enter-zone", async (route) => route.fulfill({ json: forestState }));
+  await page.route("**/game/state", async (route) => route.fulfill({ json: syncedState }));
+  await page.route("http://127.0.0.1:3000/game/sync**", async (route) =>
+    route.fulfill({ json: syncResponse(syncedState) })
+  );
+  await page.route("**/game/presence/heartbeat", async (route) =>
+    route.fulfill({ json: { ok: true } })
+  );
+  await page.route("**/game/enter-zone", async (route) => {
+    syncedState = forestState;
+    await route.fulfill({ json: forestState });
+  });
   await page.route("**/game/market", async (route) => route.fulfill({ json: marketState }));
   await page.route("**/game/npcs/dialogue-targets", async (route) =>
     route.fulfill({ json: dialogueTargets })
@@ -254,13 +286,34 @@ test("player can use the first playable MUD screen", async ({ page }) => {
       json: route.request().method() === "POST" ? repliedDialogue : emptyDialogue
     })
   );
-  await page.route("**/game/eat", async (route) => route.fulfill({ json: eatenVillageState }));
-  await page.route("**/game/repair", async (route) => route.fulfill({ json: repairedVillageState }));
-  await page.route("**/game/move", async (route) => route.fulfill({ json: forestState }));
-  await page.route("**/game/gather", async (route) => route.fulfill({ json: activeGatheringState }));
-  await page.route("**/game/action/cancel", async (route) => route.fulfill({ json: forestState }));
-  await page.route("**/game/combat/start", async (route) => route.fulfill({ json: activeCombatState }));
-  await page.route("**/game/return-village", async (route) => route.fulfill({ json: villageState }));
+  await page.route("**/game/eat", async (route) => {
+    syncedState = eatenVillageState;
+    await route.fulfill({ json: eatenVillageState });
+  });
+  await page.route("**/game/repair", async (route) => {
+    syncedState = repairedVillageState;
+    await route.fulfill({ json: repairedVillageState });
+  });
+  await page.route("**/game/move", async (route) => {
+    syncedState = forestState;
+    await route.fulfill({ json: forestState });
+  });
+  await page.route("**/game/gather", async (route) => {
+    syncedState = activeGatheringState;
+    await route.fulfill({ json: activeGatheringState });
+  });
+  await page.route("**/game/action/cancel", async (route) => {
+    syncedState = forestState;
+    await route.fulfill({ json: forestState });
+  });
+  await page.route("**/game/combat/start", async (route) => {
+    syncedState = activeCombatState;
+    await route.fulfill({ json: activeCombatState });
+  });
+  await page.route("**/game/return-village", async (route) => {
+    syncedState = villageState;
+    await route.fulfill({ json: villageState });
+  });
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "黑松哨站" })).toBeVisible();
@@ -277,13 +330,14 @@ test("player can use the first playable MUD screen", async ({ page }) => {
   await expect(trainingSword.getByText("无需修理")).toBeVisible();
 
   await page.getByRole("button", { name: "附近 NPC" }).click();
-  await expect(page.getByRole("dialog", { name: "附近 NPC 对话" })).toBeVisible();
-  await page.getByRole("button", { name: /伯林/ }).click();
+  const dialogueDialog = page.getByRole("dialog", { name: "附近 NPC 对话" });
+  await expect(dialogueDialog).toBeVisible();
+  await dialogueDialog.getByRole("button", { name: /伯林/ }).click();
   await expect(page.getByText("还没有交谈记录。")).toBeVisible();
-  await page.getByLabel("对 NPC 说").fill("最近缺什么？");
-  await page.getByRole("button", { name: "发送" }).click();
+  await dialogueDialog.getByLabel("对 NPC 说").fill("最近缺什么？");
+  await dialogueDialog.getByRole("button", { name: "发送" }).click();
   await expect(page.getByText("基础铁矿石快见底了。")).toBeVisible();
-  await page.getByRole("button", { name: "关闭" }).click();
+  await dialogueDialog.getByRole("button", { name: "关闭" }).click();
 
   await page.getByRole("button", { name: "市政集市" }).click();
   await expect(page.getByRole("dialog", { name: "市政集市" })).toBeVisible();
