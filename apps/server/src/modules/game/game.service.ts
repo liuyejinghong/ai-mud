@@ -408,10 +408,7 @@ export class GameService {
       const repo = new GameRepository(tx);
       const now = new Date();
       if (options.settle !== false) {
-        await this.settleDueAction(repo, accountId, now);
-        await this.healExpiredInjury(repo, accountId, now);
-        const character = await repo.findCharacterByAccountId(accountId);
-        if (character) await this.settleHungerForCharacter(repo, character, now);
+        await this.settleReadableState(repo, accountId, now);
       }
       return this.buildState(repo, accountId, now);
     });
@@ -421,16 +418,18 @@ export class GameService {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
       const lobby = new LobbyService(new LobbyRepository(tx));
+      const now = new Date();
+      await this.settleReadableState(repo, accountId, now);
       const character = await repo.findCharacterByAccountId(accountId);
+      const activeAction = character ? await repo.findActiveActionByCharacterId(character.id) : null;
       const events = await repo.listSyncEvents({
         accountId,
         characterId: character?.id ?? null,
         cursor,
         limit: 100
       });
-      const now = new Date();
       const nextCursor = events.at(-1)?.id ?? cursor;
-      const includeState = cursor <= 0 || events.some((event) => event.stateDirty);
+      const includeState = cursor <= 0 || activeAction !== null || events.some((event) => event.stateDirty);
       const lobbyPayload = await lobby.buildSyncPayload({
         events: events.map((event) => ({
           eventType: event.eventType,
@@ -454,6 +453,22 @@ export class GameService {
         nextCursor
       };
     });
+  }
+
+  private async settleReadableState(repo: GameRepository, accountId: string, now: Date) {
+    await this.settleDueAction(repo, accountId, now);
+    await this.healExpiredInjury(repo, accountId, now);
+
+    const character = await repo.findCharacterByAccountId(accountId);
+    if (!character) return;
+
+    const activeAction = await repo.findActiveActionByCharacterId(character.id);
+    if (activeAction?.actionType === "gathering" && activeAction.endsAt.getTime() > now.getTime()) {
+      await this.settleGatheringAction(repo, activeAction, now, { completeAction: false });
+    }
+
+    const latestCharacter = await repo.findCharacterByAccountId(accountId);
+    if (latestCharacter) await this.settleHungerForCharacter(repo, latestCharacter, now);
   }
 
   async createCharacter(

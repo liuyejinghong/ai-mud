@@ -72,6 +72,8 @@ const initialState: GameStateDto = {
   log: []
 };
 
+const EVENT_LOG_LIMIT = 30;
+
 const directionLabels: Record<Direction, string> = {
   north: "北",
   west: "西",
@@ -87,6 +89,11 @@ const locationLabels: Partial<Record<GameLocationId, string>> = {
 
 function locationText(locationId: GameLocationId) {
   return locationLabels[locationId] ?? locationId;
+}
+
+function eventTimeText(createdAt: string) {
+  const isoTime = createdAt.match(/T(\d{2}:\d{2})/)?.[1];
+  return isoTime ?? "--:--";
 }
 
 function cellText(markers: string[]) {
@@ -569,6 +576,7 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
   }, [csrfToken, onAuthExpired, state.character?.id]);
 
   const cells = useMemo(() => state.map?.cells ?? [], [state.map]);
+  const recentLog = useMemo(() => state.log.slice(-EVENT_LOG_LIMIT), [state.log]);
 
   if (!state.character) {
     return (
@@ -663,46 +671,27 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
             <span>{state.equipment.length} 件</span>
           </div>
           {state.equipment.length === 0 ? <p className="empty-copy">无</p> : null}
-          <div className="equipment-list">
+          <div className="equipment-slot-list" aria-label="已装备槽位">
             {state.equipment.map((item) => (
-              <article className="equipment-item" key={item.id}>
-                <div className="equipment-title">
-                  <strong>{item.name}</strong>
-                  <span>{slotLabels[item.slot]} · {rarityLabels[item.rarity]}</span>
-                </div>
+              <button
+                type="button"
+                className={`equipment-slot rarity-${item.rarity}`}
+                key={item.id}
+                aria-label={`${slotLabels[item.slot]} ${item.name} ${rarityLabels[item.rarity]} 耐久 ${item.durabilityPct}%`}
+                onClick={() => setActiveModal({ type: "equipment", item })}
+              >
+                <span className="equipment-slot-label">{slotLabels[item.slot]}</span>
+                <strong>{item.name}</strong>
+                <span className="equipment-slot-meta">
+                  {rarityLabels[item.rarity]} · 耐久 {item.durabilityPct}%
+                </span>
                 <div className="durability-bar" aria-hidden="true">
                   <span style={{ width: `${item.durabilityPct}%` }} />
                 </div>
-                <div className="equipment-meta">
-                  <span>{item.currentDurability}/{item.maxDurability}</span>
-                  <span>装等 {item.itemLevel}</span>
-                </div>
-                <p className="equipment-cost">{equipmentStatLine(item)}</p>
-                <p className="equipment-affixes">{equipmentAffixLine(item)}</p>
                 {item.effectiveStatRatio < 1 ? (
-                  <p className="equipment-warning">耐久归零，仅保留 20% 属性。</p>
+                  <span className="equipment-warning">耐久归零</span>
                 ) : null}
-                {item.repairQuote ? (
-                  <p className="equipment-cost">
-                    修理：{moneyText(item.repairQuote.copperCost)} + 基础铁矿石 x
-                    {item.repairQuote.ironOreCost}
-                  </p>
-                ) : (
-                  <p className="equipment-cost">无需修理</p>
-                )}
-                <button
-                  type="button"
-                  className="game-secondary-button"
-                  disabled={!canRepairEquipment || !item.repairQuote}
-                  onClick={() =>
-                    void runCommand(() =>
-                      repairEquipment({ equipmentId: item.id }, csrfToken)
-                    )
-                  }
-                >
-                  修理 {item.name}
-                </button>
-              </article>
+              </button>
             ))}
           </div>
           {damagedEquipment.length > 1 ? (
@@ -892,7 +881,43 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
           <p className="game-kicker">World Feed</p>
           <h1 id="location-title">{state.locationTitle}</h1>
           <p>{state.locationDescription}</p>
+          <section className="location-map-card" aria-label="当前位置地图">
+            <div className="panel-heading">
+              <h2>地图</h2>
+              {state.map ? <span>{state.map.width} x {state.map.height}</span> : <span>村镇</span>}
+            </div>
+            {state.map ? (
+              <div
+                className="mini-map"
+                style={{ gridTemplateColumns: `repeat(${state.map.width}, minmax(0, 1fr))` }}
+              >
+                {cells.map((cell) => (
+                  <span
+                    key={`${cell.x}:${cell.y}`}
+                    className={`mini-map-cell ${cell.markers.map((marker) => `is-${marker}`).join(" ")}`}
+                    title={`x:${cell.x} y:${cell.y}`}
+                  >
+                    {cellText(cell.markers)}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="empty-copy">当前在村镇区域，无野外方格。</p>
+            )}
+          </section>
         </div>
+
+        <section className="beginner-guide-panel" aria-labelledby="beginner-guide-title">
+          <div className="panel-heading">
+            <h2 id="beginner-guide-title">新手指引</h2>
+            <span>入门</span>
+          </div>
+          <ul>
+            <li>先从旧矿坑或腐林开始探索。</li>
+            <li>采集和战斗会耗时，背包会随同步更新。</li>
+            <li>回到哨站后再处理 NPC、集市和装备。</li>
+          </ul>
+        </section>
 
         <div className="game-actions" aria-label="常用动作">
           {canEnterForest ? (
@@ -975,6 +1000,53 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
           ) : null}
         </div>
 
+        {state.currentAction ? (
+          <section className="active-action-panel" aria-labelledby="active-action-title">
+            <div className="panel-heading">
+              <h2 id="active-action-title">当前行动</h2>
+              <span>总进度 {state.currentAction.progressPct}%</span>
+            </div>
+            <p>{state.currentAction.description}</p>
+            <div className="action-progress" aria-hidden="true">
+              <span style={{ width: `${state.currentAction.progressPct}%` }} />
+            </div>
+            {state.currentAction.actionType === "gathering" ? (
+              <p className="action-meta">
+                本轮采集 {state.currentAction.cycleProgressPct}% · 已入账{" "}
+                {state.currentAction.settledCycles}/{state.currentAction.plannedCycles}
+              </p>
+            ) : null}
+            {state.currentAction.expectedYield.length > 0 ? (
+              <p className="action-meta">
+                计划总产出：
+                {state.currentAction.expectedYield
+                  .map((item) => `${item.name} x${item.quantity}`)
+                  .join("，")}
+              </p>
+            ) : null}
+            <div className="game-actions">
+              {state.currentAction.actionType === "combat" ? (
+                <button
+                  type="button"
+                  className="game-secondary-button"
+                  onClick={() => setActiveModal({ type: "combat" })}
+                >
+                  查看战斗
+                </button>
+              ) : null}
+              {canCancelAction ? (
+                <button
+                  type="button"
+                  className="game-secondary-button"
+                  onClick={() => void runCommand(() => cancelAction(csrfToken))}
+                >
+                  {state.currentAction.actionType === "combat" ? "撤离" : "取消行动"}
+                </button>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
         {state.npcTasks.length > 0 ? (
           <section className="npc-task-panel" aria-labelledby="npc-task-title">
             <div className="panel-heading">
@@ -1043,86 +1115,6 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
           </section>
         ) : null}
 
-        <section className="rumor-panel" aria-labelledby="rumor-title">
-          <div className="panel-heading">
-            <h2 id="rumor-title">传闻</h2>
-            <span>{state.rumors.length} 条</span>
-          </div>
-          {state.rumors.length === 0 ? (
-            <p className="empty-copy">暂时没有新的传闻。</p>
-          ) : (
-            <ul className="rumor-list">
-              {state.rumors.map((rumor) => (
-                <li key={rumor.id}>{rumor.message}</li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        {offlineReport ? (
-          <section className="offline-report-panel" aria-labelledby="offline-report-title">
-            <div className="panel-heading">
-              <h2 id="offline-report-title">{offlineReport.title}</h2>
-              <span>{offlineReport.status === "success" ? "AI" : "模板"}</span>
-            </div>
-            <p>{offlineReport.summary}</p>
-            {offlineReport.highlights.length > 0 ? (
-              <ul>
-                {offlineReport.highlights.map((highlight) => (
-                  <li key={highlight}>{highlight}</li>
-                ))}
-              </ul>
-            ) : null}
-          </section>
-        ) : null}
-
-        {state.currentAction ? (
-          <section className="active-action-panel" aria-labelledby="active-action-title">
-            <div className="panel-heading">
-              <h2 id="active-action-title">当前行动</h2>
-              <span>{state.currentAction.progressPct}%</span>
-            </div>
-            <p>{state.currentAction.description}</p>
-            <div className="action-progress" aria-hidden="true">
-              <span style={{ width: `${state.currentAction.progressPct}%` }} />
-            </div>
-            {state.currentAction.actionType === "gathering" ? (
-              <p className="action-meta">
-                当前周期 {state.currentAction.cycleProgressPct}% · 已完成{" "}
-                {state.currentAction.completedCycles}/{state.currentAction.plannedCycles}
-              </p>
-            ) : null}
-            {state.currentAction.expectedYield.length > 0 ? (
-              <p className="action-meta">
-                预计产出：
-                {state.currentAction.expectedYield
-                  .map((item) => `${item.name} x${item.quantity}`)
-                  .join("，")}
-              </p>
-            ) : null}
-            <div className="game-actions">
-              {state.currentAction.actionType === "combat" ? (
-                <button
-                  type="button"
-                  className="game-secondary-button"
-                  onClick={() => setActiveModal({ type: "combat" })}
-                >
-                  查看战斗
-                </button>
-              ) : null}
-              {canCancelAction ? (
-                <button
-                  type="button"
-                  className="game-secondary-button"
-                  onClick={() => void runCommand(() => cancelAction(csrfToken))}
-                >
-                  {state.currentAction.actionType === "combat" ? "撤离" : "取消行动"}
-                </button>
-              ) : null}
-            </div>
-          </section>
-        ) : null}
-
         {syncNotices.length > 0 ? (
           <ul className="sync-feedback-list" aria-live="polite" aria-label="同步事件提示">
             {syncNotices.map((notice) => (
@@ -1135,39 +1127,23 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
 
         {error ? <p role="alert" className="game-error">{error}</p> : null}
 
-        <ol className="game-log" aria-label="事件记录">
-          {state.log.map((entry) => (
-            <li key={entry.id}>{entry.message}</li>
-          ))}
-        </ol>
+        <section className="event-log-panel" aria-labelledby="event-log-title">
+          <div className="panel-heading">
+            <h2 id="event-log-title">事件记录</h2>
+            <span>最近 {recentLog.length}/{state.log.length}</span>
+          </div>
+          <ol className="game-log" aria-label="最近事件记录">
+            {recentLog.map((entry) => (
+              <li className="event-log-entry" key={entry.id}>
+                <time dateTime={entry.createdAt}>{eventTimeText(entry.createdAt)}</time>
+                <span>{entry.message}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
       </section>
 
       <aside className="game-column game-map-panel" aria-label="地图与移动">
-        <section className="game-panel">
-          <div className="panel-heading">
-            <h2>地图</h2>
-            {state.map ? <span>{state.map.width} x {state.map.height}</span> : <span>村镇</span>}
-          </div>
-          {state.map ? (
-            <div
-              className="mini-map"
-              style={{ gridTemplateColumns: `repeat(${state.map.width}, minmax(0, 1fr))` }}
-            >
-              {cells.map((cell) => (
-                <span
-                  key={`${cell.x}:${cell.y}`}
-                  className={`mini-map-cell ${cell.markers.map((marker) => `is-${marker}`).join(" ")}`}
-                  title={`x:${cell.x} y:${cell.y}`}
-                >
-                  {cellText(cell.markers)}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <p className="empty-copy">当前在村镇区域，无野外方格。</p>
-          )}
-        </section>
-
         <section className="game-panel">
           <div className="panel-heading">
             <h2>移动</h2>
@@ -1215,27 +1191,66 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
             键盘和鼠标共用同一套服务端移动指令。
           </p>
         </section>
+
+        <section className="rumor-panel" aria-labelledby="rumor-title">
+          <div className="panel-heading">
+            <h2 id="rumor-title">传闻</h2>
+            <span>{state.rumors.length} 条</span>
+          </div>
+          {state.rumors.length === 0 ? (
+            <p className="empty-copy">暂时没有新的传闻。</p>
+          ) : (
+            <ul className="rumor-list">
+              {state.rumors.map((rumor) => (
+                <li key={rumor.id}>{rumor.message}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {offlineReport ? (
+          <section className="offline-report-panel" aria-labelledby="offline-report-title">
+            <div className="panel-heading">
+              <h2 id="offline-report-title">{offlineReport.title}</h2>
+              <span>{offlineReport.status === "success" ? "AI" : "模板"}</span>
+            </div>
+            <p>{offlineReport.summary}</p>
+            {offlineReport.highlights.length > 0 ? (
+              <ul>
+                {offlineReport.highlights.map((highlight) => (
+                  <li key={highlight}>{highlight}</li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        ) : null}
       </aside>
 
       <ModalManager activeModal={activeModal} onClose={() => setActiveModal(null)}>
         {(modal, closeModal) => {
           if (modal.type === "equipment") {
             const current = state.equipment.find((item) => item.slot === modal.item.slot) ?? null;
+            const isBackpackEquipment = state.backpackEquipment.some(
+              (item) => item.id === modal.item.id
+            );
             const powerDelta = equipmentPower(modal.item) - (current ? equipmentPower(current) : 0);
             return (
               <section
                 className="equipment-dialog"
                 role="dialog"
                 aria-modal="true"
-                aria-label={`${modal.item.name} 装备对比`}
+                aria-label={`${modal.item.name} ${isBackpackEquipment ? "装备对比" : "装备详情"}`}
               >
-                <p className="game-kicker">Equipment Compare</p>
+                <p className="game-kicker">
+                  {isBackpackEquipment ? "Equipment Compare" : "Equipment Detail"}
+                </p>
                 <div className="panel-heading">
                   <h2>{modal.item.name}</h2>
                   <span>{rarityLabels[modal.item.rarity]}</span>
                 </div>
-                <div className="equipment-compare-grid">
-                  <article className="equipment-compare-card">
+                <div className={`equipment-compare-grid${isBackpackEquipment ? "" : " is-detail"}`}>
+                  {isBackpackEquipment ? (
+                    <article className="equipment-compare-card">
                     <p className="game-kicker">当前</p>
                     <h3>{current?.name ?? "空槽位"}</h3>
                     <dl className="stat-list">
@@ -1253,8 +1268,9 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
                       </div>
                     </dl>
                   </article>
+                  ) : null}
                   <article className={`equipment-compare-card rarity-${modal.item.rarity}`}>
-                    <p className="game-kicker">背包</p>
+                    <p className="game-kicker">{isBackpackEquipment ? "背包" : "已装备"}</p>
                     <h3>{modal.item.name}</h3>
                     <dl className="stat-list">
                       <div>
@@ -1269,22 +1285,51 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
                         <dt>词缀</dt>
                         <dd>{equipmentAffixLine(modal.item)}</dd>
                       </div>
+                      <div>
+                        <dt>耐久</dt>
+                        <dd>{modal.item.currentDurability}/{modal.item.maxDurability}</dd>
+                      </div>
+                      <div>
+                        <dt>修理</dt>
+                        <dd>
+                          {modal.item.repairQuote
+                            ? `${moneyText(modal.item.repairQuote.copperCost)} + 基础铁矿石 x${modal.item.repairQuote.ironOreCost}`
+                            : "无需修理"}
+                        </dd>
+                      </div>
                     </dl>
                   </article>
                 </div>
-                <p className={powerDelta >= 0 ? "equipment-delta is-positive" : "equipment-delta is-negative"}>
-                  综合属性差异：{powerDelta >= 0 ? "+" : ""}
-                  {powerDelta}
-                </p>
+                {isBackpackEquipment ? (
+                  <p className={powerDelta >= 0 ? "equipment-delta is-positive" : "equipment-delta is-negative"}>
+                    综合属性差异：{powerDelta >= 0 ? "+" : ""}
+                    {powerDelta}
+                  </p>
+                ) : null}
                 <div className="dialog-actions">
-                  <button
-                    type="button"
-                    className="game-primary-button"
-                    disabled={!canEquipEquipment}
-                    onClick={() => void equipBackpackEquipment(modal.item.id, closeModal)}
-                  >
-                    装备
-                  </button>
+                  {isBackpackEquipment ? (
+                    <button
+                      type="button"
+                      className="game-primary-button"
+                      disabled={!canEquipEquipment}
+                      onClick={() => void equipBackpackEquipment(modal.item.id, closeModal)}
+                    >
+                      装备
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="game-secondary-button"
+                      disabled={!canRepairEquipment || !modal.item.repairQuote}
+                      onClick={() =>
+                        void runCommand(() =>
+                          repairEquipment({ equipmentId: modal.item.id }, csrfToken)
+                        )
+                      }
+                    >
+                      修理 {modal.item.name}
+                    </button>
+                  )}
                   <button type="button" className="game-secondary-button" onClick={closeModal}>
                     关闭
                   </button>

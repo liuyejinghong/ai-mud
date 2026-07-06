@@ -120,10 +120,22 @@ export class RumorService {
       this.repo.listUnrumoredNpcEvents(limit),
       this.repo.listUnrumoredGameEvents(limit)
     ]);
-    return [...npcEvents, ...gameEvents].sort(
+    return [...npcEvents, ...gameEvents].filter(isRumorWorthySource).sort(
       (left, right) => right.createdAt.getTime() - left.createdAt.getTime()
     );
   }
+}
+
+const PUBLIC_GAME_EVENT_TYPES = new Set([
+  "action.combat.victory",
+  "character.level_up",
+  "item.rare_drop",
+  "world.event"
+]);
+
+function isRumorWorthySource(source: RumorSourceRecord) {
+  if (source.sourceType === "npc_event") return true;
+  return source.tags.some((tag) => PUBLIC_GAME_EVENT_TYPES.has(tag));
 }
 
 export function buildFallbackRumorMessage(sourceMessage: string) {

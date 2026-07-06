@@ -58,6 +58,20 @@ function npcSource(overrides: Partial<RumorSourceRecord> = {}): RumorSourceRecor
   };
 }
 
+function gameSource(overrides: Partial<RumorSourceRecord> = {}): RumorSourceRecord {
+  return {
+    sourceType: "game_event",
+    sourceId: "game-event-1",
+    sourceMessage: "你向东移动，继续探索旧矿坑。",
+    npcActorId: null,
+    sourceActorName: null,
+    sourceLocationName: "旧矿坑",
+    createdAt: new Date("2026-07-02T10:00:00.000Z"),
+    tags: ["character.move"],
+    ...overrides
+  };
+}
+
 describe("RumorService", () => {
   it("builds bounded deterministic fallback rumor messages", () => {
     expect(buildFallbackRumorMessage("伯林发现基础铁矿石库存偏低。")).toBe(
@@ -154,6 +168,31 @@ describe("RumorService", () => {
     expect(created).toHaveLength(1);
     expect(created[0]?.sourceId).toBe("event-2");
     expect(repo.inserted).toHaveLength(1);
+  });
+
+  it("does not turn private player action logs into public village rumors", async () => {
+    const repo = new FakeRumorRepo();
+    repo.gameSources = [
+      gameSource(),
+      gameSource({
+        sourceId: "game-event-2",
+        sourceMessage: "你获得了基础铁矿石 x3。",
+        tags: ["action.gathering.settle"]
+      }),
+      gameSource({
+        sourceId: "game-event-3",
+        sourceMessage: "你开始采集旧矿坑铁矿脉。",
+        tags: ["action.gathering.start"]
+      })
+    ];
+    const service = new RumorService(repo);
+
+    const created = await service.syncRumors({
+      now: new Date("2026-07-02T12:00:00.000Z")
+    });
+
+    expect(created).toEqual([]);
+    expect(repo.inserted).toEqual([]);
   });
 });
 

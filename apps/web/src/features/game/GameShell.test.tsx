@@ -357,6 +357,49 @@ describe("GameShell", () => {
     expect(await screen.findByRole("heading", { name: "创建角色" })).toBeTruthy();
   });
 
+  it("shows a compact beginner guide after entering the world", async () => {
+    mockFetchWithStates([villageState]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByRole("heading", { name: "新手指引" })).toBeTruthy();
+    expect(screen.getByText("先从旧矿坑或腐林开始探索。")).toBeTruthy();
+  });
+
+  it("keeps equipment details behind a slot dialog", async () => {
+    mockFetchWithStates([villageState]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByRole("heading", { name: "装备" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "武器 训练短剑 普通 耐久 60%" })).toBeTruthy();
+    expect(screen.queryByText("攻 +2")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "武器 训练短剑 普通 耐久 60%" }));
+
+    expect(screen.getByRole("dialog", { name: "训练短剑 装备详情" })).toBeTruthy();
+    expect(screen.getByText("攻 +2")).toBeTruthy();
+  });
+
+  it("renders the event log as a fixed recent feed with timestamps", async () => {
+    const logState: GameStateDto = {
+      ...villageState,
+      log: Array.from({ length: 35 }, (_, index) => ({
+        id: `event-${index + 1}`,
+        message: `事件 ${index + 1}`,
+        createdAt: new Date(Date.UTC(2026, 6, 6, 8, index, 0)).toISOString()
+      }))
+    };
+    mockFetchWithStates([logState]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByRole("heading", { name: "事件记录" })).toBeTruthy();
+    expect(screen.queryByText("事件 1")).toBeNull();
+    expect(screen.getByText("事件 35")).toBeTruthy();
+    expect(screen.getByText("08:34")).toBeTruthy();
+  });
+
   it("enters the forest, supports keyboard movement, gathering, and item detail dialogs", async () => {
     const fetchMock = mockFetchWithStates([villageState, forestState, forestState, forestState]);
     render(<GameShell csrfToken="csrf" />);
@@ -959,9 +1002,10 @@ describe("GameShell", () => {
     render(<GameShell csrfToken="csrf" />);
 
     expect(await screen.findByRole("heading", { name: "装备" })).toBeTruthy();
-    expect(screen.getByText("训练短剑")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "武器 训练短剑 普通 耐久 60%" }));
+    expect(screen.getByRole("dialog", { name: "训练短剑 装备详情" })).toBeTruthy();
     expect(screen.getByText("60/100")).toBeTruthy();
-    expect(screen.getByText("修理：金币 0 | 银币 0 | 铜币 50 + 基础铁矿石 x1")).toBeTruthy();
+    expect(screen.getByText("金币 0 | 银币 0 | 铜币 50 + 基础铁矿石 x1")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "修理 训练短剑" }));
 
@@ -1050,7 +1094,9 @@ describe("GameShell", () => {
 
     render(<GameShell csrfToken="csrf" />);
 
-    expect(await screen.findByRole("button", { name: "修理 训练短剑" })).toHaveProperty(
+    fireEvent.click(await screen.findByRole("button", { name: "武器 训练短剑 普通 耐久 60%" }));
+
+    expect(screen.getByRole("button", { name: "修理 训练短剑" })).toHaveProperty(
       "disabled",
       true
     );
@@ -1082,7 +1128,8 @@ describe("GameShell", () => {
 
     expect(await screen.findByRole("heading", { name: "当前行动" })).toBeTruthy();
     expect(screen.getByText("正在采集野莓灌木")).toBeTruthy();
-    expect(screen.getByText(/当前周期 25%/)).toBeTruthy();
+    expect(screen.getByText(/本轮采集 25%/)).toBeTruthy();
+    expect(screen.getByText(/已入账\s*4\/10/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "取消行动" }));
 
     await waitFor(() => {

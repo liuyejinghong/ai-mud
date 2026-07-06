@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Db } from "../../db/client.js";
 import { GameService } from "./game.service.js";
-import type { CharacterActionRecord, CharacterRecord, CombatActionPayload } from "./game.repository.js";
+import type {
+  CharacterActionRecord,
+  CharacterRecord,
+  CombatActionPayload,
+  GatheringActionPayload
+} from "./game.repository.js";
 
 function character(overrides: Partial<CharacterRecord> = {}): CharacterRecord {
   return {
@@ -35,7 +40,78 @@ function combatAction(payload: CombatActionPayload): CharacterActionRecord {
   };
 }
 
+function gatheringAction(payload: GatheringActionPayload): CharacterActionRecord {
+  return {
+    id: "gather-action-1",
+    characterId: "character-1",
+    actionType: "gathering",
+    status: "active",
+    startedAt: new Date("2026-07-02T08:00:00.000Z"),
+    endsAt: new Date("2026-07-02T08:08:00.000Z"),
+    payload
+  };
+}
+
 describe("GameService action settlement", () => {
+  it("settles completed gathering cycles while the action is still active", async () => {
+    const service = new GameService({} as Db);
+    const grants: Array<{ itemId: string; quantity: number }> = [];
+    const payloadUpdates: GatheringActionPayload[] = [];
+    const chargeUpdates: Array<Record<string, number>> = [];
+    const events: string[] = [];
+    const repo = {
+      findMapInstance: async () => ({
+        id: "map-1",
+        characterId: "character-1",
+        zoneId: "old_mine",
+        resourceCharges: { old_mine_iron_vein_01: 100 },
+        encounterCooldowns: {}
+      }),
+      grantCharacterItem: async (input: { itemId: string; quantity: number }) => {
+        grants.push(input);
+      },
+      updateMapResourceCharges: async (_mapId: string, input: Record<string, number>) => {
+        chargeUpdates.push(input);
+      },
+      updateActionPayload: async (_actionId: string, input: GatheringActionPayload) => {
+        payloadUpdates.push(input);
+      },
+      writeEvent: async (input: { message: string }) => {
+        events.push(input.message);
+      },
+      markActionCompleted: async () => {
+        throw new Error("partial gathering settlement must not complete the action");
+      }
+    };
+
+    await (service as unknown as {
+      settleGatheringAction(
+        repo: object,
+        action: CharacterActionRecord,
+        now: Date,
+        options: { completeAction: boolean }
+      ): Promise<void>;
+    }).settleGatheringAction(
+      repo,
+      gatheringAction({
+        resourceId: "old_mine_iron_vein_01",
+        itemId: "iron_ore",
+        itemName: "基础铁矿石",
+        quantityPerCycle: 1,
+        cycleMs: 60_000,
+        plannedCycles: 8,
+        settledCycles: 0
+      }),
+      new Date("2026-07-02T08:03:10.000Z"),
+      { completeAction: false }
+    );
+
+    expect(grants).toMatchObject([{ itemId: "iron_ore", quantity: 3 }]);
+    expect(chargeUpdates).toEqual([{ old_mine_iron_vein_01: 97 }]);
+    expect(payloadUpdates).toMatchObject([{ settledCycles: 3 }]);
+    expect(events).toEqual(["你获得了基础铁矿石 x3。"]);
+  });
+
   it("only exposes the played combat log prefix for active combat", () => {
     const service = new GameService({} as Db);
     const startedAt = new Date("2026-07-02T08:00:00.000Z");

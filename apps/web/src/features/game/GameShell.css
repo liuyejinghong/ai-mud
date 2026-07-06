@@ -1,10 +1,11 @@
 .game-shell {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-columns: minmax(230px, 280px) minmax(0, 1fr) minmax(230px, 300px);
   gap: 12px;
   padding: 12px;
   box-sizing: border-box;
+  overflow: hidden;
   color: #d7ffe4;
   background:
     linear-gradient(180deg, rgba(2, 6, 4, 0.95), rgba(4, 12, 10, 0.98)),
@@ -34,12 +35,16 @@
 .game-main-panel {
   padding: 16px;
   min-width: 0;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
 }
 
 .game-column {
   display: grid;
   gap: 12px;
   align-content: start;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
 }
 
 .game-create-panel {
@@ -274,43 +279,50 @@
   gap: 8px;
 }
 
-.equipment-list {
+.equipment-slot-list {
   display: grid;
-  gap: 10px;
-}
-
-.equipment-item {
-  display: grid;
-  gap: 7px;
-  border: 1px solid rgba(119, 184, 160, 0.26);
-  background: rgba(3, 14, 9, 0.72);
-  padding: 10px;
-}
-
-.equipment-title,
-.equipment-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: 8px;
 }
 
-.equipment-title strong {
+.equipment-slot {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid rgba(119, 184, 160, 0.34);
+  background: rgba(3, 14, 9, 0.78);
+  color: #d8f5df;
+  padding: 8px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.equipment-slot strong,
+.equipment-slot-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.equipment-slot strong {
   color: #f3d67d;
 }
 
-.equipment-title span,
-.equipment-meta,
-.equipment-cost,
-.equipment-warning {
-  color: #b8c9bd;
+.equipment-slot-label {
+  grid-row: span 2;
+  border: 1px solid rgba(119, 184, 160, 0.28);
+  background: rgba(1, 8, 5, 0.72);
+  padding: 6px 4px;
+  color: #77b8a0;
+  text-align: center;
   font-size: 12px;
 }
 
-.equipment-cost,
+.equipment-slot-meta,
 .equipment-warning {
-  margin: 0;
-  line-height: 1.5;
+  color: #b8c9bd;
+  font-size: 12px;
 }
 
 .equipment-warning {
@@ -322,6 +334,7 @@
 }
 
 .durability-bar {
+  grid-column: 2 / 4;
   height: 8px;
   border: 1px solid rgba(216, 167, 53, 0.65);
   background: #050604;
@@ -406,6 +419,34 @@
 .location-header {
   border-bottom: 1px solid rgba(27, 208, 93, 0.28);
   margin-bottom: 14px;
+}
+
+.location-map-card,
+.beginner-guide-panel {
+  border: 1px solid rgba(119, 184, 160, 0.38);
+  background: rgba(3, 14, 9, 0.58);
+  padding: 12px;
+}
+
+.location-map-card {
+  margin: 12px 0 14px;
+}
+
+.location-map-card .mini-map {
+  max-width: 220px;
+}
+
+.beginner-guide-panel {
+  margin-bottom: 14px;
+}
+
+.beginner-guide-panel ul {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #d8dce0;
+  line-height: 1.5;
 }
 
 .game-actions {
@@ -563,16 +604,39 @@
   margin-bottom: 8px;
 }
 
-.game-log {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding-left: 20px;
-  color: #d8dce0;
+.event-log-panel {
+  border: 1px solid rgba(119, 184, 160, 0.46);
+  background: rgba(3, 14, 9, 0.62);
+  padding: 12px;
 }
 
-.game-log li::marker {
+.game-log {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 0;
+  color: #d8dce0;
+  list-style: none;
+}
+
+.event-log-entry {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 10px;
+  border-bottom: 1px dashed rgba(119, 184, 160, 0.18);
+  padding: 6px 0;
+  line-height: 1.45;
+}
+
+.event-log-entry time {
   color: #d8a735;
+  font-size: 12px;
+}
+
+.event-log-entry span {
+  overflow-wrap: anywhere;
 }
 
 .game-error {
@@ -581,7 +645,7 @@
 
 .mini-map {
   display: grid;
-  gap: 6px;
+  gap: 4px;
 }
 
 .mini-map-cell {
@@ -672,6 +736,10 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-top: 12px;
+}
+
+.equipment-compare-grid.is-detail {
+  grid-template-columns: 1fr;
 }
 
 .equipment-compare-card {
