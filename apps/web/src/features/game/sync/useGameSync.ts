@@ -25,7 +25,7 @@ export interface UseGameSyncOptions {
   activeAction?: GameStateDto["currentAction"];
   idleIntervalMs?: number;
   activeIntervalMs?: number;
-  fetchSync?: (cursor?: number) => Promise<GameSyncResponseDto>;
+  fetchSync?: (cursor?: number, signal?: AbortSignal) => Promise<GameSyncResponseDto>;
   onState?: (state: GameStateDto) => void;
   onEvents?: (events: GameSyncEventDto[]) => void;
   onLobby?: (payload: LobbySyncPayload) => void;
@@ -45,33 +45,51 @@ export function useGameSync(options: UseGameSyncOptions = {}) {
     onLobby,
     onOfflineReport
   } = options;
+  const activeActionId = activeAction?.id ?? null;
+  const actionIsActive = activeAction?.status === "active";
   const cursorRef = useRef(initialCursor);
   const timerRef = useRef<number | null>(null);
+  const mountedRef = useRef(false);
+  const rescheduleRef = useRef<(() => void) | null>(null);
+  const fetchSyncRef = useRef(fetchSync);
+  const intervalMsRef = useRef(actionIsActive ? activeIntervalMs : idleIntervalMs);
+  const callbacksRef = useRef({ onState, onEvents, onLobby, onOfflineReport });
   const [cursor, setCursor] = useState(initialCursor);
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  const applyResponse = useCallback(
-    (next: GameSyncResponseDto) => {
-      cursorRef.current = next.nextCursor;
-      setCursor(next.nextCursor);
-      setError(null);
-      if (next.state) onState?.(next.state);
-      if (next.events.length > 0) onEvents?.(next.events);
-      if (next.offlineReport) onOfflineReport?.(next.offlineReport);
-      if (next.chat || next.presence || next.leaderboards) {
-        onLobby?.({
-          chat: next.chat ?? [],
-          presence: next.presence ?? [],
-          leaderboards: {
-            level: next.leaderboards?.level ?? [],
-            wealth: next.leaderboards?.wealth ?? []
-          }
-        });
-      }
-    },
-    [onEvents, onLobby, onOfflineReport, onState]
-  );
+  fetchSyncRef.current = fetchSync;
+  intervalMsRef.current = actionIsActive ? activeIntervalMs : idleIntervalMs;
+  callbacksRef.current = { onState, onEvents, onLobby, onOfflineReport };
+
+  const applyResponse = useCallback((next: GameSyncResponseDto) => {
+    if (!mountedRef.current) return;
+
+    cursorRef.current = next.nextCursor;
+    setCursor(next.nextCursor);
+    setError(null);
+    const callbacks = callbacksRef.current;
+    if (next.state) callbacks.onState?.(next.state);
+    if (next.events.length > 0) callbacks.onEvents?.(next.events);
+    if (next.offlineReport) callbacks.onOfflineReport?.(next.offlineReport);
+    if (next.chat || next.presence || next.leaderboards) {
+      callbacks.onLobby?.({
+        chat: next.chat ?? [],
+        presence: next.presence ?? [],
+        leaderboards: {
+          level: next.leaderboards?.level ?? [],
+          wealth: next.leaderboards?.wealth ?? []
+        }
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     cursorRef.current = initialCursor;
@@ -79,10 +97,15 @@ export function useGameSync(options: UseGameSyncOptions = {}) {
   }, [initialCursor]);
 
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!enabled) {
+      setIsSyncing(false);
+      return undefined;
+    }
 
     let cancelled = false;
-    const intervalMs = activeAction ? activeIntervalMs : idleIntervalMs;
+    let failures = 0;
+    let inFlight = false;
+    let controller: AbortController | null = null;
 
     const clearTimer = () => {
       if (timerRef.current !== null) {
@@ -91,27 +114,44 @@ export function useGameSync(options: UseGameSyncOptions = {}) {
       }
     };
 
+    const nextDelay = () =>
+      failures === 0
+        ? intervalMsRef.current
+        : Math.min(intervalMsRef.current * 2 ** failures, 60_000);
+
     const schedule = () => {
       clearTimer();
-      if (!cancelled) {
+      if (!cancelled && !inFlight) {
         timerRef.current = window.setTimeout(() => {
           void poll();
-        }, intervalMs);
+        }, nextDelay());
       }
     };
 
     const poll = async () => {
+      if (cancelled || inFlight) return;
+
+      clearTimer();
+      inFlight = true;
       setIsSyncing(true);
+      controller = typeof AbortController === "undefined" ? null : new AbortController();
       try {
-        const next = await fetchSync(cursorRef.current > 0 ? cursorRef.current : undefined);
+        const next = await fetchSyncRef.current(
+          cursorRef.current > 0 ? cursorRef.current : undefined,
+          controller?.signal
+        );
         if (cancelled) return;
 
+        failures = 0;
         applyResponse(next);
       } catch (caught) {
         if (!cancelled) {
+          failures += 1;
           setError(caught instanceof Error ? caught : new Error("Game sync failed"));
         }
       } finally {
+        controller = null;
+        inFlight = false;
         if (!cancelled) {
           setIsSyncing(false);
           schedule();
@@ -119,13 +159,20 @@ export function useGameSync(options: UseGameSyncOptions = {}) {
       }
     };
 
+    rescheduleRef.current = schedule;
     void poll();
 
     return () => {
       cancelled = true;
+      rescheduleRef.current = null;
       clearTimer();
+      controller?.abort();
     };
-  }, [activeAction, activeIntervalMs, applyResponse, enabled, fetchSync, idleIntervalMs]);
+  }, [applyResponse, enabled]);
+
+  useEffect(() => {
+    rescheduleRef.current?.();
+  }, [activeActionId, actionIsActive, activeIntervalMs, idleIntervalMs]);
 
   return { cursor, isSyncing, error, applyResponse };
 }
