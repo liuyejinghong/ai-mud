@@ -1,0 +1,164 @@
+.workspace-layout {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+  background: #030806;
+}
+
+.workspace-layout > .game-shell {
+  height: 100%;
+  min-height: 0;
+}
+
+.workspace-toolbar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(27, 208, 93, 0.34);
+  background: #07100b;
+  box-sizing: border-box;
+}
+
+.workspace-switcher {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(72px, 1fr));
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid rgba(27, 208, 93, 0.32);
+  background: #020604;
+}
+
+.workspace-switcher button {
+  min-height: 30px;
+  border: 0;
+  background: transparent;
+  color: #82a98e;
+  padding: 5px 12px;
+  cursor: pointer;
+  font: 600 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0;
+}
+
+.workspace-switcher button:hover {
+  color: #d7ffe4;
+  background: rgba(27, 208, 93, 0.09);
+}
+
+.workspace-switcher button:focus-visible {
+  outline: 2px solid #70f49b;
+  outline-offset: 1px;
+}
+
+.workspace-switcher button[aria-pressed="true"] {
+  background: #12451f;
+  color: #f2fff3;
+}
+
+.admin-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  color: #d7f8db;
+  background: #030806;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.admin-shell__navigation {
+  min-width: 0;
+  border-bottom: 1px solid rgba(31, 208, 91, 0.28);
+  background: #07140a;
+}
+
+.admin-shell__tabs {
+  display: flex;
+  min-width: 0;
+  padding: 0 12px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 233, 111, 0.45) #07140a;
+}
+
+.admin-shell__tab {
+  flex: 0 0 auto;
+  min-height: 42px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #99bca2;
+  padding: 8px 12px 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.admin-shell__tab:hover {
+  color: #e6ffea;
+  background: rgba(56, 233, 111, 0.07);
+}
+
+.admin-shell__tab:focus-visible {
+  outline: 2px solid #70f49b;
+  outline-offset: -3px;
+}
+
+.admin-shell__tab[aria-selected="true"] {
+  border-bottom-color: #38e96f;
+  color: #70f49b;
+  background: rgba(18, 69, 31, 0.46);
+}
+
+.admin-shell__panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.admin-shell__panel:focus-visible {
+  outline: 2px solid rgba(112, 244, 155, 0.68);
+  outline-offset: -2px;
+}
+
+.admin-shell__panel > .admin-panel {
+  min-height: 100%;
+}
+
+@media (max-width: 720px) {
+  .workspace-toolbar {
+    min-height: 40px;
+    padding: 4px 8px;
+  }
+
+  .workspace-switcher {
+    width: 100%;
+  }
+
+  .admin-shell__tabs {
+    padding: 0 6px;
+  }
+
+  .admin-shell__tab {
+    min-height: 40px;
+    padding-inline: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-shell__panel {
+    scroll-behavior: auto;
+  }
+}

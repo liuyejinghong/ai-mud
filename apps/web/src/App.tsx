@@ -1,25 +1,28 @@
 import { useEffect, useState } from "react";
-import { AiCallAdmin } from "./features/admin/AiCallAdmin";
-import { AiLayerStatusAdmin } from "./features/admin/AiLayerStatusAdmin";
-import { AccountOpsAdmin } from "./features/admin/AccountOpsAdmin";
-import { ActivationCodeAdmin } from "./features/admin/ActivationCodeAdmin";
-import { AssetLedgerHealthAdmin } from "./features/admin/AssetLedgerHealthAdmin";
-import { EconomyAdmin } from "./features/admin/EconomyAdmin";
-import { NpcAdmin } from "./features/admin/NpcAdmin";
-import { NpcMemoryAdmin } from "./features/admin/NpcMemoryAdmin";
-import { SystemAnnouncementAdmin } from "./features/admin/SystemAnnouncementAdmin";
-import { WorldHealthAdmin } from "./features/admin/WorldHealthAdmin";
-import { WorldResetAdmin } from "./features/admin/WorldResetAdmin";
 import { AuthPage } from "./features/auth/AuthPage";
 import { getCurrentSession, logout, type AuthSessionDto } from "./features/auth/authApi";
 import { GameShell } from "./features/game/GameShell";
+import { AdminShell } from "./features/game/ui/AdminShell";
+
+type Workspace = "game" | "admin";
 
 export function App() {
   const [session, setSession] = useState<AuthSessionDto | null>(null);
+  const [activeWorkspace, setActiveWorkspace] = useState<Workspace>("game");
+
+  function authenticate(nextSession: AuthSessionDto) {
+    setActiveWorkspace("game");
+    setSession(nextSession);
+  }
+
+  function expireSession() {
+    setActiveWorkspace("game");
+    setSession(null);
+  }
 
   async function endSession() {
     await logout();
-    setSession(null);
+    expireSession();
   }
 
   useEffect(() => {
@@ -39,33 +42,43 @@ export function App() {
   }, []);
 
   if (!session) {
-    return <AuthPage onAuthenticated={setSession} />;
+    return <AuthPage onAuthenticated={authenticate} />;
   }
 
   const isAdmin = session.user.role === "admin" || session.user.role === "super_admin";
+  const gameShell = (
+    <GameShell
+      csrfToken={session.csrfToken}
+      onAuthExpired={expireSession}
+      onLogout={endSession}
+    />
+  );
+
+  if (!isAdmin) {
+    return gameShell;
+  }
 
   return (
-    <>
-      <GameShell
-        csrfToken={session.csrfToken}
-        onAuthExpired={() => setSession(null)}
-        onLogout={endSession}
-      />
-      {isAdmin ? (
-        <>
-          <WorldHealthAdmin />
-          <SystemAnnouncementAdmin csrfToken={session.csrfToken} />
-          <AccountOpsAdmin csrfToken={session.csrfToken} />
-          <ActivationCodeAdmin csrfToken={session.csrfToken} />
-          <WorldResetAdmin csrfToken={session.csrfToken} />
-          <EconomyAdmin />
-          <AssetLedgerHealthAdmin />
-          <NpcAdmin csrfToken={session.csrfToken} />
-          <AiLayerStatusAdmin />
-          <AiCallAdmin />
-          <NpcMemoryAdmin />
-        </>
-      ) : null}
-    </>
+    <div className="workspace-layout">
+      <header className="workspace-toolbar">
+        <nav className="workspace-switcher" aria-label="工作区切换">
+          <button
+            type="button"
+            aria-pressed={activeWorkspace === "game"}
+            onClick={() => setActiveWorkspace("game")}
+          >
+            游戏
+          </button>
+          <button
+            type="button"
+            aria-pressed={activeWorkspace === "admin"}
+            onClick={() => setActiveWorkspace("admin")}
+          >
+            管理
+          </button>
+        </nav>
+      </header>
+      {activeWorkspace === "admin" ? <AdminShell csrfToken={session.csrfToken} /> : gameShell}
+    </div>
   );
 }
