@@ -5,7 +5,7 @@ describe("version constants", () => {
   it("exposes the v0.10.5 world health product line and compatibility versions", () => {
     expect(PRODUCT_VERSION).toBe("0.10.5");
     expect(WORLD_COMPATIBILITY).toEqual({
-      schemaVersion: 24,
+      schemaVersion: 25,
       apiVersion: 37,
       engineVersion: 2,
       rulesetVersion: 15,

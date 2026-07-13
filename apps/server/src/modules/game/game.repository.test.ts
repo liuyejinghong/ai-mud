@@ -408,7 +408,7 @@ describe("GameRepository affected-row contracts", () => {
 describe("GameRepository municipal relief audit", () => {
   it.each([
     ["market", "transfer", "market"],
-    ["system", "grant", "system"]
+    ["system", "grant", "system_source"]
   ] as const)("records a %s source item ledger and character sync event", async (source, operation, ownerType) => {
     const grantStackable = vi.spyOn(ItemRepository.prototype, "grantStackable").mockResolvedValue();
     const writeLedger = vi.spyOn(ItemRepository.prototype, "writeLedger").mockResolvedValue();
@@ -420,7 +420,7 @@ describe("GameRepository municipal relief audit", () => {
       itemId: "wild_berry",
       quantity: 1,
       source,
-      reason: "municipal.relief",
+      reason: "municipal_relief",
       metadata: { settlementId: "blackpine_outpost" }
     });
 
@@ -435,7 +435,7 @@ describe("GameRepository municipal relief audit", () => {
       quantity: 1,
       fromOwner: { ownerType, ownerId: null },
       toOwner: { ownerType: "character", ownerId: "character-1" },
-      reason: "municipal.relief",
+      reason: "municipal_relief",
       metadata: { settlementId: "blackpine_outpost", source }
     });
     expect(writeSyncEvent).toHaveBeenCalledWith({
@@ -445,7 +445,7 @@ describe("GameRepository municipal relief audit", () => {
       payload: {
         itemId: "wild_berry",
         quantity: 1,
-        reason: "municipal.relief",
+        reason: "municipal_relief",
         source
       },
       source: "server"

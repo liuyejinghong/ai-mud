@@ -668,7 +668,10 @@ export class GameRepository {
       operation: input.source === "market" ? "transfer" : "grant",
       itemDefId: input.itemId,
       quantity: input.quantity,
-      fromOwner: { ownerType: input.source, ownerId: null },
+      fromOwner: {
+        ownerType: input.source === "system" ? "system_source" : input.source,
+        ownerId: null
+      },
       toOwner: owner,
       reason: input.reason,
       metadata

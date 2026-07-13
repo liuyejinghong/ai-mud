@@ -323,7 +323,7 @@ export const itemLedger = pgTable(
     ),
     fromOwnerTypeCheck: check(
       "item_ledger_from_owner_type_check",
-      sql`${table.fromOwnerType} IS NULL OR ${table.fromOwnerType} IN ('character', 'npc', 'market', 'system')`
+      sql`${table.fromOwnerType} IS NULL OR ${table.fromOwnerType} IN ('character', 'npc', 'market', 'system', 'system_source')`
     ),
     toOwnerTypeCheck: check(
       "item_ledger_to_owner_type_check",

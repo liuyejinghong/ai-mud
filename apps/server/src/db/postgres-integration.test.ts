@@ -181,6 +181,46 @@ async function assertWorldRumorSourceUniqueness(client: pg.Client) {
   expect(sourceFree.rows[0]?.count).toBe("2");
 }
 
+async function assertItemLedgerSourceVocabulary(client: pg.Client) {
+  await client.query(`
+    INSERT INTO item_ledger (
+      operation,
+      item_def_id,
+      quantity,
+      from_owner_type,
+      to_owner_type,
+      to_owner_id,
+      reason
+    )
+    VALUES (
+      'grant',
+      'wild_berry',
+      1,
+      'system_source',
+      'character',
+      '00000000-0000-0000-0000-000000000001',
+      'municipal_relief'
+    )
+  `);
+
+  await expect(
+    client.query(`
+      INSERT INTO item_ledger (
+        operation,
+        item_def_id,
+        quantity,
+        from_owner_type,
+        to_owner_type,
+        reason
+      )
+      VALUES ('grant', 'wild_berry', 1, 'system', 'system_source', 'invalid.recipient')
+    `)
+  ).rejects.toMatchObject({
+    code: "23514",
+    constraint: "item_ledger_to_owner_type_check"
+  });
+}
+
 async function dropDatabase(admin: pg.Client, databaseName: string) {
   const databaseIdentifier = quoteIdentifier(databaseName);
 
@@ -234,6 +274,7 @@ describe("postgres integration migrations", () => {
       await assertRequiredColumns(target);
       await assertAssetGuards(target);
       await assertWorldRumorSourceUniqueness(target);
+      await assertItemLedgerSourceVocabulary(target);
     } finally {
       if (target) await target.end();
       await dropDatabase(admin, tempDatabase);

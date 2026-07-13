@@ -21,6 +21,13 @@ export interface ItemOwner {
   ownerId: string | null;
 }
 
+export type ItemLedgerParty =
+  | ItemOwner
+  | {
+      ownerType: "system_source";
+      ownerId: null;
+    };
+
 export interface ItemInstanceRecord {
   id: string;
   itemDefId: string;
@@ -55,7 +62,7 @@ export interface WriteLedgerInput {
   itemDefId: string;
   quantity?: number | null;
   itemInstanceId?: string | null;
-  fromOwner?: ItemOwner | null;
+  fromOwner?: ItemLedgerParty | null;
   toOwner?: ItemOwner | null;
   reason: string;
   metadata?: Record<string, unknown> | undefined;
