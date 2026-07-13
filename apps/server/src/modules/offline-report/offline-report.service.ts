@@ -136,7 +136,7 @@ function buildContext(
     .filter((event) => event.createdAt <= now)
     .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
     .slice(-8)
-    .map((event) => `${event.createdAt.toISOString()} ${event.message}`);
+    .map((event) => `${playerFacingElapsedTime(event.createdAt, now)}，${event.message}`);
   const fallback = {
     title: "离线简报",
     summary:
@@ -206,6 +206,16 @@ function sameUtcDay(left: Date, right: Date) {
 
 function zoneName(locationId: GameLocationId) {
   return getZoneById(locationId)?.title ?? locationId;
+}
+
+function playerFacingElapsedTime(occurredAt: Date, now: Date) {
+  const elapsedMinutes = Math.max(0, Math.floor((now.getTime() - occurredAt.getTime()) / 60_000));
+  if (elapsedMinutes < 1) return "刚刚";
+  if (elapsedMinutes < 60) return `约 ${elapsedMinutes} 分钟前`;
+
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  if (elapsedHours < 24) return `约 ${elapsedHours} 小时前`;
+  return "此前";
 }
 
 function hashContext(context: OfflineSummaryPromptContext) {

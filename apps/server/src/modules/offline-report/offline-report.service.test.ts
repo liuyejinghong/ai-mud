@@ -170,4 +170,13 @@ describe("OfflineReportService", () => {
       errorCode: "budget_exhausted"
     });
   });
+
+  it("keeps template highlights free of raw ISO timestamps", async () => {
+    const { service } = createService({ dailyTokenBudget: 0 });
+
+    const report = await service.getReport("account-1", now);
+
+    expect(report?.highlights).toEqual(["约 1 小时前，集市记录了基础铁矿石成交。"]);
+    expect(report?.highlights.join(" ")).not.toContain("2026-07-02T09:00:00.000Z");
+  });
 });
