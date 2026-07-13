@@ -144,6 +144,16 @@ interface GatheringSettlementResult {
   completed: boolean;
 }
 
+interface ReadableSettlementResult {
+  stateChanged: boolean;
+  actionActive: boolean;
+}
+
+interface CharacterSettlementResult {
+  character: CharacterRecord;
+  stateChanged: boolean;
+}
+
 function classMaxHp(classId: CharacterClassId) {
   const characterClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
   if (!characterClass) throw new GameServiceError("VALIDATION_ERROR", "Unknown class");
@@ -447,9 +457,8 @@ export class GameService {
       const repo = new GameRepository(tx);
       const lobby = new LobbyService(new LobbyRepository(tx));
       const now = new Date();
-      await this.settleReadableState(repo, accountId, now);
+      const settlement = await this.settleReadableState(repo, accountId, now);
       const character = await repo.findCharacterByAccountId(accountId);
-      const activeAction = character ? await repo.findActiveActionByCharacterId(character.id) : null;
       const events = await repo.listSyncEvents({
         accountId,
         characterId: character?.id ?? null,
@@ -457,7 +466,11 @@ export class GameService {
         limit: 100
       });
       const nextCursor = events.at(-1)?.id ?? cursor;
-      const includeState = cursor <= 0 || activeAction !== null || events.some((event) => event.stateDirty);
+      const includeState =
+        cursor <= 0 ||
+        settlement.stateChanged ||
+        settlement.actionActive ||
+        events.some((event) => event.stateDirty);
       const lobbyPayload = await lobby.buildSyncPayload({
         events: events.map((event) => ({
           eventType: event.eventType,
@@ -483,17 +496,38 @@ export class GameService {
     });
   }
 
-  private async settleReadableState(repo: GameRepository, accountId: string, now: Date) {
-    await this.settleDueAction(repo, accountId, now);
-    await this.healExpiredInjury(repo, accountId, now);
+  private async settleReadableState(
+    repo: GameRepository,
+    accountId: string,
+    now: Date
+  ): Promise<ReadableSettlementResult> {
+    const lockedCharacter = await repo.findCharacterByAccountIdForUpdate(accountId);
+    if (!lockedCharacter) return { stateChanged: false, actionActive: false };
 
-    const character = await repo.findCharacterByAccountId(accountId);
-    if (!character) return;
+    const actionChanged = await this.settleDueAction(repo, lockedCharacter, now);
+    const characterAfterAction = await repo.findCharacterByAccountId(accountId);
+    const injuryChanged = characterAfterAction
+      ? await this.healExpiredInjury(repo, characterAfterAction, now)
+      : false;
 
-    await this.settleGatheringAction(repo, character.id, now, { completeAction: false });
+    const gatheringSettlement = await this.settleGatheringAction(repo, lockedCharacter.id, now, {
+      completeAction: false
+    });
 
     const latestCharacter = await repo.findCharacterByAccountId(accountId);
-    if (latestCharacter) await this.settleHungerForCharacter(repo, latestCharacter, now);
+    const hungerSettlement = latestCharacter
+      ? await this.settleHungerForCharacter(repo, latestCharacter, now)
+      : null;
+    const activeAction = await repo.findActiveActionByCharacterId(lockedCharacter.id);
+
+    return {
+      stateChanged:
+        actionChanged ||
+        injuryChanged ||
+        gatheringSettlement.changed ||
+        (hungerSettlement?.stateChanged ?? false),
+      actionActive: activeAction !== null
+    };
   }
 
   async createCharacter(
@@ -825,7 +859,11 @@ export class GameService {
       const quantity = this.requireTradeQuantity(input.quantity);
       const market = await this.requireMarketInventoryItemForUpdate(repo, input.itemId);
       const lockedCharacter = await this.requireCharacterForUpdate(repo, unlockedCharacter.id);
-      const character = await this.settleHungerForCharacter(repo, lockedCharacter, new Date());
+      const { character } = await this.settleHungerForCharacter(
+        repo,
+        lockedCharacter,
+        new Date()
+      );
       const item = getItemById(input.itemId);
       if (!item) throw new GameServiceError("VALIDATION_ERROR", "Unknown item");
       if (market.quantity < quantity) {
@@ -931,7 +969,11 @@ export class GameService {
         throw new GameServiceError("VALIDATION_ERROR", "背包物品不足。");
       }
       const lockedCharacter = await this.requireCharacterForUpdate(repo, unlockedCharacter.id);
-      const character = await this.settleHungerForCharacter(repo, lockedCharacter, new Date());
+      const { character } = await this.settleHungerForCharacter(
+        repo,
+        lockedCharacter,
+        new Date()
+      );
 
       const quote = calculateMarketQuote({
         direction: "sell",
@@ -1247,7 +1289,7 @@ export class GameService {
 
   private async requireSettledCharacter(repo: GameRepository, accountId: string, now: Date) {
     const character = await this.requireCharacter(repo, accountId);
-    return this.settleHungerForCharacter(repo, character, now);
+    return (await this.settleHungerForCharacter(repo, character, now)).character;
   }
 
   private async requireSettledCharacterForUpdate(
@@ -1259,7 +1301,7 @@ export class GameService {
     if (!character) {
       throw new GameServiceError("VALIDATION_ERROR", "Character required");
     }
-    return this.settleHungerForCharacter(repo, character, now);
+    return (await this.settleHungerForCharacter(repo, character, now)).character;
   }
 
   private foodDefinitions() {
@@ -1276,7 +1318,7 @@ export class GameService {
     repo: GameRepository,
     character: CharacterRecord,
     now: Date
-  ): Promise<CharacterRecord> {
+  ): Promise<CharacterSettlementResult> {
     const settlement = settleHunger({
       currentHunger: character.hunger,
       lastSettledAt: character.lastHungerSettledAt,
@@ -1285,7 +1327,7 @@ export class GameService {
       foods: this.foodDefinitions()
     });
 
-    if (settlement.missedMeals === 0) return character;
+    if (settlement.missedMeals === 0) return { character, stateChanged: false };
 
     for (const consumed of settlement.consumed) {
       await repo.consumeCharacterItem({
@@ -1328,13 +1370,16 @@ export class GameService {
         message: "你因为饥饿倒下，被送回黑松哨站休养。"
       });
       return {
-        ...character,
-        hp: 1,
-        hunger: settlement.hunger,
-        lastHungerSettledAt: now,
-        currentLocation: BLACKPINE_OUTPOST.id,
-        position: null,
-        injuryUntil
+        character: {
+          ...character,
+          hp: 1,
+          hunger: settlement.hunger,
+          lastHungerSettledAt: now,
+          currentLocation: BLACKPINE_OUTPOST.id,
+          position: null,
+          injuryUntil
+        },
+        stateChanged: true
       };
     }
 
@@ -1347,9 +1392,12 @@ export class GameService {
     }
 
     return {
-      ...character,
-      hunger: settlement.hunger,
-      lastHungerSettledAt: now
+      character: {
+        ...character,
+        hunger: settlement.hunger,
+        lastHungerSettledAt: now
+      },
+      stateChanged: true
     };
   }
 
@@ -1523,19 +1571,22 @@ export class GameService {
     }
   }
 
-  private async settleDueAction(repo: GameRepository, accountId: string, now: Date) {
-    const character = await repo.findCharacterByAccountId(accountId);
-    if (!character) return;
-
+  private async settleDueAction(
+    repo: GameRepository,
+    character: CharacterRecord,
+    now: Date
+  ): Promise<boolean> {
     const action = await repo.findActiveActionByCharacterId(character.id);
-    if (!action || action.endsAt.getTime() > now.getTime()) return;
+    if (!action || action.endsAt.getTime() > now.getTime()) return false;
 
     if (action.actionType === "gathering") {
-      await this.settleGatheringAction(repo, character.id, now, { completeAction: true });
-      return;
+      const settlement = await this.settleGatheringAction(repo, character.id, now, {
+        completeAction: true
+      });
+      return settlement.changed;
     }
 
-    await this.settleCombatAction(repo, character, action, now);
+    return this.settleCombatAction(repo, character, action, now);
   }
 
   private async settleGatheringAction(
@@ -1650,10 +1701,10 @@ export class GameService {
     character: CharacterRecord,
     action: CharacterActionRecord,
     now: Date
-  ) {
+  ): Promise<boolean> {
     const payload = action.payload as CombatActionPayload;
     const marked = await repo.markActionCompleted(action.id, now);
-    if (!marked) return;
+    if (!marked) return false;
 
     let nextHp = payload.playerRemainingHp;
     let nextXp = character.xp;
@@ -1735,6 +1786,7 @@ export class GameService {
       xp: nextXp,
       ...(injuryUntil === undefined ? {} : { injuryUntil })
     });
+    return true;
   }
 
   private async grantCombatLoot(
@@ -1796,9 +1848,12 @@ export class GameService {
     });
   }
 
-  private async healExpiredInjury(repo: GameRepository, accountId: string, now: Date) {
-    const character = await repo.findCharacterByAccountId(accountId);
-    if (!character?.injuryUntil || character.injuryUntil.getTime() > now.getTime()) return;
+  private async healExpiredInjury(
+    repo: GameRepository,
+    character: CharacterRecord,
+    now: Date
+  ): Promise<boolean> {
+    if (!character.injuryUntil || character.injuryUntil.getTime() > now.getTime()) return false;
 
     await repo.updateCharacterVitals({
       characterId: character.id,
@@ -1810,6 +1865,7 @@ export class GameService {
       eventType: "character.injury.heal",
       message: "你的伤势已经恢复。"
     });
+    return true;
   }
 
   private toCurrentActionDto(action: CharacterActionRecord, now: Date): CurrentActionDto {

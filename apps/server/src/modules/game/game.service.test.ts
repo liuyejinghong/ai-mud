@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "../../db/client.js";
 import { LedgerService } from "../ledger/ledger.service.js";
+import { LobbyRepository } from "../lobby/lobby.repository.js";
 import {
   GameRepository,
   type CharacterActionRecord,
@@ -91,13 +92,134 @@ function gatheringPayload(
   };
 }
 
-describe("GameService serialized action starts", () => {
-  function transactionDb() {
-    return {
-      transaction: vi.fn(async (operation: (tx: object) => Promise<unknown>) => operation({}))
-    } as unknown as Db;
-  }
+function transactionDb() {
+  return {
+    transaction: vi.fn(async (operation: (tx: object) => Promise<unknown>) => operation({}))
+  } as unknown as Db;
+}
 
+function arrangeReadableSync(input: {
+  character: CharacterRecord;
+  activeAction?: CharacterActionRecord | null;
+}) {
+  let currentCharacter = input.character;
+  let activeAction = input.activeAction ?? null;
+
+  vi.spyOn(GameRepository.prototype, "findCharacterByAccountId").mockImplementation(
+    async () => currentCharacter
+  );
+  vi.spyOn(GameRepository.prototype, "findCharacterByAccountIdForUpdate").mockImplementation(
+    async () => currentCharacter
+  );
+  vi.spyOn(GameRepository.prototype, "findActiveActionByCharacterId").mockImplementation(
+    async () => activeAction
+  );
+  vi.spyOn(GameRepository.prototype, "findActiveActionForUpdate").mockImplementation(
+    async () => (activeAction?.actionType === "gathering" ? activeAction : null)
+  );
+  vi.spyOn(GameRepository.prototype, "listSyncEvents").mockResolvedValue([]);
+  vi.spyOn(GameRepository.prototype, "listInventory").mockResolvedValue([]);
+  vi.spyOn(GameRepository.prototype, "listEquipment").mockResolvedValue([]);
+  vi.spyOn(GameRepository.prototype, "listItemInstances").mockResolvedValue([]);
+  vi.spyOn(GameRepository.prototype, "listRecentEvents").mockResolvedValue([]);
+  vi.spyOn(GameRepository.prototype, "findMapInstance").mockResolvedValue(null);
+  vi.spyOn(GameRepository.prototype, "writeEvent").mockResolvedValue();
+  vi.spyOn(GameRepository.prototype, "updateCharacterNeeds").mockImplementation(async (update) => {
+    currentCharacter = {
+      ...currentCharacter,
+      hunger: update.hunger,
+      lastHungerSettledAt: update.lastHungerSettledAt
+    };
+  });
+  vi.spyOn(GameRepository.prototype, "updateCharacterVitals").mockImplementation(async (update) => {
+    currentCharacter = {
+      ...currentCharacter,
+      hp: update.hp,
+      ...(update.level === undefined ? {} : { level: update.level }),
+      ...(update.xp === undefined ? {} : { xp: update.xp }),
+      ...(update.injuryUntil === undefined ? {} : { injuryUntil: update.injuryUntil })
+    };
+  });
+  vi.spyOn(GameRepository.prototype, "markActionCompleted").mockImplementation(async () => {
+    if (!activeAction) return false;
+    activeAction = null;
+    return true;
+  });
+
+  vi.spyOn(LobbyRepository.prototype, "listChatMessagesByIds").mockResolvedValue([]);
+  vi.spyOn(LobbyRepository.prototype, "listSystemAnnouncementsByIds").mockResolvedValue([]);
+  vi.spyOn(LobbyRepository.prototype, "listActivePresence").mockResolvedValue([]);
+  vi.spyOn(LobbyRepository.prototype, "listLeaderboard").mockResolvedValue([]);
+}
+
+describe("GameService readable settlement sync", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("returns newly settled hunger state with a positive cursor and no sync event", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-02T08:01:00.000Z"));
+    arrangeReadableSync({
+      character: character({
+        hunger: 5,
+        lastHungerSettledAt: new Date("2026-07-02T07:59:00.000Z"),
+        currentLocation: "blackpine_outpost",
+        position: null
+      })
+    });
+
+    const sync = await new GameService(transactionDb()).getSync("account-1", 41);
+
+    expect(sync.events).toEqual([]);
+    expect(sync.state?.character?.needs.hunger.current).toBe(4);
+  });
+
+  it("returns healed injury state with a positive cursor and no sync event", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-02T08:31:00.000Z"));
+    arrangeReadableSync({
+      character: character({
+        hp: 1,
+        injuryUntil: new Date("2026-07-02T08:30:00.000Z"),
+        lastHungerSettledAt: new Date("2026-07-02T08:01:00.000Z"),
+        currentLocation: "blackpine_outpost",
+        position: null
+      })
+    });
+
+    const sync = await new GameService(transactionDb()).getSync("account-1", 42);
+
+    expect(sync.events).toEqual([]);
+    expect(sync.state?.character).toMatchObject({ hp: 100, injuryUntil: null });
+  });
+
+  it("returns state after a due action ends with a positive cursor and no sync event", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-02T08:02:00.000Z"));
+    arrangeReadableSync({
+      character: character({ lastHungerSettledAt: new Date("2026-07-02T08:01:00.000Z") }),
+      activeAction: combatAction({
+        encounterId: "corrupt_wolf_pack_01",
+        combatLog: [],
+        combatTimeline: [],
+        expectedEndsAtMs: new Date("2026-07-02T08:01:00.000Z").getTime(),
+        outcome: "stalemate",
+        playerRemainingHp: 73,
+        xp: 0,
+        loot: []
+      })
+    });
+
+    const sync = await new GameService(transactionDb()).getSync("account-1", 43);
+
+    expect(sync.events).toEqual([]);
+    expect(sync.state?.currentAction).toBeNull();
+    expect(sync.state?.character?.hp).toBe(73);
+  });
+});
+
+describe("GameService serialized action starts", () => {
   function arrangeLockedActionStart() {
     const calls: string[] = [];
     const lockedCharacter = character({
