@@ -3,9 +3,10 @@ import {
   NPC_DIALOGUE_PROMPT_VERSION,
   type NpcDialoguePromptContext
 } from "@ai-mud/ai-prompts";
-import { FIRST_ITEMS, getNpcByKey } from "@ai-mud/content";
+import { FIRST_ITEMS, getItemById, getNpcByKey } from "@ai-mud/content";
 import {
   decideNpcResourceRequest,
+  formatMoney,
   type NpcResourceRequestDecision
 } from "@ai-mud/game-rules";
 import {
@@ -14,13 +15,18 @@ import {
   type ItemId,
   type NpcDialogueMessageDto,
   type NpcDialogueResponseDto,
+  type NpcDialogueTaskDto,
   type NpcDialogueTargetDto,
   type NpcProfession
 } from "@ai-mud/shared";
 import { createHash } from "node:crypto";
 import type { AiDialogueReply } from "../ai/ai-orchestrator.js";
 import { AI_PURPOSE_POLICIES } from "../ai/ai-purpose-policy.js";
-import type { CharacterRecord, MarketInventoryRecord } from "../game/game.repository.js";
+import type {
+  CharacterRecord,
+  InventoryRecord,
+  MarketInventoryRecord
+} from "../game/game.repository.js";
 import type { VerifiedFavorProfile } from "../npc-memory/npc-memory.service.js";
 import type {
   NpcActionRecord,
@@ -103,6 +109,7 @@ export interface DialogueNpcRepositoryPort {
 
 export interface DialogueTaskRepositoryPort {
   listTasksForCharacter(characterId: string): Promise<NpcTaskRecord[]>;
+  listCharacterInventory(characterId: string): Promise<InventoryRecord[]>;
 }
 
 export interface DialogueAiPort {
@@ -173,10 +180,15 @@ export class DialogueService {
     const character = await this.options.gameRepo.findCharacterByAccountId(accountId);
     if (!character || character.currentLocation !== BLACKPINE_OUTPOST_ID) return [];
 
-    const actors = await this.options.npcRepo.listNpcActors();
+    const [actors, tasks, inventory] = await Promise.all([
+      this.options.npcRepo.listNpcActors(),
+      this.options.taskRepo.listTasksForCharacter(character.id),
+      this.options.taskRepo.listCharacterInventory(character.id)
+    ]);
     const eligible = actors.filter((actor) => this.canTalkTo(actor));
-    const tasks = await this.options.taskRepo.listTasksForCharacter(character.id);
-    const targets = await Promise.all(eligible.map((actor) => this.toTarget(actor, tasks)));
+    const targets = await Promise.all(
+      eligible.map((actor) => this.toTarget(actor, tasks, inventory))
+    );
 
     return targets;
   }
@@ -371,13 +383,15 @@ export class DialogueService {
       throw new DialogueServiceError("VALIDATION_ERROR", "这个 NPC 暂时不能对话。");
     }
 
+    const [tasks, inventory] = await Promise.all([
+      this.options.taskRepo.listTasksForCharacter(character.id),
+      this.options.taskRepo.listCharacterInventory(character.id)
+    ]);
+
     return {
       character,
       npc,
-      target: await this.toTarget(
-        npc,
-        await this.options.taskRepo.listTasksForCharacter(character.id)
-      )
+      target: await this.toTarget(npc, tasks, inventory)
     };
   }
 
@@ -392,7 +406,8 @@ export class DialogueService {
 
   private async toTarget(
     actor: NpcActorRecord,
-    tasks: NpcTaskRecord[]
+    tasks: NpcTaskRecord[],
+    inventory: InventoryRecord[]
   ): Promise<NpcDialogueTargetDto> {
     const visibleTask = findVisibleTaskForNpc(actor.id, tasks);
     return {
@@ -402,9 +417,7 @@ export class DialogueService {
       profession: actor.profession as NpcProfession,
       currentLocation: actor.currentLocation,
       statusLine: await this.buildStatusLine(actor),
-      hasTask: Boolean(visibleTask),
-      taskStatus: visibleTask?.status ?? null,
-      taskTitle: visibleTask?.title ?? null
+      task: visibleTask ? toDialogueTaskDto(visibleTask, inventory) : null
     };
   }
 
@@ -820,6 +833,26 @@ function describeTaskSummary(npcActorId: string, tasks: NpcTaskRecord[]) {
 
   const statusText = task.status === "open" ? "可接取" : "已接取";
   return `真实任务：${task.title}，状态${statusText}，需要 ${describeItem(task.requestedItemId)} x${task.requestedQuantity}，托管奖励 ${task.rewardCopper} 铜。`;
+}
+
+function toDialogueTaskDto(
+  task: VisibleDialogueTask,
+  inventory: InventoryRecord[]
+): NpcDialogueTaskDto {
+  const item = getItemById(task.requestedItemId);
+  return {
+    id: task.id,
+    status: task.status,
+    title: task.title,
+    requestedItem: {
+      itemId: task.requestedItemId,
+      name: item?.name ?? task.requestedItemId,
+      quantity: task.requestedQuantity
+    },
+    playerQuantity:
+      inventory.find((entry) => entry.itemId === task.requestedItemId)?.quantity ?? 0,
+    rewardCopper: formatMoney(task.rewardCopper)
+  };
 }
 
 type HandledResourceDecision = Exclude<

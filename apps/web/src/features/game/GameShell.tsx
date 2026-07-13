@@ -163,9 +163,14 @@ function taskStatusText(status: GameStateDto["npcTasks"][number]["status"]) {
 }
 
 function dialogueTaskHint(target: NpcDialogueTargetDto) {
-  if (!target.hasTask || !target.taskTitle || !target.taskStatus) return null;
-  const status = target.taskStatus === "open" ? "可接取" : "进行中";
-  return `${status}：${target.taskTitle}`;
+  if (!target.task) return null;
+  const status = {
+    open: "可接取",
+    accepted: "进行中",
+    completed: "已完成",
+    expired: "已过期"
+  }[target.task.status];
+  return `${status}：${target.task.title}`;
 }
 
 interface FeedbackNotice {
@@ -458,7 +463,13 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
     setDialogueStatus("正在读取对话...");
     setIsBusy(true);
     try {
-      setDialogue(await getNpcDialogue(npcActorId));
+      const nextDialogue = await getNpcDialogue(npcActorId);
+      setDialogue(nextDialogue);
+      setDialogueTargets((current) =>
+        current.map((target) =>
+          target.npcActorId === nextDialogue.target.npcActorId ? nextDialogue.target : target
+        )
+      );
       setDialogueInput("");
       setDialogueStatus("");
     } catch (caught) {
@@ -476,7 +487,17 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
     setDialogueStatus("正在等待回应...");
     setIsBusy(true);
     try {
-      setDialogue(await sendNpcDialogueMessage(dialogue.target.npcActorId, message, csrfToken));
+      const nextDialogue = await sendNpcDialogueMessage(
+        dialogue.target.npcActorId,
+        message,
+        csrfToken
+      );
+      setDialogue(nextDialogue);
+      setDialogueTargets((current) =>
+        current.map((target) =>
+          target.npcActorId === nextDialogue.target.npcActorId ? nextDialogue.target : target
+        )
+      );
       const refreshed = await getGameSync();
       if (refreshed.state) setState(refreshed.state);
       setDialogueInput("");
@@ -484,6 +505,28 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
     } catch (caught) {
       if (isAuthExpired(caught)) onAuthExpired?.();
       setDialogueStatus(gameErrorMessage(caught, "NPC 暂时没有回应。"));
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function runDialogueTask(action: () => Promise<GameStateDto>) {
+    if (!dialogue) return;
+
+    setDialogueStatus("");
+    setIsBusy(true);
+    try {
+      setState(await action());
+      const nextDialogue = await getNpcDialogue(dialogue.target.npcActorId);
+      setDialogue(nextDialogue);
+      setDialogueTargets((current) =>
+        current.map((target) =>
+          target.npcActorId === nextDialogue.target.npcActorId ? nextDialogue.target : target
+        )
+      );
+    } catch (caught) {
+      if (isAuthExpired(caught)) onAuthExpired?.();
+      setDialogueStatus(gameErrorMessage(caught, "任务操作未完成，请稍后再试。"));
     } finally {
       setIsBusy(false);
     }
@@ -1494,6 +1537,10 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
           }
 
           if (modal.type === "dialogue") {
+            const dialogueTask = dialogue?.target.task ?? null;
+            const taskMaterialGap = dialogueTask
+              ? Math.max(0, dialogueTask.requestedItem.quantity - dialogueTask.playerQuantity)
+              : 0;
             return (
               <section
                 className="dialogue-dialog"
@@ -1521,7 +1568,7 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
                         onClick={() => void openNpcDialogue(target.npcActorId)}
                       >
                         <strong>
-                          {target.hasTask ? "! " : ""}
+                          {target.task?.status === "open" ? "! " : ""}
                           {target.name}
                         </strong>
                         <span>{target.statusLine}</span>
@@ -1535,10 +1582,50 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
                   <section className="dialogue-thread" aria-label="对话记录">
                     {dialogue ? (
                       <>
-                        {dialogueTaskHint(dialogue.target) ? (
-                          <p className="dialogue-task-summary">
-                            {dialogueTaskHint(dialogue.target)}。请在 NPC 任务面板接取或提交。
-                          </p>
+                        {dialogueTask ? (
+                          <section className="dialogue-task-summary" aria-label="NPC 任务">
+                            <strong>{dialogueTaskHint(dialogue.target)}</strong>
+                            <p>
+                              需要 {dialogueTask.requestedItem.name} x
+                              {dialogueTask.requestedItem.quantity}
+                            </p>
+                            <p>奖励 {moneyText(dialogueTask.rewardCopper)}</p>
+                            {taskMaterialGap > 0 ? (
+                              <p className="dialogue-task-gap">还差 {taskMaterialGap} 份材料</p>
+                            ) : null}
+                            {dialogueTask.status === "open" ? (
+                              <div className="dialogue-task-actions">
+                                <button
+                                  type="button"
+                                  className="game-secondary-button"
+                                  disabled={!canInteractWithTasks}
+                                  onClick={() =>
+                                    void runDialogueTask(() =>
+                                      acceptNpcTask(dialogueTask.id, csrfToken)
+                                    )
+                                  }
+                                >
+                                  接取任务
+                                </button>
+                              </div>
+                            ) : null}
+                            {dialogueTask.status === "accepted" ? (
+                              <div className="dialogue-task-actions">
+                                <button
+                                  type="button"
+                                  className="game-secondary-button"
+                                  disabled={!canInteractWithTasks || taskMaterialGap > 0}
+                                  onClick={() =>
+                                    void runDialogueTask(() =>
+                                      completeNpcTask(dialogueTask.id, csrfToken)
+                                    )
+                                  }
+                                >
+                                  提交任务
+                                </button>
+                              </div>
+                            ) : null}
+                          </section>
                         ) : null}
                         <ol>
                           {dialogue.messages.length === 0 ? <li>还没有交谈记录。</li> : null}

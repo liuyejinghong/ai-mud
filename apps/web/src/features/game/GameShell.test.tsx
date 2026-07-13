@@ -167,9 +167,14 @@ const dialogueTargets: NpcDialogueTargetDto[] = [
     profession: "blacksmith",
     currentLocation: "blackpine_outpost",
     statusLine: "正在盘点基础铁矿石库存。",
-    hasTask: true,
-    taskStatus: "open",
-    taskTitle: "炉火缺矿"
+    task: {
+      id: "task-1",
+      status: "open",
+      title: "炉火缺矿",
+      requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
+      playerQuantity: 0,
+      rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 }
+    }
   }
 ];
 
@@ -181,6 +186,14 @@ const emptyDialogue: NpcDialogueResponseDto = {
     provider: "template",
     model: "template",
     fallbackReason: null
+  }
+};
+
+const acceptedDialogue: NpcDialogueResponseDto = {
+  ...emptyDialogue,
+  target: {
+    ...dialogueTargets[0]!,
+    task: { ...dialogueTargets[0]!.task!, status: "accepted" }
   }
 };
 
@@ -729,11 +742,14 @@ describe("GameShell", () => {
     fireEvent.click(await screen.findByRole("button", { name: "附近 NPC" }));
     expect(await screen.findByRole("dialog", { name: "附近 NPC 对话" })).toBeTruthy();
     expect(await screen.findByRole("button", { name: /伯林/ })).toBeTruthy();
-    expect(screen.getByText("可接取：炉火缺矿")).toBeTruthy();
+    expect(screen.getAllByText("可接取：炉火缺矿")).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: /伯林/ }));
     expect(await screen.findByText("还没有交谈记录。")).toBeTruthy();
-    expect(screen.getByText("可接取：炉火缺矿。请在 NPC 任务面板接取或提交。")).toBeTruthy();
+    expect(screen.getAllByText("可接取：炉火缺矿")).toHaveLength(2);
+    expect(screen.getByText("需要 基础铁矿石 x3")).toBeTruthy();
+    expect(screen.getByText("还差 3 份材料")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "接取任务" })).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("对 NPC 说"), {
       target: { value: "最近缺什么？" }
@@ -751,6 +767,34 @@ describe("GameShell", () => {
       );
     });
     expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:3000/game/sync", expect.any(Object));
+  });
+
+  it("accepts a task in the NPC dialogue and refreshes that dialogue once", async () => {
+    const fetchMock = mockFetchWithStates([
+      villageState,
+      dialogueTargets,
+      emptyDialogue,
+      villageState,
+      acceptedDialogue
+    ]);
+    render(<GameShell csrfToken="csrf" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "附近 NPC" }));
+    fireEvent.click(await screen.findByRole("button", { name: /伯林/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "接取任务" }));
+
+    expect(await screen.findByRole("button", { name: "提交任务" })).toHaveProperty(
+      "disabled",
+      true
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:3000/game/npc-tasks/task-1/accept",
+      expect.objectContaining({ method: "POST" })
+    );
+    const dialogueReads = fetchMock.mock.calls.filter(
+      ([url]) => url === "http://127.0.0.1:3000/game/npcs/npc-blacksmith/dialogue"
+    );
+    expect(dialogueReads).toHaveLength(2);
   });
 
   it("renders asset feedback from the sync event stream", async () => {

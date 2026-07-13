@@ -93,7 +93,7 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
   };
   let resourceTransferCalls = 0;
   let failNextResourceTransfer = false;
-  const tasks: NpcTaskRecord[] = [
+  let tasks: NpcTaskRecord[] = [
     {
       id: "task-1",
       npcActorId: "npc-blacksmith",
@@ -197,7 +197,8 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
       ]
     },
     taskRepo: {
-      listTasksForCharacter: async () => tasks
+      listTasksForCharacter: async () => tasks,
+      listCharacterInventory: async () => playerInventory
     },
     ai: {
       replyToNpcDialogue: async (input) => {
@@ -246,6 +247,12 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
     setNpcInventory: (next: typeof npcInventory) => {
       npcInventory = next;
     },
+    setPlayerInventory: (next: InventoryRecord[]) => {
+      playerInventory = next;
+    },
+    setTasks: (next: NpcTaskRecord[]) => {
+      tasks = next;
+    },
     setVerifiedFavorProfile: (next: VerifiedFavorProfile) => {
       verifiedFavorProfile = next;
     },
@@ -284,18 +291,67 @@ describe("DialogueService", () => {
       expect.objectContaining({
         npcActorId: "npc-blacksmith",
         name: "伯林",
-        hasTask: true,
-        taskStatus: "open",
-        taskTitle: "炉火缺矿"
+        task: {
+          id: "task-1",
+          status: "open",
+          title: "炉火缺矿",
+          requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
+          playerQuantity: 0,
+          rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 }
+        }
       }),
       expect.objectContaining({
         npcActorId: "npc-officer",
         name: "艾廉",
-        hasTask: false,
-        taskStatus: null,
-        taskTitle: null
+        task: null
       })
     ]);
+  });
+
+  it("does not leak another NPC's open task into the selected nearby dialogue", async () => {
+    const { service } = buildService();
+
+    const response = await service.getDialogue("account-1", "npc-officer");
+
+    expect(response.target.npcActorId).toBe("npc-officer");
+    expect(response.target.task).toBeNull();
+  });
+
+  it("includes the current player quantity for an accepted task", async () => {
+    const { service, setPlayerInventory, setTasks } = buildService();
+    setPlayerInventory([{ itemId: "iron_ore", quantity: 2 }]);
+    setTasks([
+      {
+        id: "task-accepted",
+        npcActorId: "npc-blacksmith",
+        needType: "ore_shortage",
+        status: "accepted",
+        title: "炉火缺矿",
+        description: "伯林缺少基础铁矿石。",
+        proposalSource: "template",
+        proposalReason: "基础铁矿石不足。",
+        requestedItemId: "iron_ore",
+        requestedQuantity: 3,
+        rewardCopper: 36,
+        escrowCopper: 36,
+        acceptedByCharacterId: "character-1",
+        createdAt: new Date("2026-07-01T11:30:00.000Z"),
+        expiresAt: new Date("2026-07-02T11:30:00.000Z"),
+        acceptedAt: new Date("2026-07-01T11:45:00.000Z"),
+        completedAt: null,
+        cancelledAt: null
+      }
+    ]);
+
+    const response = await service.getDialogue("account-1", "npc-blacksmith");
+
+    expect(response.target.task).toEqual(
+      expect.objectContaining({
+        id: "task-accepted",
+        status: "accepted",
+        playerQuantity: 2
+      })
+    );
   });
 
   it("rejects NPCs outside the allowed dialogue list", async () => {

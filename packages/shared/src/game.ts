@@ -320,6 +320,15 @@ export interface WorldRumorDto {
   expiresAt: string | null;
 }
 
+export interface NpcDialogueTaskDto {
+  id: string;
+  status: "open" | "accepted" | "completed" | "expired";
+  title: string;
+  requestedItem: InventoryItemDto;
+  playerQuantity: number;
+  rewardCopper: MoneyDto;
+}
+
 export interface NpcDialogueTargetDto {
   npcActorId: string;
   npcKey: string;
@@ -327,9 +336,7 @@ export interface NpcDialogueTargetDto {
   profession: NpcProfession;
   currentLocation: GameLocationId;
   statusLine: string;
-  hasTask: boolean;
-  taskStatus: "open" | "accepted" | null;
-  taskTitle: string | null;
+  task: NpcDialogueTaskDto | null;
 }
 
 export interface NpcDialogueMessageDto {

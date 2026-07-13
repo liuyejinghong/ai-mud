@@ -108,9 +108,14 @@ const dialogueTarget: NpcDialogueTargetDto = {
   profession: "blacksmith",
   currentLocation: "blackpine_outpost",
   statusLine: "正在盘点基础铁矿石库存。",
-  hasTask: true,
-  taskStatus: "open",
-  taskTitle: "炉火缺矿"
+  task: {
+    id: "task-1",
+    status: "open",
+    title: "炉火缺矿",
+    requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
+    playerQuantity: 2,
+    rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 }
+  }
 };
 
 const dialogueResponse: NpcDialogueResponseDto = {
@@ -983,6 +988,62 @@ describe("registerGameRoutes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().npcTasks[0].status).toBe("accepted");
     expect(calls).toEqual([{ accountId: "account-1", taskId: "task-1" }]);
+  });
+
+  it("supports one post-accept state result and one dialogue refresh", async () => {
+    const calls: string[] = [];
+    const app = buildGameRouteTestApp({
+      acceptNpcTask: async () => {
+        calls.push("accept");
+        return {
+          ...baseState,
+          npcTasks: [
+            {
+              id: "task-1",
+              npcActorId: "npc-blacksmith",
+              npcName: "伯林",
+              needType: "ore_shortage",
+              status: "accepted",
+              title: "炉火缺矿",
+              description: "伯林缺少基础铁矿石。",
+              proposalSource: "template",
+              proposalReason: "基础铁矿石不足。",
+              requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
+              rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 },
+              acceptedByCharacterId: "character-1",
+              expiresAt: "2026-07-03T08:00:00.000Z",
+              createdAt: "2026-07-02T08:00:00.000Z",
+              acceptedAt: "2026-07-02T08:05:00.000Z",
+              completedAt: null
+            }
+          ]
+        };
+      },
+      getNpcDialogue: async () => {
+        calls.push("dialogue");
+        return {
+          ...dialogueResponse,
+          target: {
+            ...dialogueTarget,
+            task: { ...dialogueTarget.task!, status: "accepted" }
+          }
+        };
+      }
+    });
+
+    const mutation = await app.inject({
+      method: "POST",
+      url: "/game/npc-tasks/task-1/accept",
+      headers: { "x-csrf-token": "csrf" }
+    });
+    const dialogue = await app.inject({
+      method: "GET",
+      url: "/game/npcs/npc-blacksmith/dialogue"
+    });
+
+    expect(mutation.json().npcTasks[0].status).toBe("accepted");
+    expect(dialogue.json().target.task.status).toBe("accepted");
+    expect(calls).toEqual(["accept", "dialogue"]);
   });
 
   it("completes an NPC task through a CSRF-protected mutation", async () => {

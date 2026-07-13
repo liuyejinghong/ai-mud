@@ -949,6 +949,23 @@
   line-height: 1.45;
 }
 
+.dialogue-task-summary > strong {
+  color: #70f49b;
+}
+
+.dialogue-task-summary > p {
+  margin: 6px 0 0;
+}
+
+.dialogue-task-gap {
+  color: #f3d67d;
+}
+
+.dialogue-task-actions {
+  display: flex;
+  margin-top: 8px;
+}
+
 .dialogue-thread ol {
   display: grid;
   gap: 8px;

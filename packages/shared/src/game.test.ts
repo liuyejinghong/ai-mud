@@ -21,6 +21,7 @@ import {
   type AiPurposeStatusDto,
   type NpcDialogueMessageDto,
   type NpcDialogueResponseDto,
+  type NpcDialogueTaskDto,
   type NpcDialogueTargetDto,
   type NpcMemoryEntryDto,
   type NpcMemoryFragmentDto,
@@ -48,8 +49,8 @@ describe("game contract", () => {
 
   it("exposes v0.10.5 world health compatibility", () => {
     expect(PRODUCT_VERSION).toBe("0.10.5");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(37);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(24);
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(38);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(25);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(15);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(12);
@@ -465,9 +466,14 @@ describe("game contract", () => {
       profession: "blacksmith",
       currentLocation: "blackpine_outpost",
       statusLine: "正在盘点基础铁矿石库存。",
-      hasTask: true,
-      taskStatus: "open",
-      taskTitle: "炉火缺矿"
+      task: {
+        id: "task-1",
+        status: "open",
+        title: "炉火缺矿",
+        requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
+        playerQuantity: 2,
+        rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 }
+      }
     };
     const message: NpcDialogueMessageDto = {
       id: "msg-1",
@@ -506,8 +512,8 @@ describe("game contract", () => {
     };
 
     expect(reply.target.name).toBe("伯林");
-    expect(reply.target.hasTask).toBe(true);
-    expect(reply.target.taskTitle).toBe("炉火缺矿");
+    expect(reply.target.task?.status).toBe("open");
+    expect(reply.target.task?.title).toBe("炉火缺矿");
     expect(reply.messages[0]?.speakerType).toBe("npc");
     expect(reply.ai.model).toBe("deepseek-v4-flash");
     expect(audit.status).toBe("success");
@@ -645,5 +651,26 @@ describe("game contract", () => {
     expect(task.proposalReason).toContain("修理活");
     expect(task.requestedItem.itemId).toBe("iron_ore");
     expect(task.rewardCopper.totalCopper).toBe(36);
+  });
+
+  it("describes dialogue task facts without embedding action semantics", () => {
+    const task: NpcDialogueTaskDto = {
+      id: "task-1",
+      status: "completed",
+      title: "炉火缺矿",
+      requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
+      playerQuantity: 0,
+      rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 }
+    };
+
+    expect(task).toEqual({
+      id: "task-1",
+      status: "completed",
+      title: "炉火缺矿",
+      requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
+      playerQuantity: 0,
+      rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 }
+    });
+    expect(Object.keys(task)).not.toContain("action");
   });
 });
