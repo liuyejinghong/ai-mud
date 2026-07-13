@@ -165,6 +165,14 @@ export function returnToVillage(csrfToken: string) {
   });
 }
 
+export function claimMunicipalRelief(csrfToken: string) {
+  return requestGame<GameStateDto>("/game/relief/claim", {
+    method: "POST",
+    headers: { "x-csrf-token": csrfToken },
+    body: JSON.stringify({})
+  });
+}
+
 export function getMarket() {
   return requestGame<MarketDto>("/game/market");
 }

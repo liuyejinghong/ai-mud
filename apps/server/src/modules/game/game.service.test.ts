@@ -30,6 +30,7 @@ function character(overrides: Partial<CharacterRecord> = {}): CharacterRecord {
     copperBalance: 0,
     hunger: 5,
     lastHungerSettledAt: new Date("2026-07-02T08:00:00.000Z"),
+    lastReliefClaimedAt: null,
     currentLocation: "corrupt_forest",
     position: { x: 2, y: 3 },
     injuryUntil: null,
@@ -1231,5 +1232,219 @@ describe("GameService serialized player asset transfers", () => {
 
     expect(buyPath).not.toContain("setMarketInventoryQuantity");
     expect(sellPath).not.toContain("setMarketInventoryQuantity");
+  });
+});
+
+describe("GameService municipal food relief", () => {
+  const now = new Date("2026-07-13T12:00:00.000Z");
+  const marketFood = {
+    id: "market-berry",
+    settlementId: "blackpine_outpost",
+    itemId: "wild_berry" as const,
+    quantity: 10,
+    targetQuantity: 100,
+    baseBuyPriceCopper: 5,
+    baseSellPriceCopper: 8
+  };
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function arrangeClaim(input: {
+    claimant?: Partial<CharacterRecord>;
+    inventory?: Array<{ itemId: string; quantity: number }>;
+    market?: typeof marketFood[];
+    cooldownClaimed?: boolean;
+    marketDebited?: boolean;
+  } = {}) {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const claimant = character({
+      currentLocation: "blackpine_outpost",
+      position: null,
+      hunger: 1,
+      copperBalance: 0,
+      lastHungerSettledAt: now,
+      lastReliefClaimedAt: null,
+      ...input.claimant
+    });
+    const inventory = input.inventory ?? [];
+    const market = input.market ?? [marketFood];
+
+    vi.spyOn(GameRepository.prototype, "findCharacterByAccountIdForUpdate").mockResolvedValue(
+      claimant
+    );
+    vi.spyOn(GameRepository.prototype, "findCharacterByAccountId").mockResolvedValue(claimant);
+    vi.spyOn(GameRepository.prototype, "findActiveActionByCharacterId").mockResolvedValue(null);
+    vi.spyOn(GameRepository.prototype, "listInventory").mockResolvedValue(inventory);
+    vi.spyOn(GameRepository.prototype, "listMarketInventory").mockResolvedValue(market);
+    vi.spyOn(GameRepository.prototype, "upsertMarketInventory").mockResolvedValue();
+    vi.spyOn(GameRepository.prototype, "findMarketInventoryItemForUpdate").mockImplementation(
+      async (_settlementId, itemId) => market.find((item) => item.itemId === itemId) ?? null
+    );
+    const claimCooldown = vi
+      .spyOn(GameRepository.prototype, "claimMunicipalReliefCooldown")
+      .mockResolvedValue(input.cooldownClaimed ?? true);
+    const debitMarket = vi
+      .spyOn(GameRepository.prototype, "decrementMarketInventoryAboveReserve")
+      .mockResolvedValue(input.marketDebited ?? true);
+    const grant = vi
+      .spyOn(GameRepository.prototype, "grantMunicipalReliefItem")
+      .mockResolvedValue();
+    const event = vi.spyOn(GameRepository.prototype, "writeEvent").mockResolvedValue();
+    const copperLedger = vi
+      .spyOn(LedgerService.prototype, "recordCopperTransfer")
+      .mockResolvedValue();
+    vi.spyOn(GameService.prototype as never, "buildState" as never).mockResolvedValue({} as never);
+
+    return { claimCooldown, debitMarket, grant, event, copperLedger };
+  }
+
+  it("claims cooldown ownership before consuming one reserved market food", async () => {
+    const spies = arrangeClaim();
+
+    await new GameService(transactionDb()).claimMunicipalRelief("account-1");
+
+    expect(spies.claimCooldown).toHaveBeenCalledWith({
+      characterId: "character-1",
+      claimedAt: now,
+      cooldownCutoff: new Date("2026-07-12T12:00:00.000Z")
+    });
+    expect(spies.debitMarket).toHaveBeenCalledWith({
+      marketInventoryId: "market-berry",
+      quantity: 1,
+      reserveQuantity: 1
+    });
+    expect(spies.grant).toHaveBeenCalledWith({
+      characterId: "character-1",
+      itemId: "wild_berry",
+      quantity: 1,
+      source: "market",
+      reason: "municipal.relief",
+      metadata: expect.objectContaining({ settlementId: "blackpine_outpost" })
+    });
+    expect(spies.event).toHaveBeenCalledWith(
+      expect.objectContaining({
+        characterId: "character-1",
+        eventType: "municipal.relief.claimed",
+        metadata: expect.objectContaining({ source: "market", itemId: "wild_berry", quantity: 1 })
+      })
+    );
+    expect(spies.copperLedger).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["outside the village", { currentLocation: "old_mine" as const, position: { x: 1, y: 1 } }, [], 0],
+    ["not hungry", { hunger: 2 }, [], 0],
+    ["carrying food", {}, [{ itemId: "wild_berry", quantity: 1 }], 0],
+    ["able to buy food", { copperBalance: 100 }, [], 0],
+    ["inside cooldown", { lastReliefClaimedAt: new Date("2026-07-13T11:00:00.000Z") }, [], 0]
+  ])("rejects %s before claiming cooldown", async (_name, claimant, inventory, _unused) => {
+    const spies = arrangeClaim({ claimant, inventory });
+
+    await expect(
+      new GameService(transactionDb()).claimMunicipalRelief("account-1")
+    ).rejects.toBeInstanceOf(GameServiceError);
+
+    expect(spies.claimCooldown).not.toHaveBeenCalled();
+    expect(spies.grant).not.toHaveBeenCalled();
+    expect(spies.event).not.toHaveBeenCalled();
+  });
+
+  it("rolls back without granting when another concurrent claim owns the cooldown", async () => {
+    const spies = arrangeClaim({ cooldownClaimed: false });
+
+    await expect(
+      new GameService(transactionDb()).claimMunicipalRelief("account-1")
+    ).rejects.toBeInstanceOf(GameServiceError);
+
+    expect(spies.debitMarket).not.toHaveBeenCalled();
+    expect(spies.grant).not.toHaveBeenCalled();
+    expect(spies.event).not.toHaveBeenCalled();
+  });
+
+  it("uses one emergency wild berry only when no ordinary market food is above reserve", async () => {
+    const spies = arrangeClaim({
+      market: [{ ...marketFood, quantity: 1 }],
+      marketDebited: false
+    });
+
+    await new GameService(transactionDb()).claimMunicipalRelief("account-1");
+
+    expect(spies.grant).toHaveBeenCalledWith(
+      expect.objectContaining({
+        characterId: "character-1",
+        itemId: "wild_berry",
+        quantity: 1,
+        source: "system"
+      })
+    );
+    expect(spies.event).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "municipal.relief.claimed",
+        metadata: expect.objectContaining({ source: "system" })
+      })
+    );
+  });
+
+  it.each([
+    {
+      name: "starving claimant",
+      claimant: { hunger: 0 },
+      inventory: [],
+      expected: ["open_market", "claim_relief"]
+    },
+    {
+      name: "injured claimant",
+      claimant: { hunger: 1, injuryUntil: new Date("2026-07-13T12:30:00.000Z") },
+      inventory: [],
+      expected: ["open_market", "claim_relief"]
+    },
+    {
+      name: "claimant carrying food",
+      claimant: { hunger: 0 },
+      inventory: [{ itemId: "wild_berry", quantity: 1 }],
+      expected: ["open_market", "eat_food"]
+    },
+    {
+      name: "claimant able to afford food",
+      claimant: { hunger: 0, copperBalance: 100 },
+      inventory: [],
+      expected: ["open_market"]
+    },
+    {
+      name: "healthy village player",
+      claimant: { hunger: 5 },
+      inventory: [],
+      expected: ["enter_corrupt_forest", "enter_old_mine", "open_market"]
+    }
+  ])("publishes the exact village action matrix for a $name", async ({ claimant, inventory, expected }) => {
+    const service = new GameService({} as Db);
+    const state = await (service as unknown as {
+      buildState(repo: object, accountId: string, now: Date): Promise<{ availableActions: string[] }>;
+    }).buildState(
+      {
+        findCharacterByAccountId: async () =>
+          character({
+            currentLocation: "blackpine_outpost",
+            position: null,
+            lastHungerSettledAt: now,
+            lastReliefClaimedAt: null,
+            ...claimant
+          }),
+        listInventory: async () => inventory,
+        listEquipment: async () => [],
+        listItemInstances: async () => [],
+        listRecentEvents: async () => [],
+        findActiveActionByCharacterId: async () => null,
+        listMarketInventory: async () => [marketFood],
+        upsertMarketInventory: async () => undefined
+      },
+      "account-1",
+      now
+    );
+
+    expect(state.availableActions).toEqual(expected);
   });
 });

@@ -22,6 +22,7 @@ import {
   calculateHungerCombatMultiplier,
   calculateHungerStatus,
   calculateMarketQuote,
+  calculateMunicipalReliefEligibility,
   calculateNextMealAt,
   calculateRepairQuote,
   calculateGatheringPlan,
@@ -75,6 +76,9 @@ import {
 
 const BLACKPINE_MARKET_ID = "blackpine_outpost";
 const ENCOUNTER_VICTORY_COOLDOWN_MS = 10 * 60_000;
+const MUNICIPAL_RELIEF_COOLDOWN_MS = 24 * 60 * 60_000;
+const MUNICIPAL_RELIEF_MARKET_RESERVE = 1;
+const MUNICIPAL_RELIEF_EMERGENCY_ITEM_ID = "wild_berry" as const;
 const STARTER_EQUIPMENT: Array<{
   slot: "weapon" | "chest";
   itemKey: string;
@@ -572,7 +576,7 @@ export class GameService {
         throw new GameServiceError("VALIDATION_ERROR", "未知区域。");
       }
       await this.requireNoActiveAction(repo, character.id);
-      this.requireCanLeaveVillage(character);
+      this.requireCanLeaveVillage(character, now);
       const existingMap = await repo.findMapInstance(character.id, zone.id);
 
       if (!existingMap) {
@@ -846,6 +850,119 @@ export class GameService {
       const repo = new GameRepository(tx);
       const character = await this.requireSettledCharacter(repo, accountId, new Date());
       return this.buildMarketDto(repo, character);
+    });
+  }
+
+  async claimMunicipalRelief(accountId: string): Promise<GameStateDto> {
+    return this.db.transaction(async (tx) => {
+      const repo = new GameRepository(tx);
+      const now = new Date();
+
+      await this.ensureMarketInventory(repo);
+      const marketInventory = await repo.listMarketInventory(BLACKPINE_MARKET_ID);
+      const lockedMarketFood = [];
+      const foodItemIds = marketInventory
+        .filter((entry) => getFoodItemById(entry.itemId) !== null)
+        .map((entry) => entry.itemId)
+        .sort((left, right) => left.localeCompare(right));
+      for (const itemId of foodItemIds) {
+        const marketItem = await repo.findMarketInventoryItemForUpdate(
+          BLACKPINE_MARKET_ID,
+          itemId
+        );
+        if (marketItem) lockedMarketFood.push(marketItem);
+      }
+
+      const character = await this.requireSettledCharacterForUpdate(repo, accountId, now);
+      const inventory = await repo.listInventory(character.id);
+      const foodQuantity = inventory.reduce(
+        (total, entry) => total + (getFoodItemById(entry.itemId) ? entry.quantity : 0),
+        0
+      );
+      const quotedMarketFood = lockedMarketFood
+        .flatMap((marketItem) => {
+          const item = getFoodItemById(marketItem.itemId);
+          if (!item) return [];
+          const quote = calculateMarketQuote({
+            direction: "buy",
+            basePriceCopper: marketItem.baseSellPriceCopper,
+            stockQuantity: marketItem.quantity,
+            targetQuantity: marketItem.targetQuantity,
+            quantity: 1
+          });
+          return [{ item, marketItem, priceCopper: quote.totalCopper }];
+        })
+        .sort(
+          (left, right) =>
+            left.item.itemLevel - right.item.itemLevel ||
+            left.priceCopper - right.priceCopper ||
+            left.item.id.localeCompare(right.item.id)
+        );
+      const cheapestFoodPriceCopper = quotedMarketFood
+        .filter((entry) => entry.marketItem.quantity > 0)
+        .reduce<number | null>(
+          (cheapest, entry) =>
+            cheapest === null ? entry.priceCopper : Math.min(cheapest, entry.priceCopper),
+          null
+        );
+      const eligibility = calculateMunicipalReliefEligibility({
+        inVillage:
+          character.currentLocation === BLACKPINE_OUTPOST.id && character.position === null,
+        hunger: character.hunger,
+        foodQuantity,
+        copperBalance: character.copperBalance,
+        cheapestFoodPriceCopper,
+        lastClaimedAt: character.lastReliefClaimedAt,
+        now
+      });
+      if (!eligibility.eligible) {
+        throw new GameServiceError("VALIDATION_ERROR", "当前不符合市政救济领取条件。");
+      }
+
+      const cooldownClaimed = await repo.claimMunicipalReliefCooldown({
+        characterId: character.id,
+        claimedAt: now,
+        cooldownCutoff: new Date(now.getTime() - MUNICIPAL_RELIEF_COOLDOWN_MS)
+      });
+      if (!cooldownClaimed) {
+        throw new GameServiceError("VALIDATION_ERROR", "市政救济领取冷却尚未结束。");
+      }
+
+      let grantedItemId: MarketTradeRequestDto["itemId"] = MUNICIPAL_RELIEF_EMERGENCY_ITEM_ID;
+      let source: "market" | "system" = "system";
+      let marketInventoryId: string | null = null;
+      for (const candidate of quotedMarketFood) {
+        const debited = await repo.decrementMarketInventoryAboveReserve({
+          marketInventoryId: candidate.marketItem.id,
+          quantity: 1,
+          reserveQuantity: MUNICIPAL_RELIEF_MARKET_RESERVE
+        });
+        if (!debited) continue;
+        grantedItemId = candidate.item.id;
+        source = "market";
+        marketInventoryId = candidate.marketItem.id;
+        break;
+      }
+
+      await repo.grantMunicipalReliefItem({
+        characterId: character.id,
+        itemId: grantedItemId,
+        quantity: 1,
+        source,
+        reason: "municipal.relief",
+        metadata: {
+          settlementId: BLACKPINE_MARKET_ID,
+          ...(marketInventoryId ? { marketInventoryId } : { emergency: true })
+        }
+      });
+      await repo.writeEvent({
+        characterId: character.id,
+        eventType: "municipal.relief.claimed",
+        message: `你领取了市政救济口粮：${getItemById(grantedItemId)?.name ?? grantedItemId} x1。`,
+        metadata: { source, itemId: grantedItemId, quantity: 1 }
+      });
+
+      return this.buildState(repo, accountId, now);
     });
   }
 
@@ -1401,8 +1518,11 @@ export class GameService {
     };
   }
 
-  private requireCanLeaveVillage(character: CharacterRecord) {
-    if (character.hunger <= 0) {
+  private requireCanLeaveVillage(character: CharacterRecord, now: Date) {
+    if (character.injuryUntil && character.injuryUntil.getTime() > now.getTime()) {
+      throw new GameServiceError("VALIDATION_ERROR", "你正在养伤，暂时不能出城。");
+    }
+    if (character.hunger <= 1) {
       throw new GameServiceError("VALIDATION_ERROR", "你已经饿到虚弱，不能出城。");
     }
   }
@@ -1958,18 +2078,54 @@ export class GameService {
     const currentZone = character.position ? getZoneById(character.currentLocation) : null;
 
     if (!currentZone || !character.position) {
+      const hasFood = inventory.some(
+        (item) => item.quantity > 0 && getFoodItemById(item.itemId) !== null
+      );
+      const injuryActive =
+        character.injuryUntil !== null && character.injuryUntil.getTime() > now.getTime();
+      const recoveryBlocked = character.hunger <= 1 || injuryActive;
       const availableActions: GameStateDto["availableActions"] = currentAction
         ? ["cancel_action"]
-        : ["enter_corrupt_forest", "enter_old_mine", "open_market"];
+        : recoveryBlocked
+          ? ["open_market"]
+          : ["enter_corrupt_forest", "enter_old_mine", "open_market"];
       if (!currentAction && equipmentDto.some((item) => item.repairQuote !== null)) {
         availableActions.push("repair_equipment");
       }
+      if (!currentAction && character.hunger < 5 && hasFood) {
+        availableActions.push("eat_food");
+      }
       if (
         !currentAction &&
-        character.hunger < 5 &&
-        inventory.some((item) => getItemById(item.itemId)?.category === "food")
+        character.currentLocation === BLACKPINE_OUTPOST.id &&
+        character.hunger <= 1 &&
+        !hasFood
       ) {
-        availableActions.push("eat_food");
+        const marketInventory = await repo.listMarketInventory(BLACKPINE_MARKET_ID);
+        const cheapestFoodPriceCopper = marketInventory.reduce<number | null>(
+          (cheapest, marketItem) => {
+            if (marketItem.quantity < 1 || !getFoodItemById(marketItem.itemId)) return cheapest;
+            const quote = calculateMarketQuote({
+              direction: "buy",
+              basePriceCopper: marketItem.baseSellPriceCopper,
+              stockQuantity: marketItem.quantity,
+              targetQuantity: marketItem.targetQuantity,
+              quantity: 1
+            });
+            return cheapest === null ? quote.totalCopper : Math.min(cheapest, quote.totalCopper);
+          },
+          null
+        );
+        const reliefEligibility = calculateMunicipalReliefEligibility({
+          inVillage: true,
+          hunger: character.hunger,
+          foodQuantity: 0,
+          copperBalance: character.copperBalance,
+          cheapestFoodPriceCopper,
+          lastClaimedAt: character.lastReliefClaimedAt,
+          now
+        });
+        if (reliefEligibility.eligible) availableActions.push("claim_relief");
       }
 
       return {

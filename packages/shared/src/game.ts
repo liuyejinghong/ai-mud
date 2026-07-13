@@ -593,6 +593,7 @@ export interface GameStateDto {
     | "repair_equipment"
     | "eat_food"
     | "view_npc_tasks"
+    | "claim_relief"
   >;
   log: GameLogEntryDto[];
 }

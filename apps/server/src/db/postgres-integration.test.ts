@@ -20,6 +20,7 @@ const drizzleDir = join(serverRoot, "drizzle");
 const journalPath = join(drizzleDir, "meta", "_journal.json");
 
 const requiredColumns: RequiredColumn[] = [
+  { tableName: "characters", columnName: "last_relief_claimed_at" },
   { tableName: "npc_tasks", columnName: "proposal_source" },
   { tableName: "npc_tasks", columnName: "proposal_reason" },
   { tableName: "world_resource_nodes", columnName: "last_refreshed_at" },

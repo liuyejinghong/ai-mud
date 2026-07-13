@@ -7,7 +7,7 @@ import type {
   GridPositionDto,
   ItemId
 } from "@ai-mud/shared";
-import { and, asc, desc, eq, gt, gte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, isNull, lte, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import {
   characterActions,
@@ -40,6 +40,7 @@ export interface CharacterRecord {
   copperBalance: number;
   hunger: number;
   lastHungerSettledAt: Date;
+  lastReliefClaimedAt: Date | null;
   currentLocation: GameLocationId;
   position: GridPositionDto | null;
   injuryUntil: Date | null;
@@ -395,6 +396,7 @@ function mapCharacterRow(row: typeof characters.$inferSelect): CharacterRecord {
     copperBalance: row.copperBalance,
     hunger: serializeHunger(row.hunger),
     lastHungerSettledAt: row.lastHungerSettledAt,
+    lastReliefClaimedAt: row.lastReliefClaimedAt,
     currentLocation: row.currentLocation,
     position: parsePosition(row.position),
     injuryUntil: row.injuryUntil
@@ -492,6 +494,7 @@ export class GameRepository {
       copperBalance: row.copperBalance,
       hunger: serializeHunger(row.hunger),
       lastHungerSettledAt: row.lastHungerSettledAt,
+      lastReliefClaimedAt: row.lastReliefClaimedAt,
       currentLocation: row.currentLocation,
       position: parsePosition(row.position),
       injuryUntil: row.injuryUntil
@@ -526,6 +529,27 @@ export class GameRepository {
         and(
           eq(characters.id, input.characterId),
           gte(characters.copperBalance, input.amount)
+        )
+      )
+      .returning({ id: characters.id });
+    return rows.length > 0;
+  }
+
+  async claimMunicipalReliefCooldown(input: {
+    characterId: string;
+    claimedAt: Date;
+    cooldownCutoff: Date;
+  }): Promise<boolean> {
+    const rows = await this.db
+      .update(characters)
+      .set({ lastReliefClaimedAt: input.claimedAt })
+      .where(
+        and(
+          eq(characters.id, input.characterId),
+          or(
+            isNull(characters.lastReliefClaimedAt),
+            lte(characters.lastReliefClaimedAt, input.cooldownCutoff)
+          )
         )
       )
       .returning({ id: characters.id });
@@ -624,6 +648,42 @@ export class GameRepository {
       quantity: input.quantity,
       reason: input.reason,
       ...(input.metadata ? { metadata: input.metadata } : {})
+    });
+  }
+
+  async grantMunicipalReliefItem(input: {
+    characterId: string;
+    itemId: ItemId;
+    quantity: number;
+    source: "market" | "system";
+    reason: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    const itemRepo = new ItemRepository(this.db, false);
+    const owner = { ownerType: "character" as const, ownerId: input.characterId };
+    const metadata = { ...(input.metadata ?? {}), source: input.source };
+
+    await itemRepo.grantStackable({ owner, itemId: input.itemId, quantity: input.quantity });
+    await itemRepo.writeLedger({
+      operation: input.source === "market" ? "transfer" : "grant",
+      itemDefId: input.itemId,
+      quantity: input.quantity,
+      fromOwner: { ownerType: input.source, ownerId: null },
+      toOwner: owner,
+      reason: input.reason,
+      metadata
+    });
+    await itemRepo.writeSyncEvent({
+      owner,
+      eventType: "item.grant",
+      stateDirty: true,
+      payload: {
+        itemId: input.itemId,
+        quantity: input.quantity,
+        reason: input.reason,
+        source: input.source
+      },
+      source: "server"
     });
   }
 
@@ -934,6 +994,27 @@ export class GameRepository {
         and(
           eq(marketInventory.id, input.marketInventoryId),
           gte(marketInventory.quantity, input.quantity)
+        )
+      )
+      .returning({ id: marketInventory.id });
+    return rows.length > 0;
+  }
+
+  async decrementMarketInventoryAboveReserve(input: {
+    marketInventoryId: string;
+    quantity: number;
+    reserveQuantity: number;
+  }): Promise<boolean> {
+    const rows = await this.db
+      .update(marketInventory)
+      .set({
+        quantity: sql`${marketInventory.quantity} - ${input.quantity}`,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(marketInventory.id, input.marketInventoryId),
+          gte(marketInventory.quantity, input.reserveQuantity + input.quantity)
         )
       )
       .returning({ id: marketInventory.id });

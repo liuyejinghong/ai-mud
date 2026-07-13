@@ -181,6 +181,7 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
     startCombat: async () => baseState,
     cancelAction: async () => baseState,
     returnToVillage: async () => baseState,
+    claimMunicipalRelief: async () => baseState,
     getMarket: async () => marketState,
     buyMarketItem: async () => baseState,
     sellMarketItem: async () => baseState,
@@ -1143,6 +1144,74 @@ describe("registerGameRoutes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(calls).toEqual([{ accountId: "account-1" }]);
+  });
+
+  it("claims municipal relief through a CSRF-protected empty-body mutation", async () => {
+    const calls: string[] = [];
+    const app = buildGameRouteTestApp({
+      claimMunicipalRelief: async (accountId) => {
+        calls.push(accountId);
+        return baseState;
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/relief/claim",
+      headers: { "x-csrf-token": "csrf" },
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(baseState);
+    expect(calls).toEqual(["account-1"]);
+  });
+
+  it("rejects municipal relief claims without a mutation token", async () => {
+    const calls: string[] = [];
+    const app = buildGameRouteTestApp({
+      verifyGameMutation: async () => false,
+      claimMunicipalRelief: async (accountId) => {
+        calls.push(accountId);
+        return baseState;
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/relief/claim",
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(calls).toEqual([]);
+  });
+
+  it.each([
+    { item: "bread" },
+    { quantity: 1 },
+    { unexpected: true }
+  ])("rejects non-empty municipal relief claim bodies: %j", async (payload) => {
+    const calls: string[] = [];
+    const app = buildGameRouteTestApp({
+      claimMunicipalRelief: async (accountId) => {
+        calls.push(accountId);
+        return baseState;
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/game/relief/claim",
+      headers: { "x-csrf-token": "csrf" },
+      payload
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: { code: "VALIDATION_ERROR", message: "Invalid relief claim input" }
+    });
+    expect(calls).toEqual([]);
   });
 
   it("equips a backpack equipment instance through a CSRF-protected mutation", async () => {

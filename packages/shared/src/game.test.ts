@@ -48,10 +48,10 @@ describe("game contract", () => {
 
   it("exposes v0.10.5 world health compatibility", () => {
     expect(PRODUCT_VERSION).toBe("0.10.5");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(36);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(23);
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(37);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(24);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
-    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(14);
+    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(15);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(12);
     expect(WORLD_COMPATIBILITY.promptVersion).toBe(8);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(4);
@@ -211,7 +211,8 @@ describe("game contract", () => {
         "open_market",
         "repair_equipment",
         "eat_food",
-        "view_npc_tasks"
+        "view_npc_tasks",
+        "claim_relief"
       ],
       npcTasks: [],
       equipment: [
@@ -261,6 +262,7 @@ describe("game contract", () => {
     expect(state.availableActions).toContain("repair_equipment");
     expect(state.availableActions).toContain("eat_food");
     expect(state.availableActions).toContain("view_npc_tasks");
+    expect(state.availableActions).toContain("claim_relief");
     expect(state.equipment[0]?.durabilityPct).toBe(100);
     expect(state.market?.items[0]?.itemId).toBe("iron_ore");
     expect(state.currentAction).toBeNull();

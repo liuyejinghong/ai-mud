@@ -125,6 +125,7 @@ export const characters = pgTable(
     currentLocation: gameLocation("current_location").notNull().default("blackpine_outpost"),
     position: jsonb("position"),
     injuryUntil: timestamp("injury_until", { withTimezone: true }),
+    lastReliefClaimedAt: timestamp("last_relief_claimed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({

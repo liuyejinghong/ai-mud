@@ -115,6 +115,11 @@ describe("foundation schema", () => {
     expect(characters.lastHungerSettledAt.getSQLType()).toBe("timestamp with time zone");
   });
 
+  it("stores the nullable timestamp of the latest municipal relief claim", () => {
+    expect(characters.lastReliefClaimedAt.getSQLType()).toBe("timestamp with time zone");
+    expect(characters.lastReliefClaimedAt.notNull).toBe(false);
+  });
+
   it("stores equipment durability as per-character item instances", () => {
     expect(characterEquipment.slot.getSQLType()).toBe("text");
     expect(characterEquipment.currentDurability.getSQLType()).toBe("integer");

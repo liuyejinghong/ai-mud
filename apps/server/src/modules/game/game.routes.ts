@@ -98,6 +98,8 @@ const lobbyChatSchema = z.object({
   body: z.string().trim().min(1).max(240)
 });
 
+const municipalReliefClaimSchema = z.object({}).strict();
+
 const gameSyncQuerySchema = z.object({
   cursor: z.coerce.number().int().min(0).optional()
 });
@@ -117,6 +119,7 @@ export interface GameRouteDependencies {
   startCombat(accountId: string): Promise<GameStateDto>;
   cancelAction(accountId: string): Promise<GameStateDto>;
   returnToVillage(accountId: string): Promise<GameStateDto>;
+  claimMunicipalRelief(accountId: string): Promise<GameStateDto>;
   getMarket(accountId: string): Promise<MarketDto>;
   buyMarketItem(accountId: string, input: MarketTradeRequestDto): Promise<GameStateDto>;
   sellMarketItem(accountId: string, input: MarketTradeRequestDto): Promise<GameStateDto>;
@@ -270,6 +273,8 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
       enrichState(accountId, await game.cancelAction(accountId)),
     returnToVillage: async (accountId) =>
       enrichState(accountId, await game.returnToVillage(accountId)),
+    claimMunicipalRelief: async (accountId) =>
+      enrichState(accountId, await game.claimMunicipalRelief(accountId)),
     getMarket: (accountId) => game.getMarket(accountId),
     buyMarketItem: async (accountId, input) =>
       enrichState(accountId, await game.buyMarketItem(accountId, input)),
@@ -510,6 +515,23 @@ export async function registerGameRoutes(app: FastifyInstance, maybeDependencies
 
     try {
       return await deps.returnToVillage(account.id);
+    } catch (error) {
+      return handleGameError(reply, error);
+    }
+  });
+
+  app.post("/game/relief/claim", async (request, reply) => {
+    const account = await requireAccount(deps, request, reply);
+    if (!account) return reply;
+    if (!(await requireMutationToken(deps, request, reply))) return reply;
+
+    const parsed = municipalReliefClaimSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "Invalid relief claim input");
+    }
+
+    try {
+      return await deps.claimMunicipalRelief(account.id);
     } catch (error) {
       return handleGameError(reply, error);
     }

@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GameApiError, getGameState, heartbeatPresence, sendLobbyChat } from "./gameApi";
+import {
+  claimMunicipalRelief,
+  GameApiError,
+  getGameState,
+  heartbeatPresence,
+  sendLobbyChat
+} from "./gameApi";
 
 describe("gameApi", () => {
   afterEach(() => {
@@ -82,6 +88,25 @@ describe("gameApi", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "http://127.0.0.1:3000/game/presence/heartbeat",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({}),
+        headers: expect.objectContaining({ "x-csrf-token": "csrf" })
+      })
+    );
+  });
+
+  it("claims municipal relief with an empty JSON body", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ character: null })
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await claimMunicipalRelief("csrf");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:3000/game/relief/claim",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({}),

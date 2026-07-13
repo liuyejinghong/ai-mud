@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ItemRepository } from "../item/item.repository.js";
 import {
   GameRepository,
   parseActionPayload,
@@ -352,6 +353,20 @@ describe("GameRepository affected-row contracts", () => {
       "market inventory",
       "decrementMarketInventoryIfAvailable",
       { marketInventoryId: "market-1", quantity: 2 }
+    ],
+    [
+      "municipal relief cooldown",
+      "claimMunicipalReliefCooldown",
+      {
+        characterId: "character-1",
+        claimedAt: new Date("2026-07-13T12:00:00.000Z"),
+        cooldownCutoff: new Date("2026-07-12T12:00:00.000Z")
+      }
+    ],
+    [
+      "relief market reserve",
+      "decrementMarketInventoryAboveReserve",
+      { marketInventoryId: "market-1", quantity: 1, reserveQuantity: 1 }
     ]
   ])("returns false when the %s conditional debit affects no row", async (_label, method, input) => {
     const repository = new GameRepository(createUpdateDb([[]]) as never);
@@ -387,5 +402,55 @@ describe("GameRepository affected-row contracts", () => {
 
     await expect(repository.markActionCancelled("action-1", cancelledAt)).resolves.toBe(true);
     await expect(repository.markActionCancelled("action-1", cancelledAt)).resolves.toBe(false);
+  });
+});
+
+describe("GameRepository municipal relief audit", () => {
+  it.each([
+    ["market", "transfer", "market"],
+    ["system", "grant", "system"]
+  ] as const)("records a %s source item ledger and character sync event", async (source, operation, ownerType) => {
+    const grantStackable = vi.spyOn(ItemRepository.prototype, "grantStackable").mockResolvedValue();
+    const writeLedger = vi.spyOn(ItemRepository.prototype, "writeLedger").mockResolvedValue();
+    const writeSyncEvent = vi.spyOn(ItemRepository.prototype, "writeSyncEvent").mockResolvedValue();
+    const repository = new GameRepository({} as never);
+
+    await repository.grantMunicipalReliefItem({
+      characterId: "character-1",
+      itemId: "wild_berry",
+      quantity: 1,
+      source,
+      reason: "municipal.relief",
+      metadata: { settlementId: "blackpine_outpost" }
+    });
+
+    expect(grantStackable).toHaveBeenCalledWith({
+      owner: { ownerType: "character", ownerId: "character-1" },
+      itemId: "wild_berry",
+      quantity: 1
+    });
+    expect(writeLedger).toHaveBeenCalledWith({
+      operation,
+      itemDefId: "wild_berry",
+      quantity: 1,
+      fromOwner: { ownerType, ownerId: null },
+      toOwner: { ownerType: "character", ownerId: "character-1" },
+      reason: "municipal.relief",
+      metadata: { settlementId: "blackpine_outpost", source }
+    });
+    expect(writeSyncEvent).toHaveBeenCalledWith({
+      owner: { ownerType: "character", ownerId: "character-1" },
+      eventType: "item.grant",
+      stateDirty: true,
+      payload: {
+        itemId: "wild_berry",
+        quantity: 1,
+        reason: "municipal.relief",
+        source
+      },
+      source: "server"
+    });
+
+    vi.restoreAllMocks();
   });
 });
