@@ -1214,3 +1214,260 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* HUD acceptance contract: the browser viewport is the frame; panels own their scroll. */
+.game-shell {
+  height: 100dvh;
+  min-height: 0;
+  grid-template-columns: minmax(230px, 290px) minmax(0, 1fr) minmax(240px, 300px);
+  overflow: hidden;
+}
+
+.game-column {
+  min-height: 0;
+  max-height: none;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.game-main-panel {
+  min-height: 0;
+  max-height: none;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.game-main-panel > .world-scene-panel {
+  flex: 1 1 0;
+  min-height: 180px;
+}
+
+.game-main-panel > .quick-action-panel,
+.game-main-panel > .active-action-panel,
+.game-main-panel > .npc-task-tracker,
+.game-main-panel > .sync-feedback-list,
+.game-main-panel > .game-error {
+  flex: 0 0 auto;
+}
+
+.event-log-panel {
+  flex: 0 0 200px;
+  min-height: 160px;
+}
+
+.game-log {
+  min-height: 0;
+}
+
+.auxiliary-toggle {
+  display: none;
+  align-self: flex-end;
+  min-height: 34px;
+  border: 1px solid rgba(119, 184, 160, 0.5);
+  background: rgba(3, 14, 9, 0.84);
+  color: #d7ffe4;
+  cursor: pointer;
+  font: inherit;
+  padding: 0 10px;
+}
+
+.auxiliary-close {
+  display: none;
+  justify-self: end;
+  min-height: 30px;
+  border: 1px solid rgba(216, 167, 53, 0.6);
+  background: rgba(77, 55, 12, 0.72);
+  color: #ffd98a;
+  cursor: pointer;
+  font: inherit;
+  padding: 0 9px;
+}
+
+.auxiliary-preview {
+  border: 1px solid rgba(119, 184, 160, 0.3);
+  background: rgba(3, 14, 9, 0.58);
+  margin-bottom: 0;
+  padding: 10px;
+}
+
+.auxiliary-preview p,
+.auxiliary-preview ul {
+  color: #d8dce0;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 7px 0 0;
+}
+
+.auxiliary-preview ul {
+  display: grid;
+  gap: 5px;
+  padding-left: 18px;
+}
+
+.tutorial-guide {
+  flex: 0 0 auto;
+  border: 1px solid rgba(216, 167, 53, 0.58);
+  background: rgba(20, 15, 6, 0.52);
+  padding: 10px 12px;
+}
+
+.tutorial-guide-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.tutorial-guide-actions .game-secondary-button {
+  min-height: 28px;
+  padding: 0 9px;
+}
+
+.tutorial-guide-current {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+  border-left: 3px solid #d8a735;
+  color: #f3d67d;
+  padding-left: 9px;
+}
+
+.tutorial-guide-current p {
+  color: #d8dce0;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+@media (max-width: 1199px) {
+  .game-shell {
+    grid-template-columns: minmax(220px, 270px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .game-character-panel {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .game-main-panel {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .auxiliary-toggle {
+    display: inline-flex;
+  }
+
+  .game-map-panel {
+    position: fixed;
+    z-index: 40;
+    top: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: min(360px, calc(100vw - 24px));
+    height: auto;
+    box-sizing: border-box;
+    max-height: none;
+    padding: 12px;
+    border: 1px solid #1bd05d;
+    background: rgba(1, 12, 7, 0.98);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6), inset 0 0 22px rgba(27, 208, 93, 0.06);
+    transform: translateX(calc(100% + 24px));
+    transition: transform 160ms ease;
+  }
+
+  .game-map-panel.is-open {
+    transform: translateX(0);
+  }
+
+  .game-map-panel .auxiliary-close {
+    display: block;
+  }
+
+  .game-map-panel .nav-map-panel {
+    min-height: 0;
+  }
+
+  .market-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .game-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(180px, 34vh) minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .game-character-panel {
+    grid-column: 1;
+    grid-row: 1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+  }
+
+  .game-main-panel {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .game-main-panel > .world-scene-panel {
+    min-height: 150px;
+  }
+
+  .world-scene-panel {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .scene-copy {
+    max-height: 150px;
+  }
+
+  .scene-object-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .event-log-panel {
+    flex-basis: 160px;
+    min-height: 130px;
+  }
+
+  .npc-task-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .npc-task-tracker-list li {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .game-character-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .scene-object-list {
+    grid-template-columns: 1fr;
+  }
+
+  .duration-select,
+  .duration-select select,
+  .duration-select button {
+    width: 100%;
+  }
+
+  .duration-select {
+    flex-direction: column;
+  }
+}
+
+.modal-backdrop {
+  z-index: 100;
+}

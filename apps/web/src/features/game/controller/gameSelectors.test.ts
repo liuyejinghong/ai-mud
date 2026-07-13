@@ -354,11 +354,11 @@ describe("selectAvailablePrimaryActions", () => {
       { id: "start_combat", label: "开始战斗" },
       { id: "cancel_action", label: "取消行动" },
       { id: "return_to_village", label: "返回哨站" },
-      { id: "open_market", label: "前往市政集市" },
+      { id: "open_market", label: "市政集市" },
       { id: "repair_equipment", label: "修理装备" },
       { id: "eat_food", label: "进食" },
       { id: "view_npc_tasks", label: "查看委托" },
-      { id: "claim_relief", label: "申请市政救济" }
+      { id: "claim_relief", label: "领取市政救济" }
     ]);
   });
 

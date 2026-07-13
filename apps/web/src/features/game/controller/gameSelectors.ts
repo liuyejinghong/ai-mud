@@ -34,11 +34,11 @@ const ACTION_LABELS = {
   start_combat: "开始战斗",
   cancel_action: "取消行动",
   return_to_village: "返回哨站",
-  open_market: "前往市政集市",
+  open_market: "市政集市",
   repair_equipment: "修理装备",
   eat_food: "进食",
   view_npc_tasks: "查看委托",
-  claim_relief: "申请市政救济"
+  claim_relief: "领取市政救济"
 } satisfies Record<AvailableActionId, string>;
 
 function asSentence(text: string) {
