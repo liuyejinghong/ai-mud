@@ -155,16 +155,18 @@ export class LobbyService {
       .filter((event) => event.eventType === "system.announcement")
       .map((event) => event.payload.announcementId)
       .filter((value): value is string => typeof value === "string");
-    const [chat, announcements, presence, level, wealth] = await Promise.all([
-      this.repo.listChatMessagesByIds(Array.from(new Set(chatIds))),
-      this.repo.listSystemAnnouncementsByIds(Array.from(new Set(announcementIds))),
-      this.repo.listActivePresence({
-        since: new Date((input.now ?? this.now()).getTime() - LOBBY_PRESENCE_WINDOW_MS),
-        limit: 50
-      }),
-      this.repo.listLeaderboard("level", LOBBY_LEADERBOARD_LIMIT),
-      this.repo.listLeaderboard("wealth", LOBBY_LEADERBOARD_LIMIT)
-    ]);
+    // Game sync calls this through a transaction-scoped repository, whose PostgreSQL client only
+    // accepts one query at a time. Keeping these reads ordered preserves that contract.
+    const chat = await this.repo.listChatMessagesByIds(Array.from(new Set(chatIds)));
+    const announcements = await this.repo.listSystemAnnouncementsByIds(
+      Array.from(new Set(announcementIds))
+    );
+    const presence = await this.repo.listActivePresence({
+      since: new Date((input.now ?? this.now()).getTime() - LOBBY_PRESENCE_WINDOW_MS),
+      limit: 50
+    });
+    const level = await this.repo.listLeaderboard("level", LOBBY_LEADERBOARD_LIMIT);
+    const wealth = await this.repo.listLeaderboard("wealth", LOBBY_LEADERBOARD_LIMIT);
 
     return {
       chat: [...chat.map(toChatDto), ...announcements.map(toSystemChatDto)].sort(

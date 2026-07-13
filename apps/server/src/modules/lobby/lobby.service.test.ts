@@ -168,6 +168,31 @@ describe("LobbyService", () => {
     expect(payload.leaderboards.wealth?.[0]?.characterName).toBe("Zichen");
   });
 
+  it("serializes reads when the repository is backed by one transaction client", async () => {
+    let queryInFlight = false;
+    const serialize = async <T>(value: T) => {
+      if (queryInFlight) throw new Error("transaction client received concurrent queries");
+      queryInFlight = true;
+      await Promise.resolve();
+      queryInFlight = false;
+      return value;
+    };
+    const service = new LobbyService(
+      makeRepo({
+        listChatMessagesByIds: async () => serialize([]),
+        listSystemAnnouncementsByIds: async () => serialize([]),
+        listActivePresence: async () => serialize([]),
+        listLeaderboard: async () => serialize([])
+      })
+    );
+
+    await expect(service.buildSyncPayload({ events: [] })).resolves.toEqual({
+      chat: [],
+      presence: [],
+      leaderboards: { level: [], wealth: [] }
+    });
+  });
+
   it("adds system announcements from the public sync stream without a fake character row", async () => {
     const service = new LobbyService(
       makeRepo({
