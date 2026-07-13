@@ -1,7 +1,7 @@
 .game-shell {
   height: 100vh;
   display: grid;
-  grid-template-columns: minmax(230px, 280px) minmax(0, 1fr) minmax(230px, 300px);
+  grid-template-columns: minmax(230px, 290px) minmax(0, 1fr) minmax(240px, 300px);
   gap: 12px;
   padding: 12px;
   box-sizing: border-box;
@@ -36,7 +36,10 @@
   padding: 16px;
   min-width: 0;
   max-height: calc(100vh - 24px);
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .game-column {
@@ -418,42 +421,114 @@
 
 .location-header {
   border-bottom: 1px solid rgba(27, 208, 93, 0.28);
-  margin-bottom: 14px;
+  margin-bottom: 0;
+  flex: 0 0 auto;
 }
 
-.location-map-card,
-.beginner-guide-panel {
+.world-scene-panel,
+.quick-action-panel {
   border: 1px solid rgba(119, 184, 160, 0.38);
   background: rgba(3, 14, 9, 0.58);
   padding: 12px;
 }
 
-.location-map-card {
-  margin: 12px 0 14px;
-}
-
-.location-map-card .mini-map {
-  max-width: 220px;
-}
-
-.beginner-guide-panel {
-  margin-bottom: 14px;
-}
-
-.beginner-guide-panel ul {
+.world-scene-panel {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
-  gap: 6px;
-  margin: 8px 0 0;
-  padding-left: 18px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(240px, 0.75fr);
+  gap: 12px;
+}
+
+.scene-narrative,
+.scene-decision-panel {
+  min-height: 0;
+  border: 1px solid rgba(119, 184, 160, 0.22);
+  background: rgba(1, 8, 5, 0.52);
+  padding: 12px;
+}
+
+.scene-narrative {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.scene-copy {
+  min-height: 0;
+  overflow: auto;
   color: #d8dce0;
+  line-height: 1.75;
+}
+
+.scene-copy p {
+  margin-bottom: 10px;
+}
+
+.scene-object-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.scene-object-card {
+  min-height: 58px;
+  border: 1px solid rgba(119, 184, 160, 0.3);
+  background: rgba(7, 35, 18, 0.56);
+  padding: 9px 10px;
+}
+
+.scene-object-card strong {
+  display: block;
+  color: #f3d67d;
+  margin-bottom: 5px;
+}
+
+.scene-object-card span,
+.decision-copy {
+  color: #b8c9bd;
+  font-size: 12px;
   line-height: 1.5;
+}
+
+.scene-decision-panel {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 10px;
+}
+
+.scene-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.scene-tags span {
+  border: 1px solid rgba(216, 167, 53, 0.5);
+  background: rgba(77, 55, 12, 0.35);
+  color: #ffd98a;
+  padding: 3px 7px;
+  font-size: 12px;
+}
+
+.objective-copy {
+  border-left: 3px solid #d8a735;
+  background: rgba(77, 55, 12, 0.22);
+  color: #f3d67d;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.quick-action-panel {
+  flex: 0 0 auto;
 }
 
 .game-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-bottom: 14px;
+  margin: 10px 0 0;
 }
 
 .duration-select {
@@ -581,8 +656,8 @@
 .active-action-panel {
   border: 1px solid rgba(216, 167, 53, 0.78);
   background: rgba(20, 15, 6, 0.72);
-  margin-bottom: 14px;
   padding: 12px;
+  flex: 0 0 auto;
 }
 
 .action-progress {
@@ -608,12 +683,16 @@
   border: 1px solid rgba(119, 184, 160, 0.46);
   background: rgba(3, 14, 9, 0.62);
   padding: 12px;
+  flex: 0 0 220px;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .game-log {
   display: grid;
   gap: 6px;
-  max-height: 220px;
+  max-height: none;
   overflow: auto;
   margin: 8px 0 0;
   padding: 0;
@@ -648,6 +727,16 @@
   gap: 4px;
 }
 
+.nav-map-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.nav-map-panel .mini-map {
+  width: min(190px, 100%);
+  justify-self: center;
+}
+
 .mini-map-cell {
   aspect-ratio: 1;
   display: grid;
@@ -679,11 +768,13 @@
 .direction-pad {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: 5px;
+  width: min(180px, 100%);
+  justify-self: center;
 }
 
 .direction-button {
-  min-height: 42px;
+  min-height: 30px;
   font-weight: 700;
 }
 
@@ -991,16 +1082,66 @@
   padding-left: 8px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1180px) {
   .game-shell {
+    height: auto;
+    min-height: 100vh;
+    grid-template-columns: minmax(230px, 300px) minmax(0, 1fr);
+    overflow: auto;
+  }
+
+  .game-column,
+  .game-main-panel {
+    max-height: none;
+  }
+
+  .game-main-panel {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    min-height: min(860px, calc(100vh - 24px));
+  }
+
+  .game-map-panel {
+    grid-column: 1;
+  }
+
+  .world-scene-panel {
     grid-template-columns: 1fr;
+  }
+
+  .scene-copy {
+    max-height: 190px;
+  }
+
+  .scene-object-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .market-row {
     grid-template-columns: 1fr 1fr;
   }
+}
+
+@media (max-width: 900px) {
+  .game-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .game-main-panel,
+  .game-map-panel {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .game-main-panel {
+    min-height: auto;
+  }
 
   .npc-task-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .scene-object-list {
     grid-template-columns: 1fr;
   }
 

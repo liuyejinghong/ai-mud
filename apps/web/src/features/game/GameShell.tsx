@@ -577,6 +577,20 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
 
   const cells = useMemo(() => state.map?.cells ?? [], [state.map]);
   const recentLog = useMemo(() => state.log.slice(-EVENT_LOG_LIMIT), [state.log]);
+  const positionText = state.character?.position
+    ? `坐标 ${state.character.position.x}, ${state.character.position.y}`
+    : "村镇";
+  const sceneObjects = [
+    canGather
+      ? {
+          title: state.character?.currentLocation === "old_mine" ? "铁矿脉" : "采集点",
+          body: "可采集 · 会按周期入账"
+        }
+      : null,
+    canStartCombat ? { title: "危险踪迹", body: "可战斗 · 自动结算" } : null,
+    canOpenDialogue ? { title: "附近 NPC", body: "可交谈 · 可能有任务" } : null,
+    state.map ? { title: "相邻区域", body: "WASD 或点击小地图移动" } : null
+  ].filter((entry): entry is { title: string; body: string } => entry !== null);
 
   if (!state.character) {
     return (
@@ -881,124 +895,143 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
           <p className="game-kicker">World Feed</p>
           <h1 id="location-title">{state.locationTitle}</h1>
           <p>{state.locationDescription}</p>
-          <section className="location-map-card" aria-label="当前位置地图">
-            <div className="panel-heading">
-              <h2>地图</h2>
-              {state.map ? <span>{state.map.width} x {state.map.height}</span> : <span>村镇</span>}
-            </div>
-            {state.map ? (
-              <div
-                className="mini-map"
-                style={{ gridTemplateColumns: `repeat(${state.map.width}, minmax(0, 1fr))` }}
-              >
-                {cells.map((cell) => (
-                  <span
-                    key={`${cell.x}:${cell.y}`}
-                    className={`mini-map-cell ${cell.markers.map((marker) => `is-${marker}`).join(" ")}`}
-                    title={`x:${cell.x} y:${cell.y}`}
-                  >
-                    {cellText(cell.markers)}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="empty-copy">当前在村镇区域，无野外方格。</p>
-            )}
-          </section>
         </div>
 
-        <section className="beginner-guide-panel" aria-labelledby="beginner-guide-title">
-          <div className="panel-heading">
-            <h2 id="beginner-guide-title">新手指引</h2>
-            <span>入门</span>
-          </div>
-          <ul>
-            <li>先从旧矿坑或腐林开始探索。</li>
-            <li>采集和战斗会耗时，背包会随同步更新。</li>
-            <li>回到哨站后再处理 NPC、集市和装备。</li>
-          </ul>
+        <section className="world-scene-panel" aria-labelledby="scene-focus-title">
+          <article className="scene-narrative">
+            <div className="panel-heading">
+              <h2 id="scene-focus-title">当前位置</h2>
+              <span>{positionText}</span>
+            </div>
+            <div className="scene-copy">
+              <p>{state.locationDescription}</p>
+              <p>
+                这里需要判断下一步行动：继续探索、停下来采集、处理遭遇，或者回到哨站整理背包和 NPC 关系。
+                小地图只回答“我在哪、附近有什么”，不再作为主视觉。
+              </p>
+            </div>
+            <div className="scene-object-list" aria-label="当前位置可交互对象">
+              {sceneObjects.length === 0 ? (
+                <div className="scene-object-card">
+                  <strong>哨站设施</strong>
+                  <span>可整理背包、集市交易、寻找 NPC</span>
+                </div>
+              ) : null}
+              {sceneObjects.map((entry) => (
+                <div className="scene-object-card" key={entry.title}>
+                  <strong>{entry.title}</strong>
+                  <span>{entry.body}</span>
+                </div>
+              ))}
+            </div>
+          </article>
+
+          <aside className="scene-decision-panel" aria-labelledby="next-step-title">
+            <div className="panel-heading">
+              <h2 id="next-step-title">下一步</h2>
+              <span>{state.currentAction ? "行动中" : "空闲"}</span>
+            </div>
+            <div className="scene-tags" aria-label="当前位置标签">
+              {canGather ? <span>采集推荐</span> : null}
+              {canStartCombat ? <span>有遭遇</span> : null}
+              {canReturnVillage ? <span>可返回</span> : null}
+              {!state.map ? <span>村镇</span> : null}
+            </div>
+            <p className="objective-copy">
+              当前目标：完成一次采集或探索闭环，确认背包、行动进度和事件记录同步更新。
+            </p>
+            <p className="decision-copy">
+              自动战斗和采集都是挂机行为。玩家此刻的有效操作是选择行动、取消行动、返回哨站，或用输入栏做复杂指令。
+            </p>
+          </aside>
         </section>
 
-        <div className="game-actions" aria-label="常用动作">
-          {canEnterForest ? (
-            <button
-              type="button"
-              className="game-primary-button"
-              onClick={() => void runCommand(() => enterCorruptForest(csrfToken))}
-            >
-              前往腐林
-            </button>
-          ) : null}
-          {canEnterOldMine ? (
-            <button
-              type="button"
-              className="game-secondary-button"
-              onClick={() => void runCommand(() => enterOldMine(csrfToken))}
-            >
-              前往旧矿坑
-            </button>
-          ) : null}
-          {canOpenMarket ? (
-            <button
-              type="button"
-              className="game-secondary-button"
-              onClick={() => void openMarket()}
-            >
-              市政集市
-            </button>
-          ) : null}
-          {canOpenDialogue ? (
-            <button
-              type="button"
-              className="game-secondary-button"
-              onClick={() => void openDialogueDialog()}
-            >
-              附近 NPC
-            </button>
-          ) : null}
-          {canGather ? (
-            <div className="duration-select">
-              <select
-                aria-label="采集时长"
-                value={plannedMinutes}
-                onChange={(event) =>
-                  setPlannedMinutes(Number(event.target.value) as StartGatheringRequestDto["plannedMinutes"])
-                }
+        <section className="quick-action-panel" aria-label="常用动作">
+          <div className="panel-heading">
+            <h2>动作</h2>
+            <span>键盘/鼠标</span>
+          </div>
+          <div className="game-actions">
+            {canEnterForest ? (
+              <button
+                type="button"
+                className="game-primary-button"
+                onClick={() => void runCommand(() => enterCorruptForest(csrfToken))}
               >
-                <option value={10}>10 分钟</option>
-                <option value={30}>30 分钟</option>
-                <option value={120}>2 小时</option>
-              </select>
+                前往腐林
+              </button>
+            ) : null}
+            {canEnterOldMine ? (
               <button
                 type="button"
                 className="game-secondary-button"
-                onClick={() =>
-                  void runCommand(() => startGathering({ plannedMinutes }, csrfToken))
-                }
+                onClick={() => void runCommand(() => enterOldMine(csrfToken))}
               >
-                开始采集
+                前往旧矿坑
               </button>
-            </div>
-          ) : null}
-          {canStartCombat ? (
-            <button
-              type="button"
-              className="game-secondary-button"
-              onClick={() => void runCommand(() => startCombat(csrfToken))}
-            >
-              攻击野狼
-            </button>
-          ) : null}
-          {canReturnVillage ? (
-            <button
-              type="button"
-              className="game-secondary-button"
-              onClick={() => void runCommand(() => returnToVillage(csrfToken))}
-            >
-              返回哨站
-            </button>
-          ) : null}
-        </div>
+            ) : null}
+            {canOpenMarket ? (
+              <button
+                type="button"
+                className="game-secondary-button"
+                onClick={() => void openMarket()}
+              >
+                市政集市
+              </button>
+            ) : null}
+            {canOpenDialogue ? (
+              <button
+                type="button"
+                className="game-secondary-button"
+                onClick={() => void openDialogueDialog()}
+              >
+                附近 NPC
+              </button>
+            ) : null}
+            {canGather ? (
+              <div className="duration-select">
+                <select
+                  aria-label="采集时长"
+                  value={plannedMinutes}
+                  onChange={(event) =>
+                    setPlannedMinutes(Number(event.target.value) as StartGatheringRequestDto["plannedMinutes"])
+                  }
+                >
+                  <option value={10}>10 分钟</option>
+                  <option value={30}>30 分钟</option>
+                  <option value={120}>2 小时</option>
+                </select>
+                <button
+                  type="button"
+                  className="game-primary-button"
+                  onClick={() =>
+                    void runCommand(() => startGathering({ plannedMinutes }, csrfToken))
+                  }
+                >
+                  开始采集
+                </button>
+              </div>
+            ) : null}
+            {canStartCombat ? (
+              <button
+                type="button"
+                className="game-secondary-button"
+                onClick={() => void runCommand(() => startCombat(csrfToken))}
+              >
+                攻击野狼
+              </button>
+            ) : null}
+            {canReturnVillage ? (
+              <button
+                type="button"
+                className="game-secondary-button"
+                onClick={() => void runCommand(() => returnToVillage(csrfToken))}
+              >
+                返回哨站
+              </button>
+            ) : null}
+          </div>
+        </section>
 
         {state.currentAction ? (
           <section className="active-action-panel" aria-labelledby="active-action-title">
@@ -1143,12 +1176,31 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
         </section>
       </section>
 
-      <aside className="game-column game-map-panel" aria-label="地图与移动">
-        <section className="game-panel">
+      <aside className="game-column game-map-panel" aria-label="小地图与辅助信息">
+        <section className="game-panel nav-map-panel">
           <div className="panel-heading">
-            <h2>移动</h2>
-            <span>WASD</span>
+            <h2>小地图</h2>
+            {state.map ? <span>{state.map.width} x {state.map.height}</span> : <span>村镇</span>}
           </div>
+          {state.map ? (
+            <div
+              className="mini-map"
+              style={{ gridTemplateColumns: `repeat(${state.map.width}, minmax(0, 1fr))` }}
+              aria-label="当前位置小地图"
+            >
+              {cells.map((cell) => (
+                <span
+                  key={`${cell.x}:${cell.y}`}
+                  className={`mini-map-cell ${cell.markers.map((marker) => `is-${marker}`).join(" ")}`}
+                  title={`x:${cell.x} y:${cell.y}`}
+                >
+                  {cellText(cell.markers)}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="empty-copy">当前在村镇区域，无野外方格。</p>
+          )}
           <div className="direction-pad">
             <button
               type="button"
@@ -1188,7 +1240,7 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
             </button>
           </div>
           <p className="movement-hint">
-            键盘和鼠标共用同一套服务端移动指令。
+            WASD 或点击相邻方向移动。小地图只做导航辅助。
           </p>
         </section>
 

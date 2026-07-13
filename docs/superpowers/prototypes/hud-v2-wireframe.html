@@ -1,0 +1,1120 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI MUD HUD v2 Prototype</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #020806;
+        --panel: #06140e;
+        --panel-2: #071a14;
+        --panel-3: #0b241e;
+        --line: #18a85b;
+        --line-soft: rgba(40, 210, 111, 0.35);
+        --text: #d8eadc;
+        --muted: #83a993;
+        --green: #54ff8b;
+        --cyan: #64d3d4;
+        --amber: #e4b83e;
+        --danger: #f25b63;
+        --blue: #4998ff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background:
+          linear-gradient(rgba(27, 255, 111, 0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(27, 255, 111, 0.04) 1px, transparent 1px),
+          radial-gradient(circle at 50% 20%, rgba(39, 255, 121, 0.08), transparent 34%),
+          var(--bg);
+        background-size: 32px 32px, 32px 32px, auto, auto;
+        color: var(--text);
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          "Noto Sans SC", monospace;
+      }
+
+      button,
+      select {
+        font: inherit;
+      }
+
+      .screen {
+        width: min(1680px, 100vw);
+        height: 100vh;
+        margin: 0 auto;
+        padding: 14px;
+        display: grid;
+        grid-template-rows: 46px minmax(0, 1fr) 34px;
+        gap: 10px;
+      }
+
+      .topbar {
+        border: 1px solid var(--line);
+        background: rgba(4, 18, 11, 0.93);
+        display: grid;
+        grid-template-columns: 260px 1fr auto;
+        align-items: center;
+        min-width: 0;
+      }
+
+      .brand {
+        padding: 0 16px;
+        color: var(--green);
+        font-size: 22px;
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
+      .world-strip {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-width: 0;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+      }
+
+      .world-strip strong {
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      .top-actions {
+        display: flex;
+        height: 100%;
+        border-left: 1px solid var(--line-soft);
+      }
+
+      .top-actions button {
+        min-width: 88px;
+        border: 0;
+        border-left: 1px solid var(--line-soft);
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+
+      .top-actions button.active {
+        color: var(--green);
+        background: rgba(31, 255, 116, 0.1);
+      }
+
+      .hud {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 290px minmax(690px, 1fr) 330px;
+        gap: 10px;
+      }
+
+      .column,
+      .main,
+      .side {
+        min-height: 0;
+      }
+
+      .stack {
+        display: grid;
+        gap: 10px;
+        min-height: 0;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        background: rgba(3, 16, 9, 0.91);
+        box-shadow: 0 0 20px rgba(20, 255, 111, 0.06) inset;
+        min-height: 0;
+      }
+
+      .panel.alt {
+        border-color: rgba(83, 211, 212, 0.58);
+      }
+
+      .panel-title {
+        height: 34px;
+        padding: 8px 12px 0;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        color: var(--green);
+        font-size: 20px;
+        font-weight: 800;
+      }
+
+      .panel-title small {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .hero {
+        height: 190px;
+        padding: 12px 14px;
+      }
+
+      .hero-name {
+        color: var(--green);
+        font-size: 27px;
+        font-weight: 900;
+        margin: 4px 0 12px;
+      }
+
+      .stat-row {
+        display: grid;
+        grid-template-columns: 44px 1fr 76px;
+        align-items: center;
+        gap: 8px;
+        min-height: 25px;
+        border-bottom: 1px dashed rgba(101, 179, 126, 0.2);
+        color: var(--muted);
+      }
+
+      .bar {
+        height: 8px;
+        background: #102019;
+        border: 1px solid rgba(100, 211, 212, 0.24);
+        overflow: hidden;
+      }
+
+      .bar i {
+        display: block;
+        height: 100%;
+        background: linear-gradient(90deg, var(--amber), var(--green));
+      }
+
+      .num {
+        color: #ffe48f;
+        text-align: right;
+        font-weight: 800;
+      }
+
+      .equip {
+        height: 252px;
+        padding: 10px 12px 12px;
+      }
+
+      .silhouette {
+        display: grid;
+        grid-template-columns: 74px 1fr 74px;
+        grid-template-rows: 42px 42px 42px 42px;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .slot,
+      .bag-row,
+      .npc-row,
+      .log-row {
+        border: 1px solid rgba(64, 191, 106, 0.34);
+        background: rgba(15, 41, 26, 0.64);
+      }
+
+      .slot {
+        padding: 7px;
+        color: var(--muted);
+        cursor: pointer;
+      }
+
+      .slot strong {
+        display: block;
+        color: var(--text);
+        font-size: 13px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .body-shape {
+        grid-row: span 4;
+        border: 1px dashed rgba(83, 211, 212, 0.5);
+        display: grid;
+        place-items: center;
+        color: rgba(100, 211, 212, 0.75);
+        font-size: 54px;
+      }
+
+      .bag {
+        min-height: 150px;
+        padding: 10px 12px 12px;
+      }
+
+      .bag-list {
+        display: grid;
+        gap: 7px;
+        margin-top: 10px;
+      }
+
+      .bag-row {
+        min-height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 10px;
+        color: var(--text);
+      }
+
+      .bag-row span:last-child {
+        color: var(--cyan);
+      }
+
+      .lobby {
+        min-height: 0;
+        padding: 10px 12px;
+        overflow: hidden;
+      }
+
+      .chat-preview {
+        margin-top: 12px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .main {
+        display: grid;
+        grid-template-rows: 70px minmax(300px, 1fr) 84px 220px;
+        gap: 10px;
+      }
+
+      .location {
+        padding: 12px 16px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+      }
+
+      .location h1 {
+        margin: 0;
+        color: var(--green);
+        font-size: 30px;
+        line-height: 1;
+      }
+
+      .location p {
+        margin: 7px 0 0;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .scene {
+        padding: 14px;
+        display: grid;
+        grid-template-columns: 420px minmax(260px, 1fr);
+        gap: 14px;
+        min-height: 0;
+      }
+
+      .map-wrap,
+      .tile-detail {
+        min-height: 0;
+        border: 1px solid rgba(83, 211, 212, 0.28);
+        background: rgba(3, 12, 8, 0.48);
+      }
+
+      .map-wrap {
+        padding: 12px;
+        display: grid;
+        grid-template-rows: 28px minmax(0, 1fr) 32px;
+        row-gap: 8px;
+      }
+
+      .map-head,
+      .legend,
+      .detail-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--muted);
+      }
+
+      .map-board {
+        align-self: center;
+        justify-self: center;
+        width: min(270px, 100%);
+        aspect-ratio: 1;
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        grid-template-rows: repeat(5, 1fr);
+        gap: 6px;
+      }
+
+      .cell {
+        border: 1px solid rgba(78, 178, 108, 0.42);
+        background: rgba(7, 28, 17, 0.86);
+        color: rgba(216, 234, 220, 0.62);
+        display: grid;
+        place-items: center;
+        font-size: 18px;
+        font-weight: 900;
+      }
+
+      .cell.player {
+        border-color: var(--amber);
+        color: var(--amber);
+        background: rgba(89, 61, 10, 0.5);
+      }
+
+      .cell.resource {
+        border-color: var(--cyan);
+        color: var(--cyan);
+      }
+
+      .cell.danger {
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+
+      .legend {
+        justify-content: flex-start;
+        gap: 14px;
+        font-size: 12px;
+      }
+
+      .tile-detail {
+        padding: 14px;
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        gap: 12px;
+      }
+
+      .detail-head strong {
+        color: var(--green);
+        font-size: 21px;
+      }
+
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+
+      .tag {
+        border: 1px solid rgba(228, 184, 62, 0.45);
+        color: #ffe48f;
+        padding: 4px 7px;
+        background: rgba(93, 65, 10, 0.32);
+        font-size: 12px;
+      }
+
+      .tile-copy {
+        color: var(--text);
+        line-height: 1.7;
+        overflow: auto;
+        min-height: 0;
+      }
+
+      .objective {
+        border-left: 3px solid var(--amber);
+        padding: 8px 10px;
+        background: rgba(228, 184, 62, 0.08);
+        color: #ffe9a6;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .btn {
+        min-width: 92px;
+        height: 38px;
+        border: 1px solid var(--amber);
+        color: #fff1bd;
+        background: rgba(88, 59, 9, 0.56);
+        cursor: pointer;
+      }
+
+      .btn.secondary {
+        border-color: rgba(83, 211, 212, 0.55);
+        color: var(--cyan);
+        background: rgba(15, 55, 58, 0.38);
+      }
+
+      .action-strip {
+        padding: 12px 14px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 16px;
+        align-items: center;
+        border-color: rgba(228, 184, 62, 0.75);
+      }
+
+      .action-strip h2 {
+        margin: 0 0 8px;
+        color: var(--amber);
+        font-size: 20px;
+      }
+
+      .progress-line {
+        height: 12px;
+        border: 1px solid rgba(228, 184, 62, 0.6);
+        background: rgba(75, 54, 12, 0.55);
+      }
+
+      .progress-line i {
+        display: block;
+        width: 38%;
+        height: 100%;
+        background: linear-gradient(90deg, var(--amber), var(--green));
+      }
+
+      .action-meta {
+        color: #ffe6a0;
+        font-size: 13px;
+      }
+
+      .feed {
+        padding: 12px 14px;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: 32px minmax(0, 1fr);
+      }
+
+      .feed-list {
+        overflow: auto;
+        min-height: 0;
+        padding-right: 4px;
+      }
+
+      .log-row {
+        min-height: 30px;
+        display: grid;
+        grid-template-columns: 58px 1fr;
+        align-items: center;
+        border-width: 0 0 1px;
+        background: transparent;
+      }
+
+      .log-row time {
+        color: var(--amber);
+      }
+
+      .side {
+        display: grid;
+        grid-template-rows: 178px minmax(0, 1fr);
+        gap: 10px;
+      }
+
+      .move {
+        padding: 12px 14px;
+      }
+
+      .pad {
+        margin: 10px auto 0;
+        width: 230px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+      }
+
+      .pad button {
+        height: 36px;
+        border: 1px solid var(--line);
+        background: rgba(12, 44, 25, 0.7);
+        color: var(--text);
+        font-weight: 900;
+      }
+
+      .pad .empty {
+        visibility: hidden;
+      }
+
+      .tabs {
+        min-height: 0;
+        display: grid;
+        grid-template-rows: 40px minmax(0, 1fr);
+      }
+
+      .tabbar {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        border-bottom: 1px solid var(--line-soft);
+      }
+
+      .tabbar button {
+        border: 0;
+        border-right: 1px solid var(--line-soft);
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .tabbar button.active {
+        color: var(--green);
+        background: rgba(31, 255, 116, 0.12);
+      }
+
+      .tab-content {
+        min-height: 0;
+        padding: 12px;
+        overflow: auto;
+      }
+
+      .npc-row {
+        padding: 10px;
+        margin-bottom: 8px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+      }
+
+      .npc-row strong {
+        color: var(--text);
+      }
+
+      .npc-row small {
+        color: var(--muted);
+      }
+
+      .quest {
+        color: var(--amber);
+        font-weight: 900;
+      }
+
+      .footer {
+        border: 1px solid var(--line);
+        background: rgba(2, 14, 8, 0.94);
+        display: grid;
+        grid-template-columns: 120px 1fr auto;
+        align-items: center;
+        gap: 12px;
+        padding: 0 10px;
+      }
+
+      .prompt {
+        color: var(--green);
+        font-weight: 900;
+      }
+
+      .command {
+        color: var(--muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .hotkeys {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      /* v2.1: MUD 的主视觉是场景/动作/日志，地图降级为导航辅助。 */
+      .main {
+        grid-template-rows: 70px minmax(260px, 1fr) 84px 230px;
+      }
+
+      .scene.scene-focus {
+        grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+        gap: 12px;
+      }
+
+      .scene-copy,
+      .decision-panel {
+        min-height: 0;
+        border: 1px solid rgba(83, 211, 212, 0.28);
+        background: rgba(3, 12, 8, 0.48);
+        padding: 14px;
+      }
+
+      .scene-copy {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        gap: 12px;
+      }
+
+      .scene-copy h2,
+      .decision-panel h2 {
+        margin: 0;
+        color: var(--green);
+        font-size: 22px;
+      }
+
+      .narrative {
+        overflow: auto;
+        color: var(--text);
+        line-height: 1.8;
+        font-size: 16px;
+      }
+
+      .scene-objects {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .object-card {
+        border: 1px solid rgba(64, 191, 106, 0.34);
+        background: rgba(15, 41, 26, 0.64);
+        padding: 9px 10px;
+        min-height: 54px;
+      }
+
+      .object-card strong {
+        display: block;
+        color: var(--text);
+        margin-bottom: 4px;
+      }
+
+      .object-card span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .decision-panel {
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        gap: 12px;
+      }
+
+      .objective.compact {
+        font-size: 14px;
+      }
+
+      .action-buttons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .action-buttons .btn {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .action-buttons .primary {
+        grid-column: span 2;
+        height: 44px;
+        font-size: 17px;
+      }
+
+      .side {
+        grid-template-rows: 292px minmax(0, 1fr);
+      }
+
+      .nav-map {
+        padding: 12px 14px;
+        display: grid;
+        grid-template-rows: 34px minmax(0, 1fr) 42px;
+        gap: 8px;
+      }
+
+      .nav-map .map-board {
+        width: min(188px, 100%);
+        gap: 4px;
+      }
+
+      .nav-map .cell {
+        font-size: 14px;
+      }
+
+      .nav-bottom {
+        display: grid;
+        grid-template-columns: 1fr 140px;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .nav-copy {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .micro-pad {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 4px;
+      }
+
+      .micro-pad button {
+        height: 28px;
+        border: 1px solid var(--line-soft);
+        background: rgba(12, 44, 25, 0.64);
+        color: var(--text);
+        font-weight: 900;
+      }
+
+      .micro-pad .empty {
+        visibility: hidden;
+      }
+
+      @media (max-width: 1280px) {
+        .hud {
+          grid-template-columns: 250px minmax(560px, 1fr) 292px;
+        }
+
+        .scene.scene-focus {
+          grid-template-columns: minmax(0, 1fr);
+          overflow: auto;
+        }
+      }
+
+      @media (max-width: 1080px) {
+        body {
+          overflow: auto;
+        }
+
+        .screen {
+          width: 100%;
+          height: auto;
+          min-height: 100vh;
+          grid-template-rows: auto auto 38px;
+        }
+
+        .topbar {
+          grid-template-columns: 170px 1fr;
+        }
+
+        .top-actions {
+          display: none;
+        }
+
+        .hud {
+          grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+          grid-template-areas:
+            "left main"
+            "right main";
+        }
+
+        .column {
+          grid-area: left;
+        }
+
+        .main {
+          grid-area: main;
+          min-height: 0;
+          grid-template-rows: auto auto auto 210px;
+          align-content: start;
+        }
+
+        .side {
+          grid-area: right;
+          min-height: 620px;
+        }
+
+        .narrative {
+          max-height: 190px;
+        }
+      }
+
+      @media (max-width: 820px) {
+        .hud {
+          grid-template-columns: 1fr;
+          grid-template-areas:
+            "main"
+            "left"
+            "right";
+        }
+
+        .main {
+          min-height: 760px;
+        }
+
+        .scene-objects {
+          grid-template-columns: 1fr;
+        }
+
+        .footer {
+          grid-template-columns: 82px 1fr;
+        }
+
+        .hotkeys {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="screen">
+      <header class="topbar">
+        <div class="brand">AI MUD</div>
+        <div class="world-strip">
+          <span><strong>黑松哨站</strong> / 旧矿坑</span>
+          <span>18:36</span>
+          <span>小雨 · 潮湿</span>
+          <span>世界同步 3s</span>
+          <span>当前版本 HUD v2 原型</span>
+        </div>
+        <nav class="top-actions" aria-label="顶部导航">
+          <button class="active">游戏</button>
+          <button>角色</button>
+          <button>设置</button>
+          <button>退出</button>
+        </nav>
+      </header>
+
+      <div class="hud">
+        <aside class="column stack">
+          <section class="panel hero">
+            <div class="panel-title">
+              <span>英雄状态</span>
+              <small>Lv 1</small>
+            </div>
+            <div class="hero-name">Zichen</div>
+            <div class="stat-row">
+              <span>生命</span>
+              <div class="bar"><i style="width: 100%"></i></div>
+              <span class="num">90/90</span>
+            </div>
+            <div class="stat-row">
+              <span>经验</span>
+              <div class="bar"><i style="width: 0%"></i></div>
+              <span class="num">0%</span>
+            </div>
+            <div class="stat-row">
+              <span>饱腹</span>
+              <div class="bar"><i style="width: 100%"></i></div>
+              <span class="num">5/5</span>
+            </div>
+            <div class="stat-row">
+              <span>货币</span>
+              <span>金币 0 · 银币 0</span>
+              <span class="num">铜 0</span>
+            </div>
+          </section>
+
+          <section class="panel equip">
+            <div class="panel-title">
+              <span>装备</span>
+              <small>点击槽位看详情</small>
+            </div>
+            <div class="silhouette" aria-label="装备剪影">
+              <div class="slot"><small>头部</small><strong>空</strong></div>
+              <div class="body-shape">人</div>
+              <div class="slot"><small>饰品</small><strong>空</strong></div>
+              <div class="slot"><small>武器</small><strong>训练短剑</strong></div>
+              <div class="slot"><small>副手</small><strong>空</strong></div>
+              <div class="slot"><small>胸甲</small><strong>缝补皮甲</strong></div>
+              <div class="slot"><small>护手</small><strong>空</strong></div>
+              <div class="slot"><small>腿部</small><strong>空</strong></div>
+              <div class="slot"><small>鞋子</small><strong>旧皮靴</strong></div>
+            </div>
+          </section>
+
+          <section class="panel bag">
+            <div class="panel-title">
+              <span>背包</span>
+              <small>3 类</small>
+            </div>
+            <div class="bag-list">
+              <div class="bag-row"><span>基础铁矿石</span><span>x3</span></div>
+              <div class="bag-row"><span>粗糙食物</span><span>x2</span></div>
+              <div class="bag-row"><span>小型治疗药水</span><span>x1</span></div>
+            </div>
+          </section>
+
+          <section class="panel lobby">
+            <div class="panel-title">
+              <span>大厅</span>
+              <small>实时</small>
+            </div>
+            <div class="chat-preview">
+              [系统] 黑松哨站集市今日收购铁矿。<br />
+              [玩家] 有人在旧矿坑看到狼群。<br />
+              [NPC] 铁匠霍恩正在收矿石。
+            </div>
+          </section>
+        </aside>
+
+        <main class="main">
+          <section class="panel location">
+            <div>
+              <h1>旧矿坑</h1>
+              <p>废弃矿道向山腹深处倾斜，潮湿木梁在黑暗里发出细碎响声。</p>
+            </div>
+            <div class="tags">
+              <span class="tag">野外</span>
+              <span class="tag">矿脉</span>
+              <span class="tag">低危</span>
+            </div>
+          </section>
+
+          <section class="panel scene scene-focus">
+            <div class="scene-copy">
+              <div class="detail-head">
+                <h2>当前位置：潮湿岔路</h2>
+                <span>坐标 2,3</span>
+              </div>
+              <div class="narrative">
+                <p>
+                  你站在一处坍塌后的岔路口。东侧矿壁露出暗灰色矿脉，水珠沿着木梁滴落，
+                  敲在废弃矿车的铁皮上。西侧通道有一串新鲜脚印，像是有人刚刚拖着矿袋离开。
+                </p>
+                <p>
+                  这里真正需要玩家判断的是：继续深入、停下来采矿、调查脚印，还是回到哨站处理背包。
+                  小地图只回答“我在哪儿、附近有什么”，不抢主叙事位置。
+                </p>
+              </div>
+              <div class="scene-objects">
+                <div class="object-card">
+                  <strong>铁矿脉</strong>
+                  <span>可采集 · 剩余 997</span>
+                </div>
+                <div class="object-card">
+                  <strong>新鲜脚印</strong>
+                  <span>可调查 · 可能触发事件</span>
+                </div>
+                <div class="object-card">
+                  <strong>北侧低语</strong>
+                  <span>未知 · 需要接近</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="decision-panel">
+              <div>
+                <h2>下一步</h2>
+                <div class="tags">
+                  <span class="tag">低危</span>
+                  <span class="tag">采集推荐</span>
+                  <span class="tag">附近 NPC：0</span>
+                </div>
+              </div>
+              <div class="objective compact">
+                当前目标：完成一次采集周期，确认背包立即入账。引导只提示目标，不占据主视觉。
+              </div>
+              <div class="tile-copy">
+                自动战斗和采集都是挂机行为。玩家此刻的有效操作是选择行动、取消行动、返回哨站、
+                或者用输入栏做复杂指令。
+              </div>
+              <div class="action-buttons">
+                <button class="btn primary">开始采集</button>
+                <button class="btn secondary">调查脚印</button>
+                <button class="btn secondary">返回哨站</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel action-strip">
+            <div>
+              <h2>当前行动：采集基础铁矿石</h2>
+              <div class="progress-line"><i></i></div>
+            </div>
+            <div class="action-meta">
+              总进度 38% · 本轮 2% · 已入账 3/8 · 预计产出 x8
+            </div>
+          </section>
+
+          <section class="panel feed">
+            <div class="panel-title">
+              <span>事件记录</span>
+              <small>固定窗口 · 最新 12/30</small>
+            </div>
+            <div class="feed-list">
+              <div class="log-row"><time>18:34</time><span>你获得了基础铁矿石 x3。</span></div>
+              <div class="log-row"><time>18:33</time><span>你完成了第 3 次采集周期。</span></div>
+              <div class="log-row"><time>18:31</time><span>矿镐敲击声在潮湿岩壁间回荡。</span></div>
+              <div class="log-row"><time>18:29</time><span>你开始采集旧矿坑铁矿脉。</span></div>
+              <div class="log-row"><time>18:28</time><span>你向北移动，抵达潮湿岔路。</span></div>
+              <div class="log-row"><time>18:27</time><span>你发现一处可采集的铁矿脉。</span></div>
+            </div>
+          </section>
+        </main>
+
+        <aside class="side">
+          <section class="panel nav-map">
+            <div class="panel-title">
+              <span>小地图</span>
+              <small>辅助导航</small>
+            </div>
+            <div class="map-board" role="img" aria-label="旧矿坑 5x5 小地图">
+              <div class="cell">·</div>
+              <div class="cell">·</div>
+              <div class="cell resource">矿</div>
+              <div class="cell">·</div>
+              <div class="cell danger">!</div>
+              <div class="cell">·</div>
+              <div class="cell">·</div>
+              <div class="cell">·</div>
+              <div class="cell resource">矿</div>
+              <div class="cell">·</div>
+              <div class="cell">·</div>
+              <div class="cell player">@</div>
+              <div class="cell danger">!</div>
+              <div class="cell">·</div>
+              <div class="cell">·</div>
+              <div class="cell">·</div>
+              <div class="cell">·</div>
+              <div class="cell">·</div>
+              <div class="cell">·</div>
+              <div class="cell">·</div>
+              <div class="cell">·</div>
+              <div class="cell">·</div>
+              <div class="cell resource">矿</div>
+              <div class="cell">·</div>
+              <div class="cell">·</div>
+            </div>
+            <div class="nav-bottom">
+              <div class="nav-copy">@ 你 · 矿 资源点 · ! 事件<br />WASD 或点击相邻格移动</div>
+              <div class="micro-pad">
+                <button class="empty"></button>
+                <button>W</button>
+                <button class="empty"></button>
+                <button>A</button>
+                <button>S</button>
+                <button>D</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel tabs">
+            <div class="tabbar">
+              <button class="active">附近</button>
+              <button>任务</button>
+              <button>传闻</button>
+              <button>简报</button>
+            </div>
+            <div class="tab-content">
+              <div class="npc-row">
+                <div>
+                  <strong>矿工布兰</strong><br />
+                  <small>正在前往北侧矿点</small>
+                </div>
+                <span class="quest">!</span>
+              </div>
+              <div class="npc-row">
+                <div>
+                  <strong>巡林者艾拉</strong><br />
+                  <small>警惕狼群，态度中立</small>
+                </div>
+                <span>交谈</span>
+              </div>
+              <div class="npc-row">
+                <div>
+                  <strong>传闻</strong><br />
+                  <small>铁匠霍恩提高了铁矿收购价。</small>
+                </div>
+                <span>2 条</span>
+              </div>
+              <div class="npc-row">
+                <div>
+                  <strong>离线简报</strong><br />
+                  <small>Zichen 离开期间，哨站留下 1 条可核验记录。</small>
+                </div>
+                <span>查看</span>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="footer">
+        <div class="prompt">&gt; 命令</div>
+        <div class="command">输入 talk 矿工布兰、use 小型治疗药水、或者直接与 NPC 聊天...</div>
+        <div class="hotkeys">WASD 移动 · G 采集 · Esc 关闭弹窗</div>
+      </footer>
+    </div>
+  </body>
+</html>

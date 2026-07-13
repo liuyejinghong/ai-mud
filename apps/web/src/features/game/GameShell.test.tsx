@@ -357,13 +357,13 @@ describe("GameShell", () => {
     expect(await screen.findByRole("heading", { name: "创建角色" })).toBeTruthy();
   });
 
-  it("shows a compact beginner guide after entering the world", async () => {
+  it("shows the starter goal inside the next-step panel after entering the world", async () => {
     mockFetchWithStates([villageState]);
 
     render(<GameShell csrfToken="csrf" />);
 
-    expect(await screen.findByRole("heading", { name: "新手指引" })).toBeTruthy();
-    expect(screen.getByText("先从旧矿坑或腐林开始探索。")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "下一步" })).toBeTruthy();
+    expect(screen.getByText(/当前目标：完成一次采集或探索闭环/)).toBeTruthy();
   });
 
   it("keeps equipment details behind a slot dialog", async () => {
@@ -422,6 +422,19 @@ describe("GameShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "野莓 x2" }));
     expect(screen.getByRole("dialog", { name: "野莓" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "关闭" })).toBeTruthy();
+  });
+
+  it("keeps scene decisions primary and demotes movement to the helper minimap", async () => {
+    mockFetchWithStates([forestState]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByRole("heading", { name: "当前位置" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "下一步" })).toBeTruthy();
+    expect(screen.getByRole("complementary", { name: "小地图与辅助信息" })).toBeTruthy();
+    expect(screen.getByLabelText("当前位置小地图")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "向东移动" })).toBeTruthy();
+    expect(screen.getByText(/小地图只做导航辅助/)).toBeTruthy();
   });
 
   it("enters Old Mine through the same zone endpoint", async () => {
