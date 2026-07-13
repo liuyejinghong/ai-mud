@@ -33,6 +33,19 @@ describe("available action capability policy", () => {
       expected: ["open_market"]
     },
     {
+      name: "village hunger one can still leave while weakened",
+      facts: {
+        location: "village",
+        activeAction: null,
+        hunger: 1,
+        injuryActive: false,
+        hasRepairableEquipment: false,
+        hasFood: false,
+        reliefEligible: false
+      },
+      expected: ["enter_corrupt_forest", "enter_old_mine", "open_market"]
+    },
+    {
       name: "village injured",
       facts: {
         location: "village",

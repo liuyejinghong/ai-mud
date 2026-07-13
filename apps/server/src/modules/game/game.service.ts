@@ -1534,7 +1534,7 @@ export class GameService {
     if (character.injuryUntil && character.injuryUntil.getTime() > now.getTime()) {
       throw new GameServiceError("VALIDATION_ERROR", "你正在养伤，暂时不能出城。");
     }
-    if (character.hunger <= 1) {
+    if (character.hunger <= 0) {
       throw new GameServiceError("VALIDATION_ERROR", "你已经饿到虚弱，不能出城。");
     }
   }

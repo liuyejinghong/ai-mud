@@ -99,6 +99,10 @@ function transactionDb() {
   } as unknown as Db;
 }
 
+type VillageExitService = {
+  requireCanLeaveVillage(character: CharacterRecord, now: Date): void;
+};
+
 function arrangeReadableSync(input: {
   character: CharacterRecord;
   activeAction?: CharacterActionRecord | null;
@@ -217,6 +221,30 @@ describe("GameService readable settlement sync", () => {
     expect(sync.events).toEqual([]);
     expect(sync.state?.currentAction).toBeNull();
     expect(sync.state?.character?.hp).toBe(73);
+  });
+});
+
+describe("GameService village exit rules", () => {
+  it("allows hunger one to leave because the weakened state is not a hard lock", () => {
+    const service = new GameService({} as Db) as unknown as VillageExitService;
+
+    expect(() =>
+      service.requireCanLeaveVillage(
+        character({ hunger: 1, currentLocation: "blackpine_outpost", position: null }),
+        new Date("2026-07-13T06:00:00.000Z")
+      )
+    ).not.toThrow();
+  });
+
+  it("keeps hunger zero inside the village", () => {
+    const service = new GameService({} as Db) as unknown as VillageExitService;
+
+    expect(() =>
+      service.requireCanLeaveVillage(
+        character({ hunger: 0, currentLocation: "blackpine_outpost", position: null }),
+        new Date("2026-07-13T06:00:00.000Z")
+      )
+    ).toThrow("你已经饿到虚弱，不能出城。");
   });
 });
 
