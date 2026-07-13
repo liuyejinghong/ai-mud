@@ -1321,7 +1321,7 @@ describe("GameService municipal food relief", () => {
       itemId: "wild_berry",
       quantity: 1,
       source: "market",
-      reason: "municipal.relief",
+      reason: "municipal_relief",
       metadata: expect.objectContaining({ settlementId: "blackpine_outpost" })
     });
     expect(spies.event).toHaveBeenCalledWith(
@@ -1390,14 +1390,26 @@ describe("GameService municipal food relief", () => {
 
   it.each([
     {
-      name: "starving claimant",
-      claimant: { hunger: 0 },
+      name: "village fed healthy",
+      claimant: { hunger: 5 },
       inventory: [],
-      expected: ["open_market", "claim_relief"]
+      expected: ["enter_corrupt_forest", "enter_old_mine", "open_market"]
     },
     {
-      name: "injured claimant",
-      claimant: { hunger: 1, injuryUntil: new Date("2026-07-13T12:30:00.000Z") },
+      name: "village hunger zero",
+      claimant: { hunger: 0, copperBalance: 100 },
+      inventory: [],
+      expected: ["open_market"]
+    },
+    {
+      name: "village injured",
+      claimant: { hunger: 5, injuryUntil: new Date("2026-07-13T12:30:00.000Z") },
+      inventory: [],
+      expected: ["open_market"]
+    },
+    {
+      name: "village eligible relief",
+      claimant: { hunger: 0 },
       inventory: [],
       expected: ["open_market", "claim_relief"]
     },
@@ -1414,8 +1426,8 @@ describe("GameService municipal food relief", () => {
       expected: ["open_market"]
     },
     {
-      name: "healthy village player",
-      claimant: { hunger: 5 },
+      name: "village hunger one healthy",
+      claimant: { hunger: 1, copperBalance: 100 },
       inventory: [],
       expected: ["enter_corrupt_forest", "enter_old_mine", "open_market"]
     }
@@ -1440,6 +1452,57 @@ describe("GameService municipal food relief", () => {
         findActiveActionByCharacterId: async () => null,
         listMarketInventory: async () => [marketFood],
         upsertMarketInventory: async () => undefined
+      },
+      "account-1",
+      now
+    );
+
+    expect(state.availableActions).toEqual(expected);
+  });
+
+  it.each([
+    {
+      name: "wild idle",
+      activeAction: null,
+      expected: ["move", "return_to_village"]
+    },
+    {
+      name: "wild active gathering",
+      activeAction: gatheringAction(gatheringPayload()),
+      expected: ["cancel_action"]
+    },
+    {
+      name: "wild active combat",
+      activeAction: combatAction({
+        encounterId: "old_mine_rat_pack_01",
+        combatLog: [],
+        combatTimeline: [],
+        expectedEndsAtMs: now.getTime() + 60_000,
+        outcome: "victory",
+        playerRemainingHp: 80,
+        xp: 0,
+        loot: []
+      }),
+      expected: ["cancel_action"]
+    }
+  ])("publishes the exact action matrix for $name", async ({ activeAction, expected }) => {
+    const service = new GameService({} as Db);
+    const state = await (service as unknown as {
+      buildState(repo: object, accountId: string, now: Date): Promise<{ availableActions: string[] }>;
+    }).buildState(
+      {
+        findCharacterByAccountId: async () =>
+          character({
+            currentLocation: "old_mine",
+            position: { x: 0, y: 0 },
+            lastHungerSettledAt: now
+          }),
+        listInventory: async () => [],
+        listEquipment: async () => [],
+        listItemInstances: async () => [],
+        listRecentEvents: async () => [],
+        findActiveActionByCharacterId: async () => activeAction,
+        findMapInstance: async () => null
       },
       "account-1",
       now

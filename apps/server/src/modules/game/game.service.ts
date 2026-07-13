@@ -30,6 +30,7 @@ import {
   formatMoney,
   movePosition,
   rollRarity,
+  selectAvailableActions,
   settleLevelProgression,
   settleHunger,
   simulateCombat
@@ -949,7 +950,7 @@ export class GameService {
         itemId: grantedItemId,
         quantity: 1,
         source,
-        reason: "municipal.relief",
+        reason: "municipal_relief",
         metadata: {
           settlementId: BLACKPINE_MARKET_ID,
           ...(marketInventoryId ? { marketInventoryId } : { emergency: true })
@@ -2083,18 +2084,7 @@ export class GameService {
       );
       const injuryActive =
         character.injuryUntil !== null && character.injuryUntil.getTime() > now.getTime();
-      const recoveryBlocked = character.hunger <= 1 || injuryActive;
-      const availableActions: GameStateDto["availableActions"] = currentAction
-        ? ["cancel_action"]
-        : recoveryBlocked
-          ? ["open_market"]
-          : ["enter_corrupt_forest", "enter_old_mine", "open_market"];
-      if (!currentAction && equipmentDto.some((item) => item.repairQuote !== null)) {
-        availableActions.push("repair_equipment");
-      }
-      if (!currentAction && character.hunger < 5 && hasFood) {
-        availableActions.push("eat_food");
-      }
+      let reliefEligible = false;
       if (
         !currentAction &&
         character.currentLocation === BLACKPINE_OUTPOST.id &&
@@ -2125,8 +2115,17 @@ export class GameService {
           lastClaimedAt: character.lastReliefClaimedAt,
           now
         });
-        if (reliefEligibility.eligible) availableActions.push("claim_relief");
+        reliefEligible = reliefEligibility.eligible;
       }
+      const availableActions = selectAvailableActions({
+        location: "village",
+        activeAction: currentAction?.actionType ?? null,
+        hunger: character.hunger,
+        injuryActive,
+        hasRepairableEquipment: equipmentDto.some((item) => item.repairQuote !== null),
+        hasFood,
+        reliefEligible
+      });
 
       return {
         character: toCharacterDto(character, now),
@@ -2151,19 +2150,13 @@ export class GameService {
 
     const map = await repo.findMapInstance(character.id, currentZone.id);
     const resourceCharges = map?.resourceCharges ?? initialResourceCharges(currentZone);
-    const availableActions: GameStateDto["availableActions"] = currentAction
-      ? ["cancel_action"]
-      : ["move", "return_to_village"];
-
-    if (!currentAction && findLiveResourceAt(currentZone, character.position, resourceCharges)) {
-      availableActions.push("start_gathering");
-    }
-
     const visibleZone = map ? withReadyEncounters(currentZone, map, now) : currentZone;
-
-    if (!currentAction && findEncounterAt(visibleZone, character.position)) {
-      availableActions.push("start_combat");
-    }
+    const availableActions = selectAvailableActions({
+      location: "wild",
+      activeAction: currentAction?.actionType ?? null,
+      canGather: Boolean(findLiveResourceAt(currentZone, character.position, resourceCharges)),
+      canCombat: Boolean(findEncounterAt(visibleZone, character.position))
+    });
 
     return {
       character: toCharacterDto(character, now),
