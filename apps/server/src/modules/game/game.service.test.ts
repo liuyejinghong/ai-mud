@@ -91,6 +91,138 @@ function gatheringPayload(
   };
 }
 
+describe("GameService serialized action starts", () => {
+  function transactionDb() {
+    return {
+      transaction: vi.fn(async (operation: (tx: object) => Promise<unknown>) => operation({}))
+    } as unknown as Db;
+  }
+
+  function arrangeLockedActionStart() {
+    const calls: string[] = [];
+    const lockedCharacter = character({
+      currentLocation: "corrupt_forest",
+      position: { x: 1, y: 3 },
+      lastHungerSettledAt: new Date()
+    });
+    const lock = vi
+      .spyOn(GameRepository.prototype, "findCharacterByAccountIdForUpdate")
+      .mockImplementation(async () => {
+        calls.push("lock");
+        return lockedCharacter;
+      });
+    const unlockedRead = vi
+      .spyOn(GameRepository.prototype, "findCharacterByAccountId")
+      .mockResolvedValue(lockedCharacter);
+    vi.spyOn(GameRepository.prototype, "listInventory").mockResolvedValue([]);
+    const findActive = vi
+      .spyOn(GameRepository.prototype, "findActiveActionByCharacterId")
+      .mockImplementation(async () => {
+        calls.push("active");
+        return combatAction({
+          encounterId: "corrupt_wolf_pack_01",
+          combatLog: [],
+          combatTimeline: [],
+          expectedEndsAtMs: Date.now() + 1_000,
+          outcome: "victory",
+          playerRemainingHp: 80,
+          xp: 0,
+          loot: []
+        });
+      });
+    return { calls, findActive, lock, unlockedRead };
+  }
+
+  it.each([
+    ["gathering", (service: GameService) => service.startGathering("account-1", { plannedMinutes: 10 })],
+    ["combat", (service: GameService) => service.startCombat("account-1")]
+  ])("locks the character before checking an active %s start", async (_name, start) => {
+    const service = new GameService(transactionDb());
+    const { calls, findActive, lock, unlockedRead } = arrangeLockedActionStart();
+
+    await expect(start(service)).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+
+    expect(lock).toHaveBeenCalledWith("account-1");
+    expect(findActive).toHaveBeenCalledWith("character-1");
+    expect(calls).toEqual(["lock", "active"]);
+    expect(unlockedRead).not.toHaveBeenCalled();
+  });
+
+  it("rejects the second logical action start after the first creates an active action", async () => {
+    const service = new GameService(transactionDb());
+    const lockedCharacter = character({
+      currentLocation: "corrupt_forest",
+      position: { x: 1, y: 3 },
+      lastHungerSettledAt: new Date()
+    });
+    let activeAction: CharacterActionRecord | null = null;
+    vi.spyOn(GameRepository.prototype, "findCharacterByAccountIdForUpdate").mockResolvedValue(
+      lockedCharacter
+    );
+    vi.spyOn(GameRepository.prototype, "listInventory").mockResolvedValue([]);
+    vi.spyOn(GameRepository.prototype, "findActiveActionByCharacterId").mockImplementation(
+      async () => activeAction
+    );
+    vi.spyOn(GameRepository.prototype, "findMapInstance").mockResolvedValue({
+      id: "map-1",
+      characterId: "character-1",
+      zoneId: "corrupt_forest",
+      resourceCharges: { forest_berry_patch_01: 3 },
+      encounterCooldowns: {}
+    });
+    vi.spyOn(GameRepository.prototype, "createAction").mockImplementation(async (input) => {
+      activeAction = {
+        id: "action-1",
+        characterId: input.characterId,
+        actionType: input.actionType,
+        status: "active",
+        startedAt: input.startedAt,
+        endsAt: input.endsAt,
+        payload: input.payload
+      };
+      return activeAction;
+    });
+    vi.spyOn(GameRepository.prototype, "writeEvent").mockResolvedValue();
+    vi.spyOn(GameService.prototype as never, "buildState" as never).mockResolvedValue({} as never);
+
+    await expect(
+      service.startGathering("account-1", { plannedMinutes: 10 })
+    ).resolves.toEqual({});
+    await expect(service.startCombat("account-1")).rejects.toMatchObject({
+      code: "VALIDATION_ERROR"
+    });
+  });
+
+  it("translates the active-action partial unique conflict into validation", async () => {
+    const service = new GameService(transactionDb());
+    const lockedCharacter = character({
+      currentLocation: "corrupt_forest",
+      position: { x: 1, y: 3 },
+      lastHungerSettledAt: new Date()
+    });
+    vi.spyOn(GameRepository.prototype, "findCharacterByAccountIdForUpdate").mockResolvedValue(
+      lockedCharacter
+    );
+    vi.spyOn(GameRepository.prototype, "listInventory").mockResolvedValue([]);
+    vi.spyOn(GameRepository.prototype, "findActiveActionByCharacterId").mockResolvedValue(null);
+    vi.spyOn(GameRepository.prototype, "findMapInstance").mockResolvedValue({
+      id: "map-1",
+      characterId: "character-1",
+      zoneId: "corrupt_forest",
+      resourceCharges: { forest_berry_patch_01: 3 },
+      encounterCooldowns: {}
+    });
+    vi.spyOn(GameRepository.prototype, "createAction").mockRejectedValue({
+      code: "23505",
+      constraint: "character_actions_one_active_per_character_idx"
+    });
+
+    await expect(
+      service.startGathering("account-1", { plannedMinutes: 10 })
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", message: "已有进行中的行动。" });
+  });
+});
+
 describe("GameService action settlement", () => {
   it("settles completed gathering cycles from the character's locked action", async () => {
     const service = new GameService({} as Db) as unknown as GatheringSettlementService;

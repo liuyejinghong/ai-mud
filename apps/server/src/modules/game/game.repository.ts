@@ -382,6 +382,25 @@ function mapCharacterActionRow(row: typeof characterActions.$inferSelect): Chara
   };
 }
 
+function mapCharacterRow(row: typeof characters.$inferSelect): CharacterRecord {
+  return {
+    id: row.id,
+    accountId: row.accountId,
+    name: row.name,
+    classId: row.classId,
+    level: row.level,
+    xp: row.xp,
+    hp: row.hp,
+    maxHp: row.maxHp,
+    copperBalance: row.copperBalance,
+    hunger: serializeHunger(row.hunger),
+    lastHungerSettledAt: row.lastHungerSettledAt,
+    currentLocation: row.currentLocation,
+    position: parsePosition(row.position),
+    injuryUntil: row.injuryUntil
+  };
+}
+
 function mapMapInstanceRow(row: typeof mapInstances.$inferSelect): MapInstanceRecord {
   return {
     id: row.id,
@@ -416,24 +435,18 @@ export class GameRepository {
       .where(eq(characters.accountId, accountId))
       .limit(1);
 
-    if (!row) return null;
+    return row ? mapCharacterRow(row) : null;
+  }
 
-    return {
-      id: row.id,
-      accountId: row.accountId,
-      name: row.name,
-      classId: row.classId,
-      level: row.level,
-      xp: row.xp,
-      hp: row.hp,
-      maxHp: row.maxHp,
-      copperBalance: row.copperBalance,
-      hunger: serializeHunger(row.hunger),
-      lastHungerSettledAt: row.lastHungerSettledAt,
-      currentLocation: row.currentLocation,
-      position: parsePosition(row.position),
-      injuryUntil: row.injuryUntil
-    };
+  async findCharacterByAccountIdForUpdate(accountId: string): Promise<CharacterRecord | null> {
+    const [row] = await this.db
+      .select()
+      .from(characters)
+      .where(eq(characters.accountId, accountId))
+      .limit(1)
+      .for("update");
+
+    return row ? mapCharacterRow(row) : null;
   }
 
   async findCharacterByIdForUpdate(characterId: string): Promise<CharacterRecord | null> {
@@ -444,24 +457,7 @@ export class GameRepository {
       .limit(1)
       .for("update");
 
-    if (!row) return null;
-
-    return {
-      id: row.id,
-      accountId: row.accountId,
-      name: row.name,
-      classId: row.classId,
-      level: row.level,
-      xp: row.xp,
-      hp: row.hp,
-      maxHp: row.maxHp,
-      copperBalance: row.copperBalance,
-      hunger: serializeHunger(row.hunger),
-      lastHungerSettledAt: row.lastHungerSettledAt,
-      currentLocation: row.currentLocation,
-      position: parsePosition(row.position),
-      injuryUntil: row.injuryUntil
-    };
+    return row ? mapCharacterRow(row) : null;
   }
 
   async createCharacter(input: {

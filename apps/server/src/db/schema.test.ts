@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { getTableConfig } from "drizzle-orm/pg-core";
 import {
   accounts,
   activationCodes,
@@ -40,6 +41,14 @@ function getDrizzleTableName(table: unknown) {
   return (table as Record<symbol, string>)[Symbol.for("drizzle:Name")];
 }
 
+function getCheckNames(table: Parameters<typeof getTableConfig>[0]) {
+  return getTableConfig(table).checks.map((constraint) => constraint.name);
+}
+
+function getIndexNames(table: Parameters<typeof getTableConfig>[0]) {
+  return getTableConfig(table).indexes.map((index) => index.config.name);
+}
+
 describe("foundation schema", () => {
   it("defines the core auth/admin tables", () => {
     expect(getDrizzleTableName(accounts)).toBe("accounts");
@@ -72,6 +81,33 @@ describe("foundation schema", () => {
 
   it("stores character money as copper", () => {
     expect(characters.copperBalance.getSQLType()).toBe("integer");
+  });
+
+  it("mirrors every nonnegative asset guard", () => {
+    expect(getCheckNames(characters)).toContain("characters_copper_balance_nonnegative_check");
+    expect(getCheckNames(worldActors)).toContain("world_actors_copper_balance_nonnegative_check");
+    expect(getCheckNames(municipalTreasury)).toContain(
+      "municipal_treasury_copper_balance_nonnegative_check"
+    );
+    expect(getCheckNames(marketInventory)).toContain(
+      "market_inventory_quantity_nonnegative_check"
+    );
+    expect(getCheckNames(characterItems)).toContain("character_items_quantity_nonnegative_check");
+    expect(getCheckNames(npcItems)).toContain("npc_items_quantity_nonnegative_check");
+    expect(getCheckNames(worldResourceNodes)).toContain(
+      "world_resource_nodes_charges_nonnegative_check"
+    );
+    expect(getCheckNames(mapInstances)).toContain(
+      "map_instances_resource_charges_nonnegative_check"
+    );
+  });
+
+  it("mirrors the one-active-action partial unique index", () => {
+    const activeIndex = getTableConfig(characterActions).indexes.find(
+      (index) => index.config.name === "character_actions_one_active_per_character_idx"
+    );
+    expect(activeIndex?.config.unique).toBe(true);
+    expect(activeIndex?.config.where).toBeDefined();
   });
 
   it("stores character hunger needs", () => {

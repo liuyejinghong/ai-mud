@@ -128,7 +128,11 @@ export const characters = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
-    accountIdx: index("characters_account_id_idx").on(table.accountId)
+    accountIdx: index("characters_account_id_idx").on(table.accountId),
+    copperBalanceCheck: check(
+      "characters_copper_balance_nonnegative_check",
+      sql`${table.copperBalance} >= 0`
+    )
   })
 );
 
@@ -203,7 +207,8 @@ export const characterItems = pgTable(
     characterItemIdx: uniqueIndex("character_items_character_item_idx").on(
       table.characterId,
       table.itemId
-    )
+    ),
+    quantityCheck: check("character_items_quantity_nonnegative_check", sql`${table.quantity} >= 0`)
   })
 );
 
@@ -387,7 +392,8 @@ export const marketInventory = pgTable(
     settlementItemIdx: uniqueIndex("market_inventory_settlement_item_idx").on(
       table.settlementId,
       table.itemId
-    )
+    ),
+    quantityCheck: check("market_inventory_quantity_nonnegative_check", sql`${table.quantity} >= 0`)
   })
 );
 
@@ -443,7 +449,11 @@ export const worldActors = pgTable(
   },
   (table) => ({
     actorTypeIdx: index("world_actors_actor_type_idx").on(table.actorType),
-    npcKeyIdx: index("world_actors_npc_key_idx").on(table.npcKey)
+    npcKeyIdx: index("world_actors_npc_key_idx").on(table.npcKey),
+    copperBalanceCheck: check(
+      "world_actors_copper_balance_nonnegative_check",
+      sql`${table.copperBalance} >= 0`
+    )
   })
 );
 
@@ -457,7 +467,8 @@ export const npcItems = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
-    actorItemIdx: uniqueIndex("npc_items_actor_item_idx").on(table.actorId, table.itemId)
+    actorItemIdx: uniqueIndex("npc_items_actor_item_idx").on(table.actorId, table.itemId),
+    quantityCheck: check("npc_items_quantity_nonnegative_check", sql`${table.quantity} >= 0`)
   })
 );
 
@@ -509,7 +520,11 @@ export const worldResourceNodes = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
-    resourceIdx: uniqueIndex("world_resource_nodes_resource_idx").on(table.zoneId, table.resourceId)
+    resourceIdx: uniqueIndex("world_resource_nodes_resource_idx").on(table.zoneId, table.resourceId),
+    chargesCheck: check(
+      "world_resource_nodes_charges_nonnegative_check",
+      sql`${table.charges} >= 0`
+    )
   })
 );
 
@@ -522,7 +537,11 @@ export const municipalTreasury = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
-    settlementIdx: index("municipal_treasury_settlement_idx").on(table.settlementId)
+    settlementIdx: index("municipal_treasury_settlement_idx").on(table.settlementId),
+    copperBalanceCheck: check(
+      "municipal_treasury_copper_balance_nonnegative_check",
+      sql`${table.copperBalance} >= 0`
+    )
   })
 );
 
@@ -755,7 +774,10 @@ export const characterActions = pgTable(
       table.characterId,
       table.status
     ),
-    endsAtIdx: index("character_actions_ends_at_idx").on(table.endsAt)
+    endsAtIdx: index("character_actions_ends_at_idx").on(table.endsAt),
+    activeUniqueIdx: uniqueIndex("character_actions_one_active_per_character_idx")
+      .on(table.characterId)
+      .where(sql`${table.status} = 'active'`)
   })
 );
 
@@ -775,6 +797,10 @@ export const mapInstances = pgTable(
     characterZoneIdx: uniqueIndex("map_instances_character_zone_idx").on(
       table.characterId,
       table.zoneId
+    ),
+    resourceChargesCheck: check(
+      "map_instances_resource_charges_nonnegative_check",
+      sql`NOT (${table.resourceCharges} @? '$.** ? (@.type() == "number" && @ < 0)'::jsonpath)`
     )
   })
 );

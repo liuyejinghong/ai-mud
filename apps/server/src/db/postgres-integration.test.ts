@@ -96,6 +96,41 @@ async function assertRequiredColumns(client: pg.Client) {
   }
 }
 
+async function assertAssetGuards(client: pg.Client) {
+  const requiredChecks = [
+    "characters_copper_balance_nonnegative_check",
+    "world_actors_copper_balance_nonnegative_check",
+    "municipal_treasury_copper_balance_nonnegative_check",
+    "market_inventory_quantity_nonnegative_check",
+    "character_items_quantity_nonnegative_check",
+    "npc_items_quantity_nonnegative_check",
+    "world_resource_nodes_charges_nonnegative_check",
+    "map_instances_resource_charges_nonnegative_check"
+  ];
+  const checks = await client.query<{ conname: string }>(
+    `
+      SELECT conname
+      FROM pg_constraint
+      WHERE contype = 'c'
+        AND conname = ANY($1::text[])
+    `,
+    [requiredChecks]
+  );
+  expect(checks.rows.map((row) => row.conname).sort()).toEqual(requiredChecks.sort());
+
+  const activeIndex = await client.query<{ indexdef: string }>(
+    `
+      SELECT indexdef
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND indexname = 'character_actions_one_active_per_character_idx'
+    `
+  );
+  expect(activeIndex.rows).toHaveLength(1);
+  expect(activeIndex.rows[0]?.indexdef).toContain("UNIQUE INDEX");
+  expect(activeIndex.rows[0]?.indexdef).toContain("WHERE (status = 'active'");
+}
+
 async function dropDatabase(admin: pg.Client, databaseName: string) {
   const databaseIdentifier = quoteIdentifier(databaseName);
 
@@ -144,6 +179,7 @@ describe("postgres integration migrations", () => {
       await target.connect();
       await applyMigrations(target, journal);
       await assertRequiredColumns(target);
+      await assertAssetGuards(target);
     } finally {
       if (target) await target.end();
       await dropDatabase(admin, tempDatabase);

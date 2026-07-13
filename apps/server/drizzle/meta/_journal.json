@@ -148,6 +148,13 @@
       "when": 1783225000000,
       "tag": "0020_asset_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1783911600000,
+      "tag": "0022_asset_nonnegative_guards",
+      "breakpoints": true
     }
   ]
 }

@@ -138,6 +138,38 @@ describe("game repository helpers", () => {
 });
 
 describe("GameRepository locking contracts", () => {
+  it("locks and maps a character by account id", async () => {
+    const lastHungerSettledAt = new Date("2026-07-13T08:00:00.000Z");
+    const { db, forUpdate } = createSelectDb([
+      {
+        id: "character-1",
+        accountId: "account-1",
+        name: "Zichen",
+        classId: "ranger",
+        level: 1,
+        xp: 0,
+        hp: 80,
+        maxHp: 100,
+        copperBalance: 12,
+        hunger: 5,
+        lastHungerSettledAt,
+        currentLocation: "corrupt_forest",
+        position: { x: 1, y: 3 },
+        injuryUntil: null
+      }
+    ]);
+    const repository = new GameRepository(db as never);
+
+    await expect(repository.findCharacterByAccountIdForUpdate("account-1")).resolves.toMatchObject({
+      id: "character-1",
+      accountId: "account-1",
+      copperBalance: 12,
+      position: { x: 1, y: 3 },
+      lastHungerSettledAt
+    });
+    expect(forUpdate).toHaveBeenCalledWith("update");
+  });
+
   it("locks and maps one market inventory row", async () => {
     const { db, forUpdate } = createSelectDb([
       {

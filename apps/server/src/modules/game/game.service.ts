@@ -116,6 +116,27 @@ export class GameServiceError extends Error {
   }
 }
 
+const ACTIVE_ACTION_UNIQUE_CONSTRAINT = "character_actions_one_active_per_character_idx";
+
+function isActiveActionUniqueConflict(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const postgresError = error as { code?: unknown; constraint?: unknown };
+  return (
+    postgresError.code === "23505" && postgresError.constraint === ACTIVE_ACTION_UNIQUE_CONSTRAINT
+  );
+}
+
+async function translateActiveActionConflict<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (isActiveActionUniqueConflict(error)) {
+      throw new GameServiceError("VALIDATION_ERROR", "已有进行中的行动。");
+    }
+    throw error;
+  }
+}
+
 interface GatheringSettlementResult {
   changed: boolean;
   settledCycles: number;
@@ -583,132 +604,144 @@ export class GameService {
     accountId: string,
     input: StartGatheringRequestDto
   ): Promise<GameStateDto> {
-    return this.db.transaction(async (tx) => {
-      const repo = new GameRepository(tx);
-      const now = new Date();
-      const { character, zone } = await this.requireReadyExploringCharacter(repo, accountId, now);
-      await this.requireNoActiveAction(repo, character.id);
-      const map = await this.requireZoneMap(repo, character, zone);
-      const resource = findLiveResourceAt(zone, character.position, map.resourceCharges);
+    return translateActiveActionConflict(() =>
+      this.db.transaction(async (tx) => {
+        const repo = new GameRepository(tx);
+        const now = new Date();
+        const { character, zone } = await this.requireReadyExploringCharacter(
+          repo,
+          accountId,
+          now,
+          { forUpdate: true }
+        );
+        await this.requireNoActiveAction(repo, character.id);
+        const map = await this.requireZoneMap(repo, character, zone);
+        const resource = findLiveResourceAt(zone, character.position, map.resourceCharges);
 
-      if (!resource) {
-        throw new GameServiceError("VALIDATION_ERROR", "这里没有可采集的资源。");
-      }
-
-      const plan = calculateGatheringPlan({
-        baseCycleSeconds: resource.cycleSeconds,
-        classId: character.classId,
-        agility: classAgility(character.classId),
-        plannedMinutes: input.plannedMinutes,
-        remainingCharges: map.resourceCharges[resource.id] ?? resource.charges
-      });
-      const item = getItemById(resource.gatherResult.itemId);
-
-      await repo.createAction({
-        characterId: character.id,
-        actionType: "gathering",
-        startedAt: now,
-        endsAt: new Date(now.getTime() + plan.cycleMs * plan.plannedCycles),
-        payload: {
-          resourceId: resource.id,
-          itemId: resource.gatherResult.itemId,
-          itemName: item?.name ?? resource.gatherResult.itemId,
-          quantityPerCycle: resource.gatherResult.quantity,
-          cycleMs: plan.cycleMs,
-          plannedCycles: plan.plannedCycles,
-          settledCycles: 0
+        if (!resource) {
+          throw new GameServiceError("VALIDATION_ERROR", "这里没有可采集的资源。");
         }
-      });
-      await repo.writeEvent({
-        characterId: character.id,
-        eventType: "action.gathering.start",
-        message: `你开始采集${resource.name}。`
-      });
 
-      return this.buildState(repo, accountId, now);
-    });
+        const plan = calculateGatheringPlan({
+          baseCycleSeconds: resource.cycleSeconds,
+          classId: character.classId,
+          agility: classAgility(character.classId),
+          plannedMinutes: input.plannedMinutes,
+          remainingCharges: map.resourceCharges[resource.id] ?? resource.charges
+        });
+        const item = getItemById(resource.gatherResult.itemId);
+
+        await repo.createAction({
+          characterId: character.id,
+          actionType: "gathering",
+          startedAt: now,
+          endsAt: new Date(now.getTime() + plan.cycleMs * plan.plannedCycles),
+          payload: {
+            resourceId: resource.id,
+            itemId: resource.gatherResult.itemId,
+            itemName: item?.name ?? resource.gatherResult.itemId,
+            quantityPerCycle: resource.gatherResult.quantity,
+            cycleMs: plan.cycleMs,
+            plannedCycles: plan.plannedCycles,
+            settledCycles: 0
+          }
+        });
+        await repo.writeEvent({
+          characterId: character.id,
+          eventType: "action.gathering.start",
+          message: `你开始采集${resource.name}。`
+        });
+
+        return this.buildState(repo, accountId, now);
+      })
+    );
   }
 
   async startCombat(accountId: string): Promise<GameStateDto> {
-    return this.db.transaction(async (tx) => {
-      const repo = new GameRepository(tx);
-      const now = new Date();
-      const { character, zone } = await this.requireReadyExploringCharacter(repo, accountId, now);
-      await this.requireNoActiveAction(repo, character.id);
-      const map = await this.requireZoneMap(repo, character, zone);
-      const encounter = findEncounterAt(zone, character.position);
-
-      if (!encounter) {
-        throw new GameServiceError("VALIDATION_ERROR", "这里没有可攻击的敌人。");
-      }
-      if (!isEncounterReady(map, encounter.id, now)) {
-        const cooldownEndsAt = encounterCooldownEndsAt(map, encounter.id);
-        throw new GameServiceError(
-          "VALIDATION_ERROR",
-          cooldownEndsAt
-            ? `这处遭遇正在冷却，${cooldownEndsAt.toLocaleTimeString("zh-CN", { hour12: false })} 后再来。`
-            : "这处遭遇正在冷却。"
+    return translateActiveActionConflict(() =>
+      this.db.transaction(async (tx) => {
+        const repo = new GameRepository(tx);
+        const now = new Date();
+        const { character, zone } = await this.requireReadyExploringCharacter(
+          repo,
+          accountId,
+          now,
+          { forUpdate: true }
         );
-      }
+        await this.requireNoActiveAction(repo, character.id);
+        const map = await this.requireZoneMap(repo, character, zone);
+        const encounter = findEncounterAt(zone, character.position);
 
-      const monsters = encounter.monsterIds.map((monsterId) => getMonsterById(monsterId));
-      if (monsters.some((monster) => !monster)) {
-        throw new GameServiceError("VALIDATION_ERROR", "遭遇配置无效。");
-      }
+        if (!encounter) {
+          throw new GameServiceError("VALIDATION_ERROR", "这里没有可攻击的敌人。");
+        }
+        if (!isEncounterReady(map, encounter.id, now)) {
+          const cooldownEndsAt = encounterCooldownEndsAt(map, encounter.id);
+          throw new GameServiceError(
+            "VALIDATION_ERROR",
+            cooldownEndsAt
+              ? `这处遭遇正在冷却，${cooldownEndsAt.toLocaleTimeString("zh-CN", { hour12: false })} 后再来。`
+              : "这处遭遇正在冷却。"
+          );
+        }
 
-      const combatSeed = `${character.id}:${encounter.id}:${now.toISOString()}`;
-      const result = simulateCombat({
-        seed: combatSeed,
-        player: {
-          name: character.name,
-          hp: character.hp,
-          maxHp: character.maxHp,
-          attack:
-            Math.floor(
+        const monsters = encounter.monsterIds.map((monsterId) => getMonsterById(monsterId));
+        if (monsters.some((monster) => !monster)) {
+          throw new GameServiceError("VALIDATION_ERROR", "遭遇配置无效。");
+        }
+
+        const combatSeed = `${character.id}:${encounter.id}:${now.toISOString()}`;
+        const result = simulateCombat({
+          seed: combatSeed,
+          player: {
+            name: character.name,
+            hp: character.hp,
+            maxHp: character.maxHp,
+            attack: Math.floor(
               (classAttack(character.classId) +
                 equipmentAttackBonus(await this.listEquippedEquipment(repo, character.id))) *
                 calculateHungerCombatMultiplier(character.hunger)
             ),
-          defense:
-            Math.floor(
+            defense: Math.floor(
               (classDefense(character.classId) +
                 equipmentDefenseBonus(await this.listEquippedEquipment(repo, character.id))) *
                 calculateHungerCombatMultiplier(character.hunger)
             ),
-          agility: classAgility(character.classId)
-        },
-        monsters: monsters.map((monster) => monster!)
-      });
+            agility: classAgility(character.classId)
+          },
+          monsters: monsters.map((monster) => monster!)
+        });
 
-      if (result.outcome === "stalemate") {
-        throw new GameServiceError("VALIDATION_ERROR", "这场战斗短时间内无法结束。");
-      }
-
-      await repo.createAction({
-        characterId: character.id,
-        actionType: "combat",
-        startedAt: now,
-        endsAt: new Date(now.getTime() + result.durationMs),
-        payload: {
-          encounterId: encounter.id,
-          combatLog: result.timeline.map((entry) => entry.message),
-          combatTimeline: result.timeline,
-          lootSeed: combatSeed,
-          expectedEndsAtMs: now.getTime() + result.durationMs,
-          outcome: result.outcome,
-          playerRemainingHp: result.playerRemainingHp,
-          xp: result.xp,
-          loot: result.loot
+        if (result.outcome === "stalemate") {
+          throw new GameServiceError("VALIDATION_ERROR", "这场战斗短时间内无法结束。");
         }
-      });
-      await repo.writeEvent({
-        characterId: character.id,
-        eventType: "action.combat.start",
-        message: `你开始与${encounter.name}战斗。`
-      });
 
-      return this.buildState(repo, accountId, now);
-    });
+        await repo.createAction({
+          characterId: character.id,
+          actionType: "combat",
+          startedAt: now,
+          endsAt: new Date(now.getTime() + result.durationMs),
+          payload: {
+            encounterId: encounter.id,
+            combatLog: result.timeline.map((entry) => entry.message),
+            combatTimeline: result.timeline,
+            lootSeed: combatSeed,
+            expectedEndsAtMs: now.getTime() + result.durationMs,
+            outcome: result.outcome,
+            playerRemainingHp: result.playerRemainingHp,
+            xp: result.xp,
+            loot: result.loot
+          }
+        });
+        await repo.writeEvent({
+          characterId: character.id,
+          eventType: "action.combat.start",
+          message: `你开始与${encounter.name}战斗。`
+        });
+
+        return this.buildState(repo, accountId, now);
+      })
+    );
   }
 
   async cancelAction(accountId: string): Promise<GameStateDto> {
@@ -1217,6 +1250,18 @@ export class GameService {
     return this.settleHungerForCharacter(repo, character, now);
   }
 
+  private async requireSettledCharacterForUpdate(
+    repo: GameRepository,
+    accountId: string,
+    now: Date
+  ) {
+    const character = await repo.findCharacterByAccountIdForUpdate(accountId);
+    if (!character) {
+      throw new GameServiceError("VALIDATION_ERROR", "Character required");
+    }
+    return this.settleHungerForCharacter(repo, character, now);
+  }
+
   private foodDefinitions() {
     return FIRST_ITEMS.filter(isFoodDefinition).filter((item) => item.satietyRestore).map(
       (item) => ({
@@ -1437,9 +1482,12 @@ export class GameService {
   private async requireReadyExploringCharacter(
     repo: GameRepository,
     accountId: string,
-    now: Date
+    now: Date,
+    options: { forUpdate?: boolean } = {}
   ): Promise<{ character: CharacterRecord & { position: GridPositionDto }; zone: ZoneDefinition }> {
-    const character = await this.requireSettledCharacter(repo, accountId, now);
+    const character = options.forUpdate
+      ? await this.requireSettledCharacterForUpdate(repo, accountId, now)
+      : await this.requireSettledCharacter(repo, accountId, now);
     if (character.injuryUntil && character.injuryUntil.getTime() > now.getTime()) {
       throw new GameServiceError("VALIDATION_ERROR", "你正在养伤，暂时不能出城。");
     }
