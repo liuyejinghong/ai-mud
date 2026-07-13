@@ -1,59 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import {
   CHARACTER_CLASSES,
-  type ChatMessageDto,
   type CharacterClassId,
-  type Direction,
   type EquipmentItemDto,
   type GameLocationId,
-  type GameStateDto,
-  type GameSyncEventDto,
-  type HungerStatus,
   type InventoryItemDto,
-  type LeaderboardEntryDto,
-  type MarketDto,
   type MoneyDto,
-  type NpcDialogueResponseDto,
   type NpcDialogueTargetDto,
-  type OfflineReportDto,
-  type PresenceDto,
   type StartGatheringRequestDto
 } from "@ai-mud/shared";
-import {
-  acceptNpcTask,
-  buyMarketItem,
-  cancelAction,
-  claimMunicipalRelief,
-  completeNpcTask,
-  createCharacter,
-  eatFood,
-  enterCorruptForest,
-  enterOldMine,
-  equipEquipment,
-  GameApiError,
-  getGameSync,
-  getMarket,
-  getNpcDialogue,
-  heartbeatPresence,
-  listDialogueTargets,
-  move,
-  repairAllEquipment,
-  repairEquipment,
-  returnToVillage,
-  sellMarketItem,
-  sendLobbyChat,
-  sendNpcDialogueMessage,
-  startCombat,
-  startGathering
-} from "./gameApi";
-import { HotkeyRegistry } from "./input/HotkeyRegistry";
-import { dispatchHotkey, getInputContextScopes } from "./input/InputContext";
 import {
   selectContextualObjective,
   selectRecentLog,
   selectSceneObjects
 } from "./controller/gameSelectors";
-import { useGameSync } from "./sync/useGameSync";
+import { useGameController } from "./controller/useGameController";
 import { ModalManager } from "./ui/ModalManager";
 import "./GameShell.css";
 
@@ -63,30 +24,7 @@ interface GameShellProps {
   onLogout?: () => Promise<void>;
 }
 
-const initialState: GameStateDto = {
-  character: null,
-  locationTitle: "黑松哨站",
-  locationDescription: "你尚未创建角色。",
-  map: null,
-  inventory: [],
-  equipment: [],
-  backpackEquipment: [],
-  market: null,
-  npcTasks: [],
-  currentAction: null,
-  rumors: [],
-  availableActions: ["create_character"],
-  log: []
-};
-
 const EVENT_LOG_LIMIT = 30;
-
-const directionLabels: Record<Direction, string> = {
-  north: "北",
-  west: "西",
-  south: "南",
-  east: "东"
-};
 
 const locationLabels: Partial<Record<GameLocationId, string>> = {
   blackpine_outpost: "黑松哨站",
@@ -160,12 +98,6 @@ function equipmentAffixLine(item: EquipmentItemDto) {
   return item.affixes.map((affix) => `${affix.name} +${affix.value}`).join(" / ");
 }
 
-function hungerWarningText(status: HungerStatus) {
-  if (status === "fed") return null;
-  if (status === "starving") return "饥饿：饱腹归零，无法继续外出。";
-  return "饥饿：继续外出前最好准备食物。";
-}
-
 function dialogueTaskHint(target: NpcDialogueTargetDto) {
   if (!target.task) return null;
   const status = {
@@ -177,482 +109,66 @@ function dialogueTaskHint(target: NpcDialogueTargetDto) {
   return `${status}：${target.task.title}`;
 }
 
-interface FeedbackNotice {
-  id: string;
-  tone: "loot" | "rare" | "level";
-  text: string;
-}
-
-function readPayloadString(payload: Record<string, unknown>, key: string) {
-  return typeof payload[key] === "string" ? payload[key] : null;
-}
-
-function readPayloadNumber(payload: Record<string, unknown>, key: string) {
-  return typeof payload[key] === "number" ? payload[key] : null;
-}
-
-function syncEventNotice(
-  event: GameSyncEventDto,
-  currentCharacterId: string | null
-): FeedbackNotice | null {
-  const itemId = typeof event.payload.itemId === "string" ? event.payload.itemId : null;
-  const itemName = readPayloadString(event.payload, "itemName") ?? itemId;
-  const quantity = readPayloadNumber(event.payload, "quantity");
-  if (event.eventType === "item.grant" && itemName && quantity) {
-    return { id: String(event.id), tone: "loot", text: `获得 ${itemName} x${quantity}` };
-  }
-  if (event.eventType === "item.instance.grant") {
-    const equipmentName =
-      readPayloadString(event.payload, "itemName") ??
-      readPayloadString(event.payload, "itemDefId") ??
-      "未知装备";
-    const rarity = readPayloadString(event.payload, "rarity");
-    const rarityText =
-      rarity && rarity in rarityLabels
-        ? rarityLabels[rarity as EquipmentItemDto["rarity"]]
-        : "装备";
-    return {
-      id: String(event.id),
-      tone: rarity === "common" ? "loot" : "rare",
-      text: `获得${rarityText}装备：${equipmentName}`
-    };
-  }
-  if (event.eventType === "character.level_up") {
-    const level = readPayloadNumber(event.payload, "level");
-    if (!level) return null;
-    return { id: String(event.id), tone: "level", text: `等级提升至 ${level}` };
-  }
-  if (event.eventType === "world.broadcast") {
-    const characterId = readPayloadString(event.payload, "characterId");
-    if (characterId && characterId === currentCharacterId) return null;
-
-    const kind = readPayloadString(event.payload, "kind");
-    const characterName = readPayloadString(event.payload, "characterName") ?? "有冒险者";
-    if (kind === "rare_drop") {
-      const equipmentName =
-        readPayloadString(event.payload, "itemName") ??
-        readPayloadString(event.payload, "itemDefId") ??
-        "未知装备";
-      const rarity = readPayloadString(event.payload, "rarity");
-      const rarityText =
-        rarity && rarity in rarityLabels
-          ? rarityLabels[rarity as EquipmentItemDto["rarity"]]
-          : "稀有";
-      return {
-        id: String(event.id),
-        tone: "rare",
-        text: `${characterName} 获得${rarityText}装备：${equipmentName}`
-      };
-    }
-    if (kind === "level_up") {
-      const level = readPayloadNumber(event.payload, "level");
-      if (!level) return null;
-      return { id: String(event.id), tone: "level", text: `${characterName} 升到 ${level} 级` };
-    }
-  }
-  if (event.eventType === "system.announcement") {
-    return { id: String(event.id), tone: "level", text: "系统公告已发布" };
-  }
-  if (event.eventType === "item.consume" && itemName && quantity) {
-    return { id: String(event.id), tone: "loot", text: `消耗 ${itemName} x${quantity}` };
-  }
-  if (event.eventType === "item.transfer.in" && itemId && quantity) {
-    return { id: String(event.id), tone: "loot", text: `收到 ${itemName} x${quantity}` };
-  }
-  return null;
-}
-
-type ActiveModal =
-  | { type: "item"; item: InventoryItemDto }
-  | { type: "equipment"; item: EquipmentItemDto }
-  | { type: "market" }
-  | { type: "dialogue" }
-  | { type: "combat" };
-
-type LobbyTab = "chat" | "online" | "leaderboard";
-
-interface LobbyState {
-  chat: ChatMessageDto[];
-  presence: PresenceDto[];
-  leaderboards: {
-    level: LeaderboardEntryDto[];
-    wealth: LeaderboardEntryDto[];
-  };
-}
-
-const initialLobbyState: LobbyState = {
-  chat: [],
-  presence: [],
-  leaderboards: { level: [], wealth: [] }
-};
-
-function gameErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof GameApiError) {
-    if (error.status === 401 || error.code === "UNAUTHENTICATED") {
-      return "登录已失效，请重新登录。";
-    }
-    return error.message || fallback;
-  }
-  return fallback;
-}
-
-function isAuthExpired(error: unknown) {
-  return (
-    error instanceof GameApiError &&
-    (error.status === 401 || error.code === "UNAUTHENTICATED")
-  );
-}
-
 export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps) {
-  const [state, setState] = useState<GameStateDto>(initialState);
-  const currentCharacterIdRef = useRef<string | null>(initialState.character?.id ?? null);
-  const [name, setName] = useState("Zichen");
-  const [classId, setClassId] = useState<CharacterClassId>("ranger");
-  const [activeModal, setActiveModal] = useState<ActiveModal | null>(null);
-  const [market, setMarket] = useState<MarketDto | null>(null);
-  const [marketStatus, setMarketStatus] = useState<string | null>(null);
-  const [dialogueTargets, setDialogueTargets] = useState<NpcDialogueTargetDto[]>([]);
-  const [dialogue, setDialogue] = useState<NpcDialogueResponseDto | null>(null);
-  const [dialogueInput, setDialogueInput] = useState("");
-  const [dialogueStatus, setDialogueStatus] = useState("");
-  const [lobby, setLobby] = useState<LobbyState>(initialLobbyState);
-  const [lobbyTab, setLobbyTab] = useState<LobbyTab>("chat");
-  const [chatInput, setChatInput] = useState("");
-  const [chatStatus, setChatStatus] = useState("");
-  const [isChatSending, setIsChatSending] = useState(false);
-  const [syncNotices, setSyncNotices] = useState<FeedbackNotice[]>([]);
-  const [offlineReport, setOfflineReport] = useState<OfflineReportDto | null>(null);
-  const [plannedMinutes, setPlannedMinutes] =
-    useState<StartGatheringRequestDto["plannedMinutes"]>(10);
-  const [error, setError] = useState<string | null>(null);
-  const [isBusy, setIsBusy] = useState(false);
-
-  const handleSyncState = useCallback((nextState: GameStateDto) => {
-    currentCharacterIdRef.current = nextState.character?.id ?? null;
-    setState(nextState);
-  }, []);
-
-  const handleSyncEvents = useCallback(
-    (events: GameSyncEventDto[]) => {
-      const notices = events
-        .map((event) => syncEventNotice(event, currentCharacterIdRef.current))
-        .filter((entry): entry is FeedbackNotice => entry !== null);
-      if (notices.length === 0) return;
-      setSyncNotices((current) => [...notices, ...current].slice(0, 4));
-    },
-    []
-  );
-
-  const applyLobbySync = useCallback((next: LobbyState) => {
-    setLobby({
-      chat: next.chat.slice(-30),
-      presence: next.presence,
-      leaderboards: next.leaderboards
-    });
-  }, []);
-
-  const sync = useGameSync({
-    activeAction: state.currentAction,
-    onState: handleSyncState,
-    onEvents: handleSyncEvents,
-    onLobby: applyLobbySync,
-    onOfflineReport: setOfflineReport
+  const {
+    state,
+    activeModal,
+    market,
+    marketStatus,
+    dialogueTargets,
+    dialogue,
+    dialogueInput,
+    setDialogueInput,
+    dialogueStatus,
+    lobby,
+    lobbyTab,
+    setLobbyTab,
+    chatInput,
+    setChatInput,
+    chatStatus,
+    isChatSending,
+    syncNotices,
+    offlineReport,
+    name,
+    setName,
+    classId,
+    setClassId,
+    plannedMinutes,
+    setPlannedMinutes,
+    error,
+    isBusy,
+    sync,
+    commands,
+    view: {
+      canMove,
+      canGather,
+      canStartCombat,
+      canCancelAction,
+      canReturnVillage,
+      canClaimRelief,
+      canEnterForest,
+      canEnterOldMine,
+      canOpenMarket,
+      canOpenDialogue,
+      canInteractWithTasks,
+      canRepairEquipment,
+      canEatFood,
+      canEquipEquipment,
+      hungerWarning,
+      damagedEquipment,
+      acceptedTasks,
+      selectedClass,
+      cells,
+      location
+    }
+  } = useGameController({
+    csrfToken,
+    ...(onAuthExpired ? { onAuthExpired } : {}),
+    ...(onLogout ? { onLogout } : {})
   });
 
-  const isModalOpen = activeModal !== null;
-  const canMove = state.availableActions.includes("move") && !isBusy && !isModalOpen;
-  const canGather =
-    (state.availableActions.includes("start_gathering") ||
-      state.availableActions.includes("gather")) &&
-    !isBusy;
-  const canStartCombat = state.availableActions.includes("start_combat") && !isBusy;
-  const canCancelAction = state.availableActions.includes("cancel_action") && !isBusy;
-  const canReturnVillage = state.availableActions.includes("return_to_village") && !isBusy;
-  const canClaimRelief = state.availableActions.includes("claim_relief") && !isBusy;
-  const canEnterForest = state.availableActions.includes("enter_corrupt_forest") && !isBusy;
-  const canEnterOldMine = state.availableActions.includes("enter_old_mine") && !isBusy;
-  const canOpenMarket = state.availableActions.includes("open_market") && !isBusy;
-  const canOpenDialogue =
-    state.character?.currentLocation === "blackpine_outpost" && !isBusy && !state.currentAction;
-  const canInteractWithTasks =
-    state.character?.currentLocation === "blackpine_outpost" && !isBusy && !state.currentAction;
-  const canRepairEquipment =
-    state.availableActions.includes("repair_equipment") && !isBusy && !state.currentAction;
-  const canEatFood =
-    state.availableActions.includes("eat_food") && !isBusy && !state.currentAction;
-  const canEquipEquipment = !isBusy && !state.currentAction;
-  const hungerWarning = hungerWarningText(state.character?.needs.hunger.status ?? "fed");
-  const damagedEquipment = state.equipment.filter((item) => item.repairQuote !== null);
-  const acceptedTasks = state.npcTasks.filter((task) => task.status === "accepted");
-  const selectedClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
-  const nextStep = selectContextualObjective(state);
-
-  async function submitLobbyChat() {
-    const body = chatInput.trim();
-    if (!body || isChatSending) return;
-
-    setError(null);
-    setChatStatus("发送中...");
-    setIsChatSending(true);
-    try {
-      await sendLobbyChat(body, csrfToken);
-      const refreshed = await getGameSync(sync.cursor > 0 ? sync.cursor : undefined);
-      sync.applyResponse(refreshed);
-      setChatInput("");
-      setChatStatus("");
-    } catch (caught) {
-      if (isAuthExpired(caught)) onAuthExpired?.();
-      setChatStatus(gameErrorMessage(caught, "大厅发言失败，请稍后再试。"));
-    } finally {
-      setIsChatSending(false);
-    }
-  }
-
-  async function runCommand(
-    action: () => Promise<GameStateDto>,
-    onFailure?: (message: string) => void
-  ): Promise<boolean> {
-    setError(null);
-    setIsBusy(true);
-    try {
-      setState(await action());
-      return true;
-    } catch (caught) {
-      if (isAuthExpired(caught)) onAuthExpired?.();
-      const message = gameErrorMessage(caught, "动作失败，请稍后再试。");
-      if (onFailure) onFailure(message);
-      else setError(message);
-      return false;
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function endSession() {
-    if (!onLogout) return;
-    setIsBusy(true);
-    setError("");
-    try {
-      await onLogout();
-    } catch {
-      setError("退出登录失败，请检查网络后重试。");
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function equipBackpackEquipment(instanceId: string, onSuccess: () => void) {
-    setError(null);
-    setIsBusy(true);
-    try {
-      setState(await equipEquipment({ instanceId }, csrfToken));
-      onSuccess();
-    } catch (caught) {
-      if (isAuthExpired(caught)) onAuthExpired?.();
-      setError(gameErrorMessage(caught, "装备失败，请稍后再试。"));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function openMarket() {
-    setError(null);
-    setMarketStatus(null);
-    setIsBusy(true);
-    try {
-      setMarket(await getMarket());
-      setActiveModal({ type: "market" });
-    } catch (caught) {
-      if (isAuthExpired(caught)) onAuthExpired?.();
-      setError(gameErrorMessage(caught, "集市暂时无法打开。"));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function openDialogueDialog() {
-    setError(null);
-    setDialogueStatus("正在寻找附近 NPC...");
-    setActiveModal({ type: "dialogue" });
-    setIsBusy(true);
-    try {
-      const targets = await listDialogueTargets();
-      setDialogueTargets(targets);
-      setDialogue(null);
-      setDialogueStatus(targets.length > 0 ? "" : "附近暂时没有可交谈的 NPC。");
-    } catch (caught) {
-      if (isAuthExpired(caught)) onAuthExpired?.();
-      setDialogueStatus(gameErrorMessage(caught, "附近 NPC 暂时无法读取。"));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function openNpcDialogue(npcActorId: string) {
-    setDialogueStatus("正在读取对话...");
-    setIsBusy(true);
-    try {
-      const nextDialogue = await getNpcDialogue(npcActorId);
-      setDialogue(nextDialogue);
-      setDialogueTargets((current) =>
-        current.map((target) =>
-          target.npcActorId === nextDialogue.target.npcActorId ? nextDialogue.target : target
-        )
-      );
-      setDialogueInput("");
-      setDialogueStatus("");
-    } catch (caught) {
-      if (isAuthExpired(caught)) onAuthExpired?.();
-      setDialogueStatus(gameErrorMessage(caught, "对话暂时无法打开。"));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function submitDialogueMessage() {
-    const message = dialogueInput.trim();
-    if (!dialogue || !message) return;
-
-    setDialogueStatus("正在等待回应...");
-    setIsBusy(true);
-    try {
-      const nextDialogue = await sendNpcDialogueMessage(
-        dialogue.target.npcActorId,
-        message,
-        csrfToken
-      );
-      setDialogue(nextDialogue);
-      setDialogueTargets((current) =>
-        current.map((target) =>
-          target.npcActorId === nextDialogue.target.npcActorId ? nextDialogue.target : target
-        )
-      );
-      const refreshed = await getGameSync();
-      if (refreshed.state) setState(refreshed.state);
-      setDialogueInput("");
-      setDialogueStatus("");
-    } catch (caught) {
-      if (isAuthExpired(caught)) onAuthExpired?.();
-      setDialogueStatus(gameErrorMessage(caught, "NPC 暂时没有回应。"));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function runDialogueTask(action: () => Promise<GameStateDto>) {
-    if (!dialogue) return;
-
-    setDialogueStatus("");
-    setIsBusy(true);
-    try {
-      setState(await action());
-      const nextDialogue = await getNpcDialogue(dialogue.target.npcActorId);
-      setDialogue(nextDialogue);
-      setDialogueTargets((current) =>
-        current.map((target) =>
-          target.npcActorId === nextDialogue.target.npcActorId ? nextDialogue.target : target
-        )
-      );
-    } catch (caught) {
-      if (isAuthExpired(caught)) onAuthExpired?.();
-      setDialogueStatus(gameErrorMessage(caught, "任务操作未完成，请稍后再试。"));
-    } finally {
-      setIsBusy(false);
-    }
-  }
-
-  async function runMarketTrade(action: () => Promise<GameStateDto>) {
-    setMarketStatus(null);
-    const succeeded = await runCommand(action, setMarketStatus);
-    if (succeeded) setActiveModal(null);
-  }
-
-  const hotkeyRegistry = useMemo(() => {
-    const registry = new HotkeyRegistry();
-    const movementHotkeys: Array<{ key: string; direction: Direction; description: string }> = [
-      { key: "w", direction: "north", description: "向北移动" },
-      { key: "a", direction: "west", description: "向西移动" },
-      { key: "s", direction: "south", description: "向南移动" },
-      { key: "d", direction: "east", description: "向东移动" }
-    ];
-
-    for (const hotkey of movementHotkeys) {
-      registry.register({
-        key: hotkey.key,
-        contextScope: "global",
-        action: `move:${hotkey.direction}`,
-        description: hotkey.description,
-        handler: () => {
-          if (!canMove) return;
-          void runCommand(() => move(hotkey.direction, csrfToken));
-        }
-      });
-    }
-
-    registry.register({
-      key: "Escape",
-      contextScope: "modal",
-      action: "modal:close",
-      description: "关闭弹层",
-      handler: () => setActiveModal(null)
-    });
-
-    return registry;
-  }, [canMove, csrfToken]);
-
-  useEffect(() => {
-    if (!sync.error) return;
-    if (isAuthExpired(sync.error)) onAuthExpired?.();
-    setError(gameErrorMessage(sync.error, "同步世界状态失败。"));
-  }, [onAuthExpired, sync.error]);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      const handled = dispatchHotkey(
-        hotkeyRegistry,
-        event.key,
-        getInputContextScopes(event, { isModalOpen })
-      );
-      if (handled) event.preventDefault();
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [hotkeyRegistry, isModalOpen]);
-
-  useEffect(() => {
-    setActiveModal((current) => (current?.type === "combat" ? null : current));
-  }, [state.currentAction?.id, state.currentAction?.actionType]);
-
-  useEffect(() => {
-    if (!state.character) return undefined;
-
-    let cancelled = false;
-    const publishHeartbeat = async () => {
-      try {
-        await heartbeatPresence(csrfToken);
-      } catch (caught) {
-        if (cancelled) return;
-        if (isAuthExpired(caught)) onAuthExpired?.();
-      }
-    };
-
-    void publishHeartbeat();
-    const timer = window.setInterval(() => {
-      void publishHeartbeat();
-    }, 60_000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [csrfToken, onAuthExpired, state.character?.id]);
-
-  const cells = useMemo(() => state.map?.cells ?? [], [state.map]);
+  const nextStep = useMemo(() => selectContextualObjective(state), [state]);
   const recentLog = useMemo(() => selectRecentLog(state, EVENT_LOG_LIMIT), [state]);
-  const positionText = state.character?.position
-    ? `坐标 ${state.character.position.x}, ${state.character.position.y}`
-    : "村镇";
   const sceneObjects = useMemo(() => selectSceneObjects(state), [state]);
 
   if (!state.character) {
@@ -696,7 +212,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
             type="button"
             className="game-primary-button"
             disabled={isBusy}
-            onClick={() => void runCommand(() => createCharacter({ name, classId }, csrfToken))}
+            onClick={() => void commands.createCharacter()}
           >
             进入世界
           </button>
@@ -745,7 +261,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               type="button"
               className="game-secondary-button session-end-button"
               disabled={isBusy}
-              onClick={() => void endSession()}
+              onClick={() => void commands.endSession()}
             >
               退出登录
             </button>
@@ -765,7 +281,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                 className={`equipment-slot rarity-${item.rarity}`}
                 key={item.id}
                 aria-label={`${slotLabels[item.slot]} ${item.name} ${rarityLabels[item.rarity]} 耐久 ${item.durabilityPct}%`}
-                onClick={() => setActiveModal({ type: "equipment", item })}
+                onClick={() => commands.openEquipment(item)}
               >
                 <span className="equipment-slot-label">{slotLabels[item.slot]}</span>
                 <strong>{item.name}</strong>
@@ -786,7 +302,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               type="button"
               className="game-secondary-button repair-all-button"
               disabled={!canRepairEquipment}
-              onClick={() => void runCommand(() => repairAllEquipment(csrfToken))}
+              onClick={() => void commands.repairAllEquipment()}
             >
               修理全部装备
             </button>
@@ -808,7 +324,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                   type="button"
                   className={`inventory-equipment rarity-${item.rarity}`}
                   key={item.id}
-                  onClick={() => setActiveModal({ type: "equipment", item })}
+                  onClick={() => commands.openEquipment(item)}
                 >
                   <strong>{item.name}</strong>
                   <span>
@@ -824,7 +340,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                 <button
                   type="button"
                   className="inventory-item"
-                  onClick={() => setActiveModal({ type: "item", item })}
+                  onClick={() => commands.openItem(item)}
                 >
                   {item.name} x{item.quantity}
                 </button>
@@ -833,7 +349,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                     type="button"
                     className="game-secondary-button eat-button"
                     onClick={() =>
-                      void runCommand(() => eatFood({ itemId: item.itemId }, csrfToken))
+                      void commands.eatFood(item.itemId)
                     }
                   >
                     食用 {item.name}
@@ -897,7 +413,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                 className="lobby-chat-form"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  void submitLobbyChat();
+                  void commands.submitLobbyChat();
                 }}
               >
                 <input
@@ -974,7 +490,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
           <article className="scene-narrative">
             <div className="panel-heading">
               <h2 id="scene-focus-title">当前位置</h2>
-              <span>{positionText}</span>
+              <span>{location.positionText}</span>
             </div>
             <div className="scene-copy">
               <p>{state.locationDescription}</p>
@@ -1020,7 +536,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               <button
                 type="button"
                 className="game-primary-button"
-                onClick={() => void runCommand(() => claimMunicipalRelief(csrfToken))}
+                onClick={() => void commands.claimRelief()}
               >
                 领取市政救济
               </button>
@@ -1029,7 +545,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               <button
                 type="button"
                 className="game-primary-button"
-                onClick={() => void runCommand(() => enterCorruptForest(csrfToken))}
+                onClick={() => void commands.enterCorruptForest()}
               >
                 前往腐林
               </button>
@@ -1038,7 +554,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               <button
                 type="button"
                 className="game-secondary-button"
-                onClick={() => void runCommand(() => enterOldMine(csrfToken))}
+                onClick={() => void commands.enterOldMine()}
               >
                 前往旧矿坑
               </button>
@@ -1047,7 +563,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               <button
                 type="button"
                 className="game-secondary-button"
-                onClick={() => void openMarket()}
+                onClick={() => void commands.openMarket()}
               >
                 市政集市
               </button>
@@ -1056,7 +572,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               <button
                 type="button"
                 className="game-secondary-button"
-                onClick={() => void openDialogueDialog()}
+                onClick={() => void commands.openDialogue()}
               >
                 附近 NPC
               </button>
@@ -1078,7 +594,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                   type="button"
                   className="game-primary-button"
                   onClick={() =>
-                    void runCommand(() => startGathering({ plannedMinutes }, csrfToken))
+                    void commands.startGathering()
                   }
                 >
                   开始采集
@@ -1089,7 +605,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               <button
                 type="button"
                 className="game-secondary-button"
-                onClick={() => void runCommand(() => startCombat(csrfToken))}
+                onClick={() => void commands.startCombat()}
               >
                 攻击野狼
               </button>
@@ -1098,7 +614,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               <button
                 type="button"
                 className="game-secondary-button"
-                onClick={() => void runCommand(() => returnToVillage(csrfToken))}
+                onClick={() => void commands.returnToVillage()}
               >
                 返回哨站
               </button>
@@ -1135,7 +651,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                 <button
                   type="button"
                   className="game-secondary-button"
-                  onClick={() => setActiveModal({ type: "combat" })}
+                  onClick={commands.openCombat}
                 >
                   查看战斗
                 </button>
@@ -1144,7 +660,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                 <button
                   type="button"
                   className="game-secondary-button"
-                  onClick={() => void runCommand(() => cancelAction(csrfToken))}
+                  onClick={() => void commands.cancelAction()}
                 >
                   {state.currentAction.actionType === "combat" ? "撤离" : "取消行动"}
                 </button>
@@ -1175,7 +691,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                       <button
                         type="button"
                         className="game-secondary-button"
-                        onClick={() => void openDialogueDialog()}
+                        onClick={() => void commands.openDialogue()}
                       >
                         与 NPC 交谈
                       </button>
@@ -1246,7 +762,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               disabled={!canMove}
               className="direction-button north"
               aria-label="向北移动"
-              onClick={() => void runCommand(() => move("north", csrfToken))}
+              onClick={() => void commands.move("north")}
             >
               W
             </button>
@@ -1255,7 +771,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               disabled={!canMove}
               className="direction-button west"
               aria-label="向西移动"
-              onClick={() => void runCommand(() => move("west", csrfToken))}
+              onClick={() => void commands.move("west")}
             >
               A
             </button>
@@ -1264,7 +780,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               disabled={!canMove}
               className="direction-button south"
               aria-label="向南移动"
-              onClick={() => void runCommand(() => move("south", csrfToken))}
+              onClick={() => void commands.move("south")}
             >
               S
             </button>
@@ -1273,7 +789,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               disabled={!canMove}
               className="direction-button east"
               aria-label="向东移动"
-              onClick={() => void runCommand(() => move("east", csrfToken))}
+              onClick={() => void commands.move("east")}
             >
               D
             </button>
@@ -1314,7 +830,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
         ) : null}
       </aside>
 
-      <ModalManager activeModal={activeModal} onClose={() => setActiveModal(null)}>
+      <ModalManager activeModal={activeModal} onClose={commands.closeModal}>
         {(modal, closeModal) => {
           if (modal.type === "equipment") {
             const current = state.equipment.find((item) => item.slot === modal.item.slot) ?? null;
@@ -1400,7 +916,9 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                       type="button"
                       className="game-primary-button"
                       disabled={!canEquipEquipment}
-                      onClick={() => void equipBackpackEquipment(modal.item.id, closeModal)}
+                      onClick={() =>
+                        void commands.equipBackpackEquipment(modal.item.id, closeModal)
+                      }
                     >
                       装备
                     </button>
@@ -1409,11 +927,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                       type="button"
                       className="game-secondary-button"
                       disabled={!canRepairEquipment || !modal.item.repairQuote}
-                      onClick={() =>
-                        void runCommand(() =>
-                          repairEquipment({ equipmentId: modal.item.id }, csrfToken)
-                        )
-                      }
+                      onClick={() => void commands.repairEquipment(modal.item.id)}
                     >
                       修理 {modal.item.name}
                     </button>
@@ -1510,11 +1024,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                               : `购买 ${item.name}，铜币不足`
                           }
                           disabled={item.stockQuantity < 1 || !canAffordPurchase || isBusy}
-                          onClick={() =>
-                            void runMarketTrade(() =>
-                              buyMarketItem({ itemId: item.itemId, quantity: 1 }, csrfToken)
-                            )
-                          }
+                          onClick={() => void commands.buyMarketItem(item.itemId)}
                         >
                           购买 {item.name}
                         </button>
@@ -1522,11 +1032,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                           type="button"
                           className="game-secondary-button"
                           disabled={item.playerQuantity < 1 || isBusy}
-                          onClick={() =>
-                            void runMarketTrade(() =>
-                              sellMarketItem({ itemId: item.itemId, quantity: 1 }, csrfToken)
-                            )
-                          }
+                          onClick={() => void commands.sellMarketItem(item.itemId)}
                         >
                           出售 {item.name}
                         </button>
@@ -1583,7 +1089,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                         }
                         key={target.npcActorId}
                         disabled={isBusy}
-                        onClick={() => void openNpcDialogue(target.npcActorId)}
+                        onClick={() => void commands.openNpcDialogue(target.npcActorId)}
                       >
                         <strong>
                           {target.task?.status === "open" ? "! " : ""}
@@ -1617,11 +1123,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                                   type="button"
                                   className="game-secondary-button"
                                   disabled={!canInteractWithTasks}
-                                  onClick={() =>
-                                    void runDialogueTask(() =>
-                                      acceptNpcTask(dialogueTask.id, csrfToken)
-                                    )
-                                  }
+                                  onClick={() => void commands.acceptNpcTask(dialogueTask.id)}
                                 >
                                   接取任务
                                 </button>
@@ -1633,11 +1135,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                                   type="button"
                                   className="game-secondary-button"
                                   disabled={!canInteractWithTasks || taskMaterialGap > 0}
-                                  onClick={() =>
-                                    void runDialogueTask(() =>
-                                      completeNpcTask(dialogueTask.id, csrfToken)
-                                    )
-                                  }
+                                  onClick={() => void commands.completeNpcTask(dialogueTask.id)}
                                 >
                                   提交任务
                                 </button>
@@ -1662,7 +1160,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
                           className="dialogue-input-row"
                           onSubmit={(event) => {
                             event.preventDefault();
-                            void submitDialogueMessage();
+                            void commands.submitDialogueMessage();
                           }}
                         >
                           <input
