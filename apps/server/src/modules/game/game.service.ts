@@ -159,6 +159,10 @@ interface CharacterSettlementResult {
   stateChanged: boolean;
 }
 
+export interface GameServiceOptions {
+  testGatheringCycleMs?: number | undefined;
+}
+
 function classMaxHp(classId: CharacterClassId) {
   const characterClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
   if (!characterClass) throw new GameServiceError("VALIDATION_ERROR", "Unknown class");
@@ -441,7 +445,10 @@ function equipmentDefenseBonus(equipment: EquipmentRecord[]) {
 }
 
 export class GameService {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly options: GameServiceOptions = {}
+  ) {}
 
   async getState(
     accountId: string,
@@ -661,13 +668,17 @@ export class GameService {
           throw new GameServiceError("VALIDATION_ERROR", "这里没有可采集的资源。");
         }
 
-        const plan = calculateGatheringPlan({
+        const calculatedPlan = calculateGatheringPlan({
           baseCycleSeconds: resource.cycleSeconds,
           classId: character.classId,
           agility: classAgility(character.classId),
           plannedMinutes: input.plannedMinutes,
           remainingCharges: map.resourceCharges[resource.id] ?? resource.charges
         });
+        const plan = {
+          ...calculatedPlan,
+          cycleMs: this.options.testGatheringCycleMs ?? calculatedPlan.cycleMs
+        };
         const item = getItemById(resource.gatherResult.itemId);
 
         await repo.createAction({

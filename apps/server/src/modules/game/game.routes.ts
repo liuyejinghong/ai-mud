@@ -211,7 +211,9 @@ export async function enrichGameSyncResponse(
 function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies {
   const auth = new AuthService();
   const authRepo = new AuthRepository(app.di.db);
-  const game = new GameService(app.di.db);
+  const game = new GameService(app.di.db, {
+    testGatheringCycleMs: app.config.TEST_GATHERING_CYCLE_MS
+  });
   const lobby = new LobbyService(new LobbyRepository(app.di.db));
   const dialogue = createDialogueService(app);
   const task = createNpcTaskService(app);

@@ -119,9 +119,14 @@ const dialogueTargets = [
     profession: "blacksmith",
     currentLocation: "blackpine_outpost",
     statusLine: "正在盘点基础铁矿石库存。",
-    hasTask: true,
-    taskStatus: "open",
-    taskTitle: "炉火缺矿"
+    task: {
+      id: "task-1",
+      status: "open",
+      title: "炉火缺矿",
+      requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
+      playerQuantity: 0,
+      rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 }
+    }
   }
 ];
 
@@ -323,11 +328,11 @@ test("player can use the first playable MUD screen", async ({ page }) => {
   await expect(page.getByText("饱腹 5/5")).toBeVisible();
   await expect(page.getByRole("heading", { name: "装备" })).toBeVisible();
   await expect(page.getByText("训练短剑", { exact: true })).toBeVisible();
-  const trainingSword = page.getByRole("article").filter({ hasText: "训练短剑" });
+  await page.getByRole("button", { name: /武器 训练短剑/ }).click();
+  const trainingSword = page.getByRole("dialog", { name: "训练短剑 装备详情" });
   await expect(trainingSword.getByText("60/100")).toBeVisible();
-  await page.getByRole("button", { name: "修理 训练短剑" }).click();
-  await expect(trainingSword.getByText("100/100")).toBeVisible();
-  await expect(trainingSword.getByText("无需修理")).toBeVisible();
+  await expect(trainingSword.getByText(/基础铁矿石 x1/)).toBeVisible();
+  await trainingSword.getByRole("button", { name: "关闭" }).click();
 
   await page.getByRole("button", { name: "附近 NPC" }).click();
   const dialogueDialog = page.getByRole("dialog", { name: "附近 NPC 对话" });
@@ -351,7 +356,7 @@ test("player can use the first playable MUD screen", async ({ page }) => {
   await expect(page.getByRole("button", { name: "开始采集" })).toBeVisible();
   await page.getByRole("button", { name: "开始采集" }).click();
   await expect(page.getByRole("heading", { name: "当前行动" })).toBeVisible();
-  await expect(page.getByText(/当前周期 25%/)).toBeVisible();
+  await expect(page.getByText(/本轮采集 25%/)).toBeVisible();
   await page.getByRole("button", { name: "取消行动" }).click();
   await page.getByRole("button", { name: "攻击野狼" }).click();
   await page.getByRole("button", { name: "查看战斗" }).click();

@@ -7,7 +7,8 @@
     "build": "tsc -p tsconfig.json && vite build",
     "typecheck": "pnpm --filter @ai-mud/shared build && tsc -p tsconfig.json --noEmit",
     "test": "TZ=Asia/Shanghai pnpm --filter @ai-mud/shared build && TZ=Asia/Shanghai vitest run --passWithNoTests",
-    "e2e": "playwright test -c playwright.config.ts",
+    "e2e": "pnpm run e2e:mock && pnpm --filter @ai-mud/server e2e:real",
+    "e2e:mock": "playwright test -c playwright.config.ts --project=chromium-mock",
     "lint": "pnpm --filter @ai-mud/shared build && tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

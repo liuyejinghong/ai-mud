@@ -11,11 +11,16 @@ import { SystemAnnouncementAdmin } from "./features/admin/SystemAnnouncementAdmi
 import { WorldHealthAdmin } from "./features/admin/WorldHealthAdmin";
 import { WorldResetAdmin } from "./features/admin/WorldResetAdmin";
 import { AuthPage } from "./features/auth/AuthPage";
-import { getCurrentSession, type AuthSessionDto } from "./features/auth/authApi";
+import { getCurrentSession, logout, type AuthSessionDto } from "./features/auth/authApi";
 import { GameShell } from "./features/game/GameShell";
 
 export function App() {
   const [session, setSession] = useState<AuthSessionDto | null>(null);
+
+  async function endSession() {
+    await logout();
+    setSession(null);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -41,7 +46,11 @@ export function App() {
 
   return (
     <>
-      <GameShell csrfToken={session.csrfToken} onAuthExpired={() => setSession(null)} />
+      <GameShell
+        csrfToken={session.csrfToken}
+        onAuthExpired={() => setSession(null)}
+        onLogout={endSession}
+      />
       {isAdmin ? (
         <>
           <WorldHealthAdmin />

@@ -54,6 +54,7 @@ import "./GameShell.css";
 interface GameShellProps {
   csrfToken: string;
   onAuthExpired?: () => void;
+  onLogout?: () => Promise<void>;
 }
 
 const initialState: GameStateDto = {
@@ -296,7 +297,7 @@ function isAuthExpired(error: unknown) {
   );
 }
 
-export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
+export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps) {
   const [state, setState] = useState<GameStateDto>(initialState);
   const currentCharacterIdRef = useRef<string | null>(initialState.character?.id ?? null);
   const [name, setName] = useState("Zichen");
@@ -414,6 +415,19 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
       if (onFailure) onFailure(message);
       else setError(message);
       return false;
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function endSession() {
+    if (!onLogout) return;
+    setIsBusy(true);
+    setError("");
+    try {
+      await onLogout();
+    } catch {
+      setError("退出登录失败，请检查网络后重试。");
     } finally {
       setIsBusy(false);
     }
@@ -728,6 +742,16 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
             </div>
           </dl>
           {hungerWarning ? <p className="needs-warning">{hungerWarning}</p> : null}
+          {onLogout ? (
+            <button
+              type="button"
+              className="game-secondary-button session-end-button"
+              disabled={isBusy}
+              onClick={() => void endSession()}
+            >
+              退出登录
+            </button>
+          ) : null}
         </section>
 
         <section className="game-panel">

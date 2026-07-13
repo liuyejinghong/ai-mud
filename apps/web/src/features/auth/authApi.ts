@@ -24,6 +24,17 @@ export async function login(input: LoginRequestDto) {
   return postAuth("/auth/login", input);
 }
 
+export async function logout() {
+  const response = await fetch(`${API_BASE}/auth/logout`, {
+    method: "POST",
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    throw new Error("Unable to end session");
+  }
+}
+
 export async function getCurrentSession(): Promise<AuthSessionDto> {
   const response = await fetch(`${API_BASE}/auth/me`, {
     credentials: "include"

@@ -25,6 +25,7 @@ const envSchema = z
       .transform((value) => (value === undefined ? true : value === "true")),
     WORLD_TICK_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
     WORLD_TICK_MAX_STEPS: z.coerce.number().int().positive().default(60),
+    TEST_GATHERING_CYCLE_MS: z.coerce.number().int().min(100).max(5_000).optional(),
     AI_NPC_DIALOGUE_ENABLED: z
       .string()
       .optional()
@@ -50,6 +51,13 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         message: "ADMIN_BOOTSTRAP_EMAIL and ADMIN_BOOTSTRAP_PASSWORD must be set together",
         path: ["ADMIN_BOOTSTRAP_EMAIL"]
+      });
+    }
+    if (value.TEST_GATHERING_CYCLE_MS !== undefined && value.NODE_ENV !== "test") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "TEST_GATHERING_CYCLE_MS is only allowed when NODE_ENV=test",
+        path: ["TEST_GATHERING_CYCLE_MS"]
       });
     }
   });
