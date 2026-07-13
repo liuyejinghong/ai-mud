@@ -48,6 +48,11 @@ import {
 } from "./gameApi";
 import { HotkeyRegistry } from "./input/HotkeyRegistry";
 import { dispatchHotkey, getInputContextScopes } from "./input/InputContext";
+import {
+  selectContextualObjective,
+  selectRecentLog,
+  selectSceneObjects
+} from "./controller/gameSelectors";
 import { useGameSync } from "./sync/useGameSync";
 import { ModalManager } from "./ui/ModalManager";
 import "./GameShell.css";
@@ -159,21 +164,6 @@ function hungerWarningText(status: HungerStatus) {
   if (status === "fed") return null;
   if (status === "starving") return "饥饿：饱腹归零，无法继续外出。";
   return "饥饿：继续外出前最好准备食物。";
-}
-
-function nextStepText(state: GameStateDto, options: {
-  canClaimRelief: boolean;
-  canGather: boolean;
-  canStartCombat: boolean;
-}) {
-  if (state.currentAction) return "行动正在进行中。";
-  if (options.canClaimRelief) return "饥饿难耐，市政厅可以提供一份救济食物。";
-  if (state.character?.currentLocation === "blackpine_outpost") {
-    return "哨站暂时平静，准备前往野外探索。";
-  }
-  if (options.canGather) return "附近有可采集的资源，准备好后即可动手。";
-  if (options.canStartCombat) return "前方传来异响，继续前进前要留意敌踪。";
-  return "四周没有明显动静，先观察附近的道路。";
 }
 
 function dialogueTaskHint(target: NpcDialogueTargetDto) {
@@ -395,7 +385,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
   const damagedEquipment = state.equipment.filter((item) => item.repairQuote !== null);
   const acceptedTasks = state.npcTasks.filter((task) => task.status === "accepted");
   const selectedClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
-  const nextStep = nextStepText(state, { canClaimRelief, canGather, canStartCombat });
+  const nextStep = selectContextualObjective(state);
 
   async function submitLobbyChat() {
     const body = chatInput.trim();
@@ -659,27 +649,17 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
   }, [csrfToken, onAuthExpired, state.character?.id]);
 
   const cells = useMemo(() => state.map?.cells ?? [], [state.map]);
-  const recentLog = useMemo(() => state.log.slice(-EVENT_LOG_LIMIT), [state.log]);
+  const recentLog = useMemo(() => selectRecentLog(state, EVENT_LOG_LIMIT), [state]);
   const positionText = state.character?.position
     ? `坐标 ${state.character.position.x}, ${state.character.position.y}`
     : "村镇";
-  const sceneObjects = [
-    canGather
-      ? {
-          title: state.character?.currentLocation === "old_mine" ? "铁矿脉" : "采集点",
-          body: "可采集 · 会按周期入账"
-        }
-      : null,
-    canStartCombat ? { title: "危险踪迹", body: "可战斗 · 自动结算" } : null,
-    canOpenDialogue ? { title: "附近 NPC", body: "可交谈 · 可能有任务" } : null,
-    state.map ? { title: "相邻区域", body: "WASD 或点击小地图移动" } : null
-  ].filter((entry): entry is { title: string; body: string } => entry !== null);
+  const sceneObjects = useMemo(() => selectSceneObjects(state), [state]);
 
   if (!state.character) {
     return (
       <main className="game-shell game-shell-authenticated">
         <section className="game-create-panel" aria-labelledby="create-character-title">
-          <p className="game-kicker">Blackpine Outpost Registry</p>
+          <p className="game-kicker">黑松哨站户籍簿</p>
           <h1 id="create-character-title">创建角色</h1>
           <p className="game-copy">
             黑松哨站只记录一个常驻身份。后续职业、装备、经济和 NPC 记忆都会挂在这个角色上。
@@ -731,7 +711,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
     <main className="game-shell">
       <aside className="game-column game-character-panel" aria-label="角色状态">
         <section className="game-panel">
-          <p className="game-kicker">Hero Status</p>
+          <p className="game-kicker">冒险者状态</p>
           <h2>{state.character.name}</h2>
           <dl className="stat-list">
             <div>
@@ -985,7 +965,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
 
       <section className="game-main-panel" aria-label="场景与行动">
         <div className="location-header">
-          <p className="game-kicker">World Feed</p>
+          <p className="game-kicker">场景</p>
           <h1 id="location-title">{state.locationTitle}</h1>
           <p>{state.locationDescription}</p>
         </div>
@@ -1002,12 +982,12 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
             <div className="scene-object-list" aria-label="当前位置可交互对象">
               {sceneObjects.length === 0 ? (
                 <div className="scene-object-card">
-                  <strong>哨站设施</strong>
-                  <span>可整理背包、集市交易、寻找 NPC</span>
+                  <strong>静默的四周</strong>
+                  <span>暂时没有可辨认的交互对象。</span>
                 </div>
               ) : null}
               {sceneObjects.map((entry) => (
-                <div className="scene-object-card" key={entry.title}>
+                <div className="scene-object-card" key={entry.id}>
                   <strong>{entry.title}</strong>
                   <span>{entry.body}</span>
                 </div>
@@ -1033,7 +1013,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
         <section className="quick-action-panel" aria-label="常用动作">
           <div className="panel-heading">
             <h2>动作</h2>
-            <span>键盘/鼠标</span>
+            <span>可执行</span>
           </div>
           <div className="game-actions">
             {canClaimRelief ? (
@@ -1298,9 +1278,6 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               D
             </button>
           </div>
-          <p className="movement-hint">
-            WASD 或点击相邻方向移动。小地图只做导航辅助。
-          </p>
         </section>
 
         <section className="rumor-panel" aria-labelledby="rumor-title">

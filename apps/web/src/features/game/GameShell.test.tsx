@@ -394,7 +394,7 @@ describe("GameShell", () => {
     render(<GameShell csrfToken="csrf" />);
 
     expect(await screen.findByRole("heading", { name: "下一步" })).toBeTruthy();
-    expect(screen.getByText("哨站暂时平静，准备前往野外探索。")).toBeTruthy();
+    expect(screen.getByText("哨站空闲：去旧矿坑寻找基础铁矿石。")).toBeTruthy();
   });
 
   it("keeps the playable HUD inside its five primary regions and one modal layer", async () => {
@@ -515,7 +515,6 @@ describe("GameShell", () => {
     expect(screen.getByRole("complementary", { name: "小地图与辅助信息" })).toBeTruthy();
     expect(screen.getByLabelText("当前位置小地图")).toBeTruthy();
     expect(screen.getByRole("button", { name: "向东移动" })).toBeTruthy();
-    expect(screen.getByText(/小地图只做导航辅助/)).toBeTruthy();
   });
 
   it("enters Old Mine through the same zone endpoint", async () => {
