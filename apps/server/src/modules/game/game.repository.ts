@@ -382,6 +382,16 @@ function mapCharacterActionRow(row: typeof characterActions.$inferSelect): Chara
   };
 }
 
+function mapMapInstanceRow(row: typeof mapInstances.$inferSelect): MapInstanceRecord {
+  return {
+    id: row.id,
+    characterId: row.characterId,
+    zoneId: row.zoneId,
+    resourceCharges: parseResourceCharges(row.resourceCharges),
+    encounterCooldowns: parseEncounterCooldowns(row.encounterCooldowns)
+  };
+}
+
 export class GameRepository {
   constructor(private readonly db: GameDb) {}
 
@@ -873,13 +883,26 @@ export class GameRepository {
 
     if (!row) return null;
 
-    return {
-      id: row.id,
-      characterId: row.characterId,
-      zoneId: row.zoneId,
-      resourceCharges: parseResourceCharges(row.resourceCharges),
-      encounterCooldowns: parseEncounterCooldowns(row.encounterCooldowns)
-    };
+    return mapMapInstanceRow(row);
+  }
+
+  async findMapInstanceForUpdate(
+    characterId: string,
+    zoneId: GameLocationId
+  ): Promise<MapInstanceRecord | null> {
+    const [row] = await this.db
+      .select()
+      .from(mapInstances)
+      .where(
+        and(
+          eq(mapInstances.characterId, characterId),
+          eq(mapInstances.zoneId, zoneId)
+        )
+      )
+      .limit(1)
+      .for("update");
+
+    return row ? mapMapInstanceRow(row) : null;
   }
 
   async createMapInstance(input: {
@@ -900,13 +923,7 @@ export class GameRepository {
 
     if (!row) throw new Error("Failed to create map instance");
 
-    return {
-      id: row.id,
-      characterId: row.characterId,
-      zoneId: row.zoneId,
-      resourceCharges: parseResourceCharges(row.resourceCharges),
-      encounterCooldowns: parseEncounterCooldowns(row.encounterCooldowns)
-    };
+    return mapMapInstanceRow(row);
   }
 
   async updateMapResourceCharges(
@@ -959,8 +976,21 @@ export class GameRepository {
     const [row] = await this.db
       .select()
       .from(characterActions)
-      .where(and(eq(characterActions.characterId, characterId), eq(characterActions.status, "active")))
+      .where(
+        and(eq(characterActions.characterId, characterId), eq(characterActions.status, "active"))
+      )
       .limit(1);
+
+    return row ? mapCharacterActionRow(row) : null;
+  }
+
+  async findActiveActionForUpdate(characterId: string): Promise<CharacterActionRecord | null> {
+    const [row] = await this.db
+      .select()
+      .from(characterActions)
+      .where(and(eq(characterActions.characterId, characterId), eq(characterActions.status, "active")))
+      .limit(1)
+      .for("update");
 
     return row ? mapCharacterActionRow(row) : null;
   }

@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  GameRepository,
   parseActionPayload,
   serializeEncounterCooldowns,
   serializeEquipmentDurability,
@@ -9,6 +10,29 @@ import {
   serializeResourceCharges,
   type GatheringActionPayload
 } from "./game.repository.js";
+
+function createSelectDb(rows: unknown[]) {
+  const forUpdate = vi.fn().mockResolvedValue(rows);
+  const limit = vi.fn(() => ({ for: forUpdate }));
+  const where = vi.fn(() => ({ limit }));
+  const from = vi.fn(() => ({ where }));
+  const select = vi.fn(() => ({ from }));
+
+  return {
+    db: { select },
+    forUpdate
+  };
+}
+
+function createUpdateDb(returnedRows: unknown[][]) {
+  const returning = vi.fn();
+  for (const rows of returnedRows) returning.mockResolvedValueOnce(rows);
+  const where = vi.fn(() => ({ returning }));
+  const set = vi.fn(() => ({ where }));
+  const update = vi.fn(() => ({ set }));
+
+  return { update };
+}
 
 describe("game repository helpers", () => {
   it("serializes resource charges for the map state json", () => {
@@ -96,5 +120,112 @@ describe("game repository helpers", () => {
       netCopper: 17,
       createdAt
     });
+  });
+});
+
+describe("GameRepository locking contracts", () => {
+  it("locks and maps the active action for a character", async () => {
+    const startedAt = new Date("2026-07-13T01:00:00.000Z");
+    const endsAt = new Date("2026-07-13T01:10:00.000Z");
+    const payload: GatheringActionPayload = {
+      resourceId: "forest_berry_patch_01",
+      itemId: "wild_berry",
+      itemName: "野莓",
+      quantityPerCycle: 2,
+      cycleMs: 30000,
+      plannedCycles: 20,
+      settledCycles: 3
+    };
+    const { db, forUpdate } = createSelectDb([
+      {
+        id: "action-1",
+        characterId: "character-1",
+        actionType: "gathering",
+        status: "active",
+        startedAt,
+        endsAt,
+        payload: serializeActionPayload(payload)
+      }
+    ]);
+    const repository = new GameRepository(db as never);
+
+    await expect(repository.findActiveActionForUpdate("character-1")).resolves.toEqual({
+      id: "action-1",
+      characterId: "character-1",
+      actionType: "gathering",
+      status: "active",
+      startedAt,
+      endsAt,
+      payload
+    });
+    expect(forUpdate).toHaveBeenCalledWith("update");
+  });
+
+  it("returns null when no active action can be locked", async () => {
+    const { db, forUpdate } = createSelectDb([]);
+    const repository = new GameRepository(db as never);
+
+    await expect(repository.findActiveActionForUpdate("character-1")).resolves.toBeNull();
+    expect(forUpdate).toHaveBeenCalledWith("update");
+  });
+
+  it("locks and maps the character map instance", async () => {
+    const { db, forUpdate } = createSelectDb([
+      {
+        id: "map-1",
+        characterId: "character-1",
+        zoneId: "corrupt_forest",
+        resourceCharges: {
+          forest_berry_patch_01: 2,
+          invalid: "not-a-number"
+        },
+        encounterCooldowns: {
+          old_mine_rat_pack_01: "2026-07-13T01:10:00.000Z",
+          broken: "not-a-date"
+        }
+      }
+    ]);
+    const repository = new GameRepository(db as never);
+
+    await expect(
+      repository.findMapInstanceForUpdate("character-1", "corrupt_forest")
+    ).resolves.toEqual({
+      id: "map-1",
+      characterId: "character-1",
+      zoneId: "corrupt_forest",
+      resourceCharges: { forest_berry_patch_01: 2 },
+      encounterCooldowns: {
+        old_mine_rat_pack_01: "2026-07-13T01:10:00.000Z"
+      }
+    });
+    expect(forUpdate).toHaveBeenCalledWith("update");
+  });
+
+  it("returns null when no map instance can be locked", async () => {
+    const { db, forUpdate } = createSelectDb([]);
+    const repository = new GameRepository(db as never);
+
+    await expect(
+      repository.findMapInstanceForUpdate("character-1", "corrupt_forest")
+    ).resolves.toBeNull();
+    expect(forUpdate).toHaveBeenCalledWith("update");
+  });
+});
+
+describe("GameRepository affected-row contracts", () => {
+  it("reports whether an active action was completed", async () => {
+    const repository = new GameRepository(createUpdateDb([[{ id: "action-1" }], []]) as never);
+    const completedAt = new Date("2026-07-13T01:10:00.000Z");
+
+    await expect(repository.markActionCompleted("action-1", completedAt)).resolves.toBe(true);
+    await expect(repository.markActionCompleted("action-1", completedAt)).resolves.toBe(false);
+  });
+
+  it("reports whether an active action was cancelled", async () => {
+    const repository = new GameRepository(createUpdateDb([[{ id: "action-1" }], []]) as never);
+    const cancelledAt = new Date("2026-07-13T01:10:00.000Z");
+
+    await expect(repository.markActionCancelled("action-1", cancelledAt)).resolves.toBe(true);
+    await expect(repository.markActionCancelled("action-1", cancelledAt)).resolves.toBe(false);
   });
 });

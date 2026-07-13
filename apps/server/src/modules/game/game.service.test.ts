@@ -52,15 +52,47 @@ function gatheringAction(payload: GatheringActionPayload): CharacterActionRecord
   };
 }
 
+interface GatheringSettlementResult {
+  changed: boolean;
+  settledCycles: number;
+  quantityGranted: number;
+  completed: boolean;
+}
+
+type GatheringSettlementService = {
+  settleGatheringAction(
+    repo: object,
+    characterId: string,
+    now: Date,
+    options: { completeAction: boolean; cancelAction?: boolean }
+  ): Promise<GatheringSettlementResult>;
+};
+
+function gatheringPayload(
+  overrides: Partial<GatheringActionPayload> = {}
+): GatheringActionPayload {
+  return {
+    resourceId: "old_mine_iron_vein_01",
+    itemId: "iron_ore",
+    itemName: "基础铁矿石",
+    quantityPerCycle: 1,
+    cycleMs: 60_000,
+    plannedCycles: 8,
+    settledCycles: 0,
+    ...overrides
+  };
+}
+
 describe("GameService action settlement", () => {
-  it("settles completed gathering cycles while the action is still active", async () => {
-    const service = new GameService({} as Db);
+  it("settles completed gathering cycles from the character's locked action", async () => {
+    const service = new GameService({} as Db) as unknown as GatheringSettlementService;
     const grants: Array<{ itemId: string; quantity: number }> = [];
     const payloadUpdates: GatheringActionPayload[] = [];
     const chargeUpdates: Array<Record<string, number>> = [];
     const events: string[] = [];
     const repo = {
-      findMapInstance: async () => ({
+      findActiveActionForUpdate: async () => gatheringAction(gatheringPayload()),
+      findMapInstanceForUpdate: async () => ({
         id: "map-1",
         characterId: "character-1",
         zoneId: "old_mine",
@@ -84,32 +116,221 @@ describe("GameService action settlement", () => {
       }
     };
 
-    await (service as unknown as {
-      settleGatheringAction(
-        repo: object,
-        action: CharacterActionRecord,
-        now: Date,
-        options: { completeAction: boolean }
-      ): Promise<void>;
-    }).settleGatheringAction(
+    const result = await service.settleGatheringAction(
       repo,
-      gatheringAction({
-        resourceId: "old_mine_iron_vein_01",
-        itemId: "iron_ore",
-        itemName: "基础铁矿石",
-        quantityPerCycle: 1,
-        cycleMs: 60_000,
-        plannedCycles: 8,
-        settledCycles: 0
-      }),
+      "character-1",
       new Date("2026-07-02T08:03:10.000Z"),
       { completeAction: false }
     );
 
+    expect(result).toEqual({
+      changed: true,
+      settledCycles: 3,
+      quantityGranted: 3,
+      completed: false
+    });
     expect(grants).toMatchObject([{ itemId: "iron_ore", quantity: 3 }]);
     expect(chargeUpdates).toEqual([{ old_mine_iron_vein_01: 97 }]);
     expect(payloadUpdates).toMatchObject([{ settledCycles: 3 }]);
     expect(events).toEqual(["你获得了基础铁矿石 x3。"]);
+  });
+
+  it("trusts the locked action instead of a caller's stale settled cycle count", async () => {
+    const service = new GameService({} as Db) as unknown as GatheringSettlementService;
+    const staleAction = gatheringAction(gatheringPayload({ settledCycles: 0 }));
+    const grants: Array<{ itemId: string; quantity: number }> = [];
+    const payloadUpdates: GatheringActionPayload[] = [];
+    const chargeUpdates: Array<Record<string, number>> = [];
+    const repo = {
+      findActiveActionForUpdate: async () =>
+        gatheringAction(gatheringPayload({ settledCycles: 3 })),
+      findMapInstanceForUpdate: async () => ({
+        id: "map-1",
+        characterId: "character-1",
+        zoneId: "old_mine",
+        resourceCharges: { old_mine_iron_vein_01: 97 },
+        encounterCooldowns: {}
+      }),
+      grantCharacterItem: async (input: { itemId: string; quantity: number }) => {
+        grants.push(input);
+      },
+      updateMapResourceCharges: async (_mapId: string, input: Record<string, number>) => {
+        chargeUpdates.push(input);
+      },
+      updateActionPayload: async (_actionId: string, input: GatheringActionPayload) => {
+        payloadUpdates.push(input);
+      },
+      writeEvent: async () => {}
+    };
+
+    const result = await service.settleGatheringAction(
+      repo,
+      staleAction.characterId,
+      new Date("2026-07-02T08:03:10.000Z"),
+      { completeAction: false }
+    );
+
+    expect(result).toEqual({
+      changed: false,
+      settledCycles: 3,
+      quantityGranted: 0,
+      completed: false
+    });
+    expect(grants).toHaveLength(0);
+    expect(payloadUpdates).toHaveLength(0);
+    expect(chargeUpdates).toHaveLength(0);
+  });
+
+  it("grants each completed gathering cycle only once across repeated settlement", async () => {
+    const service = new GameService({} as Db) as unknown as GatheringSettlementService;
+    let lockedAction = gatheringAction(gatheringPayload());
+    let resourceCharges = { old_mine_iron_vein_01: 100 };
+    const grants: Array<{ itemId: string; quantity: number }> = [];
+    const repo = {
+      findActiveActionForUpdate: async () => lockedAction,
+      findMapInstanceForUpdate: async () => ({
+        id: "map-1",
+        characterId: "character-1",
+        zoneId: "old_mine",
+        resourceCharges,
+        encounterCooldowns: {}
+      }),
+      grantCharacterItem: async (input: { itemId: string; quantity: number }) => {
+        grants.push(input);
+      },
+      updateMapResourceCharges: async (_mapId: string, input: Record<string, number>) => {
+        resourceCharges = { old_mine_iron_vein_01: input.old_mine_iron_vein_01 ?? 0 };
+      },
+      updateActionPayload: async (_actionId: string, input: GatheringActionPayload) => {
+        lockedAction = gatheringAction(input);
+      },
+      writeEvent: async () => {}
+    };
+    const now = new Date("2026-07-02T08:03:10.000Z");
+
+    const first = await service.settleGatheringAction(repo, "character-1", now, {
+      completeAction: false
+    });
+    const second = await service.settleGatheringAction(repo, "character-1", now, {
+      completeAction: false
+    });
+
+    expect(first).toEqual({
+      changed: true,
+      settledCycles: 3,
+      quantityGranted: 3,
+      completed: false
+    });
+    expect(second).toEqual({
+      changed: false,
+      settledCycles: 3,
+      quantityGranted: 0,
+      completed: false
+    });
+    expect(grants).toMatchObject([{ itemId: "iron_ore", quantity: 3 }]);
+    expect(resourceCharges).toEqual({ old_mine_iron_vein_01: 97 });
+  });
+
+  it("locks and settles gathering before conditionally marking it cancelled", async () => {
+    const service = new GameService({} as Db) as unknown as GatheringSettlementService;
+    const calls: string[] = [];
+    const repo = {
+      findActiveActionForUpdate: async () => {
+        calls.push("lockAction");
+        return gatheringAction(gatheringPayload());
+      },
+      findMapInstanceForUpdate: async () => {
+        calls.push("lockMap");
+        return {
+          id: "map-1",
+          characterId: "character-1",
+          zoneId: "old_mine",
+          resourceCharges: { old_mine_iron_vein_01: 100 },
+          encounterCooldowns: {}
+        };
+      },
+      grantCharacterItem: async () => {
+        calls.push("grant");
+      },
+      updateMapResourceCharges: async () => {
+        calls.push("updateCharges");
+      },
+      updateActionPayload: async () => {
+        calls.push("updatePayload");
+      },
+      writeEvent: async () => {
+        calls.push("writeSettlementEvent");
+      },
+      markActionCancelled: async () => {
+        calls.push("markCancelled");
+        return true;
+      }
+    };
+
+    const result = await service.settleGatheringAction(
+      repo,
+      "character-1",
+      new Date("2026-07-02T08:03:10.000Z"),
+      { completeAction: false, cancelAction: true }
+    );
+
+    expect(result).toEqual({
+      changed: true,
+      settledCycles: 3,
+      quantityGranted: 3,
+      completed: false
+    });
+    expect(calls).toEqual([
+      "lockAction",
+      "lockMap",
+      "grant",
+      "updateCharges",
+      "updatePayload",
+      "writeSettlementEvent",
+      "markCancelled"
+    ]);
+  });
+
+  it("is a no-op when no active action remains after taking the lock", async () => {
+    const service = new GameService({} as Db) as unknown as GatheringSettlementService;
+    const calls: string[] = [];
+    const repo = {
+      findActiveActionForUpdate: async () => {
+        calls.push("lockAction");
+        return null;
+      },
+      findMapInstanceForUpdate: async () => {
+        calls.push("lockMap");
+      },
+      grantCharacterItem: async () => {
+        calls.push("grant");
+      },
+      updateMapResourceCharges: async () => {
+        calls.push("updateCharges");
+      },
+      updateActionPayload: async () => {
+        calls.push("updatePayload");
+      },
+      markActionCancelled: async () => {
+        calls.push("markCancelled");
+        return true;
+      }
+    };
+
+    const result = await service.settleGatheringAction(
+      repo,
+      "character-1",
+      new Date("2026-07-02T08:03:10.000Z"),
+      { completeAction: false, cancelAction: true }
+    );
+
+    expect(result).toEqual({
+      changed: false,
+      settledCycles: 0,
+      quantityGranted: 0,
+      completed: false
+    });
+    expect(calls).toEqual(["lockAction"]);
   });
 
   it("only exposes the played combat log prefix for active combat", () => {

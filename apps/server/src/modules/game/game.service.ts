@@ -116,6 +116,13 @@ export class GameServiceError extends Error {
   }
 }
 
+interface GatheringSettlementResult {
+  changed: boolean;
+  settledCycles: number;
+  quantityGranted: number;
+  completed: boolean;
+}
+
 function classMaxHp(classId: CharacterClassId) {
   const characterClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
   if (!characterClass) throw new GameServiceError("VALIDATION_ERROR", "Unknown class");
@@ -462,10 +469,7 @@ export class GameService {
     const character = await repo.findCharacterByAccountId(accountId);
     if (!character) return;
 
-    const activeAction = await repo.findActiveActionByCharacterId(character.id);
-    if (activeAction?.actionType === "gathering" && activeAction.endsAt.getTime() > now.getTime()) {
-      await this.settleGatheringAction(repo, activeAction, now, { completeAction: false });
-    }
+    await this.settleGatheringAction(repo, character.id, now, { completeAction: false });
 
     const latestCharacter = await repo.findCharacterByAccountId(accountId);
     if (latestCharacter) await this.settleHungerForCharacter(repo, latestCharacter, now);
@@ -712,29 +716,34 @@ export class GameService {
       const repo = new GameRepository(tx);
       const now = new Date();
       const character = await this.requireSettledCharacter(repo, accountId, now);
+      const gatheringSettlement = await this.settleGatheringAction(repo, character.id, now, {
+        completeAction: false,
+        cancelAction: true
+      });
       const action = await repo.findActiveActionByCharacterId(character.id);
-      if (!action) {
-        throw new GameServiceError("VALIDATION_ERROR", "当前没有进行中的行动。");
-      }
 
-      const marked = await repo.markActionCancelled(action.id, now);
-      if (!marked) return this.buildState(repo, accountId, now);
-
-      if (action.actionType === "gathering") {
-        await this.settleGatheringAction(repo, action, now, { completeAction: false });
+      if (gatheringSettlement.changed && !action) {
         await repo.writeEvent({
           characterId: character.id,
           eventType: "action.gathering.cancel",
           message: "你停止采集，带走了已经完成周期的收获。"
         });
-      } else {
-        await this.settleCombatEscapeCost(repo, character, action, now);
-        await repo.writeEvent({
-          characterId: character.id,
-          eventType: "action.combat.escape",
-          message: "你撤离了战斗，敌人没有离开原地追击。"
-        });
+        return this.buildState(repo, accountId, now);
       }
+
+      if (!action || action.actionType === "gathering") {
+        return this.buildState(repo, accountId, now);
+      }
+
+      const marked = await repo.markActionCancelled(action.id, now);
+      if (!marked) return this.buildState(repo, accountId, now);
+
+      await this.settleCombatEscapeCost(repo, character, action, now);
+      await repo.writeEvent({
+        characterId: character.id,
+        eventType: "action.combat.escape",
+        message: "你撤离了战斗，敌人没有离开原地追击。"
+      });
 
       return this.buildState(repo, accountId, now);
     });
@@ -1420,14 +1429,7 @@ export class GameService {
     if (!action || action.endsAt.getTime() > now.getTime()) return;
 
     if (action.actionType === "gathering") {
-      const marked = await repo.markActionCompleted(action.id, now);
-      if (!marked) return;
-      await this.settleGatheringAction(repo, action, now, { completeAction: false });
-      await repo.writeEvent({
-        characterId: action.characterId,
-        eventType: "action.gathering.complete",
-        message: "采集行动完成。"
-      });
+      await this.settleGatheringAction(repo, character.id, now, { completeAction: true });
       return;
     }
 
@@ -1436,16 +1438,21 @@ export class GameService {
 
   private async settleGatheringAction(
     repo: GameRepository,
-    action: CharacterActionRecord,
+    characterId: string,
     now: Date,
-    options: { completeAction: boolean }
-  ) {
+    options: { completeAction: boolean; cancelAction?: boolean }
+  ): Promise<GatheringSettlementResult> {
+    const action = await repo.findActiveActionForUpdate(characterId);
+    if (!action || action.actionType !== "gathering") {
+      return { changed: false, settledCycles: 0, quantityGranted: 0, completed: false };
+    }
+
     const payload = action.payload as GatheringActionPayload;
     const zone = getZoneByResourceId(payload.resourceId);
     if (!zone) throw new GameServiceError("VALIDATION_ERROR", "资源区域配置无效。");
     const resource = zone.resources.find((entry) => entry.id === payload.resourceId);
     if (!resource) throw new GameServiceError("VALIDATION_ERROR", "资源配置无效。");
-    const map = await repo.findMapInstance(action.characterId, zone.id);
+    const map = await repo.findMapInstanceForUpdate(action.characterId, zone.id);
     if (!map) throw new GameServiceError("VALIDATION_ERROR", "Map state required");
 
     const remainingCharges = map.resourceCharges[resource.id] ?? resource.charges;
@@ -1457,13 +1464,13 @@ export class GameService {
       settledCycles: payload.settledCycles,
       remainingCharges
     });
+    const quantityGranted = payload.quantityPerCycle * settlement.newCyclesToSettle;
 
     if (settlement.newCyclesToSettle > 0) {
-      const quantity = payload.quantityPerCycle * settlement.newCyclesToSettle;
       await repo.grantCharacterItem({
         characterId: action.characterId,
         itemId: payload.itemId,
-        quantity,
+        quantity: quantityGranted,
         reason: "action.gathering.settle",
         metadata: { actionId: action.id, resourceId: payload.resourceId }
       });
@@ -1478,18 +1485,32 @@ export class GameService {
       await repo.writeEvent({
         characterId: action.characterId,
         eventType: "action.gathering.settle",
-        message: `你获得了${payload.itemName} x${quantity}。`
+        message: `你获得了${payload.itemName} x${quantityGranted}。`
       });
     }
 
+    let completed = false;
+    let actionChanged = false;
     if (options.completeAction && settlement.isComplete) {
-      await repo.markActionCompleted(action.id, now);
-      await repo.writeEvent({
-        characterId: action.characterId,
-        eventType: "action.gathering.complete",
-        message: "采集行动完成。"
-      });
+      completed = await repo.markActionCompleted(action.id, now);
+      actionChanged = completed;
+      if (completed) {
+        await repo.writeEvent({
+          characterId: action.characterId,
+          eventType: "action.gathering.complete",
+          message: "采集行动完成。"
+        });
+      }
+    } else if (options.cancelAction) {
+      actionChanged = await repo.markActionCancelled(action.id, now);
     }
+
+    return {
+      changed: settlement.newCyclesToSettle > 0 || actionChanged,
+      settledCycles: payload.settledCycles + settlement.newCyclesToSettle,
+      quantityGranted,
+      completed
+    };
   }
 
   private async settleCombatEscapeCost(
