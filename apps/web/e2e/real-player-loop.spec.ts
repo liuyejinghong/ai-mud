@@ -3,8 +3,10 @@ import { expect, test } from "@playwright/test";
 const activationCode = process.env.REAL_E2E_ACTIVATION_CODE;
 const email = process.env.REAL_E2E_PLAYER_EMAIL;
 const password = process.env.REAL_E2E_PLAYER_PASSWORD;
+const returningEmail = process.env.REAL_E2E_RETURNING_PLAYER_EMAIL;
+const returningPassword = process.env.REAL_E2E_RETURNING_PLAYER_PASSWORD;
 
-if (!activationCode || !email || !password) {
+if (!activationCode || !email || !password || !returningEmail || !returningPassword) {
   throw new Error("The real PostgreSQL E2E runner must provide player credentials.");
 }
 
@@ -55,4 +57,23 @@ test("a new player can complete and retain the first real gathering loop", async
   await page.getByRole("button", { name: "登录" }).click();
   await expect(page.getByRole("heading", { name: "腐林" })).toBeVisible();
   await expect(page.getByRole("button", { name: "野莓 x6" })).toBeVisible();
+});
+
+test("a starving returning player can claim food, eat, and leave town", async ({ page }) => {
+  test.setTimeout(30_000);
+
+  await page.goto("/");
+  await page.getByLabel("邮箱").fill(returningEmail);
+  await page.getByLabel("密码").fill(returningPassword);
+  await page.getByRole("button", { name: "登录" }).click();
+  await expect(page.getByRole("heading", { name: "黑松哨站" })).toBeVisible();
+  await expect(page.getByText("饱腹 0/5")).toBeVisible();
+  await page.getByRole("button", { name: "领取市政救济" }).click();
+  await expect(page.getByRole("button", { name: "野莓 x1" })).toBeVisible();
+
+  await page.getByRole("button", { name: "食用 野莓" }).click();
+  await expect(page.getByText("饱腹 1/5")).toBeVisible();
+  await expect(page.getByRole("button", { name: "前往腐林" })).toBeVisible();
+  await page.getByRole("button", { name: "前往腐林" }).click();
+  await expect(page.getByRole("heading", { name: "腐林" })).toBeVisible();
 });

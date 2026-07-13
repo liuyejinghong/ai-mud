@@ -23,6 +23,7 @@ import {
   acceptNpcTask,
   buyMarketItem,
   cancelAction,
+  claimMunicipalRelief,
   completeNpcTask,
   createCharacter,
   eatFood,
@@ -362,6 +363,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
   const canStartCombat = state.availableActions.includes("start_combat") && !isBusy;
   const canCancelAction = state.availableActions.includes("cancel_action") && !isBusy;
   const canReturnVillage = state.availableActions.includes("return_to_village") && !isBusy;
+  const canClaimRelief = state.availableActions.includes("claim_relief") && !isBusy;
   const canEnterForest = state.availableActions.includes("enter_corrupt_forest") && !isBusy;
   const canEnterOldMine = state.availableActions.includes("enter_old_mine") && !isBusy;
   const canOpenMarket = state.availableActions.includes("open_market") && !isBusy;
@@ -1027,6 +1029,15 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
             <span>键盘/鼠标</span>
           </div>
           <div className="game-actions">
+            {canClaimRelief ? (
+              <button
+                type="button"
+                className="game-primary-button"
+                onClick={() => void runCommand(() => claimMunicipalRelief(csrfToken))}
+              >
+                领取市政救济
+              </button>
+            ) : null}
             {canEnterForest ? (
               <button
                 type="button"

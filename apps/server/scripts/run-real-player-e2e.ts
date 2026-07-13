@@ -14,6 +14,8 @@ import { LedgerRepository } from "../src/modules/ledger/ledger.repository.js";
 import { LedgerService } from "../src/modules/ledger/ledger.service.js";
 import { NpcRepository } from "../src/modules/npc/npc.repository.js";
 import { NpcService } from "../src/modules/npc/npc.service.js";
+import { GameRepository } from "../src/modules/game/game.repository.js";
+import { GameService } from "../src/modules/game/game.service.js";
 
 interface Journal {
   entries: Array<{ idx: number; tag: string }>;
@@ -29,6 +31,8 @@ const adminEmail = "real-e2e-admin@example.test";
 const adminPassword = "real-e2e-admin-password";
 const playerEmail = "real-e2e-player@example.test";
 const playerPassword = "real-e2e-player-password";
+const returningPlayerEmail = "real-e2e-returning@example.test";
+const returningPlayerPassword = "real-e2e-returning-password";
 const sessionSecret = "real-e2e-session-secret-that-is-at-least-32-characters";
 
 function quoteIdentifier(value: string) {
@@ -187,10 +191,24 @@ async function seedWorldAndActivationCode(databaseUrl: string) {
     const activationCodes = new ActivationCodeService(
       new DrizzleActivationCodeRepository(connection.db)
     );
-    return await activationCodes.create({
+    const activation = await activationCodes.create({
       note: "real-postgres-e2e",
       createdByAdminId: admin.id
     });
+    const returningAccount = await accounts.createAccount({
+      email: returningPlayerEmail,
+      passwordHash: await auth.hashPassword(returningPlayerPassword)
+    });
+    const returningCharacter = await new GameService(connection.db).createCharacter(
+      returningAccount.id,
+      { name: "E2E归来者", classId: "ranger" }
+    );
+    await new GameRepository(connection.db).updateCharacterNeeds({
+      characterId: returningCharacter.character!.id,
+      hunger: 0,
+      lastHungerSettledAt: new Date()
+    });
+    return activation;
   } finally {
     await connection.close();
   }
@@ -239,7 +257,9 @@ async function main() {
       PLAYWRIGHT_WEB_PORT: String(webPort),
       REAL_E2E_ACTIVATION_CODE: activation.code,
       REAL_E2E_PLAYER_EMAIL: playerEmail,
-      REAL_E2E_PLAYER_PASSWORD: playerPassword
+      REAL_E2E_PLAYER_PASSWORD: playerPassword,
+      REAL_E2E_RETURNING_PLAYER_EMAIL: returningPlayerEmail,
+      REAL_E2E_RETURNING_PLAYER_PASSWORD: returningPlayerPassword
     };
 
     await runCommand(pnpmCommand(), ["--filter", "@ai-mud/shared", "build"], {

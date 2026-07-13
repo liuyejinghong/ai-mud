@@ -108,6 +108,24 @@ const hungryVillageState: GameStateDto = {
   ]
 };
 
+const reliefEligibleVillageState: GameStateDto = {
+  ...villageState,
+  character: {
+    ...villageState.character!,
+    money: { gold: 0, silver: 0, copper: 0, totalCopper: 0 },
+    needs: {
+      hunger: {
+        current: 0,
+        max: 5,
+        status: "starving",
+        nextMealAt: "2026-07-01T18:00:00.000Z"
+      }
+    }
+  },
+  equipment: [],
+  availableActions: ["open_market", "claim_relief"]
+};
+
 const taskVillageState: GameStateDto = {
   ...villageState,
   inventory: [{ itemId: "iron_ore", name: "基础铁矿石", quantity: 3 }],
@@ -377,6 +395,27 @@ describe("GameShell", () => {
 
     expect(await screen.findByRole("heading", { name: "下一步" })).toBeTruthy();
     expect(screen.getByText(/当前目标：完成一次采集或探索闭环/)).toBeTruthy();
+  });
+
+  it("claims municipal relief only when the server makes that action available", async () => {
+    const afterRelief: GameStateDto = {
+      ...reliefEligibleVillageState,
+      inventory: [{ itemId: "wild_berry", name: "野莓", quantity: 1 }],
+      availableActions: ["open_market", "eat_food"]
+    };
+    const fetchMock = mockFetchWithStates([reliefEligibleVillageState, afterRelief]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "领取市政救济" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:3000/game/relief/claim",
+        expect.objectContaining({ method: "POST", body: "{}" })
+      );
+    });
+    expect(await screen.findByRole("button", { name: "野莓 x1" })).toBeTruthy();
   });
 
   it("keeps equipment details behind a slot dialog", async () => {
