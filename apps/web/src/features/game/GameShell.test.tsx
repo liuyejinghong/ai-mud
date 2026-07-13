@@ -779,9 +779,6 @@ describe("GameShell", () => {
   });
 
   it("formats event timestamps in the browser's local time", async () => {
-    const localTime = vi
-      .spyOn(Date.prototype, "toLocaleTimeString")
-      .mockReturnValue("本地 18:00");
     mockFetchWithStates([
       {
         ...villageState,
@@ -797,13 +794,7 @@ describe("GameShell", () => {
 
     render(<GameShell csrfToken="csrf" />);
 
-    expect(await screen.findByText("本地 18:00")).toBeTruthy();
-    expect(localTime).toHaveBeenCalledWith([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false
-    });
-    localTime.mockRestore();
+    expect(await screen.findByText("18:00")).toBeTruthy();
   });
 
   it("opens NPC dialogue and sends one free-text message", async () => {
@@ -823,6 +814,8 @@ describe("GameShell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /伯林/ }));
     expect(await screen.findByText("还没有交谈记录。")).toBeTruthy();
+    expect(screen.getByText("对话")).toBeTruthy();
+    expect(screen.queryByText("fallback")).toBeNull();
     expect(screen.getAllByText("可接取：炉火缺矿")).toHaveLength(2);
     expect(screen.getByText("需要 基础铁矿石 x3")).toBeTruthy();
     expect(screen.getByText("还差 3 份材料")).toBeTruthy();

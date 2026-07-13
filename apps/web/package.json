@@ -6,7 +6,7 @@
     "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "build": "tsc -p tsconfig.json && vite build",
     "typecheck": "pnpm --filter @ai-mud/shared build && tsc -p tsconfig.json --noEmit",
-    "test": "pnpm --filter @ai-mud/shared build && vitest run --passWithNoTests",
+    "test": "TZ=Asia/Shanghai pnpm --filter @ai-mud/shared build && TZ=Asia/Shanghai vitest run --passWithNoTests",
     "e2e": "playwright test -c playwright.config.ts",
     "lint": "pnpm --filter @ai-mud/shared build && tsc -p tsconfig.json --noEmit"
   },

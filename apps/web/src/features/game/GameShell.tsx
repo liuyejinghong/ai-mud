@@ -87,6 +87,12 @@ const locationLabels: Partial<Record<GameLocationId, string>> = {
   old_mine: "旧矿坑"
 };
 
+const eventTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false
+});
+
 function locationText(locationId: GameLocationId) {
   return locationLabels[locationId] ?? locationId;
 }
@@ -94,11 +100,7 @@ function locationText(locationId: GameLocationId) {
 function eventTimeText(createdAt: string) {
   const timestamp = new Date(createdAt);
   if (Number.isNaN(timestamp.getTime())) return "--:--";
-  return timestamp.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  });
+  return eventTimeFormatter.format(timestamp);
 }
 
 function cellText(markers: string[]) {
@@ -1548,7 +1550,7 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
                 <p className="game-kicker">NPC Dialogue</p>
                 <div className="panel-heading">
                   <h2>{dialogue ? dialogue.target.name : "附近 NPC"}</h2>
-                  <span>{dialogue?.ai.status ?? "列表"}</span>
+                  <span>{dialogue ? "对话" : "列表"}</span>
                 </div>
 
                 <div className="dialogue-layout">
