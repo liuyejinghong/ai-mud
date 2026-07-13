@@ -16,6 +16,7 @@ const TASK_TTL_MS = 24 * 60 * 60 * 1000;
 const FOOD_ITEM_ID = "wild_berry" as const;
 const ORE_ITEM_ID = "iron_ore" as const;
 const NPC_COPPER_RESERVE = 5;
+const TASK_CANDIDATE_MAX_AGE_MS = 10 * 60 * 1000;
 const TASK_TITLE_MAX_CHARS = 18;
 const TASK_DESCRIPTION_MAX_CHARS = 96;
 
@@ -44,6 +45,13 @@ export interface NpcTaskRepositoryPort {
   transaction<T>(operation: (repo: NpcTaskRepositoryPort) => Promise<T>): Promise<T>;
   listNpcActors(): Promise<NpcActorRecord[]>;
   findNpcActor(actorId: string): Promise<NpcActorRecord | null>;
+  findNpcActorForUpdate(actorId: string): Promise<NpcActorRecord | null>;
+  hasBlockingTaskForNpc(actorId: string): Promise<boolean>;
+  reserveNpcCopper(input: {
+    actorId: string;
+    amountCopper: number;
+    reserveCopper: number;
+  }): Promise<boolean>;
   incrementNpcCopper(input: { actorId: string; delta: number }): Promise<void>;
   listNpcInventory(actorId: string): Promise<NpcInventoryRecord[]>;
   findCharacterByAccountId(accountId: string): Promise<CharacterRecord | null>;
@@ -75,6 +83,27 @@ interface TaskProposal {
   proposalReason: string;
 }
 
+export interface NpcTaskCandidate {
+  npcActorId: string;
+  needType: NpcTaskNeedType;
+  requestedItemId: ItemId;
+  requestedQuantity: number;
+  rewardCopper: number;
+  templateTitle: string;
+  templateDescription: string;
+  templateReason: string;
+  observedAt: Date;
+  observedActor?: NpcActorRecord;
+  observedInventory?: NpcInventoryRecord[];
+}
+
+export interface NpcTaskPresentation {
+  title: string;
+  description: string;
+  proposalReason: string;
+  proposalSource: NpcTaskProposalSource;
+}
+
 export interface NpcTaskProposalInput {
   actor: NpcActorRecord;
   needType: NpcTaskNeedType;
@@ -102,57 +131,130 @@ export class NpcTaskService {
   ) {}
 
   async syncOpenTasks(now: Date) {
-    await this.repo.transaction((repo) => this.syncOpenTasksInTransaction(repo, now));
+    const candidates = await this.detectCandidates(now);
+    for (const candidate of candidates) {
+      const presentation = await this.presentCandidate(candidate);
+      await this.commitCandidate(candidate, presentation, now);
+    }
   }
 
-  private async syncOpenTasksInTransaction(repo: NpcTaskRepositoryPort, now: Date) {
-    await this.expireDueTasksInTransaction(repo, now);
-    const actors = await repo.listNpcActors();
-
+  async detectCandidates(now: Date): Promise<NpcTaskCandidate[]> {
+    const actors = await this.repo.listNpcActors();
+    const candidates: NpcTaskCandidate[] = [];
     for (const actor of actors) {
-      const blockingTasks = await repo.listBlockingTasksForNpc(actor.id);
-      if (blockingTasks.length > 0) continue;
+      const blockingTasks = await this.repo.listBlockingTasksForNpc(actor.id);
+      if (blockingTasks.some((task) => task.expiresAt.getTime() > now.getTime())) continue;
 
-      const inventory = await repo.listNpcInventory(actor.id);
+      const inventory = await this.repo.listNpcInventory(actor.id);
       const proposal = this.proposeTask(actor, inventory);
       if (!proposal) continue;
 
-      if (actor.copperBalance < proposal.rewardCopper + NPC_COPPER_RESERVE) continue;
-      const presentation = await this.presentProposal(actor, inventory, proposal, now);
+      const dueEscrowCopper = blockingTasks
+        .filter((task) => task.expiresAt.getTime() <= now.getTime())
+        .reduce((sum, task) => sum + task.escrowCopper, 0);
+      const expectedActor = {
+        ...actor,
+        copperBalance: actor.copperBalance + dueEscrowCopper
+      };
+      if (expectedActor.copperBalance < proposal.rewardCopper + NPC_COPPER_RESERVE) continue;
 
-      const task = await repo.createTask({
+      candidates.push({
         npcActorId: actor.id,
         needType: proposal.needType,
-        title: presentation.title,
-        description: presentation.description,
-        proposalSource: presentation.proposalSource,
-        proposalReason: presentation.proposalReason,
         requestedItemId: proposal.requestedItemId,
         requestedQuantity: proposal.requestedQuantity,
         rewardCopper: proposal.rewardCopper,
-        escrowCopper: proposal.rewardCopper,
-        createdAt: now,
-        expiresAt: new Date(now.getTime() + TASK_TTL_MS)
+        templateTitle: proposal.title,
+        templateDescription: proposal.description,
+        templateReason: proposal.proposalReason,
+        observedAt: new Date(now),
+        observedActor: expectedActor,
+        observedInventory: inventory.map((item) => ({ ...item }))
       });
-      await repo.incrementNpcCopper({
-        actorId: actor.id,
-        delta: -proposal.rewardCopper
-      });
-      await repo.recordCopperTransfer?.({
-        operation: "task_escrow",
-        fromBucket: "npc",
-        fromEntityId: actor.id,
-        toBucket: "escrow",
-        toEntityId: task.id,
-        amountCopper: proposal.rewardCopper,
-        reason: "npc_task.escrow",
-        metadata: {
+    }
+
+    return candidates;
+  }
+
+  async presentCandidate(candidate: NpcTaskCandidate): Promise<NpcTaskPresentation> {
+    const proposal = this.proposalFromCandidate(candidate);
+    const actor = candidate.observedActor ?? (await this.repo.findNpcActor(candidate.npcActorId));
+    if (!actor) return this.templatePresentation(proposal);
+    const inventory =
+      candidate.observedInventory ?? (await this.repo.listNpcInventory(candidate.npcActorId));
+    return this.presentProposal(actor, inventory, proposal, candidate.observedAt);
+  }
+
+  async commitCandidate(
+    candidate: NpcTaskCandidate,
+    presentation: NpcTaskPresentation,
+    now: Date
+  ): Promise<NpcTaskRecord | null> {
+    try {
+      return await this.repo.transaction(async (repo) => {
+        await this.expireDueTasksInTransaction(repo, now);
+
+        const actor = await repo.findNpcActorForUpdate(candidate.npcActorId);
+        if (!actor || actor.status !== "active") return null;
+        if (await repo.hasBlockingTaskForNpc(actor.id)) return null;
+
+        const inventory = await repo.listNpcInventory(actor.id);
+        const proposal = this.proposeTask(actor, inventory);
+        if (!proposal || !this.matchesCandidate(candidate, proposal)) return null;
+
+        const candidateAge = now.getTime() - candidate.observedAt.getTime();
+        if (candidateAge < 0 || candidateAge > TASK_CANDIDATE_MAX_AGE_MS) return null;
+        if (candidate.observedActor && !this.sameActorObservation(candidate.observedActor, actor)) {
+          return null;
+        }
+        if (
+          candidate.observedInventory &&
+          !this.sameInventoryObservation(candidate.observedInventory, inventory)
+        ) {
+          return null;
+        }
+
+        const reserved = await repo.reserveNpcCopper({
+          actorId: actor.id,
+          amountCopper: proposal.rewardCopper,
+          reserveCopper: NPC_COPPER_RESERVE
+        });
+        if (!reserved) return null;
+
+        const task = await repo.createTask({
+          npcActorId: actor.id,
           needType: proposal.needType,
+          title: presentation.title,
+          description: presentation.description,
+          proposalSource: presentation.proposalSource,
+          proposalReason: presentation.proposalReason,
           requestedItemId: proposal.requestedItemId,
-          requestedQuantity: proposal.requestedQuantity
-        },
-        createdAt: now
+          requestedQuantity: proposal.requestedQuantity,
+          rewardCopper: proposal.rewardCopper,
+          escrowCopper: proposal.rewardCopper,
+          createdAt: now,
+          expiresAt: new Date(now.getTime() + TASK_TTL_MS)
+        });
+        await repo.recordCopperTransfer?.({
+          operation: "task_escrow",
+          fromBucket: "npc",
+          fromEntityId: actor.id,
+          toBucket: "escrow",
+          toEntityId: task.id,
+          amountCopper: proposal.rewardCopper,
+          reason: "npc_task.escrow",
+          metadata: {
+            needType: proposal.needType,
+            requestedItemId: proposal.requestedItemId,
+            requestedQuantity: proposal.requestedQuantity
+          },
+          createdAt: now
+        });
+        return task;
       });
+    } catch (error) {
+      if (this.isActiveTaskUniqueConflict(error)) return null;
+      throw error;
     }
   }
 
@@ -390,6 +492,70 @@ export class NpcTaskService {
       proposalReason: proposal.proposalReason,
       proposalSource: "template" as const
     };
+  }
+
+  private proposalFromCandidate(candidate: NpcTaskCandidate): TaskProposal {
+    return {
+      needType: candidate.needType,
+      requestedItemId: candidate.requestedItemId,
+      requestedQuantity: candidate.requestedQuantity,
+      rewardCopper: candidate.rewardCopper,
+      title: candidate.templateTitle,
+      description: candidate.templateDescription,
+      proposalReason: candidate.templateReason
+    };
+  }
+
+  private matchesCandidate(candidate: NpcTaskCandidate, proposal: TaskProposal) {
+    return (
+      candidate.npcActorId === candidate.observedActor?.id ||
+      candidate.observedActor === undefined
+    ) &&
+      candidate.needType === proposal.needType &&
+      candidate.requestedItemId === proposal.requestedItemId &&
+      candidate.requestedQuantity === proposal.requestedQuantity &&
+      candidate.rewardCopper === proposal.rewardCopper &&
+      candidate.templateTitle === proposal.title &&
+      candidate.templateDescription === proposal.description &&
+      candidate.templateReason === proposal.proposalReason;
+  }
+
+  private sameActorObservation(expected: NpcActorRecord, actual: NpcActorRecord) {
+    return (
+      expected.id === actual.id &&
+      expected.actorType === actual.actorType &&
+      expected.npcKey === actual.npcKey &&
+      expected.name === actual.name &&
+      expected.profession === actual.profession &&
+      expected.currentLocation === actual.currentLocation &&
+      JSON.stringify(expected.position) === JSON.stringify(actual.position) &&
+      expected.copperBalance === actual.copperBalance &&
+      expected.hunger === actual.hunger &&
+      expected.lastHungerSettledAt.getTime() === actual.lastHungerSettledAt.getTime() &&
+      expected.status === actual.status
+    );
+  }
+
+  private sameInventoryObservation(
+    expected: NpcInventoryRecord[],
+    actual: NpcInventoryRecord[]
+  ) {
+    const normalize = (inventory: NpcInventoryRecord[]) =>
+      inventory
+        .map((item) => `${item.itemId}:${item.quantity}`)
+        .sort()
+        .join("|");
+    return normalize(expected) === normalize(actual);
+  }
+
+  private isActiveTaskUniqueConflict(error: unknown) {
+    if (!error || typeof error !== "object") return false;
+    const conflict = error as { code?: unknown; constraint?: unknown };
+    return (
+      conflict.code === "NPC_TASK_ACTIVE_CONFLICT" ||
+      (conflict.code === "23505" &&
+        conflict.constraint === "npc_tasks_one_active_per_npc_idx")
+    );
   }
 
   private async requireCharacter(repo: NpcTaskRepositoryPort, accountId: string) {

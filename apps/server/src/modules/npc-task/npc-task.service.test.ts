@@ -9,6 +9,10 @@ import type {
   UpdateNpcTaskInput
 } from "./npc-task.repository.js";
 
+class ActiveNpcTaskConflictError extends Error {
+  readonly code = "NPC_TASK_ACTIVE_CONFLICT";
+}
+
 class FakeNpcTaskRepo {
   actors = new Map<string, NpcActorRecord>();
   characters = new Map<string, CharacterRecord>();
@@ -23,10 +27,43 @@ class FakeNpcTaskRepo {
   escrowCalls = 0;
   expireCalls = 0;
   failNextConditionalUpdate = false;
+  failNextActiveTaskInsert = false;
+  failNextEscrowLedger = false;
+  inTransaction = false;
+  aiCalledInsideTransaction = false;
 
   async transaction<T>(operation: (repo: FakeNpcTaskRepo) => Promise<T>) {
     this.transactionCalls += 1;
-    return operation(this);
+    const snapshot = {
+      actors: structuredClone(this.actors),
+      characters: structuredClone(this.characters),
+      npcInventory: structuredClone(this.npcInventory),
+      characterInventory: structuredClone(this.characterInventory),
+      tasks: structuredClone(this.tasks),
+      nextTask: this.nextTask,
+      createTaskCalls: this.createTaskCalls,
+      npcCopperMutationCalls: this.npcCopperMutationCalls,
+      escrowCalls: this.escrowCalls,
+      expireCalls: this.expireCalls
+    };
+    this.inTransaction = true;
+    try {
+      return await operation(this);
+    } catch (error) {
+      this.actors = snapshot.actors;
+      this.characters = snapshot.characters;
+      this.npcInventory = snapshot.npcInventory;
+      this.characterInventory = snapshot.characterInventory;
+      this.tasks = snapshot.tasks;
+      this.nextTask = snapshot.nextTask;
+      this.createTaskCalls = snapshot.createTaskCalls;
+      this.npcCopperMutationCalls = snapshot.npcCopperMutationCalls;
+      this.escrowCalls = snapshot.escrowCalls;
+      this.expireCalls = snapshot.expireCalls;
+      throw error;
+    } finally {
+      this.inTransaction = false;
+    }
   }
 
   async listNpcActors() {
@@ -38,6 +75,27 @@ class FakeNpcTaskRepo {
     return this.actors.get(actorId) ?? null;
   }
 
+  async findNpcActorForUpdate(actorId: string) {
+    if (!this.inTransaction) throw new Error("actor lock requires transaction");
+    return this.actors.get(actorId) ?? null;
+  }
+
+  async hasBlockingTaskForNpc(actorId: string) {
+    return (await this.listBlockingTasksForNpc(actorId)).length > 0;
+  }
+
+  async reserveNpcCopper(input: { actorId: string; amountCopper: number; reserveCopper: number }) {
+    if (!this.inTransaction) throw new Error("escrow reservation requires transaction");
+    const actor = this.actors.get(input.actorId);
+    if (!actor || actor.copperBalance < input.amountCopper + input.reserveCopper) return false;
+    this.npcCopperMutationCalls += 1;
+    this.actors.set(input.actorId, {
+      ...actor,
+      copperBalance: actor.copperBalance - input.amountCopper
+    });
+    return true;
+  }
+
   async incrementNpcCopper(input: { actorId: string; delta: number }) {
     this.npcCopperMutationCalls += 1;
     const actor = this.actors.get(input.actorId);
@@ -46,7 +104,13 @@ class FakeNpcTaskRepo {
   }
 
   async recordCopperTransfer(input: { operation: string }) {
-    if (input.operation === "task_escrow") this.escrowCalls += 1;
+    if (input.operation === "task_escrow") {
+      this.escrowCalls += 1;
+      if (this.failNextEscrowLedger) {
+        this.failNextEscrowLedger = false;
+        throw new Error("ledger unavailable");
+      }
+    }
   }
 
   async listNpcInventory(actorId: string) {
@@ -141,8 +205,12 @@ class FakeNpcTaskRepo {
     return this.tasks.get(taskId) ?? null;
   }
 
-  async createTask(input: CreateNpcTaskInput) {
+  async createTask(input: CreateNpcTaskInput): Promise<NpcTaskRecord> {
     this.createTaskCalls += 1;
+    if (this.failNextActiveTaskInsert) {
+      this.failNextActiveTaskInsert = false;
+      throw new ActiveNpcTaskConflictError("active NPC task already exists");
+    }
     const task: NpcTaskRecord = {
       id: `task-${this.nextTask++}`,
       npcActorId: input.npcActorId,
@@ -318,6 +386,219 @@ describe("NpcTaskService", () => {
     expect(repo.npcCopperMutationCalls).toBe(0);
     expect(repo.escrowCalls).toBe(0);
     expect(repo.expireCalls).toBe(0);
+  });
+
+  it("detects rule-owned candidates through reads only", async () => {
+    const repo = new FakeNpcTaskRepo();
+    repo.actors.set("npc-blacksmith", actor({ copperBalance: 120 }));
+    repo.npcInventory.set("npc-blacksmith", []);
+    let proposalCalls = 0;
+    const service = new NpcTaskService(repo, undefined, {
+      proposeNpcTask: async () => {
+        proposalCalls += 1;
+        throw new Error("detection must not call AI");
+      }
+    });
+    const now = new Date("2026-07-02T08:00:00.000Z");
+
+    const candidates = await service.detectCandidates(now);
+
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        npcActorId: "npc-blacksmith",
+        needType: "ore_shortage",
+        requestedItemId: "iron_ore",
+        requestedQuantity: 3,
+        rewardCopper: 36,
+        templateTitle: "炉火缺矿",
+        observedAt: now
+      })
+    ]);
+    expect(repo.transactionCalls).toBe(0);
+    expect(proposalCalls).toBe(0);
+    expect(repo.createTaskCalls).toBe(0);
+    expect(repo.npcCopperMutationCalls).toBe(0);
+    expect(repo.escrowCalls).toBe(0);
+  });
+
+  it("presents a candidate with AI without opening a transaction", async () => {
+    const repo = new FakeNpcTaskRepo();
+    repo.actors.set("npc-blacksmith", actor());
+    repo.npcInventory.set("npc-blacksmith", []);
+    let proposalCalls = 0;
+    const service = new NpcTaskService(repo, undefined, {
+      proposeNpcTask: async () => {
+        proposalCalls += 1;
+        repo.aiCalledInsideTransaction ||= repo.inTransaction;
+        return {
+          title: "炉火等矿",
+          description: "伯林把空矿箱推到你面前，请你带回三块基础铁矿石。",
+          npcReason: "没有矿石，修理活会停下。",
+          status: "success"
+        };
+      }
+    });
+    const [candidate] = await service.detectCandidates(new Date("2026-07-02T08:00:00.000Z"));
+    const transactionCalls = repo.transactionCalls;
+
+    const presentation = await service.presentCandidate(candidate!);
+
+    expect(presentation).toMatchObject({
+      title: "炉火等矿",
+      proposalSource: "ai",
+      proposalReason: "没有矿石，修理活会停下。"
+    });
+    expect(proposalCalls).toBe(1);
+    expect(repo.transactionCalls).toBe(transactionCalls);
+    expect(repo.aiCalledInsideTransaction).toBe(false);
+  });
+
+  it("keeps the sync wrapper AI callback outside its commit transaction", async () => {
+    const repo = new FakeNpcTaskRepo();
+    repo.actors.set("npc-blacksmith", actor());
+    repo.npcInventory.set("npc-blacksmith", []);
+    const service = new NpcTaskService(repo, undefined, {
+      proposeNpcTask: async () => {
+        repo.aiCalledInsideTransaction ||= repo.inTransaction;
+        return {
+          title: "炉火等矿",
+          description: "伯林需要三块基础铁矿石。",
+          npcReason: "矿箱空了。",
+          status: "success"
+        };
+      }
+    });
+
+    await service.syncOpenTasks(new Date("2026-07-02T08:00:00.000Z"));
+
+    expect(repo.aiCalledInsideTransaction).toBe(false);
+    expect(repo.transactionCalls).toBe(1);
+    expect(repo.tasks.size).toBe(1);
+  });
+
+  it("commits a fresh candidate in one short transaction", async () => {
+    const repo = new FakeNpcTaskRepo();
+    repo.actors.set("npc-blacksmith", actor({ copperBalance: 120 }));
+    repo.npcInventory.set("npc-blacksmith", []);
+    const service = new NpcTaskService(repo);
+    const now = new Date("2026-07-02T08:00:00.000Z");
+    const [candidate] = await service.detectCandidates(now);
+    const presentation = await service.presentCandidate(candidate!);
+
+    const task = await service.commitCandidate(candidate!, presentation, now);
+
+    expect(task).toMatchObject({
+      npcActorId: "npc-blacksmith",
+      status: "open",
+      requestedItemId: "iron_ore",
+      requestedQuantity: 3,
+      rewardCopper: 36,
+      escrowCopper: 36
+    });
+    expect(repo.transactionCalls).toBe(1);
+    expect(repo.actors.get("npc-blacksmith")?.copperBalance).toBe(84);
+    expect(repo.tasks.size).toBe(1);
+    expect(repo.escrowCalls).toBe(1);
+  });
+
+  it("returns null for a stale candidate without reserving escrow", async () => {
+    const repo = new FakeNpcTaskRepo();
+    repo.actors.set("npc-blacksmith", actor());
+    repo.npcInventory.set("npc-blacksmith", []);
+    const service = new NpcTaskService(repo);
+    const observedAt = new Date("2026-07-02T08:00:00.000Z");
+    const [candidate] = await service.detectCandidates(observedAt);
+    const presentation = await service.presentCandidate(candidate!);
+
+    const task = await service.commitCandidate(
+      candidate!,
+      presentation,
+      new Date("2026-07-02T08:10:00.001Z")
+    );
+
+    expect(task).toBeNull();
+    expect(repo.actors.get("npc-blacksmith")?.copperBalance).toBe(120);
+    expect(repo.tasks.size).toBe(0);
+    expect(repo.escrowCalls).toBe(0);
+  });
+
+  it.each([
+    {
+      race: "inventory changed after detection",
+      arrange: async (repo: FakeNpcTaskRepo) => {
+        repo.npcInventory.set("npc-blacksmith", [{ itemId: "iron_ore", quantity: 1 }]);
+      }
+    },
+    {
+      race: "balance changed after detection",
+      arrange: async (repo: FakeNpcTaskRepo) => {
+        repo.actors.set("npc-blacksmith", actor({ copperBalance: 119 }));
+      }
+    },
+    {
+      race: "another active task won after detection",
+      arrange: async (repo: FakeNpcTaskRepo, now: Date) => {
+        await repo.createTask({
+          npcActorId: "npc-blacksmith",
+          needType: "ore_shortage",
+          title: "别处先贴出的任务",
+          description: "另一个 worker 已经创建。",
+          proposalSource: "template",
+          proposalReason: "并发创建。",
+          requestedItemId: "iron_ore",
+          requestedQuantity: 3,
+          rewardCopper: 36,
+          escrowCopper: 36,
+          createdAt: now,
+          expiresAt: new Date(now.getTime() + 86_400_000)
+        });
+      }
+    },
+    {
+      race: "active-task unique insert conflicted",
+      arrange: async (repo: FakeNpcTaskRepo) => {
+        repo.failNextActiveTaskInsert = true;
+      }
+    }
+  ])("returns null when $race and leaves no partial escrow", async ({ arrange }) => {
+    const repo = new FakeNpcTaskRepo();
+    repo.actors.set("npc-blacksmith", actor({ copperBalance: 120 }));
+    repo.npcInventory.set("npc-blacksmith", []);
+    const service = new NpcTaskService(repo);
+    const now = new Date("2026-07-02T08:00:00.000Z");
+    const [candidate] = await service.detectCandidates(now);
+    const presentation = await service.presentCandidate(candidate!);
+    await arrange(repo, now);
+    const tasksBeforeCommit = repo.tasks.size;
+    const balanceBeforeCommit = repo.actors.get("npc-blacksmith")?.copperBalance;
+
+    const task = await service.commitCandidate(candidate!, presentation, now);
+
+    expect(task).toBeNull();
+    expect(repo.tasks.size).toBe(tasksBeforeCommit);
+    expect(repo.escrowCalls).toBe(0);
+    expect(repo.actors.get("npc-blacksmith")?.copperBalance).toBe(balanceBeforeCommit);
+  });
+
+  it("rolls back task, escrow, ledger count and actor balance when ledger writing fails", async () => {
+    const repo = new FakeNpcTaskRepo();
+    repo.actors.set("npc-blacksmith", actor({ copperBalance: 120 }));
+    repo.npcInventory.set("npc-blacksmith", []);
+    const service = new NpcTaskService(repo);
+    const now = new Date("2026-07-02T08:00:00.000Z");
+    const [candidate] = await service.detectCandidates(now);
+    const presentation = await service.presentCandidate(candidate!);
+    repo.failNextEscrowLedger = true;
+
+    await expect(service.commitCandidate(candidate!, presentation, now)).rejects.toThrow(
+      "ledger unavailable"
+    );
+
+    expect(repo.actors.get("npc-blacksmith")?.copperBalance).toBe(120);
+    expect(repo.tasks.size).toBe(0);
+    expect(repo.createTaskCalls).toBe(0);
+    expect(repo.npcCopperMutationCalls).toBe(0);
+    expect(repo.escrowCalls).toBe(0);
   });
 
   it("creates ore shortage tasks from real NPC demand and escrows copper", async () => {

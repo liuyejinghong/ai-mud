@@ -4,7 +4,7 @@ import type {
   NpcTaskProposalSource,
   NpcTaskStatus
 } from "@ai-mud/shared";
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import { characterItems, characters, npcItems, npcTasks, worldActors } from "../../db/schema.js";
 import type { CharacterRecord, InventoryRecord } from "../game/game.repository.js";
@@ -151,6 +151,53 @@ export class NpcTaskRepository {
       .where(eq(worldActors.id, actorId))
       .limit(1);
     return row ? toNpcActor(row) : null;
+  }
+
+  async findNpcActorForUpdate(actorId: string): Promise<NpcActorRecord | null> {
+    const [row] = await this.db
+      .select()
+      .from(worldActors)
+      .where(and(eq(worldActors.id, actorId), eq(worldActors.actorType, "npc")))
+      .limit(1)
+      .for("update");
+    return row ? toNpcActor(row) : null;
+  }
+
+  async hasBlockingTaskForNpc(actorId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: npcTasks.id })
+      .from(npcTasks)
+      .where(
+        and(
+          eq(npcTasks.npcActorId, actorId),
+          or(eq(npcTasks.status, "open"), eq(npcTasks.status, "accepted"))
+        )
+      )
+      .limit(1);
+    return Boolean(row);
+  }
+
+  async reserveNpcCopper(input: {
+    actorId: string;
+    amountCopper: number;
+    reserveCopper: number;
+  }): Promise<boolean> {
+    const rows = await this.db
+      .update(worldActors)
+      .set({
+        copperBalance: sql`${worldActors.copperBalance} - ${input.amountCopper}`,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(worldActors.id, input.actorId),
+          eq(worldActors.actorType, "npc"),
+          eq(worldActors.status, "active"),
+          gte(worldActors.copperBalance, input.amountCopper + input.reserveCopper)
+        )
+      )
+      .returning({ id: worldActors.id });
+    return rows.length > 0;
   }
 
   async incrementNpcCopper(input: { actorId: string; delta: number }) {
