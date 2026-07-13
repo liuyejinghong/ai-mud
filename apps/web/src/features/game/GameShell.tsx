@@ -92,8 +92,13 @@ function locationText(locationId: GameLocationId) {
 }
 
 function eventTimeText(createdAt: string) {
-  const isoTime = createdAt.match(/T(\d{2}:\d{2})/)?.[1];
-  return isoTime ?? "--:--";
+  const timestamp = new Date(createdAt);
+  if (Number.isNaN(timestamp.getTime())) return "--:--";
+  return timestamp.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
 }
 
 function cellText(markers: string[]) {
@@ -150,16 +155,6 @@ function hungerWarningText(status: HungerStatus) {
   if (status === "fed") return null;
   if (status === "starving") return "饥饿：饱腹归零，无法继续外出。";
   return "饥饿：继续外出前最好准备食物。";
-}
-
-function taskStatusText(status: GameStateDto["npcTasks"][number]["status"]) {
-  return {
-    open: "可接取",
-    accepted: "进行中",
-    completed: "已完成",
-    expired: "已过期",
-    cancelled: "已取消"
-  }[status];
 }
 
 function dialogueTaskHint(target: NpcDialogueTargetDto) {
@@ -377,6 +372,7 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
   const canEquipEquipment = !isBusy && !state.currentAction;
   const hungerWarning = hungerWarningText(state.character?.needs.hunger.status ?? "fed");
   const damagedEquipment = state.equipment.filter((item) => item.repairQuote !== null);
+  const acceptedTasks = state.npcTasks.filter((task) => task.status === "accepted");
   const selectedClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
 
   async function submitLobbyChat() {
@@ -1123,71 +1119,37 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
           </section>
         ) : null}
 
-        {state.npcTasks.length > 0 ? (
-          <section className="npc-task-panel" aria-labelledby="npc-task-title">
+        {acceptedTasks.length > 0 ? (
+          <section className="npc-task-tracker" aria-labelledby="npc-task-tracker-title">
             <div className="panel-heading">
-              <h2 id="npc-task-title">NPC 任务</h2>
-              <span>{state.npcTasks.length} 个</span>
+              <h2 id="npc-task-tracker-title">任务追踪</h2>
+              <span>{acceptedTasks.length} 项进行中</span>
             </div>
-            <div className="npc-task-list">
-              {state.npcTasks.map((task) => (
-                <article className="npc-task-item" key={task.id}>
-                  <div className="npc-task-title">
-                    <strong>
-                      {task.status === "open" ? "! " : ""}
-                      {task.title}
-                    </strong>
-                    <span>{taskStatusText(task.status)}</span>
-                  </div>
-                  <p>{task.description}</p>
-                  {task.proposalReason ? (
-                    <p className="npc-task-reason">{task.proposalReason}</p>
-                  ) : null}
-                  <dl className="npc-task-meta">
-                    <div>
-                      <dt>发布者</dt>
-                      <dd>{task.npcName}</dd>
-                    </div>
-                    <div>
-                      <dt>需求</dt>
-                      <dd>
-                        {task.requestedItem.name} x{task.requestedItem.quantity}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>奖励</dt>
-                      <dd>{moneyText(task.rewardCopper)}</dd>
-                    </div>
-                  </dl>
-                  <div className="npc-task-actions">
-                    {task.status === "open" ? (
+            <ul className="npc-task-tracker-list" aria-label="已接任务">
+              {acceptedTasks.map((task) => {
+                const playerQuantity =
+                  state.inventory.find((item) => item.itemId === task.requestedItem.itemId)?.quantity ?? 0;
+                return (
+                  <li key={task.id}>
+                    <strong>{task.title}</strong>
+                    <span>
+                      材料 {Math.min(playerQuantity, task.requestedItem.quantity)}/
+                      {task.requestedItem.quantity} {task.requestedItem.name}
+                    </span>
+                    <span>发布者：{task.npcName}</span>
+                    {canOpenDialogue ? (
                       <button
                         type="button"
                         className="game-secondary-button"
-                        disabled={!canInteractWithTasks}
-                        onClick={() =>
-                          void runCommand(() => acceptNpcTask(task.id, csrfToken))
-                        }
+                        onClick={() => void openDialogueDialog()}
                       >
-                        接取
+                        与 NPC 交谈
                       </button>
                     ) : null}
-                    {task.status === "accepted" ? (
-                      <button
-                        type="button"
-                        className="game-secondary-button"
-                        disabled={!canInteractWithTasks}
-                        onClick={() =>
-                          void runCommand(() => completeNpcTask(task.id, csrfToken))
-                        }
-                      >
-                        提交
-                      </button>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
-            </div>
+                  </li>
+                );
+              })}
+            </ul>
           </section>
         ) : null}
 

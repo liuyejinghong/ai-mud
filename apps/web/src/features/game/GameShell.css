@@ -966,6 +966,38 @@
   margin-top: 8px;
 }
 
+.npc-task-tracker {
+  border-top: 1px solid rgba(119, 184, 160, 0.32);
+  margin-top: 14px;
+  padding-top: 12px;
+}
+
+.npc-task-tracker-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.npc-task-tracker-list li {
+  align-items: center;
+  border-bottom: 1px solid rgba(119, 184, 160, 0.18);
+  display: grid;
+  gap: 5px 12px;
+  grid-template-columns: minmax(120px, 1fr) auto auto;
+  padding: 0 0 8px;
+}
+
+.npc-task-tracker-list strong {
+  color: #f3d67d;
+}
+
+.npc-task-tracker-list span {
+  color: #b8c9bd;
+  font-size: 12px;
+}
+
 .dialogue-thread ol {
   display: grid;
   gap: 8px;
@@ -1155,6 +1187,10 @@
   }
 
   .npc-task-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .npc-task-tracker-list li {
     grid-template-columns: 1fr;
   }
 

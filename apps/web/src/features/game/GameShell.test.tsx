@@ -410,7 +410,7 @@ describe("GameShell", () => {
     expect(await screen.findByRole("heading", { name: "事件记录" })).toBeTruthy();
     expect(screen.queryByText("事件 1")).toBeNull();
     expect(screen.getByText("事件 35")).toBeTruthy();
-    expect(screen.getByText("08:34")).toBeTruthy();
+    expect(document.querySelector('time[datetime="2026-07-06T08:34:00.000Z"]')).toBeTruthy();
   });
 
   it("enters the forest, supports keyboard movement, gathering, and item detail dialogs", async () => {
@@ -729,6 +729,34 @@ describe("GameShell", () => {
     expect(screen.getByText("集市记录了基础铁矿石成交。")).toBeTruthy();
   });
 
+  it("formats event timestamps in the browser's local time", async () => {
+    const localTime = vi
+      .spyOn(Date.prototype, "toLocaleTimeString")
+      .mockReturnValue("本地 18:00");
+    mockFetchWithStates([
+      {
+        ...villageState,
+        log: [
+          {
+            id: "event-local-time",
+            message: "你抵达黑松哨站。",
+            createdAt: "2026-07-02T10:00:00.000Z"
+          }
+        ]
+      }
+    ]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByText("本地 18:00")).toBeTruthy();
+    expect(localTime).toHaveBeenCalledWith([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    });
+    localTime.mockRestore();
+  });
+
   it("opens NPC dialogue and sends one free-text message", async () => {
     const fetchMock = mockFetchWithStates([
       villageState,
@@ -967,7 +995,7 @@ describe("GameShell", () => {
     expect(await screen.findByRole("button", { name: "基础铁矿石 x1" })).toBeTruthy();
   });
 
-  it("shows NPC demand tasks and accepts then completes one with mouse actions", async () => {
+  it("keeps only accepted NPC tasks in the compact main tracker", async () => {
     const acceptedState: GameStateDto = {
       ...taskVillageState,
       npcTasks: [
@@ -979,37 +1007,17 @@ describe("GameShell", () => {
         }
       ]
     };
-    const completedState: GameStateDto = {
-      ...taskVillageState,
-      npcTasks: [],
-      inventory: [{ itemId: "iron_ore", name: "基础铁矿石", quantity: 0 }],
-      character: {
-        ...taskVillageState.character!,
-        money: { gold: 0, silver: 12, copper: 71, totalCopper: 1271 }
-      }
-    };
-    const fetchMock = mockFetchWithStates([taskVillageState, acceptedState, completedState]);
+    mockFetchWithStates([acceptedState]);
 
     render(<GameShell csrfToken="csrf" />);
 
-    expect(await screen.findByRole("heading", { name: "NPC 任务" })).toBeTruthy();
-    expect(screen.getByText("! 炉火缺矿")).toBeTruthy();
-    expect(screen.getByText("没有矿石，哨站的修理活会拖到深夜。")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "接取" }));
+    expect(await screen.findByRole("heading", { name: "黑松哨站" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "NPC 任务" })).toBeNull();
 
-    expect(await screen.findByText("进行中")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "提交" }));
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "http://127.0.0.1:3000/game/npc-tasks/task-1/complete",
-        expect.objectContaining({ method: "POST" })
-      );
-    });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "http://127.0.0.1:3000/game/npc-tasks/task-1/accept",
-      expect.objectContaining({ method: "POST" })
-    );
+    expect(screen.getByRole("heading", { name: "任务追踪" })).toBeTruthy();
+    expect(screen.getByText("炉火缺矿")).toBeTruthy();
+    expect(screen.getByText("材料 3/3 基础铁矿石")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "与 NPC 交谈" })).toBeTruthy();
   });
 
   it("shows hunger and eats a food item", async () => {
