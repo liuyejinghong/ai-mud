@@ -31,6 +31,29 @@ export interface HungerSettlementResult {
   injured: boolean;
 }
 
+export interface MunicipalReliefEligibilityInput {
+  inVillage: boolean;
+  hunger: number;
+  foodQuantity: number;
+  copperBalance: number;
+  cheapestFoodPriceCopper: number | null;
+  lastClaimedAt: Date | null;
+  now: Date;
+}
+
+export type MunicipalReliefIneligibilityReason =
+  | "not_hungry"
+  | "has_food"
+  | "can_afford_food"
+  | "cooldown"
+  | "not_in_village";
+
+export type MunicipalReliefEligibilityResult =
+  | { eligible: true }
+  | { eligible: false; reason: MunicipalReliefIneligibilityReason };
+
+const MUNICIPAL_RELIEF_COOLDOWN_MS = 24 * 60 * 60_000;
+
 function clampHunger(value: number) {
   return Math.min(MAX_HUNGER, Math.max(0, Math.floor(value)));
 }
@@ -53,6 +76,27 @@ export function calculateHungerStatus(current: number): HungerStatus {
   if (hunger <= 1) return "starving";
   if (hunger <= 2) return "hungry";
   return "fed";
+}
+
+export function calculateMunicipalReliefEligibility(
+  input: MunicipalReliefEligibilityInput
+): MunicipalReliefEligibilityResult {
+  if (!input.inVillage) return { eligible: false, reason: "not_in_village" };
+  if (input.hunger > 1) return { eligible: false, reason: "not_hungry" };
+  if (input.foodQuantity !== 0) return { eligible: false, reason: "has_food" };
+  if (
+    input.cheapestFoodPriceCopper !== null &&
+    input.copperBalance >= input.cheapestFoodPriceCopper
+  ) {
+    return { eligible: false, reason: "can_afford_food" };
+  }
+  if (
+    input.lastClaimedAt !== null &&
+    input.now.getTime() - input.lastClaimedAt.getTime() < MUNICIPAL_RELIEF_COOLDOWN_MS
+  ) {
+    return { eligible: false, reason: "cooldown" };
+  }
+  return { eligible: true };
 }
 
 export function calculateNextMealAt(now: Date): Date {
