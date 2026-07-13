@@ -605,6 +605,9 @@ export const worldRumors = pgTable(
   },
   (table) => ({
     sourceIdx: index("world_rumors_source_idx").on(table.sourceType, table.sourceId),
+    sourceUniqueIdx: uniqueIndex("world_rumors_source_unique")
+      .on(table.sourceType, table.sourceId)
+      .where(sql`${table.sourceId} IS NOT NULL`),
     createdAtIdx: index("world_rumors_created_at_idx").on(table.createdAt),
     audienceCreatedAtIdx: index("world_rumors_audience_created_at_idx").on(
       table.audience,

@@ -1,7 +1,7 @@
 export const PRODUCT_VERSION = "0.10.5";
 
 export const WORLD_COMPATIBILITY = {
-  schemaVersion: 22,
+  schemaVersion: 23,
   apiVersion: 35,
   engineVersion: 2,
   rulesetVersion: 14,

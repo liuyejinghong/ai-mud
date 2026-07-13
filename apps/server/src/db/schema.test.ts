@@ -191,6 +191,11 @@ describe("foundation schema", () => {
     expect(worldRumors.tags.getSQLType()).toBe("jsonb");
     expect(worldRumors.generatedBy.getSQLType()).toBe("text");
     expect(worldRumors.expiresAt.getSQLType()).toBe("timestamp with time zone");
+    const sourceIndex = getTableConfig(worldRumors).indexes.find(
+      (index) => index.config.name === "world_rumors_source_unique"
+    );
+    expect(sourceIndex?.config.unique).toBe(true);
+    expect(sourceIndex?.config.where).toBeDefined();
   });
 
   it("defines NPC memory entry and fragment tables", () => {

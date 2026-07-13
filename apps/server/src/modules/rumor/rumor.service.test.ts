@@ -9,25 +9,28 @@ class FakeRumorRepo implements RumorRepositoryPort {
   gameSources: RumorSourceRecord[] = [];
   rumored = new Set<string>();
   inserted: WorldRumorDto[] = [];
+  returnStaleCandidates = false;
 
   async listRecentPublicRumors(limit: number) {
     return this.inserted.slice(0, limit);
   }
 
   async listUnrumoredNpcEvents() {
-    return this.npcSources.filter((source) => !this.rumored.has(key(source)));
+    return this.returnStaleCandidates
+      ? this.npcSources
+      : this.npcSources.filter((source) => !this.rumored.has(key(source)));
   }
 
   async listUnrumoredGameEvents() {
-    return this.gameSources.filter((source) => !this.rumored.has(key(source)));
-  }
-
-  async hasRumorForSource(sourceType: RumorSourceRecord["sourceType"], sourceId: string) {
-    return this.rumored.has(`${sourceType}:${sourceId}`);
+    return this.returnStaleCandidates
+      ? this.gameSources
+      : this.gameSources.filter((source) => !this.rumored.has(key(source)));
   }
 
   async insertRumor(input: Parameters<RumorRepositoryPort["insertRumor"]>[0]) {
-    if (input.sourceId) this.rumored.add(`${input.sourceType}:${input.sourceId}`);
+    const sourceKey = input.sourceId ? `${input.sourceType}:${input.sourceId}` : null;
+    if (sourceKey && this.rumored.has(sourceKey)) return null;
+    if (sourceKey) this.rumored.add(sourceKey);
     const rumor: WorldRumorDto = {
       id: `rumor-${this.inserted.length + 1}`,
       sourceType: input.sourceType,
@@ -124,6 +127,37 @@ describe("RumorService", () => {
     expect(logs[0]?.purpose).toBe("world_rumor");
     expect(logs[0]?.npcActorId).toBe("npc-blacksmith");
     expect(logs[0]?.status).toBe("success");
+  });
+
+  it("treats an insert conflict as another worker completing the rumor without duplicate audit", async () => {
+    const repo = new FakeRumorRepo();
+    repo.returnStaleCandidates = true;
+    repo.npcSources = [npcSource()];
+    const logs: CreateAiCallLogInput[] = [];
+    const service = new RumorService(
+      repo,
+      {
+        generateRumor: async () => ({
+          message: "村里有人低声谈起：伯林的矿箱又见了底。",
+          status: "success",
+          provider: "deepseek",
+          model: "deepseek-v4-flash",
+          fallbackReason: null,
+          inputTokens: 80,
+          outputTokens: 20,
+          latencyMs: 30
+        })
+      },
+      { createAiCallLog: async (input) => void logs.push(input) }
+    );
+
+    const first = await service.syncRumors({ now: new Date("2026-07-02T12:00:00.000Z") });
+    const second = await service.syncRumors({ now: new Date("2026-07-02T12:01:00.000Z") });
+
+    expect(first).toHaveLength(1);
+    expect(second).toEqual([]);
+    expect(repo.inserted).toHaveLength(1);
+    expect(logs).toHaveLength(1);
   });
 
   it("stores template rumors when AI rejects unsafe output", async () => {

@@ -49,7 +49,7 @@ describe("game contract", () => {
   it("exposes v0.10.5 world health compatibility", () => {
     expect(PRODUCT_VERSION).toBe("0.10.5");
     expect(WORLD_COMPATIBILITY.apiVersion).toBe(35);
-    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(22);
+    expect(WORLD_COMPATIBILITY.schemaVersion).toBe(23);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(14);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(12);

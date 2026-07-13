@@ -64,8 +64,7 @@ function splitMigration(sql: string) {
     .filter(Boolean);
 }
 
-async function applyMigrations(client: pg.Client, journal: Journal) {
-  const entries = journal.entries.slice().sort((left, right) => left.idx - right.idx);
+async function applyMigrationEntries(client: pg.Client, entries: Journal["entries"]) {
 
   for (const entry of entries) {
     const filePath = join(drizzleDir, `${entry.tag}.sql`);
@@ -75,6 +74,16 @@ async function applyMigrations(client: pg.Client, journal: Journal) {
       await client.query(statement);
     }
   }
+}
+
+async function seedDuplicateWorldRumors(client: pg.Client) {
+  await client.query(`
+    INSERT INTO world_rumors (id, source_type, source_id, message, generated_by, created_at)
+    VALUES
+      ('00000000-0000-0000-0000-000000000002', 'npc_event', '10000000-0000-0000-0000-000000000001', 'later id', 'template', '2026-07-02T10:00:00Z'),
+      ('00000000-0000-0000-0000-000000000001', 'npc_event', '10000000-0000-0000-0000-000000000001', 'keeper', 'template', '2026-07-02T10:00:00Z'),
+      ('00000000-0000-0000-0000-000000000003', 'npc_event', '10000000-0000-0000-0000-000000000001', 'later time', 'template', '2026-07-02T11:00:00Z')
+  `);
 }
 
 async function assertRequiredColumns(client: pg.Client) {
@@ -131,6 +140,46 @@ async function assertAssetGuards(client: pg.Client) {
   expect(activeIndex.rows[0]?.indexdef).toContain("WHERE (status = 'active'");
 }
 
+async function assertWorldRumorSourceUniqueness(client: pg.Client) {
+  const sourceIndex = await client.query<{ indexdef: string }>(`
+    SELECT indexdef
+    FROM pg_indexes
+    WHERE schemaname = 'public'
+      AND indexname = 'world_rumors_source_unique'
+  `);
+  expect(sourceIndex.rows).toHaveLength(1);
+  expect(sourceIndex.rows[0]?.indexdef).toContain("UNIQUE INDEX");
+  expect(sourceIndex.rows[0]?.indexdef).toContain("WHERE (source_id IS NOT NULL)");
+
+  const deduplicated = await client.query<{ id: string }>(`
+    SELECT id
+    FROM world_rumors
+    WHERE source_type = 'npc_event'
+      AND source_id = '10000000-0000-0000-0000-000000000001'
+  `);
+  expect(deduplicated.rows).toEqual([{ id: "00000000-0000-0000-0000-000000000001" }]);
+
+  await expect(
+    client.query(`
+      INSERT INTO world_rumors (source_type, source_id, message, generated_by)
+      VALUES ('npc_event', '10000000-0000-0000-0000-000000000001', 'duplicate', 'template')
+    `)
+  ).rejects.toMatchObject({ code: "23505" });
+
+  await client.query(`
+    INSERT INTO world_rumors (source_type, source_id, message, generated_by)
+    VALUES
+      ('manual', NULL, 'first source-free rumor', 'template'),
+      ('manual', NULL, 'second source-free rumor', 'template')
+  `);
+  const sourceFree = await client.query<{ count: string }>(`
+    SELECT count(*)::text AS count
+    FROM world_rumors
+    WHERE source_type = 'manual' AND source_id IS NULL
+  `);
+  expect(sourceFree.rows[0]?.count).toBe("2");
+}
+
 async function dropDatabase(admin: pg.Client, databaseName: string) {
   const databaseIdentifier = quoteIdentifier(databaseName);
 
@@ -177,9 +226,13 @@ describe("postgres integration migrations", () => {
       await admin.query(`CREATE DATABASE ${quoteIdentifier(tempDatabase)}`);
       target = new Client({ connectionString: databaseUrlForName(databaseUrl, tempDatabase) });
       await target.connect();
-      await applyMigrations(target, journal);
+      const entries = journal.entries.slice().sort((left, right) => left.idx - right.idx);
+      await applyMigrationEntries(target, entries.filter((entry) => entry.idx < 22));
+      await seedDuplicateWorldRumors(target);
+      await applyMigrationEntries(target, entries.filter((entry) => entry.idx >= 22));
       await assertRequiredColumns(target);
       await assertAssetGuards(target);
+      await assertWorldRumorSourceUniqueness(target);
     } finally {
       if (target) await target.end();
       await dropDatabase(admin, tempDatabase);

@@ -22,7 +22,10 @@ export interface RumorRepositoryPort {
   listRecentPublicRumors(limit: number): Promise<WorldRumorDto[]>;
   listUnrumoredNpcEvents(limit: number): Promise<RumorSourceRecord[]>;
   listUnrumoredGameEvents(limit: number): Promise<RumorSourceRecord[]>;
-  hasRumorForSource(sourceType: RumorSourceRecord["sourceType"], sourceId: string): Promise<boolean>;
+  hasRumorForSource?(
+    sourceType: RumorSourceRecord["sourceType"],
+    sourceId: string
+  ): Promise<boolean>;
   insertRumor(input: {
     sourceType: RumorSourceRecord["sourceType"];
     sourceId: string | null;
@@ -33,7 +36,7 @@ export interface RumorRepositoryPort {
     generatedBy: "template" | "ai";
     createdAt?: Date;
     expiresAt?: Date | null;
-  }): Promise<WorldRumorDto>;
+  }): Promise<WorldRumorDto | null>;
 }
 
 export interface RumorGeneratorPort {
@@ -58,7 +61,6 @@ export class RumorService {
 
     for (const candidate of candidates) {
       if (created.length >= batchLimit) break;
-      if (await this.repo.hasRumorForSource(candidate.sourceType, candidate.sourceId)) continue;
 
       const fallbackMessage = buildFallbackRumorMessage(candidate.sourceMessage);
       const context: WorldRumorPromptContext = {
@@ -72,6 +74,19 @@ export class RumorService {
       const result = this.generator
         ? await this.generator.generateRumor({ context })
         : templateRumorResult(fallbackMessage);
+
+      const rumor = await this.repo.insertRumor({
+        sourceType: candidate.sourceType,
+        sourceId: candidate.sourceId,
+        settlementId: "blackpine_outpost",
+        audience: "public",
+        message: clampRumorMessage(result.message || fallbackMessage),
+        tags: candidate.tags,
+        generatedBy: result.status === "success" ? "ai" : "template",
+        createdAt: input.now,
+        expiresAt: null
+      });
+      if (!rumor) continue;
 
       if (this.audit && this.generator) {
         await this.audit.createAiCallLog({
@@ -93,19 +108,7 @@ export class RumorService {
         });
       }
 
-      created.push(
-        await this.repo.insertRumor({
-          sourceType: candidate.sourceType,
-          sourceId: candidate.sourceId,
-          settlementId: "blackpine_outpost",
-          audience: "public",
-          message: clampRumorMessage(result.message || fallbackMessage),
-          tags: candidate.tags,
-          generatedBy: result.status === "success" ? "ai" : "template",
-          createdAt: input.now,
-          expiresAt: null
-        })
-      );
+      created.push(rumor);
     }
 
     return created;

@@ -155,6 +155,13 @@
       "when": 1783911600000,
       "tag": "0022_asset_nonnegative_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1783914766000,
+      "tag": "0023_world_rumor_source_unique",
+      "breakpoints": true
     }
   ]
 }

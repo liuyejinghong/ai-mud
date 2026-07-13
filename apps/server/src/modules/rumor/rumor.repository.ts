@@ -1,5 +1,5 @@
 import type { RumorSourceType, WorldRumorDto } from "@ai-mud/shared";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import { gameEvents, npcEvents, worldRumors } from "../../db/schema.js";
 
@@ -60,7 +60,7 @@ export class RumorRepository {
       tags: [row.eventType]
     }));
 
-    return this.filterUnrumored(sources);
+    return this.filterUnrumored("npc_event", sources);
   }
 
   async listUnrumoredGameEvents(limit: number): Promise<RumorSourceRecord[]> {
@@ -81,10 +81,10 @@ export class RumorRepository {
       tags: [row.eventType]
     }));
 
-    return this.filterUnrumored(sources);
+    return this.filterUnrumored("game_event", sources);
   }
 
-  async insertRumor(input: InsertRumorInput): Promise<WorldRumorDto> {
+  async insertRumor(input: InsertRumorInput): Promise<WorldRumorDto | null> {
     const values: typeof worldRumors.$inferInsert = {
       sourceType: input.sourceType,
       sourceId: input.sourceId,
@@ -97,28 +97,38 @@ export class RumorRepository {
     };
     if (input.createdAt !== undefined) values.createdAt = input.createdAt;
 
-    const [row] = await this.db.insert(worldRumors).values(values).returning();
-    if (!row) throw new Error("Failed to insert world rumor");
-    return toWorldRumor(row);
+    const [row] = await this.db
+      .insert(worldRumors)
+      .values(values)
+      .onConflictDoNothing()
+      .returning();
+    return row ? toWorldRumor(row) : null;
   }
 
-  async hasRumorForSource(sourceType: RumorSourceType, sourceId: string): Promise<boolean> {
-    const rows = await this.db
-      .select({ id: worldRumors.id })
+  private async filterUnrumored(
+    sourceType: RumorSourceType,
+    sources: RumorSourceRecord[]
+  ): Promise<RumorSourceRecord[]> {
+    if (sources.length === 0) return [];
+
+    const existing = await this.db
+      .select({ sourceId: worldRumors.sourceId })
       .from(worldRumors)
-      .where(and(eq(worldRumors.sourceType, sourceType), eq(worldRumors.sourceId, sourceId)))
-      .limit(1);
-    return rows.length > 0;
-  }
-
-  private async filterUnrumored(sources: RumorSourceRecord[]) {
-    const result: RumorSourceRecord[] = [];
-    for (const source of sources) {
-      if (!(await this.hasRumorForSource(source.sourceType, source.sourceId))) {
-        result.push(source);
-      }
-    }
-    return result;
+      .where(
+        and(
+          eq(worldRumors.sourceType, sourceType),
+          inArray(
+            worldRumors.sourceId,
+            sources.map((source) => source.sourceId)
+          )
+        )
+      );
+    const existingIds = new Set(
+      existing
+        .filter((row) => row.sourceId !== null)
+        .map((row) => row.sourceId)
+    );
+    return sources.filter((source) => !existingIds.has(source.sourceId));
   }
 }
 
