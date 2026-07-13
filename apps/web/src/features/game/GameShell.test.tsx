@@ -388,13 +388,42 @@ describe("GameShell", () => {
     expect(await screen.findByRole("heading", { name: "创建角色" })).toBeTruthy();
   });
 
-  it("shows the starter goal inside the next-step panel after entering the world", async () => {
+  it("shows an in-world starter objective after entering the world", async () => {
     mockFetchWithStates([villageState]);
 
     render(<GameShell csrfToken="csrf" />);
 
     expect(await screen.findByRole("heading", { name: "下一步" })).toBeTruthy();
-    expect(screen.getByText(/当前目标：完成一次采集或探索闭环/)).toBeTruthy();
+    expect(screen.getByText("哨站暂时平静，准备前往野外探索。")).toBeTruthy();
+  });
+
+  it("keeps the playable HUD inside its five primary regions and one modal layer", async () => {
+    mockFetchWithStates([villageState]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    expect(await screen.findByRole("complementary", { name: "角色状态" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "场景与行动" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "事件记录" })).toBeTruthy();
+    expect(screen.getByRole("complementary", { name: "小地图与辅助信息" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "武器 训练短剑 普通 耐久 60%" }));
+    expect(await screen.findByRole("dialog", { name: "训练短剑 装备详情" })).toBeTruthy();
+    expect(document.querySelectorAll("[data-testid='modal-backdrop']")).toHaveLength(1);
+  });
+
+  it("does not expose implementation or layout rationale as player copy", async () => {
+    mockFetchWithStates([villageState]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    const hud = await screen.findByRole("main");
+    const playerCopy = hud.textContent ?? "";
+    expect(playerCopy.includes("确认背包、行动进度和事件记录同步更新")).toBe(false);
+    expect(/小地图.*主视觉/.test(playerCopy)).toBe(false);
+    expect(playerCopy.includes("fallback")).toBe(false);
+    expect(playerCopy.includes("provider")).toBe(false);
+    expect(playerCopy.includes("model")).toBe(false);
   });
 
   it("claims municipal relief only when the server makes that action available", async () => {

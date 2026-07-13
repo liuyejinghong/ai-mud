@@ -161,6 +161,21 @@ function hungerWarningText(status: HungerStatus) {
   return "饥饿：继续外出前最好准备食物。";
 }
 
+function nextStepText(state: GameStateDto, options: {
+  canClaimRelief: boolean;
+  canGather: boolean;
+  canStartCombat: boolean;
+}) {
+  if (state.currentAction) return "行动正在进行中。";
+  if (options.canClaimRelief) return "饥饿难耐，市政厅可以提供一份救济食物。";
+  if (state.character?.currentLocation === "blackpine_outpost") {
+    return "哨站暂时平静，准备前往野外探索。";
+  }
+  if (options.canGather) return "附近有可采集的资源，准备好后即可动手。";
+  if (options.canStartCombat) return "前方传来异响，继续前进前要留意敌踪。";
+  return "四周没有明显动静，先观察附近的道路。";
+}
+
 function dialogueTaskHint(target: NpcDialogueTargetDto) {
   if (!target.task) return null;
   const status = {
@@ -380,6 +395,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
   const damagedEquipment = state.equipment.filter((item) => item.repairQuote !== null);
   const acceptedTasks = state.npcTasks.filter((task) => task.status === "accepted");
   const selectedClass = CHARACTER_CLASSES.find((entry) => entry.id === classId);
+  const nextStep = nextStepText(state, { canClaimRelief, canGather, canStartCombat });
 
   async function submitLobbyChat() {
     const body = chatInput.trim();
@@ -967,7 +983,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
         </section>
       </aside>
 
-      <section className="game-main-panel" aria-labelledby="location-title">
+      <section className="game-main-panel" aria-label="场景与行动">
         <div className="location-header">
           <p className="game-kicker">World Feed</p>
           <h1 id="location-title">{state.locationTitle}</h1>
@@ -982,10 +998,6 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
             </div>
             <div className="scene-copy">
               <p>{state.locationDescription}</p>
-              <p>
-                这里需要判断下一步行动：继续探索、停下来采集、处理遭遇，或者回到哨站整理背包和 NPC 关系。
-                小地图只回答“我在哪、附近有什么”，不再作为主视觉。
-              </p>
             </div>
             <div className="scene-object-list" aria-label="当前位置可交互对象">
               {sceneObjects.length === 0 ? (
@@ -1014,12 +1026,7 @@ export function GameShell({ csrfToken, onAuthExpired, onLogout }: GameShellProps
               {canReturnVillage ? <span>可返回</span> : null}
               {!state.map ? <span>村镇</span> : null}
             </div>
-            <p className="objective-copy">
-              当前目标：完成一次采集或探索闭环，确认背包、行动进度和事件记录同步更新。
-            </p>
-            <p className="decision-copy">
-              自动战斗和采集都是挂机行为。玩家此刻的有效操作是选择行动、取消行动、返回哨站，或用输入栏做复杂指令。
-            </p>
+            <p className="objective-copy">{nextStep}</p>
           </aside>
         </section>
 
