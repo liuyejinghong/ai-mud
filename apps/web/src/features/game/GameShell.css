@@ -1089,6 +1089,13 @@
   padding: 0 8px;
 }
 
+.market-status {
+  color: #f3d67d;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 10px 0 0;
+}
+
 .dialog-actions {
   display: flex;
   justify-content: flex-end;

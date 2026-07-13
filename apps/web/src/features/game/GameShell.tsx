@@ -301,6 +301,7 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
   const [classId, setClassId] = useState<CharacterClassId>("ranger");
   const [activeModal, setActiveModal] = useState<ActiveModal | null>(null);
   const [market, setMarket] = useState<MarketDto | null>(null);
+  const [marketStatus, setMarketStatus] = useState<string | null>(null);
   const [dialogueTargets, setDialogueTargets] = useState<NpcDialogueTargetDto[]>([]);
   const [dialogue, setDialogue] = useState<NpcDialogueResponseDto | null>(null);
   const [dialogueInput, setDialogueInput] = useState("");
@@ -396,14 +397,21 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
     }
   }
 
-  async function runCommand(action: () => Promise<GameStateDto>) {
+  async function runCommand(
+    action: () => Promise<GameStateDto>,
+    onFailure?: (message: string) => void
+  ): Promise<boolean> {
     setError(null);
     setIsBusy(true);
     try {
       setState(await action());
+      return true;
     } catch (caught) {
       if (isAuthExpired(caught)) onAuthExpired?.();
-      setError(gameErrorMessage(caught, "动作失败，请稍后再试。"));
+      const message = gameErrorMessage(caught, "动作失败，请稍后再试。");
+      if (onFailure) onFailure(message);
+      else setError(message);
+      return false;
     } finally {
       setIsBusy(false);
     }
@@ -425,6 +433,7 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
 
   async function openMarket() {
     setError(null);
+    setMarketStatus(null);
     setIsBusy(true);
     try {
       setMarket(await getMarket());
@@ -529,8 +538,9 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
   }
 
   async function runMarketTrade(action: () => Promise<GameStateDto>) {
-    await runCommand(action);
-    setActiveModal(null);
+    setMarketStatus(null);
+    const succeeded = await runCommand(action, setMarketStatus);
+    if (succeeded) setActiveModal(null);
   }
 
   const hotkeyRegistry = useMemo(() => {
@@ -1428,6 +1438,10 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
           }
 
           if (modal.type === "market" && market) {
+            const availableCopper = state.character?.money.totalCopper ?? 0;
+            const hasUnaffordablePurchase = market.items.some(
+              (item) => item.buyPrice.totalCopper > availableCopper
+            );
             return (
               <section
                 className="market-dialog"
@@ -1449,7 +1463,9 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
                     <span role="columnheader">卖价</span>
                     <span role="columnheader">操作</span>
                   </div>
-                  {market.items.map((item) => (
+                  {market.items.map((item) => {
+                    const canAffordPurchase = item.buyPrice.totalCopper <= availableCopper;
+                    return (
                     <div className="market-row" role="row" key={item.itemId}>
                       <span role="cell">{item.name}</span>
                       <span role="cell">{item.stockQuantity}</span>
@@ -1464,7 +1480,15 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
                         <button
                           type="button"
                           className="game-secondary-button"
-                          disabled={item.stockQuantity < 1 || isBusy}
+                          aria-describedby={
+                            canAffordPurchase ? undefined : "market-purchase-funds-hint"
+                          }
+                          aria-label={
+                            canAffordPurchase
+                              ? undefined
+                              : `购买 ${item.name}，铜币不足`
+                          }
+                          disabled={item.stockQuantity < 1 || !canAffordPurchase || isBusy}
                           onClick={() =>
                             void runMarketTrade(() =>
                               buyMarketItem({ itemId: item.itemId, quantity: 1 }, csrfToken)
@@ -1487,8 +1511,19 @@ export function GameShell({ csrfToken, onAuthExpired }: GameShellProps) {
                         </button>
                       </span>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
+                {hasUnaffordablePurchase ? (
+                  <p id="market-purchase-funds-hint" className="market-status">
+                    铜币不足的物品暂时不能购买。
+                  </p>
+                ) : null}
+                {marketStatus ? (
+                  <p role="status" aria-live="polite" className="market-status">
+                    {marketStatus}
+                  </p>
+                ) : null}
                 <div className="dialog-actions">
                   <button type="button" className="game-primary-button" onClick={closeModal}>
                     关闭

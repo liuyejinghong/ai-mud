@@ -678,6 +678,55 @@ describe("GameShell", () => {
     });
   });
 
+  it("keeps the market dialog open and shows the failed trade context", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/game/market/buy")) {
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({
+            error: { code: "VALIDATION_ERROR", message: "市政库存刚刚不足。" }
+          })
+        };
+      }
+      if (url.includes("/game/market")) return { ok: true, json: async () => marketState };
+      if (url.includes("/game/presence/heartbeat")) return { ok: true, json: async () => ({ ok: true }) };
+      return { ok: true, json: async () => emptySyncResponse({ state: villageState }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "市政集市" }));
+    fireEvent.click(await screen.findByRole("button", { name: "购买 基础铁矿石" }));
+
+    expect(await screen.findByText("市政库存刚刚不足。")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "市政集市" })).toBeTruthy();
+  });
+
+  it("disables a market purchase the current copper balance cannot afford", async () => {
+    const unaffordableMarket: MarketDto = {
+      ...marketState,
+      items: [
+        {
+          ...marketState.items[0]!,
+          buyPrice: { gold: 0, silver: 20, copper: 0, totalCopper: 2000 }
+        }
+      ]
+    };
+    mockFetchWithStates([villageState, unaffordableMarket]);
+
+    render(<GameShell csrfToken="csrf" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "市政集市" }));
+
+    expect(
+      await screen.findByRole("button", { name: "购买 基础铁矿石，铜币不足" })
+    ).toHaveProperty("disabled", true);
+    expect(screen.getByText("铜币不足的物品暂时不能购买。")).toBeTruthy();
+  });
+
   it("renders recent world rumors in the main game feed", async () => {
     mockFetchWithStates([
       {
