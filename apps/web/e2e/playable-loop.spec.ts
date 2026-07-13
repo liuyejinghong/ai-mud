@@ -358,11 +358,64 @@ test("player can use the first playable MUD screen", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "当前行动" })).toBeVisible();
   await expect(page.getByText(/本轮采集 25%/)).toBeVisible();
   await page.getByRole("button", { name: "取消行动" }).click();
-  await page.getByRole("button", { name: "攻击野狼" }).click();
+  await page.getByRole("button", { name: "开始战斗" }).click();
   await page.getByRole("button", { name: "查看战斗" }).click();
   await expect(page.getByRole("dialog", { name: "战斗详情" })).toBeVisible();
   await page.getByRole("button", { name: "关闭" }).click();
 
   await page.getByRole("button", { name: "野莓 x2" }).click();
   await expect(page.getByRole("dialog", { name: "野莓" })).toBeVisible();
+});
+
+test("keeps the playable HUD inside the browser viewport", async ({ page }) => {
+  await page.route("**/auth/me", async (route) => {
+    await route.fulfill({
+      json: {
+        user: {
+          id: "account-viewport",
+          email: "viewport@example.com",
+          role: "player",
+          status: "active"
+        },
+        csrfToken: "csrf"
+      }
+    });
+  });
+  await page.route("**/game/state", async (route) => route.fulfill({ json: villageState }));
+  await page.route("http://127.0.0.1:3000/game/sync**", async (route) =>
+    route.fulfill({ json: syncResponse(villageState) })
+  );
+  await page.route("**/game/presence/heartbeat", async (route) =>
+    route.fulfill({ json: { ok: true } })
+  );
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1180, height: 900 },
+    { width: 980, height: 900 },
+    { width: 390, height: 844 }
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "黑松哨站" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "动作" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "事件记录" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "向北移动" })).toBeVisible();
+
+    const metrics = await page.evaluate(() => ({
+      rootScrollWidth: document.documentElement.scrollWidth,
+      rootClientWidth: document.documentElement.clientWidth,
+      rootScrollHeight: document.documentElement.scrollHeight,
+      rootClientHeight: document.documentElement.clientHeight,
+      shellHeight: document.querySelector(".game-shell")?.getBoundingClientRect().height ?? 0
+    }));
+
+    expect(metrics.rootScrollWidth).toBeLessThanOrEqual(metrics.rootClientWidth);
+    expect(metrics.rootScrollHeight).toBeLessThanOrEqual(metrics.rootClientHeight);
+    expect(metrics.shellHeight).toBeLessThanOrEqual(viewport.height);
+
+    if (process.env.SAVE_HUD_SCREENSHOTS === "1") {
+      await page.screenshot({ path: `test-results/hud-${viewport.width}x${viewport.height}.png` });
+    }
+  }
 });

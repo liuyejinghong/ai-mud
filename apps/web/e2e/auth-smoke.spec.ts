@@ -162,11 +162,17 @@ test("renders economy visibility for admins", async ({ page }) => {
 
   await page.goto("/");
 
+  await expect(page.getByRole("heading", { name: "创建角色" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "管理" })).toBeVisible();
+  await page.getByRole("button", { name: "管理" }).click();
   await expect(page.getByRole("heading", { name: "世界健康总览" })).toBeVisible();
+  await page.getByRole("tab", { name: "激活码" }).click();
   await expect(page.getByRole("heading", { name: "激活码管理" })).toBeVisible();
+  await page.getByRole("tab", { name: "经济监控" }).click();
   await expect(page.getByRole("heading", { name: "经济监控" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "NPC 运行监控" })).toBeVisible();
   await expect(page.getByText("税收合计 1 铜")).toBeVisible();
+  await page.getByRole("tab", { name: "NPC 监控" }).click();
+  await expect(page.getByRole("heading", { name: "NPC 运行监控" })).toBeVisible();
   await expect(page.getByText("市政金库 9975 铜")).toBeVisible();
   await expect(page.getByText("上次结算")).toBeVisible();
 });
