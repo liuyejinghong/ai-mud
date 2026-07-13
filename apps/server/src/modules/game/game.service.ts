@@ -788,9 +788,11 @@ export class GameService {
   ): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
-      const character = await this.requireSettledCharacter(repo, accountId, new Date());
+      const unlockedCharacter = await this.requireCharacter(repo, accountId);
       const quantity = this.requireTradeQuantity(input.quantity);
-      const market = await this.requireMarketInventoryItem(repo, input.itemId);
+      const market = await this.requireMarketInventoryItemForUpdate(repo, input.itemId);
+      const lockedCharacter = await this.requireCharacterForUpdate(repo, unlockedCharacter.id);
+      const character = await this.settleHungerForCharacter(repo, lockedCharacter, new Date());
       const item = getItemById(input.itemId);
       if (!item) throw new GameServiceError("VALIDATION_ERROR", "Unknown item");
       if (market.quantity < quantity) {
@@ -807,15 +809,25 @@ export class GameService {
       if (character.copperBalance < quote.totalCopper) {
         throw new GameServiceError("VALIDATION_ERROR", "铜币不足。");
       }
-      const treasury = await repo.findMunicipalTreasury(BLACKPINE_MARKET_ID);
+      const stockDebited = await repo.decrementMarketInventoryIfAvailable({
+        marketInventoryId: market.id,
+        quantity
+      });
+      if (!stockDebited) {
+        throw new GameServiceError("VALIDATION_ERROR", "市政集市库存不足。");
+      }
+      const paymentDebited = await repo.decrementCharacterCopperIfAvailable({
+        characterId: character.id,
+        amount: quote.totalCopper
+      });
+      if (!paymentDebited) {
+        throw new GameServiceError("VALIDATION_ERROR", "铜币不足。");
+      }
+      const treasury = await repo.findMunicipalTreasuryForUpdate(BLACKPINE_MARKET_ID);
       if (!treasury) {
         throw new GameServiceError("VALIDATION_ERROR", "市政集市金库未初始化。");
       }
 
-      await repo.incrementCharacterCopper({
-        characterId: character.id,
-        delta: -quote.totalCopper
-      });
       await repo.incrementMunicipalTreasury({
         settlementId: BLACKPINE_MARKET_ID,
         delta: quote.totalCopper
@@ -826,10 +838,6 @@ export class GameService {
         quantity,
         reason: "market.buy",
         metadata: { settlementId: BLACKPINE_MARKET_ID, unitPriceCopper: quote.unitPriceCopper }
-      });
-      await repo.setMarketInventoryQuantity({
-        marketInventoryId: market.id,
-        quantity: market.quantity - quantity
       });
       await repo.createMarketTransaction({
         settlementId: BLACKPINE_MARKET_ID,
@@ -876,17 +884,21 @@ export class GameService {
   ): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
-      const character = await this.requireSettledCharacter(repo, accountId, new Date());
+      const unlockedCharacter = await this.requireCharacter(repo, accountId);
       const quantity = this.requireTradeQuantity(input.quantity);
-      const market = await this.requireMarketInventoryItem(repo, input.itemId);
+      const market = await this.requireMarketInventoryItemForUpdate(repo, input.itemId);
       const item = getItemById(input.itemId);
       if (!item) throw new GameServiceError("VALIDATION_ERROR", "Unknown item");
 
-      const inventory = await repo.listInventory(character.id);
-      const existingStack = inventory.find((entry) => entry.itemId === input.itemId);
+      const existingStack = await repo.findCharacterInventoryItemForUpdate(
+        unlockedCharacter.id,
+        input.itemId
+      );
       if (!existingStack || existingStack.quantity < quantity) {
         throw new GameServiceError("VALIDATION_ERROR", "背包物品不足。");
       }
+      const lockedCharacter = await this.requireCharacterForUpdate(repo, unlockedCharacter.id);
+      const character = await this.settleHungerForCharacter(repo, lockedCharacter, new Date());
 
       const quote = calculateMarketQuote({
         direction: "sell",
@@ -895,19 +907,14 @@ export class GameService {
         targetQuantity: market.targetQuantity,
         quantity
       });
-      const treasury = await repo.findMunicipalTreasury(BLACKPINE_MARKET_ID);
-      if (!treasury || treasury.copperBalance < quote.totalCopper) {
+      const treasuryDebited = await repo.decrementMunicipalTreasuryIfAvailable({
+        settlementId: BLACKPINE_MARKET_ID,
+        amount: quote.totalCopper
+      });
+      if (!treasuryDebited) {
         throw new GameServiceError("VALIDATION_ERROR", "市政集市金库余额不足。");
       }
 
-      await repo.incrementCharacterCopper({
-        characterId: character.id,
-        delta: quote.totalCopper
-      });
-      await repo.incrementMunicipalTreasury({
-        settlementId: BLACKPINE_MARKET_ID,
-        delta: -quote.totalCopper
-      });
       await repo.consumeCharacterItem({
         characterId: character.id,
         itemId: input.itemId,
@@ -915,9 +922,13 @@ export class GameService {
         reason: "market.sell",
         metadata: { settlementId: BLACKPINE_MARKET_ID, unitPriceCopper: quote.unitPriceCopper }
       });
-      await repo.setMarketInventoryQuantity({
+      await repo.incrementMarketInventory({
         marketInventoryId: market.id,
-        quantity: market.quantity + quantity
+        quantity
+      });
+      await repo.incrementCharacterCopper({
+        characterId: character.id,
+        delta: quote.totalCopper
       });
       await repo.createMarketTransaction({
         settlementId: BLACKPINE_MARKET_ID,
@@ -984,7 +995,7 @@ export class GameService {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
       const character = await this.requireRepairContext(repo, accountId);
-      const equipment = await this.requireEquipment(repo, character.id, input.equipmentId);
+      const equipment = await this.requireEquipmentForUpdate(repo, character.id, input.equipmentId);
       await this.repairEquipmentRecords(repo, new LedgerService(new LedgerRepository(tx)), character, [
         equipment
       ]);
@@ -997,11 +1008,16 @@ export class GameService {
       const repo = new GameRepository(tx);
       const character = await this.requireRepairContext(repo, accountId);
       const equipment = await this.listEquippedEquipment(repo, character.id);
+      const lockedEquipment: EquipmentRecord[] = [];
+      for (const item of [...equipment].sort((left, right) => left.id.localeCompare(right.id))) {
+        const locked = await repo.findEquipmentByIdForUpdate(character.id, item.id);
+        if (locked) lockedEquipment.push(locked);
+      }
       await this.repairEquipmentRecords(
         repo,
         new LedgerService(new LedgerRepository(tx)),
         character,
-        equipment.filter((item) => calculateEquipmentRepairQuote(item) !== null)
+        lockedEquipment.filter((item) => calculateEquipmentRepairQuote(item) !== null)
       );
       return this.buildState(repo, accountId, new Date());
     });
@@ -1119,6 +1135,18 @@ export class GameService {
     return item;
   }
 
+  private async requireMarketInventoryItemForUpdate(
+    repo: GameRepository,
+    itemId: MarketTradeRequestDto["itemId"]
+  ) {
+    await this.ensureMarketInventory(repo);
+    const marketItem = await repo.findMarketInventoryItemForUpdate(BLACKPINE_MARKET_ID, itemId);
+    if (!marketItem) {
+      throw new GameServiceError("VALIDATION_ERROR", "市政集市暂不交易该物品。");
+    }
+    return marketItem;
+  }
+
   private async buildMarketDto(
     repo: GameRepository,
     character: CharacterRecord
@@ -1170,6 +1198,14 @@ export class GameService {
 
   private async requireCharacter(repo: GameRepository, accountId: string) {
     const character = await repo.findCharacterByAccountId(accountId);
+    if (!character) {
+      throw new GameServiceError("VALIDATION_ERROR", "Character required");
+    }
+    return character;
+  }
+
+  private async requireCharacterForUpdate(repo: GameRepository, characterId: string) {
+    const character = await repo.findCharacterByIdForUpdate(characterId);
     if (!character) {
       throw new GameServiceError("VALIDATION_ERROR", "Character required");
     }
@@ -1317,6 +1353,18 @@ export class GameService {
     return equipment;
   }
 
+  private async requireEquipmentForUpdate(
+    repo: GameRepository,
+    characterId: string,
+    equipmentId: string
+  ) {
+    const equipment = await repo.findEquipmentByIdForUpdate(characterId, equipmentId);
+    if (!equipment) {
+      throw new GameServiceError("VALIDATION_ERROR", "装备不存在。");
+    }
+    return equipment;
+  }
+
   private async repairEquipmentRecords(
     repo: GameRepository,
     ledger: LedgerService,
@@ -1331,6 +1379,9 @@ export class GameService {
       item,
       quote: calculateEquipmentRepairQuote(item)
     }));
+    if (quotes.some((entry) => entry.quote === null)) {
+      throw new GameServiceError("VALIDATION_ERROR", "装备不需要修理。");
+    }
     const totalCopper = quotes.reduce((sum, entry) => sum + (entry.quote?.copperCost ?? 0), 0);
     const totalIronOre = quotes.reduce((sum, entry) => sum + (entry.quote?.ironOreCost ?? 0), 0);
 
@@ -1344,9 +1395,19 @@ export class GameService {
       throw new GameServiceError("VALIDATION_ERROR", "基础铁矿石不足。");
     }
 
-    await repo.incrementCharacterCopper({
+    const paymentDebited = await repo.decrementCharacterCopperIfAvailable({
       characterId: character.id,
-      delta: -totalCopper
+      amount: totalCopper
+    });
+    if (!paymentDebited) {
+      throw new GameServiceError("VALIDATION_ERROR", "铜币不足。");
+    }
+    await repo.consumeCharacterItem({
+      characterId: character.id,
+      itemId: "iron_ore",
+      quantity: totalIronOre,
+      reason: "equipment.repair",
+      metadata: { equipmentIds: equipment.map((item) => item.id), totalCopper, totalIronOre }
     });
     await ledger.recordCopperTransfer({
       operation: "equipment_repair",
@@ -1357,13 +1418,6 @@ export class GameService {
       amountCopper: totalCopper,
       reason: "equipment.repair",
       metadata: { equipmentIds: equipment.map((item) => item.id), totalIronOre }
-    });
-    await repo.consumeCharacterItem({
-      characterId: character.id,
-      itemId: "iron_ore",
-      quantity: totalIronOre,
-      reason: "equipment.repair",
-      metadata: { equipmentIds: equipment.map((item) => item.id), totalCopper, totalIronOre }
     });
     for (const entry of quotes) {
       await repo.updateEquipmentDurability({

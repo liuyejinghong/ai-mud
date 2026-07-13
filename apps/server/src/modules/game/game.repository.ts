@@ -7,7 +7,7 @@ import type {
   GridPositionDto,
   ItemId
 } from "@ai-mud/shared";
-import { and, asc, desc, eq, gt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import {
   characterActions,
@@ -392,6 +392,20 @@ function mapMapInstanceRow(row: typeof mapInstances.$inferSelect): MapInstanceRe
   };
 }
 
+function mapMarketInventoryRow(
+  row: typeof marketInventory.$inferSelect
+): MarketInventoryRecord {
+  return {
+    id: row.id,
+    settlementId: row.settlementId,
+    itemId: row.itemId as ItemId,
+    quantity: row.quantity,
+    targetQuantity: row.targetQuantity,
+    baseBuyPriceCopper: row.baseBuyPriceCopper,
+    baseSellPriceCopper: row.baseSellPriceCopper
+  };
+}
+
 export class GameRepository {
   constructor(private readonly db: GameDb) {}
 
@@ -401,6 +415,34 @@ export class GameRepository {
       .from(characters)
       .where(eq(characters.accountId, accountId))
       .limit(1);
+
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      accountId: row.accountId,
+      name: row.name,
+      classId: row.classId,
+      level: row.level,
+      xp: row.xp,
+      hp: row.hp,
+      maxHp: row.maxHp,
+      copperBalance: row.copperBalance,
+      hunger: serializeHunger(row.hunger),
+      lastHungerSettledAt: row.lastHungerSettledAt,
+      currentLocation: row.currentLocation,
+      position: parsePosition(row.position),
+      injuryUntil: row.injuryUntil
+    };
+  }
+
+  async findCharacterByIdForUpdate(characterId: string): Promise<CharacterRecord | null> {
+    const [row] = await this.db
+      .select()
+      .from(characters)
+      .where(eq(characters.id, characterId))
+      .limit(1)
+      .for("update");
 
     if (!row) return null;
 
@@ -477,6 +519,23 @@ export class GameRepository {
       .where(eq(characters.id, input.characterId));
   }
 
+  async decrementCharacterCopperIfAvailable(input: {
+    characterId: string;
+    amount: number;
+  }): Promise<boolean> {
+    const rows = await this.db
+      .update(characters)
+      .set({ copperBalance: sql`${characters.copperBalance} - ${input.amount}` })
+      .where(
+        and(
+          eq(characters.id, input.characterId),
+          gte(characters.copperBalance, input.amount)
+        )
+      )
+      .returning({ id: characters.id });
+    return rows.length > 0;
+  }
+
   async updateCharacterNeeds(input: {
     characterId: string;
     hunger: number;
@@ -536,6 +595,24 @@ export class GameRepository {
       itemId: row.itemId as ItemId,
       quantity: row.quantity
     }));
+  }
+
+  async findCharacterInventoryItemForUpdate(
+    characterId: string,
+    itemId: ItemId
+  ): Promise<InventoryRecord | null> {
+    const [row] = await this.db
+      .select({ itemId: characterItems.itemId, quantity: characterItems.quantity })
+      .from(characterItems)
+      .where(
+        and(
+          eq(characterItems.characterId, characterId),
+          eq(characterItems.itemId, itemId)
+        )
+      )
+      .limit(1)
+      .for("update");
+    return row ? { itemId: row.itemId as ItemId, quantity: row.quantity } : null;
   }
 
   async grantCharacterItem(input: {
@@ -649,6 +726,66 @@ export class GameRepository {
     return equipment.find((item) => item.id === equipmentId) ?? null;
   }
 
+  async findEquipmentByIdForUpdate(
+    characterId: string,
+    equipmentId: string
+  ): Promise<EquipmentRecord | null> {
+    const [legacy] = await this.db
+      .select()
+      .from(characterEquipment)
+      .where(
+        and(
+          eq(characterEquipment.characterId, characterId),
+          eq(characterEquipment.id, equipmentId)
+        )
+      )
+      .limit(1)
+      .for("update");
+    if (legacy) {
+      return {
+        id: legacy.id,
+        characterId: legacy.characterId,
+        slot: legacy.slot as EquipmentSlot,
+        itemKey: legacy.itemKey,
+        name: legacy.name,
+        itemLevel: legacy.itemLevel,
+        attackBonus: legacy.attackBonus,
+        defenseBonus: legacy.defenseBonus,
+        maxDurability: legacy.maxDurability,
+        currentDurability: legacy.currentDurability
+      };
+    }
+
+    const [instance] = await this.db
+      .select()
+      .from(itemInstances)
+      .where(
+        and(
+          eq(itemInstances.id, equipmentId),
+          eq(itemInstances.ownerType, "character"),
+          eq(itemInstances.ownerId, characterId),
+          eq(itemInstances.locationType, "equipped")
+        )
+      )
+      .limit(1)
+      .for("update");
+    if (!instance) return null;
+
+    return {
+      id: instance.id,
+      characterId,
+      slot: (instance.slot ?? "weapon") as EquipmentSlot,
+      itemKey: instance.itemDefId,
+      name: instance.itemDefId,
+      rarity: instance.rarity as ItemRarity,
+      itemLevel: instance.itemLevel,
+      attackBonus: 0,
+      defenseBonus: 0,
+      maxDurability: instance.maxDurability,
+      currentDurability: instance.currentDurability
+    };
+  }
+
   async createEquipment(input: {
     characterId: string;
     slot: EquipmentSlot;
@@ -720,15 +857,25 @@ export class GameRepository {
       .from(marketInventory)
       .where(eq(marketInventory.settlementId, settlementId));
 
-    return rows.map((row) => ({
-      id: row.id,
-      settlementId: row.settlementId,
-      itemId: row.itemId as ItemId,
-      quantity: row.quantity,
-      targetQuantity: row.targetQuantity,
-      baseBuyPriceCopper: row.baseBuyPriceCopper,
-      baseSellPriceCopper: row.baseSellPriceCopper
-    }));
+    return rows.map(mapMarketInventoryRow);
+  }
+
+  async findMarketInventoryItemForUpdate(
+    settlementId: string,
+    itemId: ItemId
+  ): Promise<MarketInventoryRecord | null> {
+    const [row] = await this.db
+      .select()
+      .from(marketInventory)
+      .where(
+        and(
+          eq(marketInventory.settlementId, settlementId),
+          eq(marketInventory.itemId, itemId)
+        )
+      )
+      .limit(1)
+      .for("update");
+    return row ? mapMarketInventoryRow(row) : null;
   }
 
   async upsertMarketInventory(input: {
@@ -777,12 +924,58 @@ export class GameRepository {
       .where(eq(marketInventory.id, input.marketInventoryId));
   }
 
+  async decrementMarketInventoryIfAvailable(input: {
+    marketInventoryId: string;
+    quantity: number;
+  }): Promise<boolean> {
+    const rows = await this.db
+      .update(marketInventory)
+      .set({
+        quantity: sql`${marketInventory.quantity} - ${input.quantity}`,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(marketInventory.id, input.marketInventoryId),
+          gte(marketInventory.quantity, input.quantity)
+        )
+      )
+      .returning({ id: marketInventory.id });
+    return rows.length > 0;
+  }
+
+  async incrementMarketInventory(input: {
+    marketInventoryId: string;
+    quantity: number;
+  }): Promise<void> {
+    await this.db
+      .update(marketInventory)
+      .set({
+        quantity: sql`${marketInventory.quantity} + ${input.quantity}`,
+        updatedAt: new Date()
+      })
+      .where(eq(marketInventory.id, input.marketInventoryId))
+      .returning({ id: marketInventory.id });
+  }
+
   async findMunicipalTreasury(settlementId: string): Promise<{ copperBalance: number } | null> {
     const [row] = await this.db
       .select({ copperBalance: municipalTreasury.copperBalance })
       .from(municipalTreasury)
       .where(eq(municipalTreasury.settlementId, settlementId))
       .limit(1);
+    return row ?? null;
+  }
+
+  async findMunicipalTreasuryForUpdate(
+    settlementId: string
+  ): Promise<{ copperBalance: number } | null> {
+    const [row] = await this.db
+      .select({ copperBalance: municipalTreasury.copperBalance })
+      .from(municipalTreasury)
+      .where(eq(municipalTreasury.settlementId, settlementId))
+      .limit(1)
+      .for("update");
     return row ?? null;
   }
 
@@ -797,6 +990,26 @@ export class GameRepository {
         updatedAt: new Date()
       })
       .where(eq(municipalTreasury.settlementId, input.settlementId));
+  }
+
+  async decrementMunicipalTreasuryIfAvailable(input: {
+    settlementId: string;
+    amount: number;
+  }): Promise<boolean> {
+    const rows = await this.db
+      .update(municipalTreasury)
+      .set({
+        copperBalance: sql`${municipalTreasury.copperBalance} - ${input.amount}`,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(municipalTreasury.settlementId, input.settlementId),
+          gte(municipalTreasury.copperBalance, input.amount)
+        )
+      )
+      .returning({ settlementId: municipalTreasury.settlementId });
+    return rows.length > 0;
   }
 
   async createMarketTransaction(input: MarketTransactionInput): Promise<void> {

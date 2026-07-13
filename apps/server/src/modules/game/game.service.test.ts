@@ -1,12 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "../../db/client.js";
-import { GameService } from "./game.service.js";
-import type {
-  CharacterActionRecord,
-  CharacterRecord,
-  CombatActionPayload,
-  GatheringActionPayload
+import { LedgerService } from "../ledger/ledger.service.js";
+import {
+  GameRepository,
+  type CharacterActionRecord,
+  type CharacterRecord,
+  type CombatActionPayload,
+  type EquipmentRecord,
+  type GatheringActionPayload
 } from "./game.repository.js";
+import { GameService, GameServiceError } from "./game.service.js";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function character(overrides: Partial<CharacterRecord> = {}): CharacterRecord {
   return {
@@ -696,5 +704,278 @@ describe("GameService action settlement", () => {
       "listItemInstances",
       "updateEquipmentDurability"
     ]);
+  });
+});
+
+describe("GameService serialized player asset transfers", () => {
+  const marketItem = {
+    id: "market-1",
+    settlementId: "blackpine_outpost",
+    itemId: "iron_ore" as const,
+    quantity: 10,
+    targetQuantity: 20,
+    baseBuyPriceCopper: 4,
+    baseSellPriceCopper: 7
+  };
+
+  function rollbackDb(state: Record<string, number>) {
+    return {
+      transaction: vi.fn(async (operation: (tx: object) => Promise<unknown>) => {
+        const snapshot = { ...state };
+        try {
+          return await operation({});
+        } catch (error) {
+          Object.assign(state, snapshot);
+          throw error;
+        }
+      })
+    } as unknown as Db;
+  }
+
+  function arrangeCommon(state: Record<string, number>) {
+    vi.spyOn(GameRepository.prototype, "findCharacterByAccountId").mockImplementation(async () =>
+      character({
+        copperBalance: state.copper ?? 0,
+        currentLocation: "blackpine_outpost",
+        position: null,
+        lastHungerSettledAt: new Date()
+      })
+    );
+    const characterForUpdate = vi
+      .spyOn(GameRepository.prototype, "findCharacterByIdForUpdate")
+      .mockImplementation(async () =>
+        character({
+          copperBalance: state.copper ?? 0,
+          currentLocation: "blackpine_outpost",
+          position: null,
+          lastHungerSettledAt: new Date()
+        })
+      );
+    vi.spyOn(GameRepository.prototype, "listInventory").mockImplementation(async () => [
+      { itemId: "iron_ore", quantity: state.ironOre ?? 0 }
+    ]);
+    vi.spyOn(GameRepository.prototype, "listMarketInventory").mockResolvedValue([marketItem]);
+    vi.spyOn(GameRepository.prototype, "upsertMarketInventory").mockResolvedValue();
+    vi.spyOn(GameRepository.prototype, "findCharacterInventoryItemForUpdate")
+      .mockImplementation(async () => ({
+        itemId: "iron_ore",
+        quantity: state.ironOre ?? 0
+      }));
+    vi.spyOn(GameService.prototype as never, "buildState" as never).mockResolvedValue({} as never);
+    return { characterForUpdate };
+  }
+
+  it("locks buy assets in market, character, treasury order", async () => {
+    const state = { market: 10, copper: 100 };
+    const calls: string[] = [];
+    const { characterForUpdate } = arrangeCommon(state);
+    vi.spyOn(GameRepository.prototype, "findMarketInventoryItemForUpdate").mockImplementation(async () => {
+      calls.push("market");
+      return { ...marketItem, quantity: state.market };
+    });
+    characterForUpdate.mockImplementation(async () => {
+      calls.push("character");
+      return character({
+        copperBalance: state.copper,
+        currentLocation: "blackpine_outpost",
+        position: null,
+        lastHungerSettledAt: new Date()
+      });
+    });
+    vi.spyOn(GameRepository.prototype, "decrementMarketInventoryIfAvailable").mockResolvedValue(true);
+    vi.spyOn(GameRepository.prototype, "decrementCharacterCopperIfAvailable").mockResolvedValue(true);
+    vi.spyOn(GameRepository.prototype, "findMunicipalTreasuryForUpdate").mockImplementation(async () => {
+      calls.push("treasury");
+      return null;
+    });
+
+    const service = new GameService(rollbackDb(state));
+    await expect(service.buyMarketItem("account-1", { itemId: "iron_ore", quantity: 1 }))
+      .rejects.toBeInstanceOf(GameServiceError);
+
+    expect(calls).toEqual(["market", "character", "treasury"]);
+  });
+
+  it("locks sell assets in market, inventory, character, treasury order", async () => {
+    const state = { market: 10, copper: 0, ironOre: 3 };
+    const calls: string[] = [];
+    const { characterForUpdate } = arrangeCommon(state);
+    vi.spyOn(GameRepository.prototype, "findMarketInventoryItemForUpdate").mockImplementation(async () => {
+      calls.push("market");
+      return { ...marketItem, quantity: state.market };
+    });
+    vi.spyOn(GameRepository.prototype, "findCharacterInventoryItemForUpdate")
+      .mockImplementation(async () => {
+        calls.push("inventory");
+        return { itemId: "iron_ore", quantity: state.ironOre };
+      });
+    characterForUpdate.mockImplementation(async () => {
+      calls.push("character");
+      return character({
+        copperBalance: state.copper,
+        currentLocation: "blackpine_outpost",
+        position: null,
+        lastHungerSettledAt: new Date()
+      });
+    });
+    vi.spyOn(GameRepository.prototype, "decrementMunicipalTreasuryIfAvailable")
+      .mockImplementation(async () => {
+        calls.push("treasury");
+        return false;
+      });
+
+    const service = new GameService(rollbackDb(state));
+    await expect(service.sellMarketItem("account-1", { itemId: "iron_ore", quantity: 1 }))
+      .rejects.toBeInstanceOf(GameServiceError);
+
+    expect(calls).toEqual(["market", "inventory", "character", "treasury"]);
+  });
+
+  it("rolls back locked market stock when the buyer's conditional copper debit loses the race", async () => {
+    const state = { market: 10, copper: 100 };
+    arrangeCommon(state);
+    vi.spyOn(GameRepository.prototype, "findMarketInventoryItemForUpdate")
+      .mockResolvedValue({ ...marketItem, quantity: state.market });
+    vi.spyOn(GameRepository.prototype, "decrementMarketInventoryIfAvailable")
+      .mockImplementation(async () => {
+        state.market -= 1;
+        return true;
+      });
+    const debitCopper = vi
+      .spyOn(GameRepository.prototype, "decrementCharacterCopperIfAvailable")
+      .mockResolvedValue(false);
+    const grant = vi.spyOn(GameRepository.prototype, "grantCharacterItem").mockResolvedValue();
+    const transaction = vi
+      .spyOn(GameRepository.prototype, "createMarketTransaction")
+      .mockResolvedValue();
+    const event = vi.spyOn(GameRepository.prototype, "writeEvent").mockResolvedValue();
+    const ledger = vi.spyOn(LedgerService.prototype, "recordCopperTransfer").mockResolvedValue();
+
+    const service = new GameService(rollbackDb(state));
+    await expect(service.buyMarketItem("account-1", { itemId: "iron_ore", quantity: 1 }))
+      .rejects.toBeInstanceOf(GameServiceError);
+
+    expect(debitCopper).toHaveBeenCalledOnce();
+    expect(state).toEqual({ market: 10, copper: 100 });
+    expect(grant).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+    expect(ledger).not.toHaveBeenCalled();
+    expect(event).not.toHaveBeenCalled();
+  });
+
+  it("does not debit or grant when the locked market stock conditional update loses the race", async () => {
+    const state = { market: 10, copper: 100 };
+    arrangeCommon(state);
+    vi.spyOn(GameRepository.prototype, "findMarketInventoryItemForUpdate")
+      .mockResolvedValue({ ...marketItem, quantity: state.market });
+    vi.spyOn(GameRepository.prototype, "decrementMarketInventoryIfAvailable")
+      .mockResolvedValue(false);
+    const debitCopper = vi.spyOn(GameRepository.prototype, "decrementCharacterCopperIfAvailable");
+    const grant = vi.spyOn(GameRepository.prototype, "grantCharacterItem").mockResolvedValue();
+    const transaction = vi
+      .spyOn(GameRepository.prototype, "createMarketTransaction")
+      .mockResolvedValue();
+    const event = vi.spyOn(GameRepository.prototype, "writeEvent").mockResolvedValue();
+    const ledger = vi.spyOn(LedgerService.prototype, "recordCopperTransfer").mockResolvedValue();
+
+    const service = new GameService(rollbackDb(state));
+    await expect(service.buyMarketItem("account-1", { itemId: "iron_ore", quantity: 1 }))
+      .rejects.toBeInstanceOf(GameServiceError);
+
+    expect(state).toEqual({ market: 10, copper: 100 });
+    expect(debitCopper).not.toHaveBeenCalled();
+    expect(grant).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+    expect(ledger).not.toHaveBeenCalled();
+    expect(event).not.toHaveBeenCalled();
+  });
+
+  it("rolls back sold ore when the municipal treasury conditional debit loses the race", async () => {
+    const state = { market: 10, copper: 0, ironOre: 3, treasury: 0 };
+    arrangeCommon(state);
+    vi.spyOn(GameRepository.prototype, "findMarketInventoryItemForUpdate")
+      .mockResolvedValue({ ...marketItem, quantity: state.market });
+    const consume = vi.spyOn(GameRepository.prototype, "consumeCharacterItem").mockImplementation(async () => {
+      state.ironOre -= 2;
+    });
+    vi.spyOn(GameRepository.prototype, "decrementMunicipalTreasuryIfAvailable")
+      .mockResolvedValue(false);
+    const credit = vi.spyOn(GameRepository.prototype, "incrementCharacterCopper").mockResolvedValue();
+    const marketIncrement = vi.spyOn(GameRepository.prototype, "incrementMarketInventory");
+    const transaction = vi
+      .spyOn(GameRepository.prototype, "createMarketTransaction")
+      .mockResolvedValue();
+    const event = vi.spyOn(GameRepository.prototype, "writeEvent").mockResolvedValue();
+    const ledger = vi.spyOn(LedgerService.prototype, "recordCopperTransfer").mockResolvedValue();
+
+    const service = new GameService(rollbackDb(state));
+    await expect(service.sellMarketItem("account-1", { itemId: "iron_ore", quantity: 2 }))
+      .rejects.toBeInstanceOf(GameServiceError);
+
+    expect(state).toEqual({ market: 10, copper: 0, ironOre: 3, treasury: 0 });
+    expect(consume).not.toHaveBeenCalled();
+    expect(credit).not.toHaveBeenCalled();
+    expect(marketIncrement).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+    expect(ledger).not.toHaveBeenCalled();
+    expect(event).not.toHaveBeenCalled();
+  });
+
+  it("locks and re-reads equipment so a second repair request cannot charge a full item", async () => {
+    const state = { copper: 100, ironOre: 10, durability: 50 };
+    arrangeCommon(state);
+    vi.spyOn(GameRepository.prototype, "findActiveActionByCharacterId").mockResolvedValue(null);
+    const equipment: EquipmentRecord = {
+      id: "equipment-1",
+      characterId: "character-1",
+      slot: "weapon",
+      itemKey: "training_sword",
+      name: "训练短剑",
+      itemLevel: 5,
+      attackBonus: 2,
+      defenseBonus: 0,
+      maxDurability: 100,
+      currentDurability: 50
+    };
+    const lockEquipment = vi
+      .spyOn(GameRepository.prototype, "findEquipmentByIdForUpdate")
+      .mockImplementation(async () => ({ ...equipment, currentDurability: state.durability }));
+    const debitCopper = vi
+      .spyOn(GameRepository.prototype, "decrementCharacterCopperIfAvailable")
+      .mockImplementation(async (input: { amount: number }) => {
+        if (state.copper < input.amount) return false;
+        state.copper -= input.amount;
+        return true;
+      });
+    vi.spyOn(GameRepository.prototype, "consumeCharacterItem").mockImplementation(async (input) => {
+      if (state.ironOre < input.quantity) throw new Error("insufficient ore");
+      state.ironOre -= input.quantity;
+    });
+    vi.spyOn(GameRepository.prototype, "updateEquipmentDurability").mockImplementation(async () => {
+      state.durability = 100;
+    });
+    const event = vi.spyOn(GameRepository.prototype, "writeEvent").mockResolvedValue();
+    const ledger = vi.spyOn(LedgerService.prototype, "recordCopperTransfer").mockResolvedValue();
+
+    const service = new GameService(rollbackDb(state));
+    await service.repairEquipment("account-1", { equipmentId: "equipment-1" });
+    const afterFirst = { ...state };
+    await expect(service.repairEquipment("account-1", { equipmentId: "equipment-1" }))
+      .rejects.toBeInstanceOf(GameServiceError);
+
+    expect(lockEquipment).toHaveBeenCalledTimes(2);
+    expect(state).toEqual(afterFirst);
+    expect(debitCopper).toHaveBeenCalledTimes(1);
+    expect(ledger).toHaveBeenCalledTimes(1);
+    expect(event).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not use absolute market inventory writes in player buy or sell paths", () => {
+    const source = readFileSync(new URL("./game.service.ts", import.meta.url), "utf8");
+    const buyPath = source.slice(source.indexOf("async buyMarketItem"), source.indexOf("async sellMarketItem"));
+    const sellPath = source.slice(source.indexOf("async sellMarketItem"), source.indexOf("async getRepairQuote"));
+
+    expect(buyPath).not.toContain("setMarketInventoryQuantity");
+    expect(sellPath).not.toContain("setMarketInventoryQuantity");
   });
 });
