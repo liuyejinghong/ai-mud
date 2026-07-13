@@ -96,6 +96,7 @@ function toCharacter(row: typeof characters.$inferSelect): CharacterRecord {
     copperBalance: row.copperBalance,
     hunger: serializeHunger(row.hunger),
     lastHungerSettledAt: row.lastHungerSettledAt,
+    lastReliefClaimedAt: row.lastReliefClaimedAt,
     currentLocation: row.currentLocation,
     position:
       typeof row.position === "object" && row.position !== null

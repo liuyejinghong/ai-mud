@@ -19,6 +19,7 @@ const character: CharacterRecord = {
   copperBalance: 20,
   hunger: 4,
   lastHungerSettledAt: now,
+  lastReliefClaimedAt: null,
   currentLocation: "blackpine_outpost",
   position: null,
   injuryUntil: null

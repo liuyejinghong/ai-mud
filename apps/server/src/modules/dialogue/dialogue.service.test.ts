@@ -25,6 +25,7 @@ const character = {
   copperBalance: 120,
   hunger: 4,
   lastHungerSettledAt: new Date("2026-07-01T08:00:00.000Z"),
+  lastReliefClaimedAt: null,
   currentLocation: "blackpine_outpost" as const,
   position: null,
   injuryUntil: null

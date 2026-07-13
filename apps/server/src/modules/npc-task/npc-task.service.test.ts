@@ -305,6 +305,7 @@ function character(): CharacterRecord {
     copperBalance: 5,
     hunger: 5,
     lastHungerSettledAt: new Date("2026-07-02T00:00:00.000Z"),
+    lastReliefClaimedAt: null,
     currentLocation: "blackpine_outpost",
     position: null,
     injuryUntil: null
