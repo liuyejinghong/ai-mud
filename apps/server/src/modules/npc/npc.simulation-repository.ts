@@ -81,6 +81,10 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
     return this.actors;
   }
 
+  async findNpcActorForUpdate(actorId: string) {
+    return this.actors.find((actor) => actor.id === actorId) ?? null;
+  }
+
   async createNpcActor(npc: NpcDefinition, now: Date) {
     const actor: NpcActorRecord = {
       id: `simulation-actor-${npc.key}`,
@@ -140,6 +144,10 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
     return this.treasury?.settlementId === settlementId ? this.treasury : null;
   }
 
+  async findMunicipalTreasuryForUpdate(settlementId: typeof BLACKPINE_MARKET_ID) {
+    return this.findMunicipalTreasury(settlementId);
+  }
+
   async createMunicipalTreasury(input: {
     settlementId: typeof BLACKPINE_MARKET_ID;
     copperBalance: number;
@@ -149,6 +157,10 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
 
   async listNpcInventory(actorId: string) {
     return this.inventory.get(actorId) ?? [];
+  }
+
+  async findNpcInventoryItemForUpdate(actorId: string, itemId: ItemId | string) {
+    return (this.inventory.get(actorId) ?? []).find((item) => item.itemId === itemId) ?? null;
   }
 
   async setNpcInventoryItem(input: { actorId: string; itemId: ItemId | string; quantity: number }) {
@@ -177,6 +189,44 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
     if (input.copperBalance !== undefined) actor.copperBalance = input.copperBalance;
     if (input.hunger !== undefined) actor.hunger = input.hunger;
     if (input.lastHungerSettledAt) actor.lastHungerSettledAt = cloneDate(input.lastHungerSettledAt);
+  }
+
+  async decrementNpcCopperIfAvailable(input: { actorId: string; amount: number }) {
+    const actor = this.actors.find((entry) => entry.id === input.actorId);
+    if (!actor || actor.copperBalance < input.amount) return false;
+    actor.copperBalance -= input.amount;
+    return true;
+  }
+
+  async incrementNpcCopper(input: { actorId: string; delta: number }) {
+    const actor = this.actors.find((entry) => entry.id === input.actorId);
+    if (!actor) throw new Error("NPC actor not found");
+    actor.copperBalance += input.delta;
+  }
+
+  async decrementNpcInventoryIfAvailable(input: {
+    actorId: string;
+    itemId: ItemId | string;
+    quantity: number;
+  }) {
+    const item = (this.inventory.get(input.actorId) ?? []).find(
+      (entry) => entry.itemId === input.itemId
+    );
+    if (!item || item.quantity < input.quantity) return false;
+    item.quantity -= input.quantity;
+    return true;
+  }
+
+  async incrementNpcInventory(input: {
+    actorId: string;
+    itemId: ItemId | string;
+    quantity: number;
+  }) {
+    const item = (this.inventory.get(input.actorId) ?? []).find(
+      (entry) => entry.itemId === input.itemId
+    );
+    if (!item) throw new Error("NPC inventory item not found");
+    item.quantity += input.quantity;
   }
 
   async findActiveNpcAction(actorId: string) {
@@ -251,14 +301,61 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
     this.treasury = { ...input };
   }
 
+  async decrementMunicipalTreasuryIfAvailable(input: {
+    settlementId: typeof BLACKPINE_MARKET_ID;
+    amount: number;
+  }) {
+    if (!this.treasury || this.treasury.settlementId !== input.settlementId) return false;
+    if (this.treasury.copperBalance < input.amount) return false;
+    this.treasury.copperBalance -= input.amount;
+    return true;
+  }
+
+  async incrementMunicipalTreasury(input: {
+    settlementId: typeof BLACKPINE_MARKET_ID;
+    delta: number;
+  }) {
+    if (!this.treasury || this.treasury.settlementId !== input.settlementId) {
+      throw new Error("Municipal treasury not found");
+    }
+    this.treasury.copperBalance += input.delta;
+  }
+
   async listMarketInventory(settlementId: typeof BLACKPINE_MARKET_ID) {
     return this.marketInventory.filter((item) => item.settlementId === settlementId);
+  }
+
+  async findMarketInventoryItemForUpdate(
+    settlementId: typeof BLACKPINE_MARKET_ID,
+    itemId: ItemId | string
+  ) {
+    return (
+      this.marketInventory.find(
+        (item) => item.settlementId === settlementId && item.itemId === itemId
+      ) ?? null
+    );
   }
 
   async setMarketInventoryQuantity(input: { marketInventoryId: string; quantity: number }) {
     const item = this.marketInventory.find((entry) => entry.id === input.marketInventoryId);
     if (!item) throw new Error("Market item not found");
     item.quantity = input.quantity;
+  }
+
+  async decrementMarketInventoryIfAvailable(input: {
+    marketInventoryId: string;
+    quantity: number;
+  }) {
+    const item = this.marketInventory.find((entry) => entry.id === input.marketInventoryId);
+    if (!item || item.quantity < input.quantity) return false;
+    item.quantity -= input.quantity;
+    return true;
+  }
+
+  async incrementMarketInventory(input: { marketInventoryId: string; quantity: number }) {
+    const item = this.marketInventory.find((entry) => entry.id === input.marketInventoryId);
+    if (!item) throw new Error("Market item not found");
+    item.quantity += input.quantity;
   }
 
   async createNpcMarketTransaction() {

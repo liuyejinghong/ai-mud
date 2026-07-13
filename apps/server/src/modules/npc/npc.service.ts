@@ -97,6 +97,7 @@ export interface NpcEventRecord {
 
 export interface NpcRepositoryPort {
   listNpcActors(): Promise<NpcActorRecord[]>;
+  findNpcActorForUpdate(actorId: string): Promise<NpcActorRecord | null>;
   createNpcActor(npc: NpcDefinition, now: Date): Promise<NpcActorRecord>;
   listWorldResourceNodes(): Promise<Array<{
     zoneId: GameLocationId;
@@ -122,11 +123,19 @@ export interface NpcRepositoryPort {
     settlementId: typeof BLACKPINE_MARKET_ID;
     copperBalance: number;
   } | null>;
+  findMunicipalTreasuryForUpdate(settlementId: typeof BLACKPINE_MARKET_ID): Promise<{
+    settlementId: typeof BLACKPINE_MARKET_ID;
+    copperBalance: number;
+  } | null>;
   createMunicipalTreasury(input: {
     settlementId: typeof BLACKPINE_MARKET_ID;
     copperBalance: number;
   }): Promise<void>;
   listNpcInventory(actorId: string): Promise<NpcInventoryRecord[]>;
+  findNpcInventoryItemForUpdate(
+    actorId: string,
+    itemId: ItemId | string
+  ): Promise<NpcInventoryRecord | null>;
   setNpcInventoryItem(input: {
     actorId: string;
     itemId: ItemId | string;
@@ -140,7 +149,18 @@ export interface NpcRepositoryPort {
     hunger?: number;
     lastHungerSettledAt?: Date;
   }): Promise<void>;
-  incrementNpcCopper?(input: { actorId: string; delta: number }): Promise<void>;
+  decrementNpcCopperIfAvailable(input: { actorId: string; amount: number }): Promise<boolean>;
+  incrementNpcCopper(input: { actorId: string; delta: number }): Promise<void>;
+  decrementNpcInventoryIfAvailable(input: {
+    actorId: string;
+    itemId: ItemId | string;
+    quantity: number;
+  }): Promise<boolean>;
+  incrementNpcInventory(input: {
+    actorId: string;
+    itemId: ItemId | string;
+    quantity: number;
+  }): Promise<void>;
   findActiveNpcAction(actorId: string): Promise<NpcActionRecord | null>;
   listNpcActions(): Promise<NpcActionRecord[]>;
   createNpcAction(input: {
@@ -168,12 +188,28 @@ export interface NpcRepositoryPort {
     settlementId: typeof BLACKPINE_MARKET_ID;
     copperBalance: number;
   }): Promise<void>;
-  incrementMunicipalTreasury?(input: {
+  decrementMunicipalTreasuryIfAvailable(input: {
+    settlementId: typeof BLACKPINE_MARKET_ID;
+    amount: number;
+  }): Promise<boolean>;
+  incrementMunicipalTreasury(input: {
     settlementId: typeof BLACKPINE_MARKET_ID;
     delta: number;
   }): Promise<void>;
   listMarketInventory(settlementId: typeof BLACKPINE_MARKET_ID): Promise<NpcMarketInventoryRecord[]>;
+  findMarketInventoryItemForUpdate(
+    settlementId: typeof BLACKPINE_MARKET_ID,
+    itemId: ItemId | string
+  ): Promise<NpcMarketInventoryRecord | null>;
   setMarketInventoryQuantity(input: {
+    marketInventoryId: string;
+    quantity: number;
+  }): Promise<void>;
+  decrementMarketInventoryIfAvailable(input: {
+    marketInventoryId: string;
+    quantity: number;
+  }): Promise<boolean>;
+  incrementMarketInventory(input: {
     marketInventoryId: string;
     quantity: number;
   }): Promise<void>;
@@ -472,32 +508,16 @@ export class NpcService {
   }
 
   private async incrementNpcCopper(actor: NpcActorRecord, delta: number) {
-    if (this.repo.incrementNpcCopper) {
-      await this.repo.incrementNpcCopper({ actorId: actor.id, delta });
-      return;
-    }
-
-    await this.repo.updateNpcActor({
-      actorId: actor.id,
-      copperBalance: actor.copperBalance + delta
-    });
+    await this.repo.incrementNpcCopper({ actorId: actor.id, delta });
   }
 
   private async incrementMunicipalCopper(
     treasury: { settlementId: typeof BLACKPINE_MARKET_ID; copperBalance: number },
     delta: number
   ) {
-    if (this.repo.incrementMunicipalTreasury) {
-      await this.repo.incrementMunicipalTreasury({
-        settlementId: treasury.settlementId,
-        delta
-      });
-      return;
-    }
-
-    await this.repo.updateMunicipalTreasury({
+    await this.repo.incrementMunicipalTreasury({
       settlementId: treasury.settlementId,
-      copperBalance: treasury.copperBalance + delta
+      delta
     });
   }
 
@@ -650,34 +670,57 @@ export class NpcService {
     }
 
     if (intent.intent === "buy_food" && marketFood) {
-      const treasury = await this.repo.findMunicipalTreasury(BLACKPINE_MARKET_ID);
-      if (!treasury) return true;
+      const lockedMarketFood = await this.repo.findMarketInventoryItemForUpdate(
+        BLACKPINE_MARKET_ID,
+        marketFood.itemId
+      );
+      if (!lockedMarketFood || lockedMarketFood.quantity < 1) return false;
+
+      const lockedActor = await this.repo.findNpcActorForUpdate(actor.id);
+      if (!lockedActor) return false;
+
+      const treasury = await this.repo.findMunicipalTreasuryForUpdate(BLACKPINE_MARKET_ID);
+      if (!treasury) return false;
+
       const quote = calculateMarketQuote({
         direction: "buy",
-        basePriceCopper: marketFood.baseSellPriceCopper,
-        stockQuantity: marketFood.quantity,
-        targetQuantity: marketFood.targetQuantity,
+        basePriceCopper: lockedMarketFood.baseSellPriceCopper,
+        stockQuantity: lockedMarketFood.quantity,
+        targetQuantity: lockedMarketFood.targetQuantity,
         quantity: 1
       });
-      if (actor.copperBalance < quote.totalCopper) return true;
+      if (lockedActor.copperBalance < quote.totalCopper) return true;
 
-      const item = getFoodItemById(marketFood.itemId);
-      await this.incrementNpcCopper(actor, -quote.totalCopper);
-      await this.repo.updateNpcActor({
-        actorId: actor.id,
-        hunger: Math.min(5, actor.hunger + (item?.satietyRestore ?? 1))
+      const stockDebited = await this.repo.decrementMarketInventoryIfAvailable({
+        marketInventoryId: lockedMarketFood.id,
+        quantity: 1
       });
-      await this.repo.setMarketInventoryQuantity({
-        marketInventoryId: marketFood.id,
-        quantity: marketFood.quantity - 1
+      if (!stockDebited) return false;
+
+      const paymentDebited = await this.repo.decrementNpcCopperIfAvailable({
+        actorId: lockedActor.id,
+        amount: quote.totalCopper
+      });
+      if (!paymentDebited) {
+        await this.repo.incrementMarketInventory({
+          marketInventoryId: lockedMarketFood.id,
+          quantity: 1
+        });
+        return false;
+      }
+
+      const item = getFoodItemById(lockedMarketFood.itemId);
+      await this.repo.updateNpcActor({
+        actorId: lockedActor.id,
+        hunger: Math.min(5, lockedActor.hunger + (item?.satietyRestore ?? 1))
       });
       await this.incrementMunicipalCopper(treasury, quote.totalCopper);
       await this.repo.createNpcMarketTransaction({
-        actorId: actor.id,
+        actorId: lockedActor.id,
         actorType: "npc",
-        actorName: actor.name,
+        actorName: lockedActor.name,
         transactionType: "buy",
-        itemId: marketFood.itemId,
+        itemId: lockedMarketFood.itemId,
         quantity: 1,
         unitPriceCopper: quote.unitPriceCopper,
         grossCopper: quote.grossCopper,
@@ -687,13 +730,13 @@ export class NpcService {
       await this.ledger?.recordCopperTransfer({
         operation: "market_buy",
         fromBucket: "npc",
-        fromEntityId: actor.id,
+        fromEntityId: lockedActor.id,
         toBucket: "municipal",
         toEntityId: BLACKPINE_MARKET_ID,
         amountCopper: quote.totalCopper,
         reason: "npc.market.buy",
         metadata: {
-          itemId: marketFood.itemId,
+          itemId: lockedMarketFood.itemId,
           quantity: 1,
           unitPriceCopper: quote.unitPriceCopper,
           taxCopper: quote.taxCopper
@@ -716,30 +759,68 @@ export class NpcService {
     const marketItem = marketInventory.find((entry) => entry.itemId === item.itemId);
     if (!marketItem) return false;
 
+    const lockedMarketItem = await this.repo.findMarketInventoryItemForUpdate(
+      BLACKPINE_MARKET_ID,
+      marketItem.itemId
+    );
+    if (!lockedMarketItem) return false;
+
+    const lockedInventoryItem = await this.repo.findNpcInventoryItemForUpdate(
+      actor.id,
+      item.itemId
+    );
+    if (!lockedInventoryItem) return false;
+
+    const lockedActor = await this.repo.findNpcActorForUpdate(actor.id);
+    if (!lockedActor) return false;
+
+    const treasury = await this.repo.findMunicipalTreasuryForUpdate(BLACKPINE_MARKET_ID);
+    if (!treasury) return false;
+
+    const lockedSellableItem = this.findSellableInventoryItem(lockedActor, [lockedInventoryItem]);
+    if (!lockedSellableItem) return false;
+
     const quote = calculateMarketQuote({
       direction: "sell",
-      basePriceCopper: marketItem.baseBuyPriceCopper,
-      stockQuantity: marketItem.quantity,
-      targetQuantity: marketItem.targetQuantity,
-      quantity: item.quantity
+      basePriceCopper: lockedMarketItem.baseBuyPriceCopper,
+      stockQuantity: lockedMarketItem.quantity,
+      targetQuantity: lockedMarketItem.targetQuantity,
+      quantity: lockedSellableItem.quantity
     });
-    const treasury = await this.repo.findMunicipalTreasury(BLACKPINE_MARKET_ID);
-    if (!treasury || treasury.copperBalance < quote.totalCopper) return false;
+    if (treasury.copperBalance < quote.totalCopper) return false;
 
-    await this.addNpcInventoryItem(actor.id, item.itemId, -item.quantity);
-    await this.incrementNpcCopper(actor, quote.totalCopper);
-    await this.incrementMunicipalCopper(treasury, -quote.totalCopper);
-    await this.repo.setMarketInventoryQuantity({
-      marketInventoryId: marketItem.id,
-      quantity: marketItem.quantity + item.quantity
+    const inventoryDebited = await this.repo.decrementNpcInventoryIfAvailable({
+      actorId: lockedActor.id,
+      itemId: lockedSellableItem.itemId,
+      quantity: lockedSellableItem.quantity
     });
+    if (!inventoryDebited) return false;
+
+    const treasuryDebited = await this.repo.decrementMunicipalTreasuryIfAvailable({
+      settlementId: BLACKPINE_MARKET_ID,
+      amount: quote.totalCopper
+    });
+    if (!treasuryDebited) {
+      await this.repo.incrementNpcInventory({
+        actorId: lockedActor.id,
+        itemId: lockedSellableItem.itemId,
+        quantity: lockedSellableItem.quantity
+      });
+      return false;
+    }
+
+    await this.repo.incrementMarketInventory({
+      marketInventoryId: lockedMarketItem.id,
+      quantity: lockedSellableItem.quantity
+    });
+    await this.incrementNpcCopper(lockedActor, quote.totalCopper);
     await this.repo.createNpcMarketTransaction({
-      actorId: actor.id,
+      actorId: lockedActor.id,
       actorType: "npc",
-      actorName: actor.name,
+      actorName: lockedActor.name,
       transactionType: "sell",
-      itemId: item.itemId,
-      quantity: item.quantity,
+      itemId: lockedSellableItem.itemId,
+      quantity: lockedSellableItem.quantity,
       unitPriceCopper: quote.unitPriceCopper,
       grossCopper: quote.grossCopper,
       taxCopper: quote.taxCopper,
@@ -750,12 +831,12 @@ export class NpcService {
       fromBucket: "municipal",
       fromEntityId: BLACKPINE_MARKET_ID,
       toBucket: "npc",
-      toEntityId: actor.id,
+      toEntityId: lockedActor.id,
       amountCopper: quote.totalCopper,
       reason: "npc.market.sell",
       metadata: {
-        itemId: item.itemId,
-        quantity: item.quantity,
+        itemId: lockedSellableItem.itemId,
+        quantity: lockedSellableItem.quantity,
         unitPriceCopper: quote.unitPriceCopper,
         taxCopper: quote.taxCopper
       }

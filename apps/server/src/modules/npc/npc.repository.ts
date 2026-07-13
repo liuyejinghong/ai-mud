@@ -1,6 +1,6 @@
 import type { NpcDefinition } from "@ai-mud/content";
 import type { GameLocationId, GridPositionDto, ItemId } from "@ai-mud/shared";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import {
   marketInventory,
@@ -91,6 +91,17 @@ export class NpcRepository implements NpcRepositoryPort {
       .where(eq(worldActors.actorType, "npc"));
 
     return rows.map(toNpcActor);
+  }
+
+  async findNpcActorForUpdate(actorId: string): Promise<NpcActorRecord | null> {
+    const [row] = await this.db
+      .select()
+      .from(worldActors)
+      .where(and(eq(worldActors.id, actorId), eq(worldActors.actorType, "npc")))
+      .limit(1)
+      .for("update");
+
+    return row ? toNpcActor(row) : null;
   }
 
   async createNpcActor(npc: NpcDefinition, now: Date): Promise<NpcActorRecord> {
@@ -188,6 +199,22 @@ export class NpcRepository implements NpcRepositoryPort {
       : null;
   }
 
+  async findMunicipalTreasuryForUpdate(settlementId: "blackpine_outpost") {
+    const [row] = await this.db
+      .select()
+      .from(municipalTreasury)
+      .where(eq(municipalTreasury.settlementId, settlementId))
+      .limit(1)
+      .for("update");
+
+    return row
+      ? {
+          settlementId: "blackpine_outpost" as const,
+          copperBalance: row.copperBalance
+        }
+      : null;
+  }
+
   async createMunicipalTreasury(input: {
     settlementId: "blackpine_outpost";
     copperBalance: number;
@@ -208,6 +235,17 @@ export class NpcRepository implements NpcRepositoryPort {
       itemId: row.itemId as ItemId,
       quantity: row.quantity
     }));
+  }
+
+  async findNpcInventoryItemForUpdate(actorId: string, itemId: string) {
+    const [row] = await this.db
+      .select({ itemId: npcItems.itemId, quantity: npcItems.quantity })
+      .from(npcItems)
+      .where(and(eq(npcItems.actorId, actorId), eq(npcItems.itemId, itemId)))
+      .limit(1)
+      .for("update");
+
+    return row ? { itemId: row.itemId as ItemId, quantity: row.quantity } : null;
   }
 
   async setNpcInventoryItem(input: {
@@ -263,6 +301,63 @@ export class NpcRepository implements NpcRepositoryPort {
         updatedAt: new Date()
       })
       .where(eq(worldActors.id, input.actorId));
+  }
+
+  async decrementNpcCopperIfAvailable(input: {
+    actorId: string;
+    amount: number;
+  }): Promise<boolean> {
+    const rows = await this.db
+      .update(worldActors)
+      .set({
+        copperBalance: sql`${worldActors.copperBalance} - ${input.amount}`,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(worldActors.id, input.actorId),
+          eq(worldActors.actorType, "npc"),
+          gte(worldActors.copperBalance, input.amount)
+        )
+      )
+      .returning({ id: worldActors.id });
+    return rows.length > 0;
+  }
+
+  async decrementNpcInventoryIfAvailable(input: {
+    actorId: string;
+    itemId: string;
+    quantity: number;
+  }): Promise<boolean> {
+    const rows = await this.db
+      .update(npcItems)
+      .set({
+        quantity: sql`${npcItems.quantity} - ${input.quantity}`,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(npcItems.actorId, input.actorId),
+          eq(npcItems.itemId, input.itemId),
+          gte(npcItems.quantity, input.quantity)
+        )
+      )
+      .returning({ id: npcItems.id });
+    return rows.length > 0;
+  }
+
+  async incrementNpcInventory(input: {
+    actorId: string;
+    itemId: string;
+    quantity: number;
+  }): Promise<void> {
+    await this.db
+      .update(npcItems)
+      .set({
+        quantity: sql`${npcItems.quantity} + ${input.quantity}`,
+        updatedAt: new Date()
+      })
+      .where(and(eq(npcItems.actorId, input.actorId), eq(npcItems.itemId, input.itemId)));
   }
 
   async findActiveNpcAction(actorId: string): Promise<NpcActionRecord | null> {
@@ -380,6 +475,26 @@ export class NpcRepository implements NpcRepositoryPort {
       .where(eq(municipalTreasury.settlementId, input.settlementId));
   }
 
+  async decrementMunicipalTreasuryIfAvailable(input: {
+    settlementId: "blackpine_outpost";
+    amount: number;
+  }): Promise<boolean> {
+    const rows = await this.db
+      .update(municipalTreasury)
+      .set({
+        copperBalance: sql`${municipalTreasury.copperBalance} - ${input.amount}`,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(municipalTreasury.settlementId, input.settlementId),
+          gte(municipalTreasury.copperBalance, input.amount)
+        )
+      )
+      .returning({ settlementId: municipalTreasury.settlementId });
+    return rows.length > 0;
+  }
+
   async listMarketInventory(settlementId: "blackpine_outpost") {
     const rows = await this.db
       .select()
@@ -397,6 +512,32 @@ export class NpcRepository implements NpcRepositoryPort {
     }));
   }
 
+  async findMarketInventoryItemForUpdate(settlementId: "blackpine_outpost", itemId: string) {
+    const [row] = await this.db
+      .select()
+      .from(marketInventory)
+      .where(
+        and(
+          eq(marketInventory.settlementId, settlementId),
+          eq(marketInventory.itemId, itemId)
+        )
+      )
+      .limit(1)
+      .for("update");
+
+    return row
+      ? {
+          id: row.id,
+          settlementId: "blackpine_outpost" as const,
+          itemId: row.itemId as ItemId,
+          quantity: row.quantity,
+          targetQuantity: row.targetQuantity,
+          baseBuyPriceCopper: row.baseBuyPriceCopper,
+          baseSellPriceCopper: row.baseSellPriceCopper
+        }
+      : null;
+  }
+
   async setMarketInventoryQuantity(input: {
     marketInventoryId: string;
     quantity: number;
@@ -404,6 +545,39 @@ export class NpcRepository implements NpcRepositoryPort {
     await this.db
       .update(marketInventory)
       .set({ quantity: input.quantity, updatedAt: new Date() })
+      .where(eq(marketInventory.id, input.marketInventoryId));
+  }
+
+  async decrementMarketInventoryIfAvailable(input: {
+    marketInventoryId: string;
+    quantity: number;
+  }): Promise<boolean> {
+    const rows = await this.db
+      .update(marketInventory)
+      .set({
+        quantity: sql`${marketInventory.quantity} - ${input.quantity}`,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(marketInventory.id, input.marketInventoryId),
+          gte(marketInventory.quantity, input.quantity)
+        )
+      )
+      .returning({ id: marketInventory.id });
+    return rows.length > 0;
+  }
+
+  async incrementMarketInventory(input: {
+    marketInventoryId: string;
+    quantity: number;
+  }): Promise<void> {
+    await this.db
+      .update(marketInventory)
+      .set({
+        quantity: sql`${marketInventory.quantity} + ${input.quantity}`,
+        updatedAt: new Date()
+      })
       .where(eq(marketInventory.id, input.marketInventoryId));
   }
 
