@@ -1,11 +1,4 @@
-import {
-  NPC_DIALOGUE_MAX_PLAYER_CHARS,
-  NPC_MEMORY_COMPRESSION_PROMPT_VERSION,
-  NPC_TASK_PROPOSAL_PROMPT_VERSION,
-  type NpcMemoryCompressionPromptContext,
-  type NpcTaskProposalPromptContext,
-  type WorldRumorPromptContext
-} from "@ai-mud/ai-prompts";
+import { NPC_DIALOGUE_MAX_PLAYER_CHARS } from "@ai-mud/ai-prompts";
 import { getItemById, getZoneById } from "@ai-mud/content";
 import {
   CHARACTER_CLASS_IDS,
@@ -21,18 +14,16 @@ import {
   type GameLocationId,
   type MarketDto,
   type MarketTradeRequestDto,
+  type NpcTaskDto,
   type NpcDialogueResponseDto,
   type NpcDialogueTargetDto,
   type RepairEquipmentRequestDto,
   type RepairQuoteDto,
-  type StartGatheringRequestDto
+  type StartGatheringRequestDto,
+  type WorldRumorDto
 } from "@ai-mud/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { createHash } from "node:crypto";
 import { z } from "zod";
-import { AiOrchestrator } from "../ai/ai-orchestrator.js";
-import type { AiProvider } from "../ai/ai-provider.js";
-import { DeepSeekAiProvider } from "../ai/deepseek-ai-provider.js";
 import { AuthRepository, type PublicAccountRecord } from "../auth/auth.repository.js";
 import { AuthService } from "../auth/auth.service.js";
 import { DialogueRepository } from "../dialogue/dialogue.repository.js";
@@ -42,20 +33,15 @@ import { ItemServiceError } from "../item/item.service.js";
 import { LobbyRepository } from "../lobby/lobby.repository.js";
 import { LobbyService, LobbyServiceError } from "../lobby/lobby.service.js";
 import { NpcRepository } from "../npc/npc.repository.js";
-import { NpcMemoryRepository } from "../npc-memory/npc-memory.repository.js";
-import {
-  NpcMemoryService,
-  type NpcMemoryCompressorPort
-} from "../npc-memory/npc-memory.service.js";
 import { NpcTaskRepository } from "../npc-task/npc-task.repository.js";
-import {
-  NpcTaskService,
-  NpcTaskServiceError,
-  type NpcTaskProposalInput
-} from "../npc-task/npc-task.service.js";
+import { NpcTaskServiceError } from "../npc-task/npc-task.service.js";
 import { OfflineReportService } from "../offline-report/offline-report.service.js";
-import { RumorRepository } from "../rumor/rumor.repository.js";
-import { RumorService } from "../rumor/rumor.service.js";
+import {
+  createAiOrchestrator,
+  createNpcMemoryService,
+  createNpcTaskService,
+  createRumorService
+} from "./game.composition.js";
 import { GameRepository } from "./game.repository.js";
 import { GameService, GameServiceError } from "./game.service.js";
 
@@ -163,6 +149,62 @@ function hasGameRouteDependencies(value: unknown): value is GameRouteDependencie
   );
 }
 
+interface GameStateEnricherOptions {
+  tasks: {
+    listTasksForAccount(accountId: string, now?: Date): Promise<NpcTaskDto[]>;
+  };
+  rumors: {
+    listRecentPublicRumors(limit: number): Promise<WorldRumorDto[]>;
+  };
+  listNpcActors(): Promise<Array<{ id: string; currentLocation: GameLocationId }>>;
+  now?: () => Date;
+}
+
+export type GameStateEnricher = (
+  accountId: string,
+  state: GameStateDto
+) => Promise<GameStateDto>;
+
+export function createGameStateEnricher(options: GameStateEnricherOptions): GameStateEnricher {
+  return async (accountId, state) => {
+    if (!state.character) return state;
+
+    const currentLocation = state.character.currentLocation;
+    const now = options.now?.() ?? new Date();
+    const [tasks, rumors, actors] = await Promise.all([
+      options.tasks.listTasksForAccount(accountId, now),
+      options.rumors.listRecentPublicRumors(8),
+      options.listNpcActors()
+    ]);
+    const actorLocations = new Map(actors.map((actor) => [actor.id, actor.currentLocation]));
+    const npcTasks = tasks
+      .map((task) => {
+        const npcLocation = actorLocations.get(task.npcActorId) ?? task.npcLocation ?? null;
+        return { ...task, npcLocation };
+      })
+      .filter(
+        (task) =>
+          task.status === "accepted" ||
+          (task.status === "open" && task.npcLocation === currentLocation)
+      );
+    const availableActions: GameStateDto["availableActions"] = state.availableActions.filter(
+      (action) => action !== "view_npc_tasks"
+    );
+    if (npcTasks.length > 0) availableActions.push("view_npc_tasks");
+
+    return { ...state, npcTasks, rumors, availableActions };
+  };
+}
+
+export async function enrichGameSyncResponse(
+  accountId: string,
+  sync: GameSyncResponseDto,
+  enrichState: GameStateEnricher
+): Promise<GameSyncResponseDto> {
+  if (sync.state === null) return sync;
+  return { ...sync, state: await enrichState(accountId, sync.state) };
+}
+
 function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies {
   const auth = new AuthService();
   const authRepo = new AuthRepository(app.di.db);
@@ -171,35 +213,17 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
   const dialogue = createDialogueService(app);
   const task = createNpcTaskService(app);
   const rumor = createRumorService(app);
+  const enrichState = createGameStateEnricher({
+    tasks: task,
+    rumors: rumor,
+    listNpcActors: () => new NpcRepository(app.di.db).listNpcActors()
+  });
   const offlineReport = new OfflineReportService({
     ai: createAiOrchestrator(app),
     gameRepository: new GameRepository(app.di.db),
     aiLogRepository: new DialogueRepository(app.di.db),
     dailyTokenBudget: app.config.AI_DAILY_TOKEN_BUDGET
   });
-
-  const withNpcTasksAndRumors = async (
-    accountId: string,
-    state: GameStateDto
-  ): Promise<GameStateDto> => {
-    if (!state.character) return state;
-    const npcTasks = await task.listTasksForAccount(accountId, new Date());
-    const availableActions = npcTasks.length
-      ? Array.from(new Set([...state.availableActions, "view_npc_tasks" as const]))
-      : state.availableActions;
-    let rumors = state.rumors;
-    try {
-      await rumor.syncRumors({ now: new Date(), batchLimit: 3 });
-      rumors = await rumor.listRecentPublicRumors(8);
-    } catch {
-      try {
-        rumors = await rumor.listRecentPublicRumors(8);
-      } catch {
-        rumors = state.rumors;
-      }
-    }
-    return { ...state, npcTasks, availableActions, rumors };
-  };
 
   return {
     getCurrentAccount: async (request) => {
@@ -219,9 +243,13 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
     settleWorldIfDue: async () => {
       await app.di.worldRuntime.settleDue(new Date());
     },
-    getState: async (accountId) => withNpcTasksAndRumors(accountId, await game.getState(accountId)),
+    getState: async (accountId) => enrichState(accountId, await game.getState(accountId)),
     syncGame: async (accountId, cursor) => {
-      const sync = await game.getSync(accountId, cursor);
+      const sync = await enrichGameSyncResponse(
+        accountId,
+        await game.getSync(accountId, cursor),
+        enrichState
+      );
       if ((cursor ?? 0) > 0) return sync;
       const report = await offlineReport.getReport(accountId, new Date());
       return report ? { ...sync, offlineReport: report } : sync;
@@ -229,161 +257,45 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
     sendLobbyChat: (accountId, body) => lobby.sendLobbyChat(accountId, body),
     heartbeatPresence: (accountId) => lobby.heartbeat(accountId),
     createCharacter: async (accountId, input) =>
-      withNpcTasksAndRumors(accountId, await game.createCharacter(accountId, input)),
+      enrichState(accountId, await game.createCharacter(accountId, input)),
     enterZone: async (accountId, zoneId) =>
-      withNpcTasksAndRumors(accountId, await game.enterZone(accountId, zoneId)),
+      enrichState(accountId, await game.enterZone(accountId, zoneId)),
     move: async (accountId, direction) =>
-      withNpcTasksAndRumors(accountId, await game.move(accountId, direction)),
+      enrichState(accountId, await game.move(accountId, direction)),
     startGathering: async (accountId, input) =>
-      withNpcTasksAndRumors(accountId, await game.startGathering(accountId, input)),
+      enrichState(accountId, await game.startGathering(accountId, input)),
     startCombat: async (accountId) =>
-      withNpcTasksAndRumors(accountId, await game.startCombat(accountId)),
+      enrichState(accountId, await game.startCombat(accountId)),
     cancelAction: async (accountId) =>
-      withNpcTasksAndRumors(accountId, await game.cancelAction(accountId)),
+      enrichState(accountId, await game.cancelAction(accountId)),
     returnToVillage: async (accountId) =>
-      withNpcTasksAndRumors(accountId, await game.returnToVillage(accountId)),
+      enrichState(accountId, await game.returnToVillage(accountId)),
     getMarket: (accountId) => game.getMarket(accountId),
     buyMarketItem: async (accountId, input) =>
-      withNpcTasksAndRumors(accountId, await game.buyMarketItem(accountId, input)),
+      enrichState(accountId, await game.buyMarketItem(accountId, input)),
     sellMarketItem: async (accountId, input) =>
-      withNpcTasksAndRumors(accountId, await game.sellMarketItem(accountId, input)),
+      enrichState(accountId, await game.sellMarketItem(accountId, input)),
     getRepairQuote: (accountId, input) => game.getRepairQuote(accountId, input),
     repairEquipment: async (accountId, input) =>
-      withNpcTasksAndRumors(accountId, await game.repairEquipment(accountId, input)),
+      enrichState(accountId, await game.repairEquipment(accountId, input)),
     repairAllEquipment: async (accountId) =>
-      withNpcTasksAndRumors(accountId, await game.repairAllEquipment(accountId)),
+      enrichState(accountId, await game.repairAllEquipment(accountId)),
     equipEquipment: async (accountId, input) =>
-      withNpcTasksAndRumors(accountId, await game.equipEquipment(accountId, input)),
+      enrichState(accountId, await game.equipEquipment(accountId, input)),
     eatFood: async (accountId, input) =>
-      withNpcTasksAndRumors(accountId, await game.eatFood(accountId, input)),
+      enrichState(accountId, await game.eatFood(accountId, input)),
     acceptNpcTask: async (accountId, taskId) => {
       await task.acceptTask(accountId, taskId, new Date());
-      return withNpcTasksAndRumors(accountId, await game.getState(accountId));
+      return enrichState(accountId, await game.getState(accountId));
     },
     completeNpcTask: async (accountId, taskId) => {
       await task.completeTask(accountId, taskId, new Date());
-      return withNpcTasksAndRumors(accountId, await game.getState(accountId));
+      return enrichState(accountId, await game.getState(accountId));
     },
     listDialogueTargets: (accountId) => dialogue.listDialogueTargets(accountId),
     getNpcDialogue: (accountId, npcActorId) => dialogue.getDialogue(accountId, npcActorId),
     sendNpcDialogueMessage: (accountId, npcActorId, message) =>
       dialogue.sendDialogueMessage(accountId, npcActorId, message)
-  };
-}
-
-function createNpcTaskService(app: FastifyInstance) {
-  return new NpcTaskService(
-    new NpcTaskRepository(app.di.db),
-    createNpcMemoryService(app),
-    createNpcTaskProposalPort(app)
-  );
-}
-
-function createRumorService(app: FastifyInstance) {
-  return new RumorService(
-    new RumorRepository(app.di.db),
-    createWorldRumorGenerator(app),
-    new DialogueRepository(app.di.db)
-  );
-}
-
-function createAiOrchestrator(app: FastifyInstance) {
-  const hasDeepSeekKey =
-    app.config.AI_NPC_DIALOGUE_ENABLED &&
-    app.config.AI_PROVIDER === "deepseek" &&
-    Boolean(app.config.DEEPSEEK_API_KEY);
-  const provider: AiProvider = hasDeepSeekKey
-    ? new DeepSeekAiProvider({
-        apiKey: app.config.DEEPSEEK_API_KEY!,
-        baseUrl: app.config.DEEPSEEK_BASE_URL
-      })
-    : {
-        completeJson: async () => {
-          throw new Error("AI provider is disabled");
-        }
-      };
-
-  return new AiOrchestrator({
-    enabled: hasDeepSeekKey,
-    providerName: hasDeepSeekKey ? "deepseek" : "template",
-    model: hasDeepSeekKey ? app.config.DEEPSEEK_MODEL : "template",
-    maxOutputTokens: app.config.AI_DIALOGUE_MAX_OUTPUT_TOKENS,
-    timeoutMs: app.config.AI_DIALOGUE_TIMEOUT_MS,
-    provider
-  });
-}
-
-function createNpcTaskProposalPort(app: FastifyInstance) {
-  const ai = createAiOrchestrator(app);
-  const dialogueRepo = new DialogueRepository(app.di.db);
-
-  return {
-    proposeNpcTask: async (input: NpcTaskProposalInput) => {
-      const item = getItemById(input.requestedItemId);
-      const itemName = item?.name ?? input.requestedItemId;
-      const context: NpcTaskProposalPromptContext = {
-        npc: {
-          name: input.actor.name,
-          profession: describeNpcProfession(input.actor.profession),
-          personality: describeNpcPersonality(input.actor.npcKey),
-          currentState: describeNpcTaskState(input)
-        },
-        candidate: {
-          needType: input.needType,
-          requestedItemName: itemName,
-          requestedItemId: input.requestedItemId,
-          requestedQuantity: input.requestedQuantity,
-          rewardCopper: input.rewardCopper,
-          expiresInHours: 24
-        },
-        economy: {
-          npcCopperBalance: input.actor.copperBalance,
-          npcCopperReserve: 5,
-          canEscrowReward: input.actor.copperBalance >= input.rewardCopper + 5
-        },
-        relationship: {
-          summary: "首版 AI 任务提案只读取真实需求，不使用关系调整奖励。"
-        },
-        world: {
-          settlement: "黑松哨站",
-          marketSummary: "任务提案只使用 NPC 当前库存和合法任务草案，不读取或改变集市价格。"
-        }
-      };
-      const result = await ai.proposeNpcTask({ context });
-
-      await dialogueRepo.createAiCallLog({
-        purpose: "npc_task_proposal",
-        status: result.status,
-        provider: result.provider,
-        model: result.model,
-        promptVersion: NPC_TASK_PROPOSAL_PROMPT_VERSION,
-        accountId: null,
-        characterId: null,
-        npcActorId: input.actor.id,
-        requestHash: hashNpcTaskProposalRequest(input),
-        inputSummary: summarizeNpcTaskProposalInput(input, itemName),
-        outputSummary: truncateSummary(`${result.title}：${result.description}｜${result.npcReason}`),
-        latencyMs: result.latencyMs,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
-        errorCode: result.fallbackReason
-      });
-
-      return {
-        title: result.title,
-        description: result.description,
-        npcReason: result.npcReason,
-        status: result.status
-      };
-    }
-  };
-}
-
-function createWorldRumorGenerator(app: FastifyInstance) {
-  const ai = createAiOrchestrator(app);
-  return {
-    generateRumor: async (input: { context: WorldRumorPromptContext }) =>
-      ai.generateWorldRumor(input)
   };
 }
 
@@ -397,133 +309,6 @@ function createDialogueService(app: FastifyInstance) {
     memory: createNpcMemoryService(app),
     ai: createAiOrchestrator(app)
   });
-}
-
-function createNpcMemoryService(app: FastifyInstance) {
-  return new NpcMemoryService(
-    new NpcMemoryRepository(app.di.db),
-    createNpcMemoryCompressor(app)
-  );
-}
-
-function createNpcMemoryCompressor(app: FastifyInstance): NpcMemoryCompressorPort {
-  const ai = createAiOrchestrator(app);
-  const dialogueRepo = new DialogueRepository(app.di.db);
-
-  return {
-    compressMemory: async (input) => {
-      const context: NpcMemoryCompressionPromptContext = {
-        npc: {
-          name: input.npcActorId,
-          memoryKind: input.memoryKind,
-          evidenceLevel: input.evidenceLevel
-        },
-        entries: input.entries.map((entry) => ({
-          summary: entry.summary,
-          importance: entry.importance,
-          occurredAt: entry.occurredAt.toISOString()
-        })),
-        fallbackSummary: input.fallbackSummary
-      };
-      const result = await ai.compressNpcMemory({ context });
-
-      await dialogueRepo.createAiCallLog({
-        purpose: "npc_memory_compression",
-        status: result.status,
-        provider: result.provider,
-        model: result.model,
-        promptVersion: NPC_MEMORY_COMPRESSION_PROMPT_VERSION,
-        accountId: null,
-        characterId: null,
-        npcActorId: input.npcActorId,
-        requestHash: hashNpcMemoryCompressionRequest(input),
-        inputSummary: summarizeNpcMemoryCompressionInput(input),
-        outputSummary: truncateSummary(result.summary),
-        latencyMs: result.latencyMs,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
-        errorCode: result.fallbackReason
-      });
-
-      return result;
-    }
-  };
-}
-
-function describeNpcProfession(profession: string) {
-  switch (profession) {
-    case "blacksmith":
-      return "铁匠，负责修理和打造基础装备";
-    case "farmer":
-      return "农民，负责采集和供应基础食物";
-    default:
-      return profession;
-  }
-}
-
-function describeNpcPersonality(npcKey: string) {
-  if (npcKey.includes("blacksmith")) return "直率、重视材料库存，不喜欢空口承诺。";
-  if (npcKey.includes("farmer")) return "务实、关心食物储备，愿意感谢真正帮忙的人。";
-  return "谨慎、只根据自己真实需求发布请求。";
-}
-
-function describeNpcTaskState(input: NpcTaskProposalInput) {
-  const inventoryLine = input.inventory.length
-    ? input.inventory.map((entry) => `${entry.itemId} x${entry.quantity}`).join("，")
-    : "库存为空";
-  return `饱腹度 ${input.actor.hunger}/5，铜币 ${input.actor.copperBalance}，库存：${inventoryLine}。`;
-}
-
-function hashNpcTaskProposalRequest(input: NpcTaskProposalInput) {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
-        actorId: input.actor.id,
-        needType: input.needType,
-        requestedItemId: input.requestedItemId,
-        requestedQuantity: input.requestedQuantity,
-        rewardCopper: input.rewardCopper,
-        title: input.title,
-        description: input.description,
-        proposalReason: input.proposalReason
-      })
-    )
-    .digest("hex");
-}
-
-function hashNpcMemoryCompressionRequest(input: Parameters<NpcMemoryCompressorPort["compressMemory"]>[0]) {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
-        actorId: input.npcActorId,
-        characterId: input.characterId,
-        memoryKind: input.memoryKind,
-        evidenceLevel: input.evidenceLevel,
-        entryCount: input.entries.length,
-        firstOccurredAt: input.entries[0]?.occurredAt.toISOString() ?? null,
-        lastOccurredAt: input.entries.at(-1)?.occurredAt.toISOString() ?? null,
-        fallbackSummary: input.fallbackSummary
-      })
-    )
-    .digest("hex");
-}
-
-function summarizeNpcTaskProposalInput(input: NpcTaskProposalInput, itemName: string) {
-  return truncateSummary(
-    `${input.actor.name}:${input.needType}:${itemName}x${input.requestedQuantity}:${input.rewardCopper}铜`
-  );
-}
-
-function summarizeNpcMemoryCompressionInput(
-  input: Parameters<NpcMemoryCompressorPort["compressMemory"]>[0]
-) {
-  return truncateSummary(
-    `${input.npcActorId}:${input.memoryKind}:${input.evidenceLevel}:${input.entries.length}条`
-  );
-}
-
-function truncateSummary(value: string) {
-  return value.length <= 120 ? value : `${value.slice(0, 117)}...`;
 }
 
 async function requireAccount(

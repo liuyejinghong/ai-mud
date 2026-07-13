@@ -453,6 +453,7 @@ export type NpcTaskProposalSource = "template" | "ai";
 export interface NpcTaskDto {
   id: string;
   npcActorId: string;
+  npcLocation?: GameLocationId | null;
   npcName: string;
   needType: NpcTaskNeedType;
   status: NpcTaskStatus;

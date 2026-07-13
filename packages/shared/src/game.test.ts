@@ -48,7 +48,7 @@ describe("game contract", () => {
 
   it("exposes v0.10.5 world health compatibility", () => {
     expect(PRODUCT_VERSION).toBe("0.10.5");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(35);
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(36);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(23);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(14);
@@ -620,6 +620,7 @@ describe("game contract", () => {
     const task: NpcTaskDto = {
       id: "task-1",
       npcActorId: "npc-blacksmith",
+      npcLocation: "blackpine_outpost",
       npcName: "伯林",
       needType: "ore_shortage",
       status: "open",
@@ -637,6 +638,7 @@ describe("game contract", () => {
     };
 
     expect(task.needType).toBe("ore_shortage");
+    expect(task.npcLocation).toBe("blackpine_outpost");
     expect(task.proposalSource).toBe("ai");
     expect(task.proposalReason).toContain("修理活");
     expect(task.requestedItem.itemId).toBe("iron_ore");

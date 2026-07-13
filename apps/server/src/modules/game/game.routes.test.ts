@@ -7,9 +7,15 @@ import type {
   NpcDialogueTargetDto
 } from "@ai-mud/shared";
 import Fastify from "fastify";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { GameServiceError } from "./game.service.js";
-import { registerGameRoutes, type GameRouteDependencies } from "./game.routes.js";
+import {
+  createGameStateEnricher,
+  enrichGameSyncResponse,
+  registerGameRoutes,
+  type GameRouteDependencies
+} from "./game.routes.js";
 
 const activeAccount = {
   id: "account-1",
@@ -211,6 +217,224 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
 }
 
 describe("registerGameRoutes", () => {
+  it("keeps production game route enrichment free of world generation calls", () => {
+    const source = readFileSync(new URL("./game.routes.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("syncOpenTasks(");
+    expect(source).not.toContain("syncRumors(");
+    expect(source).toContain('from "./game.composition.js"');
+    expect(source).not.toContain("function createAiOrchestrator(");
+  });
+
+  it("purely enriches sync state with persisted visible tasks and rumors", async () => {
+    let taskGeneratorCalls = 0;
+    let rumorGeneratorCalls = 0;
+    const openTask = {
+      id: "task-open",
+      npcActorId: "npc-blacksmith",
+      npcName: "伯林",
+      needType: "ore_shortage" as const,
+      status: "open" as const,
+      title: "炉火缺矿",
+      description: "伯林缺少基础铁矿石。",
+      proposalSource: "template" as const,
+      proposalReason: "矿箱空了。",
+      requestedItem: { itemId: "iron_ore" as const, name: "基础铁矿石", quantity: 3 },
+      rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 },
+      acceptedByCharacterId: null,
+      expiresAt: "2026-07-14T08:00:00.000Z",
+      createdAt: "2026-07-13T08:00:00.000Z",
+      acceptedAt: null,
+      completedAt: null
+    };
+    const acceptedTask = {
+      ...openTask,
+      id: "task-accepted",
+      status: "accepted" as const,
+      acceptedByCharacterId: "character-1",
+      acceptedAt: "2026-07-13T08:05:00.000Z"
+    };
+    const taskReads = {
+      listTasksForAccount: async () => [openTask, acceptedTask],
+      syncOpenTasks: async () => {
+        taskGeneratorCalls += 1;
+      }
+    };
+    const rumorReads = {
+      listRecentPublicRumors: async () => [
+        {
+          id: "rumor-1",
+          message: "矿炉边的铁矿石快见底了。",
+          sourceType: "npc_event" as const,
+          sourceId: "event-1",
+          settlementId: "blackpine_outpost",
+          audience: "public" as const,
+          tags: ["npc.task"],
+          generatedBy: "template" as const,
+          createdAt: "2026-07-13T08:00:00.000Z",
+          expiresAt: null
+        }
+      ],
+      syncRumors: async () => {
+        rumorGeneratorCalls += 1;
+      }
+    };
+    const enrich = createGameStateEnricher({
+      tasks: taskReads,
+      rumors: rumorReads,
+      listNpcActors: async () => [
+        { id: "npc-blacksmith", currentLocation: "blackpine_outpost" as const }
+      ],
+      now: () => new Date("2026-07-13T08:10:00.000Z")
+    });
+    const mineState: GameStateDto = {
+      ...baseState,
+      character: { ...baseState.character!, currentLocation: "old_mine" },
+      availableActions: [...baseState.availableActions, "view_npc_tasks"]
+    };
+
+    const response = await enrichGameSyncResponse(
+      "account-1",
+      {
+        stateVersion: 3,
+        state: mineState,
+        events: [],
+        chat: [],
+        presence: [],
+        leaderboards: { level: [], wealth: [] },
+        nextCursor: 3
+      },
+      enrich
+    );
+
+    expect(response.state?.npcTasks).toEqual([
+      expect.objectContaining({
+        id: "task-accepted",
+        status: "accepted",
+        npcLocation: "blackpine_outpost"
+      })
+    ]);
+    expect(response.state?.rumors).toHaveLength(1);
+    expect(response.state?.availableActions).toContain("view_npc_tasks");
+    expect(taskGeneratorCalls).toBe(0);
+    expect(rumorGeneratorCalls).toBe(0);
+  });
+
+  it("hides remote open tasks and removes invalid task actions", async () => {
+    const enrich = createGameStateEnricher({
+      tasks: {
+        listTasksForAccount: async () => [
+          {
+            id: "task-open",
+            npcActorId: "npc-blacksmith",
+            npcName: "伯林",
+            needType: "ore_shortage",
+            status: "open",
+            title: "炉火缺矿",
+            description: "伯林缺少基础铁矿石。",
+            proposalSource: "template",
+            proposalReason: "矿箱空了。",
+            requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
+            rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 },
+            acceptedByCharacterId: null,
+            expiresAt: "2026-07-14T08:00:00.000Z",
+            createdAt: "2026-07-13T08:00:00.000Z",
+            acceptedAt: null,
+            completedAt: null
+          }
+        ]
+      },
+      rumors: { listRecentPublicRumors: async () => [] },
+      listNpcActors: async () => [
+        { id: "npc-blacksmith", currentLocation: "blackpine_outpost" as const }
+      ]
+    });
+    const mineState: GameStateDto = {
+      ...baseState,
+      character: { ...baseState.character!, currentLocation: "old_mine" },
+      availableActions: [...baseState.availableActions, "view_npc_tasks"]
+    };
+
+    const enriched = await enrich("account-1", mineState);
+
+    expect(enriched.npcTasks).toEqual([]);
+    expect(enriched.availableActions).not.toContain("view_npc_tasks");
+  });
+
+  it("shows an open task when its NPC is at the player's current location", async () => {
+    const enrich = createGameStateEnricher({
+      tasks: {
+        listTasksForAccount: async () => [
+          {
+            id: "task-open",
+            npcActorId: "npc-miner",
+            npcName: "洛恩",
+            needType: "ore_shortage",
+            status: "open",
+            title: "矿道缺粮",
+            description: "洛恩需要补给。",
+            proposalSource: "template",
+            proposalReason: "补给箱空了。",
+            requestedItem: { itemId: "iron_ore", name: "基础铁矿石", quantity: 3 },
+            rewardCopper: { gold: 0, silver: 0, copper: 36, totalCopper: 36 },
+            acceptedByCharacterId: null,
+            expiresAt: "2026-07-14T08:00:00.000Z",
+            createdAt: "2026-07-13T08:00:00.000Z",
+            acceptedAt: null,
+            completedAt: null
+          }
+        ]
+      },
+      rumors: { listRecentPublicRumors: async () => [] },
+      listNpcActors: async () => [{ id: "npc-miner", currentLocation: "old_mine" as const }]
+    });
+    const mineState: GameStateDto = {
+      ...baseState,
+      character: { ...baseState.character!, currentLocation: "old_mine" }
+    };
+
+    const enriched = await enrich("account-1", mineState);
+
+    expect(enriched.npcTasks).toEqual([
+      expect.objectContaining({ id: "task-open", npcLocation: "old_mine" })
+    ]);
+    expect(enriched.availableActions).toContain("view_npc_tasks");
+  });
+
+  it("does not read tasks or rumors when sync state is null", async () => {
+    const reads: string[] = [];
+    const enrich = createGameStateEnricher({
+      tasks: {
+        listTasksForAccount: async () => {
+          reads.push("tasks");
+          return [];
+        }
+      },
+      rumors: {
+        listRecentPublicRumors: async () => {
+          reads.push("rumors");
+          return [];
+        }
+      },
+      listNpcActors: async () => {
+        reads.push("actors");
+        return [];
+      }
+    });
+    const sync: GameSyncResponseDto = {
+      stateVersion: 3,
+      state: null,
+      events: [],
+      chat: [],
+      presence: [],
+      leaderboards: { level: [], wealth: [] },
+      nextCursor: 3
+    };
+
+    await expect(enrichGameSyncResponse("account-1", sync, enrich)).resolves.toBe(sync);
+    expect(reads).toEqual([]);
+  });
+
   it("requires an authenticated session for game state", async () => {
     const settleCalls: string[] = [];
     const app = buildGameRouteTestApp({

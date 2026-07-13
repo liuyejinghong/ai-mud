@@ -9,11 +9,16 @@ import { AuthRepository } from "./modules/auth/auth.repository.js";
 import { registerAuthRoutes } from "./modules/auth/auth.routes.js";
 import { AuthService } from "./modules/auth/auth.service.js";
 import { registerGameRoutes } from "./modules/game/game.routes.js";
+import {
+  createNpcTaskService,
+  createRumorService
+} from "./modules/game/game.composition.js";
 import { LedgerRepository } from "./modules/ledger/ledger.repository.js";
 import { LedgerService } from "./modules/ledger/ledger.service.js";
 import { NpcRepository } from "./modules/npc/npc.repository.js";
 import { NpcService } from "./modules/npc/npc.service.js";
 import { WorldRuntimeRepository } from "./modules/world-runtime/world-runtime.repository.js";
+import { WorldPostTickService } from "./modules/world-runtime/world-post-tick.service.js";
 import {
   WorldRuntimeService,
   type WorldRuntimeSettleResult
@@ -36,6 +41,45 @@ function isAllowedOrigin(origin: string | undefined, allowedOrigins: string[]) {
   return allowedOrigins.includes(origin);
 }
 
+export function createWorldRuntimeScheduler(input: {
+  settleDue(now: Date): Promise<WorldRuntimeSettleResult>;
+  runPostTick(now: Date): Promise<void>;
+  onPostTickError(error: unknown): void;
+}) {
+  let settlementInFlight: Promise<WorldRuntimeSettleResult> | null = null;
+  let postTickInFlight: Promise<void> | null = null;
+
+  const startPostTick = (now: Date) => {
+    if (postTickInFlight) return;
+    postTickInFlight = Promise.resolve()
+      .then(() => input.runPostTick(now))
+      .catch((error: unknown) => {
+        try {
+          input.onPostTickError(error);
+        } catch {
+          // Logging failures must not become unhandled background rejections.
+        }
+      })
+      .finally(() => {
+        postTickInFlight = null;
+      });
+  };
+
+  return {
+    settleDue: async (now = new Date()): Promise<WorldRuntimeSettleResult> => {
+      if (settlementInFlight) return { settledSteps: 0, skipped: true };
+      settlementInFlight = Promise.resolve().then(() => input.settleDue(now));
+      try {
+        const result = await settlementInFlight;
+        if (!result.skipped && result.settledSteps > 0) startPostTick(now);
+        return result;
+      } finally {
+        settlementInFlight = null;
+      }
+    }
+  };
+}
+
 export async function buildApp(input?: { env?: Env; db?: Db }) {
   const app = Fastify({ logger: true });
   const config = input?.env ?? loadEnv();
@@ -48,7 +92,6 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
     dbConnection = createDb(config.DATABASE_URL);
     db = dbConnection.db;
   }
-  let worldRuntimeInFlight: Promise<WorldRuntimeSettleResult> | null = null;
   const runSettleDue = async (now = new Date()) => {
     const repo = new WorldRuntimeRepository(db);
     const runtime = new WorldRuntimeService({
@@ -75,17 +118,25 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
     });
     return runtime.settleDue(now);
   };
-  const worldRuntime = {
-    settleDue: async (now = new Date()) => {
-      if (worldRuntimeInFlight) return { settledSteps: 0, skipped: true };
-      worldRuntimeInFlight = runSettleDue(now);
-      try {
-        return await worldRuntimeInFlight;
-      } finally {
-        worldRuntimeInFlight = null;
-      }
+  const worldRuntime = createWorldRuntimeScheduler({
+    settleDue: runSettleDue,
+    runPostTick: async (now) => {
+      const postTick = new WorldPostTickService({
+        tasks: createNpcTaskService(app),
+        rumors: createRumorService(app),
+        onFailure: (failure) => {
+          app.log.error(
+            { err: failure.error, phase: failure.phase, npcActorId: failure.npcActorId },
+            "world post-tick operation failed"
+          );
+        }
+      });
+      await postTick.run(now);
+    },
+    onPostTickError: (error) => {
+      app.log.error({ err: error }, "world post-tick failed");
     }
-  };
+  });
   let worldTickTimer: NodeJS.Timeout | null = null;
 
   app.decorate("config", config);
