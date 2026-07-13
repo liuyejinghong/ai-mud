@@ -17,6 +17,11 @@ class FakeNpcTaskRepo {
   tasks = new Map<string, NpcTaskRecord>();
   nextTask = 1;
   transactionCalls = 0;
+  listNpcActorsCalls = 0;
+  createTaskCalls = 0;
+  npcCopperMutationCalls = 0;
+  escrowCalls = 0;
+  expireCalls = 0;
   failNextConditionalUpdate = false;
 
   async transaction<T>(operation: (repo: FakeNpcTaskRepo) => Promise<T>) {
@@ -25,6 +30,7 @@ class FakeNpcTaskRepo {
   }
 
   async listNpcActors() {
+    this.listNpcActorsCalls += 1;
     return [...this.actors.values()];
   }
 
@@ -33,9 +39,14 @@ class FakeNpcTaskRepo {
   }
 
   async incrementNpcCopper(input: { actorId: string; delta: number }) {
+    this.npcCopperMutationCalls += 1;
     const actor = this.actors.get(input.actorId);
     if (!actor) throw new Error("actor not found");
     this.actors.set(input.actorId, { ...actor, copperBalance: actor.copperBalance + input.delta });
+  }
+
+  async recordCopperTransfer(input: { operation: string }) {
+    if (input.operation === "task_escrow") this.escrowCalls += 1;
   }
 
   async listNpcInventory(actorId: string) {
@@ -131,6 +142,7 @@ class FakeNpcTaskRepo {
   }
 
   async createTask(input: CreateNpcTaskInput) {
+    this.createTaskCalls += 1;
     const task: NpcTaskRecord = {
       id: `task-${this.nextTask++}`,
       npcActorId: input.npcActorId,
@@ -156,6 +168,7 @@ class FakeNpcTaskRepo {
   }
 
   async updateTask(input: UpdateNpcTaskInput) {
+    if (input.status === "expired") this.expireCalls += 1;
     const task = this.tasks.get(input.taskId);
     if (!task) throw new Error("task not found");
     const conditionalInput = input as UpdateNpcTaskInput & {
@@ -231,17 +244,92 @@ function character(): CharacterRecord {
 }
 
 describe("NpcTaskService", () => {
+  it("lists existing tasks without producing or mutating world state", async () => {
+    const repo = new FakeNpcTaskRepo();
+    repo.actors.set("npc-blacksmith", actor({ copperBalance: 120 }));
+    repo.npcInventory.set("npc-blacksmith", []);
+    repo.characters.set("character-1", character());
+    const acceptedTask = await repo.createTask({
+      npcActorId: "npc-blacksmith",
+      needType: "ore_shortage",
+      title: "炉火缺矿",
+      description: "伯林缺少基础铁矿石。",
+      proposalSource: "template",
+      proposalReason: "基础铁矿石不足。",
+      requestedItemId: "iron_ore",
+      requestedQuantity: 3,
+      rewardCopper: 36,
+      escrowCopper: 36,
+      createdAt: new Date("2026-07-02T08:00:00.000Z"),
+      expiresAt: new Date("2026-07-03T08:00:00.000Z")
+    });
+    repo.tasks.set(acceptedTask.id, {
+      ...acceptedTask,
+      status: "accepted",
+      acceptedByCharacterId: "character-1",
+      acceptedAt: new Date("2026-07-02T08:05:00.000Z")
+    });
+    const completedTask = await repo.createTask({
+      npcActorId: "npc-blacksmith",
+      needType: "ore_shortage",
+      title: "已经完成",
+      description: "这个任务已经完成。",
+      proposalSource: "template",
+      proposalReason: "基础铁矿石不足。",
+      requestedItemId: "iron_ore",
+      requestedQuantity: 3,
+      rewardCopper: 36,
+      escrowCopper: 36,
+      createdAt: new Date("2026-07-01T08:00:00.000Z"),
+      expiresAt: new Date("2026-07-02T08:00:00.000Z")
+    });
+    repo.tasks.set(completedTask.id, {
+      ...completedTask,
+      status: "completed",
+      acceptedByCharacterId: "character-1",
+      acceptedAt: new Date("2026-07-01T08:05:00.000Z"),
+      completedAt: new Date("2026-07-01T08:10:00.000Z")
+    });
+    repo.createTaskCalls = 0;
+    let proposalCalls = 0;
+    const service = new NpcTaskService(repo, undefined, {
+      proposeNpcTask: async () => {
+        proposalCalls += 1;
+        return {
+          title: "不应生成",
+          description: "列表读取不应生成任务。",
+          npcReason: "列表读取不能调用 AI。",
+          status: "success"
+        };
+      }
+    });
+
+    const tasks = await service.listTasksForAccount(
+      "account-1",
+      new Date("2026-07-02T09:00:00.000Z")
+    );
+
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]).toMatchObject({ id: acceptedTask.id, status: "accepted" });
+    expect(repo.transactionCalls).toBe(0);
+    expect(repo.listNpcActorsCalls).toBe(0);
+    expect(proposalCalls).toBe(0);
+    expect(repo.createTaskCalls).toBe(0);
+    expect(repo.npcCopperMutationCalls).toBe(0);
+    expect(repo.escrowCalls).toBe(0);
+    expect(repo.expireCalls).toBe(0);
+  });
+
   it("creates ore shortage tasks from real NPC demand and escrows copper", async () => {
     const repo = new FakeNpcTaskRepo();
     repo.actors.set("npc-blacksmith", actor({ copperBalance: 120 }));
     repo.npcInventory.set("npc-blacksmith", []);
     repo.characters.set("character-1", character());
     const service = new NpcTaskService(repo);
+    const now = new Date("2026-07-02T08:00:00.000Z");
 
-    const tasks = await service.listTasksForAccount(
-      "account-1",
-      new Date("2026-07-02T08:00:00.000Z")
-    );
+    await service.syncOpenTasks(now);
+    const tasks = await service.listTasksForAccount("account-1", now);
 
     expect(tasks).toHaveLength(1);
     expect(tasks[0]?.needType).toBe("ore_shortage");
@@ -269,11 +357,10 @@ describe("NpcTaskService", () => {
         };
       }
     });
+    const now = new Date("2026-07-02T08:00:00.000Z");
 
-    const tasks = await service.listTasksForAccount(
-      "account-1",
-      new Date("2026-07-02T08:00:00.000Z")
-    );
+    await service.syncOpenTasks(now);
+    const tasks = await service.listTasksForAccount("account-1", now);
     const created = [...repo.tasks.values()][0];
 
     expect(tasks[0]?.title).toBe("炉火等矿");
@@ -304,11 +391,10 @@ describe("NpcTaskService", () => {
         status: "rejected" as AiCallStatus
       })
     });
+    const now = new Date("2026-07-02T08:00:00.000Z");
 
-    const tasks = await service.listTasksForAccount(
-      "account-1",
-      new Date("2026-07-02T08:00:00.000Z")
-    );
+    await service.syncOpenTasks(now);
+    const tasks = await service.listTasksForAccount("account-1", now);
 
     expect(tasks[0]?.title).toBe("炉火缺矿");
     expect(tasks[0]?.description).toContain("缺少基础铁矿石");
@@ -332,11 +418,10 @@ describe("NpcTaskService", () => {
         };
       }
     });
+    const now = new Date("2026-07-02T08:00:00.000Z");
 
-    const tasks = await service.listTasksForAccount(
-      "account-1",
-      new Date("2026-07-02T08:00:00.000Z")
-    );
+    await service.syncOpenTasks(now);
+    const tasks = await service.listTasksForAccount("account-1", now);
 
     expect(tasks).toEqual([]);
     expect(repo.actors.get("npc-blacksmith")?.copperBalance).toBe(20);
@@ -359,12 +444,24 @@ describe("NpcTaskService", () => {
         );
       }
     });
+    const now = new Date("2026-07-02T08:00:00.000Z");
 
-    const [task] = await service.listTasksForAccount(
+    await service.syncOpenTasks(now);
+    const [task] = await service.listTasksForAccount("account-1", now);
+    const acceptedTasks = await service.acceptTask(
       "account-1",
-      new Date("2026-07-02T08:00:00.000Z")
+      task!.id,
+      new Date("2026-07-02T08:05:00.000Z")
     );
-    await service.acceptTask("account-1", task!.id, new Date("2026-07-02T08:05:00.000Z"));
+    expect(acceptedTasks).toEqual([
+      expect.objectContaining({
+        id: task!.id,
+        status: "accepted",
+        acceptedByCharacterId: "character-1",
+        acceptedAt: "2026-07-02T08:05:00.000Z",
+        completedAt: null
+      })
+    ]);
     const tasks = await service.completeTask(
       "account-1",
       task!.id,
@@ -389,10 +486,9 @@ describe("NpcTaskService", () => {
     repo.actors.set("npc-blacksmith", actor({ copperBalance: 120 }));
     repo.characters.set("character-1", character());
     const service = new NpcTaskService(repo);
-    const [task] = await service.listTasksForAccount(
-      "account-1",
-      new Date("2026-07-02T08:00:00.000Z")
-    );
+    const now = new Date("2026-07-02T08:00:00.000Z");
+    await service.syncOpenTasks(now);
+    const [task] = await service.listTasksForAccount("account-1", now);
 
     repo.failNextConditionalUpdate = true;
 
@@ -449,15 +545,13 @@ describe("NpcTaskService", () => {
     repo.actors.set("npc-blacksmith", actor({ copperBalance: 120 }));
     repo.characters.set("character-1", character());
     const service = new NpcTaskService(repo);
+    const createdAt = new Date("2026-07-02T08:00:00.000Z");
+    const refreshedAt = new Date("2026-07-03T08:00:01.000Z");
 
-    const [task] = await service.listTasksForAccount(
-      "account-1",
-      new Date("2026-07-02T08:00:00.000Z")
-    );
-    const visibleTasks = await service.listTasksForAccount(
-      "account-1",
-      new Date("2026-07-03T08:00:01.000Z")
-    );
+    await service.syncOpenTasks(createdAt);
+    const [task] = await service.listTasksForAccount("account-1", createdAt);
+    await service.syncOpenTasks(refreshedAt);
+    const visibleTasks = await service.listTasksForAccount("account-1", refreshedAt);
 
     expect(repo.tasks.get(task!.id)?.status).toBe("expired");
     expect(visibleTasks).toHaveLength(1);

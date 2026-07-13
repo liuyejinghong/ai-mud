@@ -157,7 +157,6 @@ export class NpcTaskService {
   }
 
   async listTasksForAccount(accountId: string, now = new Date()): Promise<NpcTaskDto[]> {
-    await this.syncOpenTasks(now);
     const character = await this.requireCharacter(this.repo, accountId);
     const tasks = await this.repo.listTasksForCharacter(character.id);
     return Promise.all(tasks.map((task) => this.toDto(task)));
