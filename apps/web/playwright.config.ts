@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const browserChannel = process.env.PLAYWRIGHT_BROWSER_CHANNEL;
-const webPort = Number(process.env.PLAYWRIGHT_WEB_PORT ?? 5173);
+const webPort = Number(process.env.PLAYWRIGHT_WEB_PORT ?? 5180);
 const baseURL = `http://127.0.0.1:${webPort}`;
 
 export default defineConfig({
@@ -13,7 +13,7 @@ export default defineConfig({
   webServer: {
     command: `pnpm exec vite --host 127.0.0.1 --port ${webPort} --strictPort`,
     url: baseURL,
-    reuseExistingServer: !process.env.CI && !process.env.PLAYWRIGHT_WEB_PORT,
+    reuseExistingServer: false,
     timeout: 120_000
   },
   projects: [

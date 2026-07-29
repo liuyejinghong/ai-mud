@@ -1,14 +1,18 @@
 import { expect, test } from "@playwright/test";
+import type { GameStateDto } from "@ai-mud/shared";
 
-const createCharacterState = {
+const createCharacterState: GameStateDto = {
   character: null,
   locationTitle: "黑松哨站",
   locationDescription: "你尚未创建角色。",
   map: null,
   inventory: [],
   equipment: [],
+  backpackEquipment: [],
   market: null,
+  npcTasks: [],
   currentAction: null,
+  rumors: [],
   availableActions: ["create_character"],
   log: []
 };
@@ -148,6 +152,19 @@ test("renders economy visibility for admins", async ({ page }) => {
     });
   });
   await page.route("**/game/state", async (route) => route.fulfill({ json: createCharacterState }));
+  await page.route("http://127.0.0.1:3000/game/sync**", async (route) =>
+    route.fulfill({
+      json: {
+        stateVersion: 1,
+        state: createCharacterState,
+        events: [],
+        nextCursor: 1,
+        chat: [],
+        presence: [],
+        leaderboards: { level: [], wealth: [] }
+      }
+    })
+  );
   await page.route("**/admin/economy", async (route) => route.fulfill({ json: economySnapshot }));
   await page.route("**/admin/npcs", async (route) => route.fulfill({ json: npcSnapshot }));
   await page.route("**/admin/world-runtime", async (route) =>
