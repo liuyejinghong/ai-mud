@@ -12,6 +12,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:verify-migrations": "tsx scripts/verify-migrations.ts",
     "db:verify-world-reset": "tsx scripts/verify-world-reset.ts",
+    "verify:npc-simulation": "tsx scripts/verify-npc-simulation.ts",
     "e2e:real": "node --env-file=../../.env --import tsx scripts/run-real-player-e2e.ts",
     "test:integration:postgres": "pnpm --filter @ai-mud/shared build && pnpm --filter @ai-mud/content build && pnpm --filter @ai-mud/game-rules build && pnpm --filter @ai-mud/ai-prompts build && vitest run src/db/postgres-integration.test.ts src/db/game-concurrency.integration.test.ts"
   },

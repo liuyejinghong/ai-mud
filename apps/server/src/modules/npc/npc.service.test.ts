@@ -618,13 +618,17 @@ describe("NpcService", () => {
     const blacksmith = repo.actors.find(
       (actor) => actor.npcKey === "blackpine_blacksmith_borin"
     )!;
+    const officer = repo.actors.find(
+      (actor) => actor.npcKey === "blackpine_officer_elian"
+    )!;
 
     await service.settleNpcWorld(tickAt);
 
     expect(farmer.copperBalance).toBe(65);
-    expect(miner.copperBalance).toBe(60);
-    expect(blacksmith.copperBalance).toBe(145);
-    expect(repo.treasury?.copperBalance).toBe(9_925);
+    expect(miner.copperBalance).toBe(65);
+    expect(blacksmith.copperBalance).toBe(155);
+    expect(officer.copperBalance).toBe(120);
+    expect(repo.treasury?.copperBalance).toBe(9_870);
   });
 
   it("sells gathered NPC inventory into the municipal market with an actor ledger", async () => {
@@ -978,6 +982,26 @@ describe("NpcService", () => {
     );
   });
 
+  it("includes daily maintenance when a simulation starts between UTC hour boundaries", async () => {
+    const repo = new InMemoryNpcRepository();
+    const service = new NpcService(repo);
+    const startAt = new Date("2026-07-01T06:37:20.000Z");
+
+    await service.ensureWorldSeeded(startAt);
+    repo.seedMarketItem({
+      itemId: "wild_berry",
+      quantity: 50,
+      targetQuantity: 100,
+      baseBuyPriceCopper: 5,
+      baseSellPriceCopper: 8
+    });
+
+    const report = await service.runNpcSimulation(1, startAt);
+
+    expect(report.metrics.starvingNpcCount).toBe(0);
+    expect(report.metrics.idleRate).toBeLessThan(0.3);
+  });
+
   it("runs simulation reports without mutating the live NPC world", async () => {
     const repo = new InMemoryNpcRepository();
     const service = new NpcService(repo);
@@ -1069,8 +1093,7 @@ describe("NpcService", () => {
     expect(report.metrics.starvingNpcCount).toBe(0);
     expect(report.metrics.minNpcHunger).toBeGreaterThan(0);
     expect(report.metrics.marketStockQuantity).toBeGreaterThan(0);
-    expect(report.metrics.idleRate).toBeGreaterThanOrEqual(0);
-    expect(report.metrics.idleRate).toBeLessThanOrEqual(1);
+    expect(report.metrics.idleRate).toBeLessThan(0.3);
     expect(report.metrics.resourceStartCharges).toBeGreaterThan(0);
     expect(report.metrics.resourceEndCharges).toBeGreaterThanOrEqual(0);
     expect(report.metrics.marketTransactionsPerDay).toBeGreaterThan(0);

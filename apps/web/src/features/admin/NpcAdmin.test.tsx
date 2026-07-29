@@ -166,7 +166,7 @@ describe("NpcAdmin", () => {
       );
     });
     expect(await screen.findByText("3 天仿真健康：正常")).toBeTruthy();
-    expect(screen.getByText("行动 12 次 · 空闲 75%")).toBeTruthy();
+    expect(screen.getByText("行动 12 次 · 全程空闲 75%")).toBeTruthy();
     expect(screen.getByText("资源 140 → 132（-8）")).toBeTruthy();
     expect(screen.getByText("货币流速 3.0 笔/天")).toBeTruthy();
     expect(screen.getByText("行动触发 2.75 次/NPC日")).toBeTruthy();

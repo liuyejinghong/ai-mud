@@ -14,6 +14,7 @@
     "db:migrate": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server db:migrate",
     "db:verify-migrations": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server db:verify-migrations",
     "db:verify-world-reset": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server db:verify-world-reset",
+    "verify:npc-simulation": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server verify:npc-simulation",
     "test:postgres": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server test:integration:postgres"
   },
   "devDependencies": {

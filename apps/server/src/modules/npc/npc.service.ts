@@ -1,5 +1,4 @@
 import {
-  BLACKPINE_DAILY_NPC_WAGE_COPPER,
   CORRUPT_FOREST,
   FIRST_NPCS,
   FIRST_ITEMS,
@@ -38,6 +37,7 @@ import { NpcSimulationRepository } from "./npc.simulation-repository.js";
 const BLACKPINE_MARKET_ID = "blackpine_outpost" as const;
 const INITIAL_TREASURY_COPPER = 10_000;
 const DAY_MS = 24 * 60 * 60_000;
+const HOUR_MS = 60 * 60_000;
 const FOOD_RESERVE_QUANTITY = 1;
 const BLACKSMITH_IRON_ORE_RESERVE = 3;
 const BLACKSMITH_REPAIR_ORE_COST = 1;
@@ -93,6 +93,10 @@ export interface NpcEventRecord {
   actorId: string;
   message: string;
   createdAt: Date;
+}
+
+export interface NpcWorldSettlementResult {
+  activeActorIds: string[];
 }
 
 export interface NpcRepositoryPort {
@@ -256,36 +260,53 @@ export class NpcService {
     });
   }
 
-  async settleNpcWorld(now: Date) {
+  async settleNpcWorld(now: Date): Promise<NpcWorldSettlementResult> {
+    const activeActorIds = new Set<string>();
     await this.ensureWorldSeeded(now);
     await this.refreshDailyResources(now);
 
     let actors = await this.repo.listNpcActors();
-    await this.payScheduledNpcWages(actors, now);
-    await this.runBlacksmithMaintenance(actors, now);
+    for (const actorId of await this.payScheduledNpcWages(actors, now)) {
+      activeActorIds.add(actorId);
+    }
+    for (const actorId of await this.runBlacksmithMaintenance(actors, now)) {
+      activeActorIds.add(actorId);
+    }
     actors = await this.repo.listNpcActors();
 
     for (const actor of actors) {
       const settledActor = await this.settleNpcHunger(actor, now);
       const action = await this.repo.findActiveNpcAction(actor.id);
       if (action) {
+        activeActorIds.add(actor.id);
         if (action.endsAt.getTime() <= now.getTime()) {
           await this.settleNpcAction(settledActor, action, now);
         }
         continue;
       }
 
-      const handledNeeds = await this.handleNpcNeeds(settledActor);
-      if (handledNeeds) continue;
+      const needs = await this.handleNpcNeeds(settledActor);
+      if (needs.acted) activeActorIds.add(actor.id);
+      if (needs.handled) continue;
 
       const soldInventory = await this.sellNpcSurplusToMarket(settledActor);
-      if (soldInventory) continue;
+      if (soldInventory) {
+        activeActorIds.add(actor.id);
+        continue;
+      }
 
       const returningToMarket = await this.returnNpcInventoryToMarket(settledActor, now);
-      if (returningToMarket) continue;
+      if (returningToMarket) {
+        activeActorIds.add(actor.id);
+        continue;
+      }
 
-      await this.createNextNpcAction(settledActor, now);
+      if (await this.createNextNpcAction(settledActor, now)) {
+        activeActorIds.add(actor.id);
+      }
     }
+
+    return { activeActorIds: [...activeActorIds] };
   }
 
   async payNpcWage(actorId: string, requestedCopper: number) {
@@ -318,6 +339,8 @@ export class NpcService {
         }
       });
     }
+
+    return payment;
   }
 
   async listNpcSummaries(now: Date): Promise<NpcSummaryDto[]> {
@@ -388,12 +411,10 @@ export class NpcService {
         .map((action) => action.id)
     );
 
-    for (
-      let timestamp = startAt.getTime();
-      timestamp <= endedAt.getTime();
-      timestamp += 60 * 60_000
-    ) {
-      await this.settleNpcWorld(new Date(timestamp));
+    const activeActorIds = new Set<string>();
+    for (const timestamp of this.simulationTickTimestamps(startAt, endedAt)) {
+      const settlement = await this.settleNpcWorld(new Date(timestamp));
+      for (const actorId of settlement.activeActorIds) activeActorIds.add(actorId);
     }
 
     const [actors, treasury, resources, actions, marketInventory, marketTransactionCount] =
@@ -417,9 +438,7 @@ export class NpcService {
     const marketStockQuantity = marketInventory.reduce((sum, item) => sum + item.quantity, 0);
     const totalNpcCopper = actors.reduce((sum, actor) => sum + actor.copperBalance, 0);
     const npcHungers = actors.map((actor) => actor.hunger);
-    const idleNpcCount = actors.filter(
-      (actor) => !activeActions.some((action) => action.actorId === actor.id)
-    ).length;
+    const idleNpcCount = actors.filter((actor) => !activeActorIds.has(actor.id)).length;
     const fedNpcCount = npcHungers.filter((hunger) => hunger >= 3).length;
     const endingResourceCharges = resources.reduce((sum, resource) => sum + resource.charges, 0);
     const npcDays = Math.max(1, actors.length * boundedDays);
@@ -564,17 +583,17 @@ export class NpcService {
 
   private async createNextNpcAction(actor: NpcActorRecord, now: Date) {
     const npc = getNpcByKey(actor.npcKey);
-    if (!npc) return;
+    if (!npc) return false;
 
     const intent = chooseNpcWorkIntent({
       profession: npc.profession,
       workResourceId: npc.workResourceId,
       producesItemId: npc.producesItemId
     });
-    if (intent.intent !== "gather") return;
+    if (intent.intent !== "gather") return false;
 
     const resource = getResourceById(intent.resourceId);
-    if (!resource) return;
+    if (!resource) return false;
 
     if (actor.currentLocation !== CORRUPT_FOREST.id || !actor.position) {
       await this.repo.createNpcAction({
@@ -587,7 +606,7 @@ export class NpcService {
           toPosition: CORRUPT_FOREST.entry
         }
       });
-      return;
+      return true;
     }
 
     if (actor.position.x !== resource.position.x || actor.position.y !== resource.position.y) {
@@ -604,7 +623,7 @@ export class NpcService {
           })
         }
       });
-      return;
+      return true;
     }
 
     await this.repo.createNpcAction({
@@ -618,6 +637,7 @@ export class NpcService {
         quantity: resource.gatherResult.quantity
       }
     });
+    return true;
   }
 
   private toActionSummary(action: NpcActionRecord): NpcActionSummaryDto {
@@ -657,7 +677,7 @@ export class NpcService {
       marketFoodStock: marketFood?.quantity ?? 0
     });
 
-    if (intent.intent === "none") return false;
+    if (intent.intent === "none") return { handled: false, acted: false };
 
     if (intent.intent === "eat_food") {
       const item = getFoodItemById(intent.itemId);
@@ -666,7 +686,7 @@ export class NpcService {
         actorId: actor.id,
         hunger: Math.min(5, actor.hunger + (item?.satietyRestore ?? 1))
       });
-      return true;
+      return { handled: true, acted: true };
     }
 
     if (intent.intent === "buy_food" && marketFood) {
@@ -674,13 +694,15 @@ export class NpcService {
         BLACKPINE_MARKET_ID,
         marketFood.itemId
       );
-      if (!lockedMarketFood || lockedMarketFood.quantity < 1) return false;
+      if (!lockedMarketFood || lockedMarketFood.quantity < 1) {
+        return { handled: false, acted: false };
+      }
 
       const lockedActor = await this.repo.findNpcActorForUpdate(actor.id);
-      if (!lockedActor) return false;
+      if (!lockedActor) return { handled: false, acted: false };
 
       const treasury = await this.repo.findMunicipalTreasuryForUpdate(BLACKPINE_MARKET_ID);
-      if (!treasury) return false;
+      if (!treasury) return { handled: false, acted: false };
 
       const quote = calculateMarketQuote({
         direction: "buy",
@@ -689,13 +711,15 @@ export class NpcService {
         targetQuantity: lockedMarketFood.targetQuantity,
         quantity: 1
       });
-      if (lockedActor.copperBalance < quote.totalCopper) return true;
+      if (lockedActor.copperBalance < quote.totalCopper) {
+        return { handled: true, acted: false };
+      }
 
       const stockDebited = await this.repo.decrementMarketInventoryIfAvailable({
         marketInventoryId: lockedMarketFood.id,
         quantity: 1
       });
-      if (!stockDebited) return false;
+      if (!stockDebited) return { handled: false, acted: false };
 
       const paymentDebited = await this.repo.decrementNpcCopperIfAvailable({
         actorId: lockedActor.id,
@@ -706,7 +730,7 @@ export class NpcService {
           marketInventoryId: lockedMarketFood.id,
           quantity: 1
         });
-        return false;
+        return { handled: false, acted: false };
       }
 
       const item = getFoodItemById(lockedMarketFood.itemId);
@@ -742,10 +766,10 @@ export class NpcService {
           taxCopper: quote.taxCopper
         }
       });
-      return true;
+      return { handled: true, acted: true };
     }
 
-    return true;
+    return { handled: true, acted: false };
   }
 
   private async sellNpcSurplusToMarket(actor: NpcActorRecord) {
@@ -969,18 +993,22 @@ export class NpcService {
   }
 
   private async payScheduledNpcWages(actors: NpcActorRecord[], now: Date) {
-    if (!this.isDailyMaintenanceTick(now)) return;
-    if (!actors.some((actor) => getNpcByKey(actor.npcKey)?.paysWages)) return;
+    if (!this.isDailyMaintenanceTick(now)) return [];
+    const payers = actors.filter((actor) => getNpcByKey(actor.npcKey)?.paysWages);
+    if (payers.length === 0) return [];
 
     for (const actor of actors) {
       const npc = getNpcByKey(actor.npcKey);
-      if (!npc || npc.paysWages) continue;
-      await this.payNpcWage(actor.id, BLACKPINE_DAILY_NPC_WAGE_COPPER);
+      if (!npc) continue;
+      await this.payNpcWage(actor.id, npc.wageCopper);
     }
+
+    return payers.map((actor) => actor.id);
   }
 
   private async runBlacksmithMaintenance(actors: NpcActorRecord[], now: Date) {
-    if (!this.isDailyMaintenanceTick(now)) return;
+    if (!this.isDailyMaintenanceTick(now)) return [];
+    const activeActorIds: string[] = [];
 
     for (const actor of actors) {
       if (actor.profession !== "blacksmith") continue;
@@ -997,7 +1025,10 @@ export class NpcService {
         metadata: { itemId: "iron_ore", quantity: BLACKSMITH_REPAIR_ORE_COST },
         createdAt: now
       });
+      activeActorIds.push(actor.id);
     }
+
+    return activeActorIds;
   }
 
   private findSellableInventoryItem(actor: NpcActorRecord, inventory: NpcInventoryRecord[]) {
@@ -1035,6 +1066,18 @@ export class NpcService {
       now.getUTCSeconds() === 0 &&
       now.getUTCMilliseconds() === 0
     );
+  }
+
+  private simulationTickTimestamps(startAt: Date, endedAt: Date) {
+    const timestamps = [startAt.getTime()];
+    const firstHourBoundary = Math.floor(startAt.getTime() / HOUR_MS) * HOUR_MS + HOUR_MS;
+
+    for (let timestamp = firstHourBoundary; timestamp < endedAt.getTime(); timestamp += HOUR_MS) {
+      timestamps.push(timestamp);
+    }
+
+    if (timestamps.at(-1) !== endedAt.getTime()) timestamps.push(endedAt.getTime());
+    return timestamps;
   }
 
   private initialResourceChargesForZone(zoneId: GameLocationId) {

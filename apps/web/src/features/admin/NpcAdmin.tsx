@@ -188,7 +188,7 @@ export function NpcAdmin({ csrfToken }: { csrfToken: string }) {
             {simulation.days} 天仿真健康：{simulation.health.ok ? "正常" : "异常"}
           </strong>
           <span>
-            行动 {simulation.actionCount} 次 · 空闲 {percentText(simulation.metrics.idleRate)}
+            行动 {simulation.actionCount} 次 · 全程空闲 {percentText(simulation.metrics.idleRate)}
           </span>
           <span>
             资源 {simulation.metrics.resourceStartCharges} →{" "}
