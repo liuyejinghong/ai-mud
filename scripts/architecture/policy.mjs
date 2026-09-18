@@ -32,7 +32,6 @@ const PACKAGE_MODULES = {
 // While the shared barrel is unpartitioned (frozen transitional debt DEBT-026),
 // importing @ai-mud/shared only requires `kernel` to be allowed; the protocol
 // share of the barrel is covered by DEBT-026.
-const SHARED_BARREL_DEBT_ID = "DEBT-026";
 
 const CLIENT_MODULES = new Set(["client_session", "client_text", "client_pixel"]);
 const PURE_MODULES = new Set(["kernel", "content", "rules", "protocol"]);
@@ -75,9 +74,7 @@ function globToRegExp(glob) {
   const esc = glob
     .replace(/[.+^${}()|[\]\\]/g, "\\$&") // escapes braces to \{ \} as well
     .replace(/\\{([^}]+)\\\}/g, (_, alt) => "(?:" + alt.split(",").join("|") + ")") // expand alternation after escaping
-    .replace(/\*\*/g, "\u0000")
-    .replace(/\*/g, "[^/]*")
-    .replace(/\u0000/g, ".*");
+    .replace(/\*/g, "[^/]*");
   return new RegExp(`^${esc}$`);
 }
 
@@ -94,13 +91,9 @@ function snakeToCamel(s) {
 export function matchDebtEntry(entry, v) {
   const globs = expandDebtGlobs(entry);
   switch (v.rule) {
-    case RULES.DISALLOWED_EDGE:
-    case RULES.DISALLOWED_PACKAGE_EDGE: {
+    case RULES.DISALLOWED_EDGE: {
       if (!edgeRuleIds(entry).has(v.rule)) return false;
       if (!entryMatchesSource(entry, v.from)) return false;
-      if (v.rule === RULES.DISALLOWED_PACKAGE_EDGE) {
-        return globs.length > 0 && globs.some((re) => re.test(v.to ?? "")) && (entry.symbol ?? "").includes(v.toPackage ?? "");
-      }
       if (globs.length > 0) return globs.some((re) => re.test(v.toPath ?? ""));
       return entryMentionsFile(entry, v.toPath ?? "");
     }
@@ -209,7 +202,6 @@ export async function runCruise(rootDir) {
 
 export function edgeCheck(cruiseOutput, rootDir, boundaries, catalog, debt) {
   const index = new Map(boundaries.files.map((f) => [f.path, f]));
-  const moduleOf = (p) => index.get(p)?.module ?? null;
   const allowed = new Map(catalog.modules.map((m) => [m.id, new Set(m.allowedDependencies)]));
   const violations = [];
   const matched = [];
@@ -384,14 +376,13 @@ export function layerRestrictionChecks(rootDir, boundaries, cruiseOutput) {
     }
     // NEG-05: client importing server-side code
     if (CLIENT_MODULES.has(meta.module)) {
+      if (/\bfrom\s+["']node:/.test(src)) {
+        violations.push({ rule: RULES.CLIENT_SERVER_BOUNDARY, from: rel, to: "node builtin", message: "client module imports node builtin" });
+      }
       for (const dep of mod.dependencies ?? []) {
         const t = normalizeTarget(rootDir, dep.resolved);
         if (t.path && (t.path.startsWith("apps/server/") || /\/server\//.test(t.path))) {
           violations.push({ rule: RULES.CLIENT_SERVER_BOUNDARY, from: rel, toPath: t.path, message: "client module imports server code" });
-        }
-        if (/\bfrom\s+["']node:/.test(src)) {
-          violations.push({ rule: RULES.CLIENT_SERVER_BOUNDARY, from: rel, to: "node builtin", message: "client module imports node builtin" });
-          break;
         }
       }
     }
@@ -467,14 +458,13 @@ export function columnWriteCheck(rootDir, boundaries, debt) {
       }
       // find the table this setter targets: nearest preceding .update(<ident>)
       const before = src.slice(0, m.index);
-      const um = before.match(/\.update\s*\(\s*([A-Za-z_$][\w$]*)\s*\)(?![\s\S]*\.update\s*\(\s*[A-Za-z_$][\w$]*\s*\)[\s\S]*$)/);
       const body = src.slice(start, depthEnd);
       if (/[.]{3}|\[\s*[^\]"']+\]/.test(body)) {
         pushWithDebtCheck({ rule: RULES.UNANALYZABLE_SQL_WRITE, from: f.path, to: enclosingFunction(src, m.index), message: "spread/computed key in .set() — requires manual review" });
         continue;
       }
-      if (!um) continue;
-      const table = um[1];
+      const table = [...before.matchAll(/\.update\s*\(\s*([A-Za-z_$][\w$]*)\s*\)/g)].at(-1)?.[1];
+      if (!table) continue;
       const ownerMap = COLUMN_OWNERSHIP[table];
       if (!ownerMap) continue;
       const keys = [...body.matchAll(/(?:^|[,{]\s*)([A-Za-z_$][\w$]*)\s*:/g)].map((x) => x[1]);
@@ -518,7 +508,10 @@ export async function analyze(rootDir) {
   const filesOnDisk = listSourceFiles(rootDir);
   const coverage = coverageCheck(filesOnDisk, boundaries);
   const violations = [...coverage.violations];
-  const matched = coverage.dupes.map((p) => ({ rule: "DUPLICATE_OWNERSHIP", from: p }));
+  const matched = [];
+  for (const p of coverage.dupes) {
+    violations.push({ rule: "DUPLICATE_OWNERSHIP", from: p, message: "file classified more than once in module-boundaries.json" });
+  }
 
   let cruiseOutput = { modules: [] };
   try {
