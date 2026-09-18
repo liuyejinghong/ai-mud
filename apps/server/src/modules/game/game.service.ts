@@ -875,6 +875,7 @@ export class GameService {
   async claimMunicipalRelief(accountId: string): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
+      const assets = this.options.assetMutations?.(tx) ?? new AssetMutationService(tx);
       const now = new Date();
 
       await this.ensureMarketInventory(repo);
@@ -951,11 +952,11 @@ export class GameService {
       let source: "market" | "system" = "system";
       let marketInventoryId: string | null = null;
       for (const candidate of quotedMarketFood) {
-        const debited = await repo.decrementMarketInventoryAboveReserve({
-          marketInventoryId: candidate.marketItem.id,
-          quantity: 1,
-          reserveQuantity: MUNICIPAL_RELIEF_MARKET_RESERVE
-        });
+        const debited = await assets.debitMarketStockAboveReserve(
+          candidate.marketItem.id,
+          1,
+          MUNICIPAL_RELIEF_MARKET_RESERVE
+        );
         if (!debited) continue;
         grantedItemId = candidate.item.id;
         source = "market";
@@ -1246,11 +1247,16 @@ export class GameService {
   ): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
+      const assets = this.options.assetMutations?.(tx) ?? new AssetMutationService(tx);
       const character = await this.requireRepairContext(repo, accountId);
       const equipment = await this.requireEquipmentForUpdate(repo, character.id, input.equipmentId);
-      await this.repairEquipmentRecords(repo, new LedgerService(new LedgerRepository(tx)), character, [
-        equipment
-      ]);
+      await this.repairEquipmentRecords(
+        repo,
+        assets,
+        new LedgerService(new LedgerRepository(tx)),
+        character,
+        [equipment]
+      );
       return this.buildState(repo, accountId, new Date());
     });
   }
@@ -1258,6 +1264,7 @@ export class GameService {
   async repairAllEquipment(accountId: string): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
+      const assets = this.options.assetMutations?.(tx) ?? new AssetMutationService(tx);
       const character = await this.requireRepairContext(repo, accountId);
       const equipment = await this.listEquippedEquipment(repo, character.id);
       const lockedEquipment: EquipmentRecord[] = [];
@@ -1267,6 +1274,7 @@ export class GameService {
       }
       await this.repairEquipmentRecords(
         repo,
+        assets,
         new LedgerService(new LedgerRepository(tx)),
         character,
         lockedEquipment.filter((item) => calculateEquipmentRepairQuote(item) !== null)
@@ -1640,6 +1648,7 @@ export class GameService {
 
   private async repairEquipmentRecords(
     repo: GameRepository,
+    assets: AssetMutationPort,
     ledger: LedgerService,
     character: CharacterRecord,
     equipment: EquipmentRecord[]
@@ -1668,10 +1677,10 @@ export class GameService {
       throw new GameServiceError("VALIDATION_ERROR", "基础铁矿石不足。");
     }
 
-    const paymentDebited = await repo.decrementCharacterCopperIfAvailable({
-      characterId: character.id,
-      amount: totalCopper
-    });
+    const paymentDebited = await assets.debitCharacterCopperIfAvailable(
+      character.id,
+      totalCopper
+    );
     if (!paymentDebited) {
       throw new GameServiceError("VALIDATION_ERROR", "铜币不足。");
     }

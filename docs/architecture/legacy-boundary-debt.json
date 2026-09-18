@@ -205,54 +205,6 @@
       "severity": "target_blocking"
     },
     {
-      "id": "DEBT-016",
-      "ruleId": "CROSS_OWNER_COLUMN_WRITE",
-      "source": "characters.copper_balance",
-      "target": "目标唯一写所有者：assets",
-      "symbol": "game.repository.updateCharacterCopper:504 / incrementCharacterCopper:514 / decrementCharacterCopperIfAvailable:521；npc-task.repository.incrementCharacterCopper:233；dialogue-resource-transfer.repository:41",
-      "evidence": "三个模块目录写同一余额列",
-      "reason": "PC-02 共表列归属债务",
-      "fixTask": "ARCH-03（assets 统一出入账；迁移顺序按 ARCH-03：市场→任务→赠予→NPC→角色）",
-      "removalCondition": "非 assets 模块无该列写路径",
-      "severity": "target_blocking"
-    },
-    {
-      "id": "DEBT-017",
-      "ruleId": "CROSS_OWNER_COLUMN_WRITE",
-      "source": "world_actors.copper_balance",
-      "target": "目标唯一写所有者：assets",
-      "symbol": "npc.repository.{incrementNpcCopper:298,decrementNpcCopperIfAvailable:311,updateNpcActor copper 字段}；npc-task.repository.{reserveNpcCopper:187,incrementNpcCopper:206}；dialogue-resource-transfer.repository:29",
-      "evidence": "三个模块目录写同一余额列",
-      "reason": "PC-02 共表列归属债务",
-      "fixTask": "ARCH-03",
-      "removalCondition": "非 assets 模块无该列写路径",
-      "severity": "target_blocking"
-    },
-    {
-      "id": "DEBT-018",
-      "ruleId": "CROSS_OWNER_COLUMN_WRITE",
-      "source": "market_inventory.quantity",
-      "target": "目标唯一写所有者：assets（价格/成交语义归 economy）",
-      "symbol": "game.repository.{upsertMarketInventory:940,setMarketInventoryQuantity:981,decrement...:991,1012,incrementMarketInventory:1032}；npc.repository.{setNpcInventoryItem 市场同名族:546,556,576}",
-      "evidence": "game+npc 两套增减/绝对set实现并存（绝对 set 当前玩家路径未用但存活）",
-      "reason": "PC-02 债务；绝对 set 旁路是 NEG-07 型风险点",
-      "fixTask": "ARCH-03（economy 报价 + assets 库存出入；删除绝对 set 旁路）",
-      "removalCondition": "仅 assets persistence 写 quantity",
-      "severity": "target_blocking"
-    },
-    {
-      "id": "DEBT-019",
-      "ruleId": "CROSS_OWNER_COLUMN_WRITE",
-      "source": "municipal_treasury.copper_balance",
-      "target": "目标唯一写所有者：assets",
-      "symbol": "game.repository.{increment:1067,decrement...:1080}；npc.repository.{create:222,update:460,increment:470,decrement:483}",
-      "evidence": "game+npc 双写；create 仅 npc 侧",
-      "reason": "PC-02 债务",
-      "fixTask": "ARCH-03",
-      "removalCondition": "仅 assets persistence 写金库",
-      "severity": "target_blocking"
-    },
-    {
       "id": "DEBT-020",
       "ruleId": "CROSS_OWNER_COLUMN_WRITE",
       "source": "npc_items.quantity",
@@ -670,6 +622,11 @@
       "date": "2026-09-18",
       "kind": "ARCH-03b fixture registration",
       "detail": "新增 DEBT-042：任务服务测试的 assets 端口桩与物品服务导入登记。"
+    },
+    {
+      "date": "2026-09-18",
+      "kind": "debt retirement (ARCH-03c, npc/character flows)",
+      "detail": "销账 DEBT-016/DEBT-017/DEBT-018/DEBT-019：铜币、市场库存、金库的全部可变余额写入现仅存在于 AssetMutationService（assets 模块）；npc.repository/game.repository 的对应 SQL 已删除；updateNpcActor 入参的 copperBalance 字段一并移除。DEBT-020（npc_items 数量）按计划保留至 ItemService 统一切片。"
     }
   ]
 }

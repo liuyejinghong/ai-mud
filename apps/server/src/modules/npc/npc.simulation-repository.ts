@@ -1,5 +1,6 @@
 import type { NpcDefinition } from "@ai-mud/content";
 import type { GameLocationId, GridPositionDto, ItemId, NpcSimulationReportDto } from "@ai-mud/shared";
+import type { AssetMutationPort } from "../ledger/asset-mutation.service.js";
 import { NpcService } from "./npc.service.js";
 import type {
   NpcActionRecord,
@@ -166,7 +167,6 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
     actorId: string;
     currentLocation?: GameLocationId;
     position?: GridPositionDto | null;
-    copperBalance?: number;
     hunger?: number;
     lastHungerSettledAt?: Date;
   }) {
@@ -174,22 +174,8 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
     if (!actor) throw new Error("NPC actor not found");
     if (input.currentLocation !== undefined) actor.currentLocation = input.currentLocation;
     if ("position" in input) actor.position = input.position ?? null;
-    if (input.copperBalance !== undefined) actor.copperBalance = input.copperBalance;
     if (input.hunger !== undefined) actor.hunger = input.hunger;
     if (input.lastHungerSettledAt) actor.lastHungerSettledAt = cloneDate(input.lastHungerSettledAt);
-  }
-
-  async decrementNpcCopperIfAvailable(input: { actorId: string; amount: number }) {
-    const actor = this.actors.find((entry) => entry.id === input.actorId);
-    if (!actor || actor.copperBalance < input.amount) return false;
-    actor.copperBalance -= input.amount;
-    return true;
-  }
-
-  async incrementNpcCopper(input: { actorId: string; delta: number }) {
-    const actor = this.actors.find((entry) => entry.id === input.actorId);
-    if (!actor) throw new Error("NPC actor not found");
-    actor.copperBalance += input.delta;
   }
 
   async decrementNpcInventoryIfAvailable(input: {
@@ -282,33 +268,6 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
     if (input.lastRefreshedAt) resource.lastRefreshedAt = cloneDate(input.lastRefreshedAt);
   }
 
-  async updateMunicipalTreasury(input: {
-    settlementId: typeof BLACKPINE_MARKET_ID;
-    copperBalance: number;
-  }) {
-    this.treasury = { ...input };
-  }
-
-  async decrementMunicipalTreasuryIfAvailable(input: {
-    settlementId: typeof BLACKPINE_MARKET_ID;
-    amount: number;
-  }) {
-    if (!this.treasury || this.treasury.settlementId !== input.settlementId) return false;
-    if (this.treasury.copperBalance < input.amount) return false;
-    this.treasury.copperBalance -= input.amount;
-    return true;
-  }
-
-  async incrementMunicipalTreasury(input: {
-    settlementId: typeof BLACKPINE_MARKET_ID;
-    delta: number;
-  }) {
-    if (!this.treasury || this.treasury.settlementId !== input.settlementId) {
-      throw new Error("Municipal treasury not found");
-    }
-    this.treasury.copperBalance += input.delta;
-  }
-
   async listMarketInventory(settlementId: typeof BLACKPINE_MARKET_ID) {
     return this.marketInventory.filter((item) => item.settlementId === settlementId);
   }
@@ -324,28 +283,6 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
     );
   }
 
-  async setMarketInventoryQuantity(input: { marketInventoryId: string; quantity: number }) {
-    const item = this.marketInventory.find((entry) => entry.id === input.marketInventoryId);
-    if (!item) throw new Error("Market item not found");
-    item.quantity = input.quantity;
-  }
-
-  async decrementMarketInventoryIfAvailable(input: {
-    marketInventoryId: string;
-    quantity: number;
-  }) {
-    const item = this.marketInventory.find((entry) => entry.id === input.marketInventoryId);
-    if (!item || item.quantity < input.quantity) return false;
-    item.quantity -= input.quantity;
-    return true;
-  }
-
-  async incrementMarketInventory(input: { marketInventoryId: string; quantity: number }) {
-    const item = this.marketInventory.find((entry) => entry.id === input.marketInventoryId);
-    if (!item) throw new Error("Market item not found");
-    item.quantity += input.quantity;
-  }
-
   async createNpcMarketTransaction() {
     this.marketTransactionCount += 1;
   }
@@ -358,11 +295,87 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
 // Simulation orchestration entry: clones the live world into an in-memory
 // snapshot and runs the settlement loop there. Lives beside the snapshot
 // repository so the production NpcService never imports simulation fixtures.
+export function simulationAssets(repo: NpcSimulationRepository): AssetMutationPort {
+  return {
+    async debitNpcCopperIfAvailable(actorId: string, amount: number) {
+      const actor = await repo.findNpcActorForUpdate(actorId);
+      if (!actor || actor.copperBalance < amount) return false;
+      actor.copperBalance -= amount;
+      return true;
+    },
+    async creditNpcCopper(actorId: string, amount: number) {
+      const actor = await repo.findNpcActorForUpdate(actorId);
+      if (!actor) throw new Error("NPC actor not found");
+      actor.copperBalance += amount;
+    },
+    async creditTreasury(settlementId: string, amount: number) {
+      const treasury = await repo.findMunicipalTreasuryForUpdate(
+        settlementId as typeof BLACKPINE_MARKET_ID
+      );
+      if (!treasury) throw new Error("Municipal treasury not found");
+      treasury.copperBalance += amount;
+    },
+    async debitTreasuryIfAvailable(settlementId: string, amount: number) {
+      const treasury = await repo.findMunicipalTreasuryForUpdate(
+        settlementId as typeof BLACKPINE_MARKET_ID
+      );
+      if (!treasury || treasury.copperBalance < amount) return false;
+      treasury.copperBalance -= amount;
+      return true;
+    },
+    async debitMarketStockIfAvailable(marketInventoryId: string, quantity: number) {
+      const item = (await repo.listMarketInventory(BLACKPINE_MARKET_ID)).find(
+        (entry) => entry.id === marketInventoryId
+      );
+      if (!item || item.quantity < quantity) return false;
+      item.quantity -= quantity;
+      return true;
+    },
+    async debitMarketStockAboveReserve(
+      marketInventoryId: string,
+      quantity: number,
+      reserveQuantity: number
+    ) {
+      const item = (await repo.listMarketInventory(BLACKPINE_MARKET_ID)).find(
+        (entry) => entry.id === marketInventoryId
+      );
+      if (!item || item.quantity - quantity < reserveQuantity) return false;
+      item.quantity -= quantity;
+      return true;
+    },
+    async creditMarketStock(marketInventoryId: string, quantity: number) {
+      const item = (await repo.listMarketInventory(BLACKPINE_MARKET_ID)).find(
+        (entry) => entry.id === marketInventoryId
+      );
+      if (!item) throw new Error("Market item not found");
+      item.quantity += quantity;
+    },
+    async debitCharacterCopperIfAvailable() {
+      throw new Error("Character assets are not part of NPC simulation");
+    },
+    async creditCharacterCopper() {
+      throw new Error("Character assets are not part of NPC simulation");
+    },
+    async reserveNpcCopper() {
+      throw new Error("NPC copper reserve is not used by NPC flows");
+    },
+    async findReceiptForUpdate() {
+      throw new Error("Command receipts are not part of NPC simulation");
+    },
+    async claimReceipt() {
+      throw new Error("Command receipts are not part of NPC simulation");
+    },
+    async saveReceiptResult() {
+      throw new Error("Command receipts are not part of NPC simulation");
+    }
+  };
+}
+
 export async function runNpcSimulationOnSnapshot(
   liveRepo: NpcRepositoryPort,
   days: number,
   startAt: Date
 ): Promise<NpcSimulationReportDto> {
   const simulationRepo = await NpcSimulationRepository.fromLive(liveRepo);
-  return new NpcService(simulationRepo).runNpcSimulationInPlace(days, startAt);
+  return new NpcService(simulationRepo, undefined, simulationAssets(simulationRepo)).runNpcSimulationInPlace(days, startAt);
 }

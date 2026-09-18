@@ -168,7 +168,6 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
     actorId: string;
     currentLocation?: GameLocationId;
     position?: { x: number; y: number } | null;
-    copperBalance?: number;
     hunger?: number;
     lastHungerSettledAt?: Date;
   }) {
@@ -176,25 +175,10 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
     if (!actor) throw new Error("actor not found");
     if (input.currentLocation !== undefined) actor.currentLocation = input.currentLocation;
     if ("position" in input) actor.position = input.position ?? null;
-    if (input.copperBalance !== undefined) actor.copperBalance = input.copperBalance;
     if (input.hunger !== undefined) actor.hunger = input.hunger;
     if (input.lastHungerSettledAt !== undefined) {
       actor.lastHungerSettledAt = input.lastHungerSettledAt;
     }
-  }
-
-  async decrementNpcCopperIfAvailable(input: { actorId: string; amount: number }) {
-    if (this.failNpcCopperDebit) return false;
-    const actor = this.actors.find((entry) => entry.id === input.actorId);
-    if (!actor || actor.copperBalance < input.amount) return false;
-    actor.copperBalance -= input.amount;
-    return true;
-  }
-
-  async incrementNpcCopper(input: { actorId: string; delta: number }) {
-    const actor = this.actors.find((entry) => entry.id === input.actorId);
-    if (!actor) throw new Error("actor not found");
-    actor.copperBalance += input.delta;
   }
 
   async decrementNpcInventoryIfAvailable(input: {
@@ -282,39 +266,8 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
     if (input.lastRefreshedAt) resource.lastRefreshedAt = input.lastRefreshedAt;
   }
 
-  async updateMunicipalTreasury(input: {
-    settlementId: "blackpine_outpost";
-    copperBalance: number;
-  }) {
-    if (!this.treasury || this.treasury.settlementId !== input.settlementId) {
-      throw new Error("treasury not found");
-    }
-    this.treasury.copperBalance = input.copperBalance;
-  }
-
   async findMunicipalTreasuryForUpdate(settlementId: "blackpine_outpost") {
     return this.findMunicipalTreasury(settlementId);
-  }
-
-  async decrementMunicipalTreasuryIfAvailable(input: {
-    settlementId: "blackpine_outpost";
-    amount: number;
-  }) {
-    if (this.failTreasuryDebit) return false;
-    if (!this.treasury || this.treasury.settlementId !== input.settlementId) return false;
-    if (this.treasury.copperBalance < input.amount) return false;
-    this.treasury.copperBalance -= input.amount;
-    return true;
-  }
-
-  async incrementMunicipalTreasury(input: {
-    settlementId: "blackpine_outpost";
-    delta: number;
-  }) {
-    if (!this.treasury || this.treasury.settlementId !== input.settlementId) {
-      throw new Error("treasury not found");
-    }
-    this.treasury.copperBalance += input.delta;
   }
 
   async createNpcMarketTransaction(input: {
@@ -345,37 +298,6 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
     return item?.settlementId === settlementId ? item : null;
   }
 
-  async setMarketInventoryQuantity(input: { marketInventoryId: string; quantity: number }) {
-    for (const item of this.marketInventory.values()) {
-      if (item.id === input.marketInventoryId) {
-        item.quantity = input.quantity;
-        return;
-      }
-    }
-    throw new Error("market item not found");
-  }
-
-  async decrementMarketInventoryIfAvailable(input: {
-    marketInventoryId: string;
-    quantity: number;
-  }) {
-    if (this.failMarketDebit) return false;
-    const item = [...this.marketInventory.values()].find(
-      (entry) => entry.id === input.marketInventoryId
-    );
-    if (!item || item.quantity < input.quantity) return false;
-    item.quantity -= input.quantity;
-    return true;
-  }
-
-  async incrementMarketInventory(input: { marketInventoryId: string; quantity: number }) {
-    const item = [...this.marketInventory.values()].find(
-      (entry) => entry.id === input.marketInventoryId
-    );
-    if (!item) throw new Error("market item not found");
-    item.quantity += input.quantity;
-  }
-
   seedMarketItem(input: {
     itemId: string;
     quantity: number;
@@ -391,6 +313,104 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
   }
 }
 
+class FakeAssets {
+  assetCalls = 0;
+
+  constructor(private readonly repo: InMemoryNpcRepository) {}
+
+  private marketItem(marketInventoryId: string) {
+    return [...this.repo.marketInventory.values()].find(
+      (entry) => entry.id === marketInventoryId
+    );
+  }
+
+  async debitNpcCopperIfAvailable(actorId: string, amount: number) {
+    this.assetCalls += 1;
+    if (this.repo.failNpcCopperDebit) return false;
+    const actor = this.repo.actors.find((entry) => entry.id === actorId);
+    if (!actor || actor.copperBalance < amount) return false;
+    actor.copperBalance -= amount;
+    return true;
+  }
+
+  async creditNpcCopper(actorId: string, amount: number) {
+    this.assetCalls += 1;
+    const actor = this.repo.actors.find((entry) => entry.id === actorId);
+    if (!actor) throw new Error("actor not found");
+    actor.copperBalance += amount;
+  }
+
+  async creditTreasury(settlementId: string, amount: number) {
+    this.assetCalls += 1;
+    if (!this.repo.treasury || this.repo.treasury.settlementId !== settlementId) {
+      throw new Error("treasury not found");
+    }
+    this.repo.treasury.copperBalance += amount;
+  }
+
+  async debitTreasuryIfAvailable(settlementId: string, amount: number) {
+    this.assetCalls += 1;
+    if (this.repo.failTreasuryDebit) return false;
+    if (!this.repo.treasury || this.repo.treasury.settlementId !== settlementId) return false;
+    if (this.repo.treasury.copperBalance < amount) return false;
+    this.repo.treasury.copperBalance -= amount;
+    return true;
+  }
+
+  async debitMarketStockIfAvailable(marketInventoryId: string, quantity: number) {
+    this.assetCalls += 1;
+    if (this.repo.failMarketDebit) return false;
+    const item = this.marketItem(marketInventoryId);
+    if (!item || item.quantity < quantity) return false;
+    item.quantity -= quantity;
+    return true;
+  }
+
+  async debitMarketStockAboveReserve(
+    marketInventoryId: string,
+    quantity: number,
+    reserveQuantity: number
+  ) {
+    this.assetCalls += 1;
+    if (this.repo.failMarketDebit) return false;
+    const item = this.marketItem(marketInventoryId);
+    if (!item || item.quantity - quantity < reserveQuantity) return false;
+    item.quantity -= quantity;
+    return true;
+  }
+
+  async creditMarketStock(marketInventoryId: string, quantity: number) {
+    this.assetCalls += 1;
+    const item = this.marketItem(marketInventoryId);
+    if (!item) throw new Error("market item not found");
+    item.quantity += quantity;
+  }
+
+  async debitCharacterCopperIfAvailable(): Promise<boolean> {
+    throw new Error("not used in NPC tests");
+  }
+
+  async creditCharacterCopper(): Promise<void> {
+    throw new Error("not used in NPC tests");
+  }
+
+  async reserveNpcCopper(): Promise<boolean> {
+    throw new Error("not used in NPC tests");
+  }
+
+  async findReceiptForUpdate(): Promise<null> {
+    throw new Error("not used in NPC tests");
+  }
+
+  async claimReceipt(): Promise<boolean> {
+    throw new Error("not used in NPC tests");
+  }
+
+  async saveReceiptResult(): Promise<void> {
+    throw new Error("not used in NPC tests");
+  }
+}
+
 describe("NpcService", () => {
   function recordingLedger(entries: unknown[]): CopperLedgerWriter {
     return {
@@ -398,6 +418,14 @@ describe("NpcService", () => {
         entries.push(input);
       }
     };
+  }
+
+  function serviceWithAssets(repo: InMemoryNpcRepository, ledger?: CopperLedgerWriter) {
+    const assets = new FakeAssets(repo);
+    const service = ledger
+      ? new NpcService(repo, ledger, assets)
+      : new NpcService(repo, undefined, assets);
+    return { service, assets };
   }
 
   it("seeds persistent NPC actors, shared resources, and municipal treasury", async () => {
@@ -534,17 +562,36 @@ describe("NpcService", () => {
 
   it("pays wages from municipal treasury instead of minting coins", async () => {
     const repo = new InMemoryNpcRepository();
-    const service = new NpcService(repo);
+    const { service, assets } = serviceWithAssets(repo);
     const now = new Date("2026-07-01T06:00:00.000Z");
 
     await service.ensureWorldSeeded(now);
     const farmer = repo.actors.find((actor) => actor.npcKey === "blackpine_farmer_mara")!;
     const previousCopper = farmer.copperBalance;
 
-    await service.payNpcWage(farmer.id, 25);
+    const payment = await service.payNpcWage(farmer.id, 25);
 
+    expect(payment).toEqual({ paidCopper: 25, shortfallCopper: 0 });
     expect(farmer.copperBalance).toBe(previousCopper + 25);
     expect(repo.treasury?.copperBalance).toBe(9_975);
+    expect(assets.assetCalls).toBe(2);
+  });
+
+  it("pays partial wages when the municipal treasury cannot cover the request", async () => {
+    const repo = new InMemoryNpcRepository();
+    const { service } = serviceWithAssets(repo);
+    const now = new Date("2026-07-01T06:00:00.000Z");
+
+    await service.ensureWorldSeeded(now);
+    const farmer = repo.actors.find((actor) => actor.npcKey === "blackpine_farmer_mara")!;
+    repo.treasury!.copperBalance = 10;
+    const previousCopper = farmer.copperBalance;
+
+    const payment = await service.payNpcWage(farmer.id, 25);
+
+    expect(payment).toEqual({ paidCopper: 10, shortfallCopper: 15 });
+    expect(farmer.copperBalance).toBe(previousCopper + 10);
+    expect(repo.treasury?.copperBalance).toBe(0);
   });
 
   it("settles NPC hunger decay during world ticks", async () => {
@@ -586,7 +633,7 @@ describe("NpcService", () => {
 
   it("pays scheduled NPC wages from the municipal treasury on the daily tick", async () => {
     const repo = new InMemoryNpcRepository();
-    const service = new NpcService(repo);
+    const { service, assets } = serviceWithAssets(repo);
     const tickAt = new Date("2026-07-01T00:00:00.000Z");
 
     await service.ensureWorldSeeded(tickAt);
@@ -606,11 +653,12 @@ describe("NpcService", () => {
     expect(blacksmith.copperBalance).toBe(155);
     expect(officer.copperBalance).toBe(120);
     expect(repo.treasury?.copperBalance).toBe(9_870);
+    expect(assets.assetCalls).toBeGreaterThan(0);
   });
 
   it("sells gathered NPC inventory into the municipal market with an actor ledger", async () => {
     const repo = new InMemoryNpcRepository();
-    const service = new NpcService(repo);
+    const { service, assets } = serviceWithAssets(repo);
     const now = new Date("2026-07-01T08:00:00.000Z");
 
     await service.ensureWorldSeeded(now);
@@ -635,6 +683,7 @@ describe("NpcService", () => {
     expect(repo.marketInventory.get("wild_berry")?.quantity).toBe(11);
     expect(farmer.copperBalance).toBe(5);
     expect(repo.treasury?.copperBalance).toBe(9_995);
+    expect(assets.assetCalls).toBe(3);
     expect(repo.transactions).toEqual([
       expect.objectContaining({
         actorId: farmer.id,
@@ -668,7 +717,7 @@ describe("NpcService", () => {
     repo.failNpcInventoryDebit = true;
     const ledgerEntries: unknown[] = [];
 
-    await new NpcService(repo, recordingLedger(ledgerEntries)).settleNpcWorld(now);
+    await new NpcService(repo, recordingLedger(ledgerEntries), new FakeAssets(repo)).settleNpcWorld(now);
 
     expect(await repo.listNpcInventory(farmer.id)).toEqual([
       { itemId: "wild_berry", quantity: 2 }
@@ -697,7 +746,7 @@ describe("NpcService", () => {
     repo.failTreasuryDebit = true;
     const ledgerEntries: unknown[] = [];
 
-    await new NpcService(repo, recordingLedger(ledgerEntries)).settleNpcWorld(now);
+    await new NpcService(repo, recordingLedger(ledgerEntries), new FakeAssets(repo)).settleNpcWorld(now);
 
     expect(await repo.listNpcInventory(farmer.id)).toEqual([
       { itemId: "wild_berry", quantity: 2 }
@@ -711,7 +760,7 @@ describe("NpcService", () => {
 
   it("reserves blacksmith iron ore and consumes it for daily forge upkeep", async () => {
     const repo = new InMemoryNpcRepository();
-    const service = new NpcService(repo);
+    const { service } = serviceWithAssets(repo);
     const tickAt = new Date("2026-07-01T00:00:00.000Z");
 
     await service.ensureWorldSeeded(tickAt);
@@ -746,7 +795,7 @@ describe("NpcService", () => {
 
   it("lets hungry NPCs buy and eat market food before working", async () => {
     const repo = new InMemoryNpcRepository();
-    const service = new NpcService(repo);
+    const { service, assets } = serviceWithAssets(repo);
     const now = new Date("2026-07-01T08:00:00.000Z");
 
     await service.ensureWorldSeeded(now);
@@ -767,6 +816,7 @@ describe("NpcService", () => {
     expect(miner.copperBalance).toBe(84);
     expect(repo.treasury?.copperBalance).toBe(10_016);
     expect(repo.marketInventory.get("wild_berry")?.quantity).toBe(2);
+    expect(assets.assetCalls).toBe(3);
     expect(await repo.findActiveNpcAction(miner.id)).toBeNull();
     expect(repo.transactions).toContainEqual(
       expect.objectContaining({
@@ -799,7 +849,7 @@ describe("NpcService", () => {
     repo.failMarketDebit = true;
     const ledgerEntries: unknown[] = [];
 
-    await new NpcService(repo, recordingLedger(ledgerEntries)).settleNpcWorld(now);
+    await new NpcService(repo, recordingLedger(ledgerEntries), new FakeAssets(repo)).settleNpcWorld(now);
 
     expect(miner.hunger).toBe(1);
     expect(miner.copperBalance).toBe(100);
@@ -826,7 +876,7 @@ describe("NpcService", () => {
     repo.failNpcCopperDebit = true;
     const ledgerEntries: unknown[] = [];
 
-    await new NpcService(repo, recordingLedger(ledgerEntries)).settleNpcWorld(now);
+    await new NpcService(repo, recordingLedger(ledgerEntries), new FakeAssets(repo)).settleNpcWorld(now);
 
     expect(miner.hunger).toBe(1);
     expect(miner.copperBalance).toBe(100);
@@ -849,8 +899,41 @@ describe("NpcService", () => {
 
     expect(needsPath).not.toContain("setMarketInventoryQuantity");
     expect(needsPath).not.toContain("updateMunicipalTreasury");
+    expect(needsPath).not.toContain("repo.decrementMarketInventoryIfAvailable");
+    expect(needsPath).not.toContain("repo.decrementNpcCopperIfAvailable");
+    expect(needsPath).not.toContain("repo.incrementMarketInventory");
+    expect(needsPath).not.toContain("repo.incrementMunicipalTreasury");
     expect(sellPath).not.toContain("setMarketInventoryQuantity");
     expect(sellPath).not.toContain("updateMunicipalTreasury");
+    expect(sellPath).not.toContain("repo.decrementMunicipalTreasuryIfAvailable");
+    expect(sellPath).not.toContain("repo.incrementMarketInventory");
+    expect(sellPath).not.toContain("repo.incrementNpcCopper");
+  });
+
+  it("routes NPC copper, treasury, and market stock writes through AssetMutationPort", () => {
+    const source = readFileSync(new URL("./npc.service.ts", import.meta.url), "utf8");
+    const needsPath = source.slice(
+      source.indexOf("private async handleNpcNeeds"),
+      source.indexOf("private async sellNpcSurplusToMarket")
+    );
+    const sellPath = source.slice(
+      source.indexOf("private async sellNpcSurplusToMarket"),
+      source.indexOf("private async returnNpcInventoryToMarket")
+    );
+    const wagePath = source.slice(
+      source.indexOf("async payNpcWage"),
+      source.indexOf("async listNpcSummaries")
+    );
+
+    expect(needsPath).toContain("debitMarketStockIfAvailable");
+    expect(needsPath).toContain("debitNpcCopperIfAvailable");
+    expect(needsPath).toContain("creditMarketStock");
+    expect(needsPath).toContain("creditTreasury");
+    expect(sellPath).toContain("debitTreasuryIfAvailable");
+    expect(sellPath).toContain("creditMarketStock");
+    expect(sellPath).toContain("creditNpcCopper");
+    expect(wagePath).toContain("debitTreasuryIfAvailable");
+    expect(wagePath).toContain("creditNpcCopper");
   });
 
   it("keeps hungry NPCs in town when food is unavailable", async () => {
@@ -927,7 +1010,7 @@ describe("NpcService", () => {
 
   it("runs a bounded NPC simulation report against real settlement state", async () => {
     const repo = new InMemoryNpcRepository();
-    const service = new NpcService(repo);
+    const { service } = serviceWithAssets(repo);
     const startAt = new Date("2026-07-01T00:00:00.000Z");
 
     const report = await service.runNpcSimulationInPlace(1, startAt);
@@ -961,7 +1044,7 @@ describe("NpcService", () => {
 
   it("includes daily maintenance when a simulation starts between UTC hour boundaries", async () => {
     const repo = new InMemoryNpcRepository();
-    const service = new NpcService(repo);
+    const { service } = serviceWithAssets(repo);
     const startAt = new Date("2026-07-01T06:37:20.000Z");
 
     await service.ensureWorldSeeded(startAt);

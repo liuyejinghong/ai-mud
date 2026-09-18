@@ -506,23 +506,6 @@ export class GameRepository {
 
 
 
-  async decrementCharacterCopperIfAvailable(input: {
-    characterId: string;
-    amount: number;
-  }): Promise<boolean> {
-    const rows = await this.db
-      .update(characters)
-      .set({ copperBalance: sql`${characters.copperBalance} - ${input.amount}` })
-      .where(
-        and(
-          eq(characters.id, input.characterId),
-          gte(characters.copperBalance, input.amount)
-        )
-      )
-      .returning({ id: characters.id });
-    return rows.length > 0;
-  }
-
   async claimMunicipalReliefCooldown(input: {
     characterId: string;
     claimedAt: Date;
@@ -933,57 +916,21 @@ export class GameRepository {
     baseBuyPriceCopper: number;
     baseSellPriceCopper: number;
   }): Promise<void> {
-    const [existing] = await this.db
-      .select({ id: marketInventory.id })
-      .from(marketInventory)
-      .where(
-        and(
-          eq(marketInventory.settlementId, input.settlementId),
-          eq(marketInventory.itemId, input.itemId)
-        )
-      )
-      .limit(1);
-
-    if (existing) {
-      await this.db
-        .update(marketInventory)
-        .set({
-          quantity: input.quantity,
-          targetQuantity: input.targetQuantity,
-          baseBuyPriceCopper: input.baseBuyPriceCopper,
-          baseSellPriceCopper: input.baseSellPriceCopper,
-          updatedAt: new Date()
-        })
-        .where(eq(marketInventory.id, existing.id));
-      return;
-    }
-
-    await this.db.insert(marketInventory).values(input);
-  }
-
-
-
-  async decrementMarketInventoryAboveReserve(input: {
-    marketInventoryId: string;
-    quantity: number;
-    reserveQuantity: number;
-  }): Promise<boolean> {
-    const rows = await this.db
-      .update(marketInventory)
-      .set({
-        quantity: sql`${marketInventory.quantity} - ${input.quantity}`,
-        updatedAt: new Date()
+    // Seed-only: insert missing rows, skip rows another writer already created.
+    await this.db
+      .insert(marketInventory)
+      .values({
+        settlementId: input.settlementId,
+        itemId: input.itemId,
+        quantity: input.quantity,
+        targetQuantity: input.targetQuantity,
+        baseBuyPriceCopper: input.baseBuyPriceCopper,
+        baseSellPriceCopper: input.baseSellPriceCopper
       })
-      .where(
-        and(
-          eq(marketInventory.id, input.marketInventoryId),
-          gte(marketInventory.quantity, input.reserveQuantity + input.quantity)
-        )
-      )
-      .returning({ id: marketInventory.id });
-    return rows.length > 0;
+      .onConflictDoNothing({
+        target: [marketInventory.settlementId, marketInventory.itemId]
+      });
   }
-
 
   async findMunicipalTreasury(settlementId: string): Promise<{ copperBalance: number } | null> {
     const [row] = await this.db
