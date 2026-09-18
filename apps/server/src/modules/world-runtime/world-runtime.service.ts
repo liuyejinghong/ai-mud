@@ -1,26 +1,24 @@
-import type { WorldRuntimeRepository } from "./world-runtime.repository.js";
+import type { WorldClock } from "./world-clock.js";
+import type { WorldRuntimeRepositoryPort, WorldRuntimeTx } from "./world-runtime.repository.js";
+import { WorldRuntimeRepository } from "./world-runtime.repository.js";
 
 export const NPC_WORLD_RUNTIME_KEY = "npc_world";
 export const WORLD_RUNTIME_TICK_MS = 60_000;
-const DEFAULT_LEASE_MS = 55_000;
 
-function floorToTick(date: Date) {
+export function floorToTick(date: Date) {
   return new Date(Math.floor(date.getTime() / WORLD_RUNTIME_TICK_MS) * WORLD_RUNTIME_TICK_MS);
 }
 
-export interface WorldRuntimeServiceInput {
-  repo: Pick<WorldRuntimeRepository, "acquireLease" | "find" | "releaseLease" | "saveProgress">;
-  ownerId: string;
-  maxStepsPerRun?: number;
-  settleNpcWorld(now: Date): Promise<void>;
-  settleTick?(now: Date, progress: WorldRuntimeProgress): Promise<void>;
-}
+// Runs inside the per-tick transaction, after the runtime row lock is held.
+// Composition binds these closures to module persistence (npc settlement,
+// character-side instance refresh); they must not commit or open transactions.
+export type WorldTickParticipant = (tx: WorldRuntimeTx, tickAt: Date) => Promise<void>;
 
-export interface WorldRuntimeProgress {
-  key: string;
-  lastSettledAt: Date;
-  leaseOwner: string;
-  leaseUntil: Date;
+export interface WorldRuntimeServiceInput {
+  repo: WorldRuntimeRepositoryPort;
+  clock: WorldClock;
+  maxStepsPerRun?: number;
+  participants: readonly WorldTickParticipant[];
 }
 
 export interface WorldRuntimeSettleResult {
@@ -31,54 +29,42 @@ export interface WorldRuntimeSettleResult {
 export class WorldRuntimeService {
   constructor(private readonly input: WorldRuntimeServiceInput) {}
 
-  async settleDue(now: Date = new Date()): Promise<WorldRuntimeSettleResult> {
+  async settleDue(now: Date = this.input.clock.now()): Promise<WorldRuntimeSettleResult> {
     const currentTick = floorToTick(now);
-    const existing = await this.input.repo.find(NPC_WORLD_RUNTIME_KEY);
+    await this.input.repo.ensureRow(NPC_WORLD_RUNTIME_KEY, currentTick);
 
-    if (existing?.leaseUntil && existing.leaseUntil.getTime() > now.getTime()) {
+    const known = await this.input.repo.find(NPC_WORLD_RUNTIME_KEY);
+    const settledUpTo = known?.lastSettledAt ?? currentTick;
+    if (settledUpTo.getTime() + WORLD_RUNTIME_TICK_MS > currentTick.getTime()) {
       return { settledSteps: 0, skipped: true };
     }
 
-    const leaseUntil = new Date(now.getTime() + DEFAULT_LEASE_MS);
-    const leased = await this.input.repo.acquireLease({
-      key: NPC_WORLD_RUNTIME_KEY,
-      ownerId: this.input.ownerId,
-      now,
-      leaseUntil,
-      initialLastSettledAt: currentTick
-    });
-    if (!leased) return { settledSteps: 0, skipped: true };
-
     const maxSteps = Math.max(1, Math.floor(this.input.maxStepsPerRun ?? 60));
-    let cursor = leased.lastSettledAt ?? currentTick;
     let settledSteps = 0;
+    while (settledSteps < maxSteps) {
+      let advanced = false;
+      await this.input.repo.transaction(async (txRepo, tx) => {
+        const locked = await txRepo.lockAndRead(NPC_WORLD_RUNTIME_KEY);
+        const last = locked?.lastSettledAt ?? currentTick;
+        const tickAt = new Date(last.getTime() + WORLD_RUNTIME_TICK_MS);
+        if (tickAt.getTime() > currentTick.getTime()) return; // caught up; commit no-op
 
-    while (
-      cursor.getTime() + WORLD_RUNTIME_TICK_MS <= currentTick.getTime() &&
-      settledSteps < maxSteps
-    ) {
-      cursor = new Date(cursor.getTime() + WORLD_RUNTIME_TICK_MS);
-      const progress = {
-        key: NPC_WORLD_RUNTIME_KEY,
-        lastSettledAt: cursor,
-        leaseOwner: this.input.ownerId,
-        leaseUntil
-      };
-      if (this.input.settleTick) {
-        await this.input.settleTick(cursor, progress);
-      } else {
-        await this.input.settleNpcWorld(cursor);
-        await this.input.repo.saveProgress(progress);
-      }
+        for (const participant of this.input.participants) {
+          await participant(tx, tickAt);
+        }
+        await txRepo.saveProgress({
+          key: NPC_WORLD_RUNTIME_KEY,
+          lastSettledAt: tickAt,
+          now: this.input.clock.now()
+        });
+        advanced = true;
+      });
+      if (!advanced) break;
       settledSteps += 1;
     }
 
-    await this.input.repo.releaseLease({
-      key: NPC_WORLD_RUNTIME_KEY,
-      lastSettledAt: cursor,
-      ownerId: this.input.ownerId
-    });
-
-    return { settledSteps, skipped: false };
+    return settledSteps > 0
+      ? { settledSteps, skipped: false }
+      : { settledSteps: 0, skipped: true };
   }
 }

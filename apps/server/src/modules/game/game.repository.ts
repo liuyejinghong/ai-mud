@@ -7,6 +7,7 @@ import type {
   GridPositionDto,
   ItemId
 } from "@ai-mud/shared";
+import { getZoneById } from "@ai-mud/content";
 import { and, asc, desc, eq, gt, gte, isNull, lte, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import {
@@ -25,6 +26,8 @@ import {
 import { ItemRepository } from "../item/item.repository.js";
 import type { ItemInstanceRecord, ItemLocationType, ItemRarity } from "../item/item.repository.js";
 import { ItemService } from "../item/item.service.js";
+
+const DAY_MS = 24 * 60 * 60_000;
 
 type GameDb = Pick<Db, "delete" | "insert" | "select" | "update">;
 
@@ -1227,6 +1230,35 @@ export class GameRepository {
       .update(mapInstances)
       .set({ resourceCharges: serializeResourceCharges(resourceCharges), updatedAt: new Date() })
       .where(eq(mapInstances.id, mapInstanceId));
+  }
+
+  // Character-side daily instance refresh: the world tick triggers this, but
+  // this persistence is the only writer of personal-instance resource charges
+  // (DEBT-022 adjudication, 2026-09-18).
+  async refreshDueInstanceResources(input: { now: Date }): Promise<number> {
+    const maps = await this.db.select().from(mapInstances);
+    let refreshed = 0;
+    for (const map of maps) {
+      if (map.resourcesRefreshedAt && input.now.getTime() - map.resourcesRefreshedAt.getTime() < DAY_MS) {
+        continue;
+      }
+      const zone = getZoneById(map.zoneId);
+      if (!zone) continue;
+
+      const charges = Object.fromEntries(
+        zone.resources.map((resource) => [resource.id, resource.charges])
+      );
+      await this.db
+        .update(mapInstances)
+        .set({
+          resourceCharges: serializeResourceCharges(charges),
+          resourcesRefreshedAt: input.now,
+          updatedAt: new Date()
+        })
+        .where(eq(mapInstances.id, map.id));
+      refreshed += 1;
+    }
+    return refreshed;
   }
 
   async updateMapEncounterCooldowns(

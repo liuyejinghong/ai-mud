@@ -1,5 +1,6 @@
 import type { NpcDefinition } from "@ai-mud/content";
-import type { GameLocationId, GridPositionDto, ItemId } from "@ai-mud/shared";
+import type { GameLocationId, GridPositionDto, ItemId, NpcSimulationReportDto } from "@ai-mud/shared";
+import { NpcService } from "./npc.service.js";
 import type {
   NpcActionRecord,
   NpcActorRecord,
@@ -125,19 +126,6 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
 
   async listMapInstances() {
     return this.mapInstances;
-  }
-
-  async updateMapResourceCharges(input: {
-    mapInstanceId: string;
-    resourceCharges: Record<string, number>;
-    resourcesRefreshedAt?: Date;
-  }) {
-    const map = this.mapInstances.find((entry) => entry.id === input.mapInstanceId);
-    if (!map) throw new Error("Map instance not found");
-    map.resourceCharges = { ...input.resourceCharges };
-    if (input.resourcesRefreshedAt) {
-      map.resourcesRefreshedAt = cloneDate(input.resourcesRefreshedAt);
-    }
   }
 
   async findMunicipalTreasury(settlementId: typeof BLACKPINE_MARKET_ID) {
@@ -365,4 +353,16 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
   async countNpcMarketTransactions() {
     return this.marketTransactionCount;
   }
+}
+
+// Simulation orchestration entry: clones the live world into an in-memory
+// snapshot and runs the settlement loop there. Lives beside the snapshot
+// repository so the production NpcService never imports simulation fixtures.
+export async function runNpcSimulationOnSnapshot(
+  liveRepo: NpcRepositoryPort,
+  days: number,
+  startAt: Date
+): Promise<NpcSimulationReportDto> {
+  const simulationRepo = await NpcSimulationRepository.fromLive(liveRepo);
+  return new NpcService(simulationRepo).runNpcSimulationInPlace(days, startAt);
 }
