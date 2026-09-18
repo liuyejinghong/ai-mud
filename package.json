@@ -15,10 +15,13 @@
     "db:verify-migrations": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server db:verify-migrations",
     "db:verify-world-reset": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server db:verify-world-reset",
     "verify:npc-simulation": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server verify:npc-simulation",
-    "test:postgres": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server test:integration:postgres"
+    "test:postgres": "if [ -f .env ]; then set -a; . ./.env; set +a; fi; pnpm --filter @ai-mud/server test:integration:postgres",
+    "arch:check": "node scripts/architecture/arch-check.mjs",
+    "arch:test": "node scripts/architecture/arch-test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "dependency-cruiser": "18.3.1",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   },
