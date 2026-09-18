@@ -61,6 +61,12 @@ import {
 import type { Db } from "../../db/client.js";
 import { ItemRepository, type ItemInstanceRecord } from "../item/item.repository.js";
 import { ItemService } from "../item/item.service.js";
+import {
+  AssetMutationService,
+  hashRequest,
+  newCommandId,
+  type AssetMutationPort
+} from "../ledger/asset-mutation.service.js";
 import { LedgerRepository } from "../ledger/ledger.repository.js";
 import { LedgerService } from "../ledger/ledger.service.js";
 import { LobbyRepository } from "../lobby/lobby.repository.js";
@@ -114,7 +120,7 @@ const STARTER_EQUIPMENT: Array<{
 
 export class GameServiceError extends Error {
   constructor(
-    readonly code: "VALIDATION_ERROR",
+    readonly code: "VALIDATION_ERROR" | "CONFLICT",
     message: string
   ) {
     super(message);
@@ -161,6 +167,7 @@ interface CharacterSettlementResult {
 
 export interface GameServiceOptions {
   testGatheringCycleMs?: number | undefined;
+  assetMutations?: (tx: unknown) => AssetMutationPort;
 }
 
 function classMaxHp(classId: CharacterClassId) {
@@ -984,6 +991,7 @@ export class GameService {
   ): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
+      const assets = this.options.assetMutations?.(tx) ?? new AssetMutationService(tx);
       const unlockedCharacter = await this.requireCharacter(repo, accountId);
       const quantity = this.requireTradeQuantity(input.quantity);
       const market = await this.requireMarketInventoryItemForUpdate(repo, input.itemId);
@@ -1009,17 +1017,39 @@ export class GameService {
       if (character.copperBalance < quote.totalCopper) {
         throw new GameServiceError("VALIDATION_ERROR", "铜币不足。");
       }
-      const stockDebited = await repo.decrementMarketInventoryIfAvailable({
-        marketInventoryId: market.id,
-        quantity
+
+      // Command receipt: same command id replays the stored result, same id
+      // with a different payload conflicts. The claim insert is the dedup
+      // gate — it happens before any asset moves.
+      const actorScope = `character:${character.id}`;
+      const commandKind = "market.buy";
+      const commandId = input.commandId ?? newCommandId();
+      const requestHash = hashRequest({ itemId: input.itemId, quantity });
+      const existing = await assets.findReceiptForUpdate(actorScope, commandKind, commandId);
+      if (existing) {
+        if (existing.requestHash !== requestHash) {
+          throw new GameServiceError("CONFLICT", "相同命令编号对应了不同的请求内容。");
+        }
+        return existing.result as GameStateDto;
+      }
+      const claimed = await assets.claimReceipt({
+        actorScope,
+        commandKind,
+        commandId,
+        requestHash
       });
+      if (!claimed) {
+        throw new GameServiceError("CONFLICT", "相同命令正在处理中。");
+      }
+
+      const stockDebited = await assets.debitMarketStockIfAvailable(market.id, quantity);
       if (!stockDebited) {
         throw new GameServiceError("VALIDATION_ERROR", "市政集市库存不足。");
       }
-      const paymentDebited = await repo.decrementCharacterCopperIfAvailable({
-        characterId: character.id,
-        amount: quote.totalCopper
-      });
+      const paymentDebited = await assets.debitCharacterCopperIfAvailable(
+        character.id,
+        quote.totalCopper
+      );
       if (!paymentDebited) {
         throw new GameServiceError("VALIDATION_ERROR", "铜币不足。");
       }
@@ -1028,10 +1058,7 @@ export class GameService {
         throw new GameServiceError("VALIDATION_ERROR", "市政集市金库未初始化。");
       }
 
-      await repo.incrementMunicipalTreasury({
-        settlementId: BLACKPINE_MARKET_ID,
-        delta: quote.totalCopper
-      });
+      await assets.creditTreasury(BLACKPINE_MARKET_ID, quote.totalCopper);
       await repo.grantCharacterItem({
         characterId: character.id,
         itemId: input.itemId,
@@ -1074,7 +1101,9 @@ export class GameService {
         message: `你在市政集市购买了${item.name} x${quantity}。`
       });
 
-      return this.buildState(repo, accountId, new Date());
+      const state = await this.buildState(repo, accountId, new Date());
+      await assets.saveReceiptResult({ actorScope, commandKind, commandId, result: state });
+      return state;
     });
   }
 
@@ -1084,6 +1113,7 @@ export class GameService {
   ): Promise<GameStateDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
+      const assets = this.options.assetMutations?.(tx) ?? new AssetMutationService(tx);
       const unlockedCharacter = await this.requireCharacter(repo, accountId);
       const quantity = this.requireTradeQuantity(input.quantity);
       const market = await this.requireMarketInventoryItemForUpdate(repo, input.itemId);
@@ -1111,10 +1141,32 @@ export class GameService {
         targetQuantity: market.targetQuantity,
         quantity
       });
-      const treasuryDebited = await repo.decrementMunicipalTreasuryIfAvailable({
-        settlementId: BLACKPINE_MARKET_ID,
-        amount: quote.totalCopper
+
+      const actorScope = `character:${character.id}`;
+      const commandKind = "market.sell";
+      const commandId = input.commandId ?? newCommandId();
+      const requestHash = hashRequest({ itemId: input.itemId, quantity });
+      const existing = await assets.findReceiptForUpdate(actorScope, commandKind, commandId);
+      if (existing) {
+        if (existing.requestHash !== requestHash) {
+          throw new GameServiceError("CONFLICT", "相同命令编号对应了不同的请求内容。");
+        }
+        return existing.result as GameStateDto;
+      }
+      const claimed = await assets.claimReceipt({
+        actorScope,
+        commandKind,
+        commandId,
+        requestHash
       });
+      if (!claimed) {
+        throw new GameServiceError("CONFLICT", "相同命令正在处理中。");
+      }
+
+      const treasuryDebited = await assets.debitTreasuryIfAvailable(
+        BLACKPINE_MARKET_ID,
+        quote.totalCopper
+      );
       if (!treasuryDebited) {
         throw new GameServiceError("VALIDATION_ERROR", "市政集市金库余额不足。");
       }
@@ -1126,14 +1178,8 @@ export class GameService {
         reason: "market.sell",
         metadata: { settlementId: BLACKPINE_MARKET_ID, unitPriceCopper: quote.unitPriceCopper }
       });
-      await repo.incrementMarketInventory({
-        marketInventoryId: market.id,
-        quantity
-      });
-      await repo.incrementCharacterCopper({
-        characterId: character.id,
-        delta: quote.totalCopper
-      });
+      await assets.creditMarketStock(market.id, quantity);
+      await assets.creditCharacterCopper(character.id, quote.totalCopper);
       await repo.createMarketTransaction({
         settlementId: BLACKPINE_MARKET_ID,
         characterId: character.id,
@@ -1169,7 +1215,9 @@ export class GameService {
         message: `你向市政集市出售了${item.name} x${quantity}。`
       });
 
-      return this.buildState(repo, accountId, new Date());
+      const state = await this.buildState(repo, accountId, new Date());
+      await assets.saveReceiptResult({ actorScope, commandKind, commandId, result: state });
+      return state;
     });
   }
 

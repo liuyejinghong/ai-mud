@@ -345,16 +345,6 @@ describe("GameRepository affected-row contracts", () => {
   it.each([
     ["character copper", "decrementCharacterCopperIfAvailable", { characterId: "character-1", amount: 10 }],
     [
-      "municipal treasury",
-      "decrementMunicipalTreasuryIfAvailable",
-      { settlementId: "blackpine_outpost", amount: 10 }
-    ],
-    [
-      "market inventory",
-      "decrementMarketInventoryIfAvailable",
-      { marketInventoryId: "market-1", quantity: 2 }
-    ],
-    [
       "municipal relief cooldown",
       "claimMunicipalReliefCooldown",
       {
@@ -374,18 +364,6 @@ describe("GameRepository affected-row contracts", () => {
     await expect(
       (repository[method as keyof GameRepository] as (value: typeof input) => Promise<boolean>)(input)
     ).resolves.toBe(false);
-  });
-
-  it("increments market inventory with an atomic SQL expression", async () => {
-    const db = createUpdateDb([[{ id: "market-1" }]]);
-    const repository = new GameRepository(db as never);
-
-    await repository.incrementMarketInventory({ marketInventoryId: "market-1", quantity: 3 });
-
-    expect(db.set).toHaveBeenCalledTimes(1);
-    const values = db.set.mock.calls[0]![0] as { quantity: unknown };
-    expect(values.quantity).not.toBe(3);
-    expect(values.quantity).toBeTypeOf("object");
   });
 
   it("reports whether an active action was completed", async () => {

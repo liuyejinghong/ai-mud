@@ -512,7 +512,7 @@
         "apps/server/src/modules/lobby/lobby.repository.ts"
       ],
       "targetGlobs": [
-        "apps/server/src/modules/ledger/ledger.service.ts",
+        "apps/server/src/modules/ledger/*",
         "apps/server/src/modules/lobby/lobby.repository.ts"
       ]
     },
@@ -625,6 +625,21 @@
       "targetGlobs": [
         "apps/server/src/modules/{npc,game,ledger}/*"
       ]
+    },
+    {
+      "id": "DEBT-041",
+      "ruleId": "TEST_CROSS_MODULE_FIXTURE",
+      "source": "apps/server/src/db/asset-mutation.integration.test.ts",
+      "target": "资产故障注入/回执幂等真库测试：驱动 characters 侧真实仓储写入",
+      "symbol": "GameRepository",
+      "evidence": "ARCH-03a 新增；asset-mutation.integration.test.ts imports",
+      "reason": "真库故障注入测试须组装 characters 侧真实仓储",
+      "fixTask": "ARCH-09（测试基建统一时收敛为登记 helper）",
+      "removalCondition": "集成测试仅经登记的 setup helper 组装",
+      "severity": "transitional",
+      "targetGlobs": [
+        "apps/server/src/modules/game/game.repository.ts"
+      ]
     }
   ],
   "explicitlyNotViolations": [
@@ -649,6 +664,16 @@
       "date": "2026-09-18",
       "kind": "ARCH-02 fixture registration",
       "detail": "新增 DEBT-040：世界 tick 真 PG 并发测试的跨模块夹具登记（与 DEBT-029 同类）。"
+    },
+    {
+      "date": "2026-09-18",
+      "kind": "ARCH-03a progress",
+      "detail": "玩家市场买卖链已迁移到 AssetMutationService + 命令回执（command_receipts 迁移 0026）；DEBT-016/018/019 的玩家侧写路径已收敛至 assets，npc 侧写路径保留待 ARCH-03b。"
+    },
+    {
+      "date": "2026-09-18",
+      "kind": "ARCH-03a fixture registration",
+      "detail": "新增 DEBT-041；DEBT-034 targetGlobs 扩至 ledger 目录（覆盖新资产端口类型的白盒导入）。"
     }
   ]
 }

@@ -504,22 +504,7 @@ export class GameRepository {
     };
   }
 
-  async updateCharacterCopper(input: {
-    characterId: string;
-    copperBalance: number;
-  }): Promise<void> {
-    await this.db
-      .update(characters)
-      .set({ copperBalance: input.copperBalance })
-      .where(eq(characters.id, input.characterId));
-  }
 
-  async incrementCharacterCopper(input: { characterId: string; delta: number }): Promise<void> {
-    await this.db
-      .update(characters)
-      .set({ copperBalance: sql`${characters.copperBalance} + ${input.delta}` })
-      .where(eq(characters.id, input.characterId));
-  }
 
   async decrementCharacterCopperIfAvailable(input: {
     characterId: string;
@@ -976,35 +961,7 @@ export class GameRepository {
     await this.db.insert(marketInventory).values(input);
   }
 
-  async setMarketInventoryQuantity(input: {
-    marketInventoryId: string;
-    quantity: number;
-  }): Promise<void> {
-    await this.db
-      .update(marketInventory)
-      .set({ quantity: input.quantity, updatedAt: new Date() })
-      .where(eq(marketInventory.id, input.marketInventoryId));
-  }
 
-  async decrementMarketInventoryIfAvailable(input: {
-    marketInventoryId: string;
-    quantity: number;
-  }): Promise<boolean> {
-    const rows = await this.db
-      .update(marketInventory)
-      .set({
-        quantity: sql`${marketInventory.quantity} - ${input.quantity}`,
-        updatedAt: new Date()
-      })
-      .where(
-        and(
-          eq(marketInventory.id, input.marketInventoryId),
-          gte(marketInventory.quantity, input.quantity)
-        )
-      )
-      .returning({ id: marketInventory.id });
-    return rows.length > 0;
-  }
 
   async decrementMarketInventoryAboveReserve(input: {
     marketInventoryId: string;
@@ -1027,19 +984,6 @@ export class GameRepository {
     return rows.length > 0;
   }
 
-  async incrementMarketInventory(input: {
-    marketInventoryId: string;
-    quantity: number;
-  }): Promise<void> {
-    await this.db
-      .update(marketInventory)
-      .set({
-        quantity: sql`${marketInventory.quantity} + ${input.quantity}`,
-        updatedAt: new Date()
-      })
-      .where(eq(marketInventory.id, input.marketInventoryId))
-      .returning({ id: marketInventory.id });
-  }
 
   async findMunicipalTreasury(settlementId: string): Promise<{ copperBalance: number } | null> {
     const [row] = await this.db
@@ -1062,38 +1006,7 @@ export class GameRepository {
     return row ?? null;
   }
 
-  async incrementMunicipalTreasury(input: {
-    settlementId: string;
-    delta: number;
-  }): Promise<void> {
-    await this.db
-      .update(municipalTreasury)
-      .set({
-        copperBalance: sql`${municipalTreasury.copperBalance} + ${input.delta}`,
-        updatedAt: new Date()
-      })
-      .where(eq(municipalTreasury.settlementId, input.settlementId));
-  }
 
-  async decrementMunicipalTreasuryIfAvailable(input: {
-    settlementId: string;
-    amount: number;
-  }): Promise<boolean> {
-    const rows = await this.db
-      .update(municipalTreasury)
-      .set({
-        copperBalance: sql`${municipalTreasury.copperBalance} - ${input.amount}`,
-        updatedAt: new Date()
-      })
-      .where(
-        and(
-          eq(municipalTreasury.settlementId, input.settlementId),
-          gte(municipalTreasury.copperBalance, input.amount)
-        )
-      )
-      .returning({ settlementId: municipalTreasury.settlementId });
-    return rows.length > 0;
-  }
 
   async createMarketTransaction(input: MarketTransactionInput): Promise<void> {
     await this.db.insert(marketTransactions).values(input);

@@ -560,6 +560,28 @@ export const worldRuntimeState = pgTable(
   })
 );
 
+export const commandReceipts = pgTable(
+  "command_receipts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actorScope: text("actor_scope").notNull(),
+    commandKind: text("command_kind").notNull(),
+    commandId: text("command_id").notNull(),
+    worldEpoch: integer("world_epoch").notNull().default(1),
+    requestHash: text("request_hash").notNull(),
+    result: jsonb("result").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    scopeKindIdEpochUnique: uniqueIndex("command_receipts_scope_kind_id_epoch_unique").on(
+      table.actorScope,
+      table.commandKind,
+      table.commandId,
+      table.worldEpoch
+    )
+  })
+)
+
 export const aiCallLogs = pgTable(
   "ai_call_logs",
   {
