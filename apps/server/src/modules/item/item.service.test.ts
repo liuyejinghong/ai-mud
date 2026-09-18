@@ -55,6 +55,20 @@ class FakeItemRepo {
     return instance;
   }
 
+  async updateItemInstanceDurability(input: {
+    instanceId: string;
+    currentDurability: number;
+    maxDurability: number;
+  }) {
+    const instance = this.instances.get(input.instanceId);
+    if (!instance) throw new Error("instance not found");
+    this.instances.set(input.instanceId, {
+      ...instance,
+      currentDurability: input.currentDurability,
+      maxDurability: input.maxDurability
+    });
+  }
+
   async findItemInstance(instanceId: string) {
     return this.instances.get(instanceId) ?? null;
   }

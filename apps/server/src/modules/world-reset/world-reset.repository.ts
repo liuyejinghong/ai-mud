@@ -2,7 +2,6 @@ import type { Db } from "../../db/client.js";
 import {
   aiCallLogs,
   characterActions,
-  characterEquipment,
   characterItems,
   characterPresence,
   characters,
@@ -90,7 +89,6 @@ export class WorldResetRepository implements WorldResetRepositoryPort {
     await this.db.delete(marketTransactions);
     await this.db.delete(assetLedger);
     await this.db.delete(itemLedger);
-    await this.db.delete(characterEquipment);
     await this.db.delete(characterItems);
     await this.db.delete(characterPresence);
     await this.db.delete(chatMessages);

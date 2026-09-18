@@ -209,6 +209,21 @@ export class ItemRepository {
     return toItemInstance(row);
   }
 
+  async updateItemInstanceDurability(input: {
+    instanceId: string;
+    currentDurability: number;
+    maxDurability: number;
+  }): Promise<void> {
+    await this.db
+      .update(itemInstances)
+      .set({
+        currentDurability: input.currentDurability,
+        maxDurability: input.maxDurability,
+        updatedAt: new Date()
+      })
+      .where(eq(itemInstances.id, input.instanceId));
+  }
+
   async findItemInstance(instanceId: string): Promise<ItemInstanceRecord | null> {
     const [row] = await this.db
       .select()

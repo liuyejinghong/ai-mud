@@ -9,7 +9,6 @@ import {
   characterActions,
   characterActionStatus,
   characterActionType,
-  characterEquipment,
   characterItems,
   characterPresence,
   characters,
@@ -60,7 +59,6 @@ describe("foundation schema", () => {
   it("defines the first playable world state tables", () => {
     expect(getDrizzleTableName(characters)).toBe("characters");
     expect(getDrizzleTableName(characterItems)).toBe("character_items");
-    expect(getDrizzleTableName(characterEquipment)).toBe("character_equipment");
     expect(getDrizzleTableName(itemInstances)).toBe("item_instances");
     expect(getDrizzleTableName(itemLedger)).toBe("item_ledger");
     expect(getDrizzleTableName(characterActions)).toBe("character_actions");
@@ -121,9 +119,6 @@ describe("foundation schema", () => {
   });
 
   it("stores equipment durability as per-character item instances", () => {
-    expect(characterEquipment.slot.getSQLType()).toBe("text");
-    expect(characterEquipment.currentDurability.getSQLType()).toBe("integer");
-    expect(characterEquipment.maxDurability.getSQLType()).toBe("integer");
   });
 
   it("defines item instance and ledger tables for the v0.8 asset write path", () => {

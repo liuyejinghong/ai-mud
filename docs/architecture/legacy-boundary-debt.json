@@ -217,18 +217,6 @@
       "severity": "target_blocking"
     },
     {
-      "id": "DEBT-021",
-      "ruleId": "CROSS_OWNER_COLUMN_WRITE",
-      "source": "item_instances / character_equipment（装备耐久）",
-      "target": "目标唯一写所有者：assets",
-      "symbol": "game.repository.updateEquipmentDurability legacy-first 双写:873-898（列 currentDurability/maxDurability，两套表示）",
-      "evidence": "item 拥有全生命周期（create/move:191,254），game 侧存在耐久 fallback 写",
-      "reason": "装备双真源（AR-03）",
-      "fixTask": "ARCH-04",
-      "removalCondition": "legacy character_equipment 路径删除，耐久仅 item 写",
-      "severity": "target_blocking"
-    },
-    {
       "id": "DEBT-023",
       "ruleId": "CROSS_OWNER_TABLE_WRITE",
       "source": "sync_events",
@@ -627,6 +615,11 @@
       "date": "2026-09-18",
       "kind": "debt retirement (ARCH-03c, npc/character flows)",
       "detail": "销账 DEBT-016/DEBT-017/DEBT-018/DEBT-019：铜币、市场库存、金库的全部可变余额写入现仅存在于 AssetMutationService（assets 模块）；npc.repository/game.repository 的对应 SQL 已删除；updateNpcActor 入参的 copperBalance 字段一并移除。DEBT-020（npc_items 数量）按计划保留至 ItemService 统一切片。"
+    },
+    {
+      "date": "2026-09-18",
+      "kind": "debt retirement (ARCH-04)",
+      "detail": "DEBT-021 销账：装备双真源模型移除——迁移 0027 将 legacy 装备迁入 item_instances（原ID、幂等、不覆盖）并删除 character_equipment 表；修理/耐久/换装/新角色全部单一真源。"
     }
   ]
 }

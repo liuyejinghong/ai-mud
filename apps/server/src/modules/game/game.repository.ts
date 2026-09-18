@@ -8,11 +8,11 @@ import type {
   ItemId
 } from "@ai-mud/shared";
 import { getZoneById } from "@ai-mud/content";
+import { getItemById } from "@ai-mud/content";
 import { and, asc, desc, eq, gt, gte, isNull, lte, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import {
   characterActions,
-  characterEquipment,
   characterItems,
   characters,
   gameEvents,
@@ -202,19 +202,6 @@ export function serializeEncounterCooldowns(cooldowns: Record<string, string>) {
   );
 }
 
-export function serializeEquipmentDurability(input: {
-  currentDurability: number;
-  maxDurability: number;
-}) {
-  const maxDurability = Math.max(1, Math.floor(input.maxDurability));
-  return {
-    currentDurability: Math.min(
-      maxDurability,
-      Math.max(0, Math.floor(input.currentDurability))
-    ),
-    maxDurability
-  };
-}
 
 export function serializeHunger(value: number) {
   return Math.min(5, Math.max(0, Math.floor(value)));
@@ -695,25 +682,6 @@ export class GameRepository {
     });
   }
 
-  async listEquipment(characterId: string): Promise<EquipmentRecord[]> {
-    const rows = await this.db
-      .select()
-      .from(characterEquipment)
-      .where(eq(characterEquipment.characterId, characterId));
-
-    return rows.map((row) => ({
-      id: row.id,
-      characterId: row.characterId,
-      slot: row.slot as EquipmentSlot,
-      itemKey: row.itemKey,
-      name: row.name,
-      itemLevel: row.itemLevel,
-      attackBonus: row.attackBonus,
-      defenseBonus: row.defenseBonus,
-      maxDurability: row.maxDurability,
-      currentDurability: row.currentDurability
-    }));
-  }
 
   async listItemInstances(input: {
     characterId: string;
@@ -748,44 +716,11 @@ export class GameRepository {
     }));
   }
 
-  async findEquipmentById(
-    characterId: string,
-    equipmentId: string
-  ): Promise<EquipmentRecord | null> {
-    const equipment = await this.listEquipment(characterId);
-    return equipment.find((item) => item.id === equipmentId) ?? null;
-  }
 
   async findEquipmentByIdForUpdate(
     characterId: string,
     equipmentId: string
   ): Promise<EquipmentRecord | null> {
-    const [legacy] = await this.db
-      .select()
-      .from(characterEquipment)
-      .where(
-        and(
-          eq(characterEquipment.characterId, characterId),
-          eq(characterEquipment.id, equipmentId)
-        )
-      )
-      .limit(1)
-      .for("update");
-    if (legacy) {
-      return {
-        id: legacy.id,
-        characterId: legacy.characterId,
-        slot: legacy.slot as EquipmentSlot,
-        itemKey: legacy.itemKey,
-        name: legacy.name,
-        itemLevel: legacy.itemLevel,
-        attackBonus: legacy.attackBonus,
-        defenseBonus: legacy.defenseBonus,
-        maxDurability: legacy.maxDurability,
-        currentDurability: legacy.currentDurability
-      };
-    }
-
     const [instance] = await this.db
       .select()
       .from(itemInstances)
@@ -801,12 +736,13 @@ export class GameRepository {
       .for("update");
     if (!instance) return null;
 
+    const definition = getItemById(instance.itemDefId);
     return {
       id: instance.id,
       characterId,
       slot: (instance.slot ?? "weapon") as EquipmentSlot,
       itemKey: instance.itemDefId,
-      name: instance.itemDefId,
+      name: definition?.name ?? instance.itemDefId,
       rarity: instance.rarity as ItemRarity,
       itemLevel: instance.itemLevel,
       attackBonus: 0,
@@ -816,69 +752,11 @@ export class GameRepository {
     };
   }
 
-  async createEquipment(input: {
-    characterId: string;
-    slot: EquipmentSlot;
-    itemKey: string;
-    name: string;
-    itemLevel: number;
-    attackBonus: number;
-    defenseBonus: number;
-    maxDurability: number;
-    currentDurability: number;
-  }): Promise<void> {
-    const durability = serializeEquipmentDurability(input);
-    await this.db.insert(characterEquipment).values({
-      characterId: input.characterId,
-      slot: input.slot,
-      itemKey: input.itemKey,
-      name: input.name,
-      itemLevel: input.itemLevel,
-      attackBonus: input.attackBonus,
-      defenseBonus: input.defenseBonus,
-      maxDurability: durability.maxDurability,
-      currentDurability: durability.currentDurability
-    });
-  }
 
-  async updateEquipmentDurability(input: {
-    equipmentId: string;
-    currentDurability: number;
-    maxDurability: number;
-  }): Promise<void> {
-    const durability = serializeEquipmentDurability(input);
-    const legacyRows = await this.db
-      .update(characterEquipment)
-      .set({
-        currentDurability: durability.currentDurability,
-        maxDurability: durability.maxDurability,
-        updatedAt: new Date()
-      })
-      .where(eq(characterEquipment.id, input.equipmentId))
-      .returning({ id: characterEquipment.id });
-    if (legacyRows.length > 0) return;
-
-    await this.db
-      .update(itemInstances)
-      .set({
-        currentDurability: durability.currentDurability,
-        maxDurability: durability.maxDurability,
-        updatedAt: new Date()
-      })
-      .where(eq(itemInstances.id, input.equipmentId));
-  }
-
-  async deleteLegacyEquipmentBySlot(input: {
-    characterId: string;
-    slot: EquipmentSlot;
-  }): Promise<boolean> {
-    const rows = await this.db
-      .delete(characterEquipment)
-      .where(
-        and(eq(characterEquipment.characterId, input.characterId), eq(characterEquipment.slot, input.slot))
-      )
-      .returning({ id: characterEquipment.id });
-    return rows.length > 0;
+  // Item writes bound to this repository's transaction handle (assets module
+  // owns item_instances; characters flows join via this writer).
+  itemWriter(): ItemService {
+    return new ItemService(new ItemRepository(this.db as never, false));
   }
 
   async listMarketInventory(settlementId: string): Promise<MarketInventoryRecord[]> {

@@ -127,7 +127,7 @@ function arrangeReadableSync(input: {
   );
   vi.spyOn(GameRepository.prototype, "listSyncEvents").mockResolvedValue([]);
   vi.spyOn(GameRepository.prototype, "listInventory").mockResolvedValue([]);
-  vi.spyOn(GameRepository.prototype, "listEquipment").mockResolvedValue([]);
+  vi.spyOn(GameRepository.prototype, "listItemInstances").mockResolvedValue([]);
   vi.spyOn(GameRepository.prototype, "listItemInstances").mockResolvedValue([]);
   vi.spyOn(GameRepository.prototype, "listRecentEvents").mockResolvedValue([]);
   vi.spyOn(GameRepository.prototype, "findMapInstance").mockResolvedValue(null);
@@ -674,10 +674,6 @@ describe("GameService action settlement", () => {
       writeEvent: async () => {
         calls.push("writeEvent");
       },
-      listEquipment: async () => {
-        calls.push("listEquipment");
-        return [];
-      },
       listItemInstances: async () => {
         calls.push("listItemInstances");
         return [];
@@ -916,39 +912,47 @@ describe("GameService action settlement", () => {
     const service = new GameService({} as Db);
     const calls: string[] = [];
     const vitals: Array<{ hp: number; xp?: number }> = [];
-    const durabilityUpdates: Array<{ equipmentId: string; currentDurability: number }> = [];
+    const durabilityUpdates: Array<{ instanceId: string; currentDurability: number }> = [];
     const repo = {
       updateCharacterVitals: async (input: { hp: number; xp?: number }) => {
         calls.push("updateCharacterVitals");
         vitals.push(input);
       },
-      listEquipment: async () => {
-        calls.push("listEquipment");
+      listItemInstances: async () => {
+        calls.push("listItemInstances");
         return [
           {
             id: "weapon-1",
-            slot: "weapon" as const,
-            itemKey: "training_sword",
-            name: "训练短剑",
+            itemDefId: "training_sword",
+            ownerType: "character" as const,
+            ownerId: "character-1",
+            locationType: "equipped" as const,
+            slot: "weapon",
+            rarity: "common",
             itemLevel: 5,
-            attackBonus: 2,
-            defenseBonus: 0,
+            baseStats: { attack: 2, defense: 0, agility: 0, maxHp: 0 },
+            affixes: [],
             currentDurability: 10,
             maxDurability: 10
           }
         ];
       },
-      listItemInstances: async () => {
-        calls.push("listItemInstances");
-        return [];
-      },
       updateEquipmentDurability: async (input: {
-        equipmentId: string;
+        instanceId: string;
         currentDurability: number;
       }) => {
         calls.push("updateEquipmentDurability");
         durabilityUpdates.push(input);
-      }
+      },
+      itemWriter: () => ({
+        updateEquipmentDurability: async (input: {
+          instanceId: string;
+          currentDurability: number;
+        }) => {
+          calls.push("updateEquipmentDurability");
+          durabilityUpdates.push(input);
+        }
+      })
     };
     const startedAt = new Date("2026-07-02T08:00:00.000Z");
     const payload: CombatActionPayload = {
@@ -982,11 +986,10 @@ describe("GameService action settlement", () => {
 
     expect(vitals).toEqual([{ characterId: "character-1", hp: 73 }]);
     expect(durabilityUpdates).toEqual([
-      { equipmentId: "weapon-1", currentDurability: 8, maxDurability: 10 }
+      { instanceId: "weapon-1", currentDurability: 8, maxDurability: 10 }
     ]);
     expect(calls).toEqual([
       "updateCharacterVitals",
-      "listEquipment",
       "listItemInstances",
       "updateEquipmentDurability"
     ]);
@@ -1527,7 +1530,6 @@ describe("GameService municipal food relief", () => {
             ...claimant
           }),
         listInventory: async () => inventory,
-        listEquipment: async () => [],
         listItemInstances: async () => [],
         listRecentEvents: async () => [],
         findActiveActionByCharacterId: async () => null,
@@ -1579,7 +1581,6 @@ describe("GameService municipal food relief", () => {
             lastHungerSettledAt: now
           }),
         listInventory: async () => [],
-        listEquipment: async () => [],
         listItemInstances: async () => [],
         listRecentEvents: async () => [],
         findActiveActionByCharacterId: async () => activeAction,

@@ -4,7 +4,6 @@ import {
   GameRepository,
   parseActionPayload,
   serializeEncounterCooldowns,
-  serializeEquipmentDurability,
   serializeHunger,
   serializeActionPayload,
   serializeMarketTransaction,
@@ -82,15 +81,39 @@ describe("game repository helpers", () => {
     expect(parseActionPayload("gathering", serializeActionPayload(payload))).toEqual(payload);
   });
 
-  it("serializes equipment durability with clamped integer values", () => {
-    expect(serializeEquipmentDurability({ currentDurability: 150, maxDurability: 100 })).toEqual({
-      currentDurability: 100,
+  it("clamps equipment durability when updating via the item writer", async () => {
+    const updates: Array<{ currentDurability: number; maxDurability: number }> = [];
+    const db = {
+      update: vi.fn(() => ({
+        set: (values: { currentDurability: number; maxDurability: number }) => {
+          updates.push(values);
+          return {
+            where: async () => undefined
+          };
+        }
+      })),
+      select: vi.fn(() => ({ from: async () => [] })),
+      insert: vi.fn(() => ({ values: async () => undefined }))
+    };
+    const { ItemService } = await import("../item/item.service.js");
+    const { ItemRepository } = await import("../item/item.repository.js");
+    const service = new ItemService(new ItemRepository(db as never, false));
+
+    await service.updateEquipmentDurability({
+      instanceId: "instance-1",
+      currentDurability: 150,
       maxDurability: 100
     });
-    expect(serializeEquipmentDurability({ currentDurability: -5, maxDurability: 100 })).toEqual({
-      currentDurability: 0,
+    await service.updateEquipmentDurability({
+      instanceId: "instance-1",
+      currentDurability: -5,
       maxDurability: 100
     });
+
+    expect(updates.map((u) => [u.currentDurability, u.maxDurability])).toEqual([
+      [100, 100],
+      [0, 100]
+    ]);
   });
 
   it("serializes hunger with clamped integer values", () => {
@@ -222,9 +245,8 @@ describe("GameRepository locking contracts", () => {
     expect(forUpdate).toHaveBeenCalledWith("update");
   });
 
-  it("falls back to locking an equipped item instance before repair", async () => {
+  it("locks an equipped item instance before repair", async () => {
     const { db, forUpdate } = createSequentialSelectDb([
-      [],
       [
         {
           id: "instance-1",
@@ -248,9 +270,8 @@ describe("GameRepository locking contracts", () => {
     await expect(
       repository.findEquipmentByIdForUpdate("character-1", "instance-1")
     ).resolves.toMatchObject({ id: "instance-1", currentDurability: 40 });
-    expect(forUpdate).toHaveBeenCalledTimes(2);
-    expect(forUpdate).toHaveBeenNthCalledWith(1, "update");
-    expect(forUpdate).toHaveBeenNthCalledWith(2, "update");
+    expect(forUpdate).toHaveBeenCalledTimes(1);
+    expect(forUpdate).toHaveBeenCalledWith("update");
   });
 
   it("locks and maps the active action for a character", async () => {
