@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "../../db/client.js";
-import type { AssetMutationPort } from "../ledger/asset-mutation.service.js";
+import { AssetMutationService, type AssetMutationPort } from "../ledger/asset-mutation.service.js";
 import type { GameStateDto } from "@ai-mud/shared";
 import { hashRequest } from "../ledger/asset-mutation.service.js";
 import { LedgerService } from "../ledger/ledger.service.js";
@@ -1065,6 +1065,10 @@ describe("GameService serialized player asset transfers", () => {
       creditMarketStock: async () => {
         calls.push("stock-credit");
       },
+      debitMarketStockAboveReserve: async () => {
+        calls.push("stock-reserve-debit");
+        return true;
+      },
       findReceiptForUpdate: async () => null,
       claimReceipt: async () => true,
       saveReceiptResult: async () => {}
@@ -1368,7 +1372,7 @@ describe("GameService municipal food relief", () => {
       .spyOn(GameRepository.prototype, "claimMunicipalReliefCooldown")
       .mockResolvedValue(input.cooldownClaimed ?? true);
     const debitMarket = vi
-      .spyOn(GameRepository.prototype, "decrementMarketInventoryAboveReserve")
+      .spyOn(AssetMutationService.prototype, "debitMarketStockAboveReserve")
       .mockResolvedValue(input.marketDebited ?? true);
     const grant = vi
       .spyOn(GameRepository.prototype, "grantMunicipalReliefItem")
@@ -1392,11 +1396,7 @@ describe("GameService municipal food relief", () => {
       claimedAt: now,
       cooldownCutoff: new Date("2026-07-12T12:00:00.000Z")
     });
-    expect(spies.debitMarket).toHaveBeenCalledWith({
-      marketInventoryId: "market-berry",
-      quantity: 1,
-      reserveQuantity: 1
-    });
+    expect(spies.debitMarket).toHaveBeenCalledWith("market-berry", 1, 1);
     expect(spies.grant).toHaveBeenCalledWith({
       characterId: "character-1",
       itemId: "wild_berry",

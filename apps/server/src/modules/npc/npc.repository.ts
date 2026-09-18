@@ -257,7 +257,6 @@ export class NpcRepository implements NpcRepositoryPort {
     actorId: string;
     currentLocation?: GameLocationId;
     position?: GridPositionDto | null;
-    copperBalance?: number;
     hunger?: number;
     lastHungerSettledAt?: Date;
   }): Promise<void> {
@@ -267,44 +266,12 @@ export class NpcRepository implements NpcRepositoryPort {
 
     if (input.currentLocation !== undefined) values.currentLocation = input.currentLocation;
     if ("position" in input) values.position = serializePosition(input.position ?? null);
-    if (input.copperBalance !== undefined) values.copperBalance = input.copperBalance;
     if (input.hunger !== undefined) values.hunger = input.hunger;
     if (input.lastHungerSettledAt !== undefined) {
       values.lastHungerSettledAt = input.lastHungerSettledAt;
     }
 
     await this.db.update(worldActors).set(values).where(eq(worldActors.id, input.actorId));
-  }
-
-  async incrementNpcCopper(input: { actorId: string; delta: number }): Promise<void> {
-    await this.db
-      .update(worldActors)
-      .set({
-        copperBalance: sql`${worldActors.copperBalance} + ${input.delta}`,
-        updatedAt: new Date()
-      })
-      .where(eq(worldActors.id, input.actorId));
-  }
-
-  async decrementNpcCopperIfAvailable(input: {
-    actorId: string;
-    amount: number;
-  }): Promise<boolean> {
-    const rows = await this.db
-      .update(worldActors)
-      .set({
-        copperBalance: sql`${worldActors.copperBalance} - ${input.amount}`,
-        updatedAt: new Date()
-      })
-      .where(
-        and(
-          eq(worldActors.id, input.actorId),
-          eq(worldActors.actorType, "npc"),
-          gte(worldActors.copperBalance, input.amount)
-        )
-      )
-      .returning({ id: worldActors.id });
-    return rows.length > 0;
   }
 
   async decrementNpcInventoryIfAvailable(input: {
@@ -435,49 +402,6 @@ export class NpcRepository implements NpcRepositoryPort {
       .where(eq(worldResourceNodes.resourceId, input.resourceId));
   }
 
-  async updateMunicipalTreasury(input: {
-    settlementId: "blackpine_outpost";
-    copperBalance: number;
-  }): Promise<void> {
-    await this.db
-      .update(municipalTreasury)
-      .set({ copperBalance: input.copperBalance, updatedAt: new Date() })
-      .where(eq(municipalTreasury.settlementId, input.settlementId));
-  }
-
-  async incrementMunicipalTreasury(input: {
-    settlementId: "blackpine_outpost";
-    delta: number;
-  }): Promise<void> {
-    await this.db
-      .update(municipalTreasury)
-      .set({
-        copperBalance: sql`${municipalTreasury.copperBalance} + ${input.delta}`,
-        updatedAt: new Date()
-      })
-      .where(eq(municipalTreasury.settlementId, input.settlementId));
-  }
-
-  async decrementMunicipalTreasuryIfAvailable(input: {
-    settlementId: "blackpine_outpost";
-    amount: number;
-  }): Promise<boolean> {
-    const rows = await this.db
-      .update(municipalTreasury)
-      .set({
-        copperBalance: sql`${municipalTreasury.copperBalance} - ${input.amount}`,
-        updatedAt: new Date()
-      })
-      .where(
-        and(
-          eq(municipalTreasury.settlementId, input.settlementId),
-          gte(municipalTreasury.copperBalance, input.amount)
-        )
-      )
-      .returning({ settlementId: municipalTreasury.settlementId });
-    return rows.length > 0;
-  }
-
   async listMarketInventory(settlementId: "blackpine_outpost") {
     const rows = await this.db
       .select()
@@ -519,49 +443,6 @@ export class NpcRepository implements NpcRepositoryPort {
           baseSellPriceCopper: row.baseSellPriceCopper
         }
       : null;
-  }
-
-  async setMarketInventoryQuantity(input: {
-    marketInventoryId: string;
-    quantity: number;
-  }): Promise<void> {
-    await this.db
-      .update(marketInventory)
-      .set({ quantity: input.quantity, updatedAt: new Date() })
-      .where(eq(marketInventory.id, input.marketInventoryId));
-  }
-
-  async decrementMarketInventoryIfAvailable(input: {
-    marketInventoryId: string;
-    quantity: number;
-  }): Promise<boolean> {
-    const rows = await this.db
-      .update(marketInventory)
-      .set({
-        quantity: sql`${marketInventory.quantity} - ${input.quantity}`,
-        updatedAt: new Date()
-      })
-      .where(
-        and(
-          eq(marketInventory.id, input.marketInventoryId),
-          gte(marketInventory.quantity, input.quantity)
-        )
-      )
-      .returning({ id: marketInventory.id });
-    return rows.length > 0;
-  }
-
-  async incrementMarketInventory(input: {
-    marketInventoryId: string;
-    quantity: number;
-  }): Promise<void> {
-    await this.db
-      .update(marketInventory)
-      .set({
-        quantity: sql`${marketInventory.quantity} + ${input.quantity}`,
-        updatedAt: new Date()
-      })
-      .where(eq(marketInventory.id, input.marketInventoryId));
   }
 
   async createNpcMarketTransaction(input: {

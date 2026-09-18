@@ -5,6 +5,7 @@ import { FIRST_ITEMS } from "@ai-mud/content";
 import pg from "pg";
 import { createDb } from "../src/db/client.js";
 import { GameRepository } from "../src/modules/game/game.repository.js";
+import { AssetMutationService } from "../src/modules/ledger/asset-mutation.service.js";
 import { LedgerRepository } from "../src/modules/ledger/ledger.repository.js";
 import { LedgerService } from "../src/modules/ledger/ledger.service.js";
 import { NpcRepository } from "../src/modules/npc/npc.repository.js";
@@ -86,7 +87,11 @@ async function seedMarket(repository: GameRepository) {
 async function verifySimulation(targetDatabaseUrl: string) {
   const connection = createDb(targetDatabaseUrl);
   const ledger = new LedgerService(new LedgerRepository(connection.db));
-  const npcService = new NpcService(new NpcRepository(connection.db), ledger);
+  const npcService = new NpcService(
+    new NpcRepository(connection.db),
+    ledger,
+    new AssetMutationService(connection.db)
+  );
   const startAt = new Date("2026-07-01T06:37:20.000Z");
 
   try {

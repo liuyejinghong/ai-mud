@@ -14,6 +14,7 @@ import {
   createRumorService
 } from "./modules/game/game.composition.js";
 import { GameRepository } from "./modules/game/game.repository.js";
+import { AssetMutationService } from "./modules/ledger/asset-mutation.service.js";
 import { LedgerRepository } from "./modules/ledger/ledger.repository.js";
 import { LedgerService } from "./modules/ledger/ledger.service.js";
 import { NpcRepository } from "./modules/npc/npc.repository.js";
@@ -112,7 +113,8 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
         async (tx, tickAt) => {
           const npcService = new NpcService(
             new NpcRepository(tx),
-            new LedgerService(new LedgerRepository(tx))
+            new LedgerService(new LedgerRepository(tx)),
+            new AssetMutationService(tx)
           );
           await npcService.settleNpcWorld(tickAt);
         },

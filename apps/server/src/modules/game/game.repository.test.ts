@@ -343,7 +343,6 @@ describe("GameRepository locking contracts", () => {
 
 describe("GameRepository affected-row contracts", () => {
   it.each([
-    ["character copper", "decrementCharacterCopperIfAvailable", { characterId: "character-1", amount: 10 }],
     [
       "municipal relief cooldown",
       "claimMunicipalReliefCooldown",
@@ -353,11 +352,6 @@ describe("GameRepository affected-row contracts", () => {
         cooldownCutoff: new Date("2026-07-12T12:00:00.000Z")
       }
     ],
-    [
-      "relief market reserve",
-      "decrementMarketInventoryAboveReserve",
-      { marketInventoryId: "market-1", quantity: 1, reserveQuantity: 1 }
-    ]
   ])("returns false when the %s conditional debit affects no row", async (_label, method, input) => {
     const repository = new GameRepository(createUpdateDb([[]]) as never);
 

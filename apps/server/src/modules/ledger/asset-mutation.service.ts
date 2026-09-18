@@ -46,6 +46,11 @@ export interface AssetMutationPort {
   creditTreasury(settlementId: string, amount: number): Promise<void>;
   debitTreasuryIfAvailable(settlementId: string, amount: number): Promise<boolean>;
   debitMarketStockIfAvailable(marketInventoryId: string, quantity: number): Promise<boolean>;
+  debitMarketStockAboveReserve(
+    marketInventoryId: string,
+    quantity: number,
+    reserveQuantity: number
+  ): Promise<boolean>;
   creditMarketStock(marketInventoryId: string, quantity: number): Promise<void>;
   findReceiptForUpdate(
     actorScope: string,
@@ -157,6 +162,24 @@ export class AssetMutationService implements AssetMutationPort {
       .update(marketInventory)
       .set({ quantity: sqlPlus(marketInventory.quantity, quantity) })
       .where(eq(marketInventory.id, marketInventoryId));
+  }
+
+  async debitMarketStockAboveReserve(
+    marketInventoryId: string,
+    quantity: number,
+    reserveQuantity: number
+  ): Promise<boolean> {
+    const rows = await this.db
+      .update(marketInventory)
+      .set({ quantity: sqlMinus(marketInventory.quantity, quantity) })
+      .where(
+        and(
+          eq(marketInventory.id, marketInventoryId),
+          gteStock(marketInventory.quantity, quantity + reserveQuantity)
+        )
+      )
+      .returning({ id: marketInventory.id });
+    return rows.length > 0;
   }
 
   // ---------- command receipts ----------

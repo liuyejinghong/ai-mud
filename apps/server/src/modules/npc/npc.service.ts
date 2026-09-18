@@ -31,6 +31,7 @@ import type {
   NpcSummaryDto
 } from "@ai-mud/shared";
 import type { CopperLedgerWriter } from "../ledger/ledger.service.js";
+import type { AssetMutationPort } from "../ledger/asset-mutation.service.js";
 
 const BLACKPINE_MARKET_ID = "blackpine_outpost" as const;
 const INITIAL_TREASURY_COPPER = 10_000;
@@ -142,12 +143,9 @@ export interface NpcRepositoryPort {
     actorId: string;
     currentLocation?: GameLocationId;
     position?: GridPositionDto | null;
-    copperBalance?: number;
     hunger?: number;
     lastHungerSettledAt?: Date;
   }): Promise<void>;
-  decrementNpcCopperIfAvailable(input: { actorId: string; amount: number }): Promise<boolean>;
-  incrementNpcCopper(input: { actorId: string; delta: number }): Promise<void>;
   decrementNpcInventoryIfAvailable(input: {
     actorId: string;
     itemId: ItemId | string;
@@ -181,35 +179,11 @@ export interface NpcRepositoryPort {
     charges: number;
     lastRefreshedAt?: Date;
   }): Promise<void>;
-  updateMunicipalTreasury(input: {
-    settlementId: typeof BLACKPINE_MARKET_ID;
-    copperBalance: number;
-  }): Promise<void>;
-  decrementMunicipalTreasuryIfAvailable(input: {
-    settlementId: typeof BLACKPINE_MARKET_ID;
-    amount: number;
-  }): Promise<boolean>;
-  incrementMunicipalTreasury(input: {
-    settlementId: typeof BLACKPINE_MARKET_ID;
-    delta: number;
-  }): Promise<void>;
   listMarketInventory(settlementId: typeof BLACKPINE_MARKET_ID): Promise<NpcMarketInventoryRecord[]>;
   findMarketInventoryItemForUpdate(
     settlementId: typeof BLACKPINE_MARKET_ID,
     itemId: ItemId | string
   ): Promise<NpcMarketInventoryRecord | null>;
-  setMarketInventoryQuantity(input: {
-    marketInventoryId: string;
-    quantity: number;
-  }): Promise<void>;
-  decrementMarketInventoryIfAvailable(input: {
-    marketInventoryId: string;
-    quantity: number;
-  }): Promise<boolean>;
-  incrementMarketInventory(input: {
-    marketInventoryId: string;
-    quantity: number;
-  }): Promise<void>;
   createNpcMarketTransaction(input: {
     actorId: string;
     actorType: "npc";
@@ -228,7 +202,8 @@ export interface NpcRepositoryPort {
 export class NpcService {
   constructor(
     private readonly repo: NpcRepositoryPort,
-    private readonly ledger?: CopperLedgerWriter
+    private readonly ledger?: CopperLedgerWriter,
+    private readonly assets?: AssetMutationPort
   ) {}
 
   async ensureWorldSeeded(now: Date) {
@@ -316,8 +291,15 @@ export class NpcService {
     });
 
     if (payment.paidCopper > 0) {
-      await this.incrementMunicipalCopper(treasury, -payment.paidCopper);
-      await this.incrementNpcCopper(actor, payment.paidCopper);
+      const assets = this.requireAssets();
+      const debited = await assets.debitTreasuryIfAvailable(
+        BLACKPINE_MARKET_ID,
+        payment.paidCopper
+      );
+      if (!debited) {
+        return { paidCopper: 0, shortfallCopper: requestedCopper };
+      }
+      await assets.creditNpcCopper(actorId, payment.paidCopper);
       await this.ledger?.recordCopperTransfer({
         operation: "npc_wage",
         fromBucket: "municipal",
@@ -513,18 +495,9 @@ export class NpcService {
     }
   }
 
-  private async incrementNpcCopper(actor: NpcActorRecord, delta: number) {
-    await this.repo.incrementNpcCopper({ actorId: actor.id, delta });
-  }
-
-  private async incrementMunicipalCopper(
-    treasury: { settlementId: typeof BLACKPINE_MARKET_ID; copperBalance: number },
-    delta: number
-  ) {
-    await this.repo.incrementMunicipalTreasury({
-      settlementId: treasury.settlementId,
-      delta
-    });
+  private requireAssets(): AssetMutationPort {
+    if (!this.assets) throw new Error("AssetMutationPort required for NPC fund movement");
+    return this.assets;
   }
 
   private async ensureSharedResources(now: Date) {
@@ -702,21 +675,16 @@ export class NpcService {
         return { handled: true, acted: false };
       }
 
-      const stockDebited = await this.repo.decrementMarketInventoryIfAvailable({
-        marketInventoryId: lockedMarketFood.id,
-        quantity: 1
-      });
+      const assets = this.requireAssets();
+      const stockDebited = await assets.debitMarketStockIfAvailable(lockedMarketFood.id, 1);
       if (!stockDebited) return { handled: false, acted: false };
 
-      const paymentDebited = await this.repo.decrementNpcCopperIfAvailable({
-        actorId: lockedActor.id,
-        amount: quote.totalCopper
-      });
+      const paymentDebited = await assets.debitNpcCopperIfAvailable(
+        lockedActor.id,
+        quote.totalCopper
+      );
       if (!paymentDebited) {
-        await this.repo.incrementMarketInventory({
-          marketInventoryId: lockedMarketFood.id,
-          quantity: 1
-        });
+        await assets.creditMarketStock(lockedMarketFood.id, 1);
         return { handled: false, acted: false };
       }
 
@@ -725,7 +693,7 @@ export class NpcService {
         actorId: lockedActor.id,
         hunger: Math.min(5, lockedActor.hunger + (item?.satietyRestore ?? 1))
       });
-      await this.incrementMunicipalCopper(treasury, quote.totalCopper);
+      await assets.creditTreasury(BLACKPINE_MARKET_ID, quote.totalCopper);
       await this.repo.createNpcMarketTransaction({
         actorId: lockedActor.id,
         actorType: "npc",
@@ -807,10 +775,11 @@ export class NpcService {
     });
     if (!inventoryDebited) return false;
 
-    const treasuryDebited = await this.repo.decrementMunicipalTreasuryIfAvailable({
-      settlementId: BLACKPINE_MARKET_ID,
-      amount: quote.totalCopper
-    });
+    const assets = this.requireAssets();
+    const treasuryDebited = await assets.debitTreasuryIfAvailable(
+      BLACKPINE_MARKET_ID,
+      quote.totalCopper
+    );
     if (!treasuryDebited) {
       await this.repo.incrementNpcInventory({
         actorId: lockedActor.id,
@@ -820,11 +789,8 @@ export class NpcService {
       return false;
     }
 
-    await this.repo.incrementMarketInventory({
-      marketInventoryId: lockedMarketItem.id,
-      quantity: lockedSellableItem.quantity
-    });
-    await this.incrementNpcCopper(lockedActor, quote.totalCopper);
+    await assets.creditMarketStock(lockedMarketItem.id, lockedSellableItem.quantity);
+    await assets.creditNpcCopper(lockedActor.id, quote.totalCopper);
     await this.repo.createNpcMarketTransaction({
       actorId: lockedActor.id,
       actorType: "npc",

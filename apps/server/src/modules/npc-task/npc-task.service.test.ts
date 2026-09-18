@@ -281,6 +281,10 @@ class FakeAssets implements AssetMutationPort {
     return false;
   }
 
+  async debitMarketStockAboveReserve() {
+    return false;
+  }
+
   async creditMarketStock() {}
 
   async findReceiptForUpdate() {
