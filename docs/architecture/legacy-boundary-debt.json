@@ -32,36 +32,6 @@
       ]
     },
     {
-      "id": "DEBT-002",
-      "ruleId": "REPO_INSTANTIATES_PEER_SERVICE",
-      "source": "apps/server/src/modules/npc-task/npc-task.repository.ts",
-      "target": "apps/server/src/modules/item/item.{repository,service}.ts",
-      "symbol": "transferCharacterItemToNpc → new ItemService(new ItemRepository(db,false))",
-      "evidence": "npc-task.repository.ts:12-13,253-269",
-      "reason": "repository 层执行跨域物品转移编排",
-      "fixTask": "ARCH-03（UoW 绑定 assets 公开 API；编排上移 application/quests 用例）",
-      "removalCondition": "npc-task.repository 不再 import ../item/*",
-      "severity": "target_blocking",
-      "targetGlobs": [
-        "apps/server/src/modules/item/item.{repository,service}.ts"
-      ]
-    },
-    {
-      "id": "DEBT-003",
-      "ruleId": "REPO_INSTANTIATES_PEER_SERVICE",
-      "source": "apps/server/src/modules/npc-task/npc-task.repository.ts",
-      "target": "apps/server/src/modules/ledger/*",
-      "symbol": "recordCopperTransfer → new LedgerService(new LedgerRepository(db))",
-      "evidence": "npc-task.repository.ts:14-15,238-242",
-      "reason": "repository 层直接写资产账本（方向 npc-task→assets 本身合法，违规在层次与直接实例化）",
-      "fixTask": "ARCH-03（tx 绑定的 assets 参与API 注入）",
-      "removalCondition": "npc-task.repository 不再 import ../ledger/*",
-      "severity": "target_blocking",
-      "targetGlobs": [
-        "apps/server/src/modules/ledger/{ledger.repository,ledger.service}.ts"
-      ]
-    },
-    {
       "id": "DEBT-004",
       "ruleId": "TYPE_ONLY_PEER_IMPORT",
       "source": "apps/server/src/modules/npc-task/npc-task.service.ts",
@@ -640,6 +610,22 @@
       "targetGlobs": [
         "apps/server/src/modules/game/game.repository.ts"
       ]
+    },
+    {
+      "id": "DEBT-042",
+      "ruleId": "TEST_CROSS_MODULE_FIXTURE",
+      "source": "apps/server/src/modules/npc-task/npc-task.service.test.ts",
+      "target": "任务服务白盒测试：assets 端口桩与物品服务真身",
+      "symbol": "AssetMutationPort/AssetMutationTx/ItemService/CopperLedgerWriter",
+      "evidence": "ARCH-03b 测试适配新增",
+      "reason": "任务流测试需注入 assets 假实现并驱动真 ItemService 转移",
+      "fixTask": "ARCH-09（测试基建统一时收敛）",
+      "removalCondition": "测试仅经登记端口组装",
+      "severity": "transitional",
+      "targetGlobs": [
+        "apps/server/src/modules/item/*",
+        "apps/server/src/modules/ledger/*"
+      ]
     }
   ],
   "explicitlyNotViolations": [
@@ -674,6 +660,16 @@
       "date": "2026-09-18",
       "kind": "ARCH-03a fixture registration",
       "detail": "新增 DEBT-041；DEBT-034 targetGlobs 扩至 ledger 目录（覆盖新资产端口类型的白盒导入）。"
+    },
+    {
+      "date": "2026-09-18",
+      "kind": "debt retirement (ARCH-03b, task chain + npc gift)",
+      "detail": "DEBT-002/003 销账：npc-task.repository 不再导入 item/ledger；托管/完成/退还的铜币与物品移动经 AssetMutationService/ItemService/LedgerService 在同一事务执行（quests→assets 为 catalog 允许边）。dialogue 赠予的铜币移动同样改经 assets。DEBT-016/017/020 缩小为 npc/game 残余写路径（03c 迁移）。"
+    },
+    {
+      "date": "2026-09-18",
+      "kind": "ARCH-03b fixture registration",
+      "detail": "新增 DEBT-042：任务服务测试的 assets 端口桩与物品服务导入登记。"
     }
   ]
 }

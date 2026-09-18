@@ -8,7 +8,15 @@ import type {
   NpcTaskProposalSource
 } from "@ai-mud/shared";
 import type { CharacterRecord, InventoryRecord } from "../game/game.repository.js";
-import type { CopperLedgerWriter } from "../ledger/ledger.service.js";
+import {
+  AssetMutationService,
+  type AssetMutationPort,
+  type AssetMutationTx
+} from "../ledger/asset-mutation.service.js";
+import { ItemRepository } from "../item/item.repository.js";
+import { ItemService } from "../item/item.service.js";
+import { LedgerRepository } from "../ledger/ledger.repository.js";
+import { LedgerService, type CopperLedgerWriter } from "../ledger/ledger.service.js";
 import type { NpcActorRecord, NpcInventoryRecord } from "../npc/npc.service.js";
 import type { NpcTaskRecord, NpcTaskRepository } from "./npc-task.repository.js";
 
@@ -41,31 +49,23 @@ export interface NpcTaskMemoryPort {
   }): Promise<void>;
 }
 
+export interface NpcTaskAssetPorts {
+  assetsFor(tx: AssetMutationTx): AssetMutationPort;
+  ledgerFor(tx: AssetMutationTx): CopperLedgerWriter;
+  itemsFor(tx: AssetMutationTx): ItemService;
+}
+
 export interface NpcTaskRepositoryPort {
-  transaction<T>(operation: (repo: NpcTaskRepositoryPort) => Promise<T>): Promise<T>;
+  transaction<T>(
+    operation: (repo: NpcTaskRepositoryPort, tx: AssetMutationTx) => Promise<T>
+  ): Promise<T>;
   listNpcActors(): Promise<NpcActorRecord[]>;
   findNpcActor(actorId: string): Promise<NpcActorRecord | null>;
   findNpcActorForUpdate(actorId: string): Promise<NpcActorRecord | null>;
   hasBlockingTaskForNpc(actorId: string): Promise<boolean>;
-  reserveNpcCopper(input: {
-    actorId: string;
-    amountCopper: number;
-    reserveCopper: number;
-  }): Promise<boolean>;
-  incrementNpcCopper(input: { actorId: string; delta: number }): Promise<void>;
   listNpcInventory(actorId: string): Promise<NpcInventoryRecord[]>;
   findCharacterByAccountId(accountId: string): Promise<CharacterRecord | null>;
-  incrementCharacterCopper(input: { characterId: string; delta: number }): Promise<void>;
-  recordCopperTransfer?(input: Parameters<CopperLedgerWriter["recordCopperTransfer"]>[0]): Promise<void>;
   listCharacterInventory(characterId: string): Promise<InventoryRecord[]>;
-  transferCharacterItemToNpc(input: {
-    characterId: string;
-    actorId: string;
-    itemId: ItemId;
-    quantity: number;
-    reason: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<void>;
   listBlockingTasksForNpc(actorId: string): Promise<NpcTaskRecord[]>;
   listTasksForCharacter(characterId: string): Promise<NpcTaskRecord[]>;
   findTask(taskId: string): Promise<NpcTaskRecord | null>;
@@ -126,6 +126,7 @@ export interface NpcTaskProposalPort {
 export class NpcTaskService {
   constructor(
     private readonly repo: NpcTaskRepositoryPort,
+    private readonly ports: NpcTaskAssetPorts,
     private readonly memory?: NpcTaskMemoryPort,
     private readonly proposalPort?: NpcTaskProposalPort
   ) {}
@@ -191,8 +192,8 @@ export class NpcTaskService {
     now: Date
   ): Promise<NpcTaskRecord | null> {
     try {
-      return await this.repo.transaction(async (repo) => {
-        await this.expireDueTasksInTransaction(repo, now);
+      return await this.repo.transaction(async (repo, tx) => {
+        await this.expireDueTasksInTransaction(repo, tx, now);
 
         const actor = await repo.findNpcActorForUpdate(candidate.npcActorId);
         if (!actor || actor.status !== "active") return null;
@@ -214,11 +215,9 @@ export class NpcTaskService {
           return null;
         }
 
-        const reserved = await repo.reserveNpcCopper({
-          actorId: actor.id,
-          amountCopper: proposal.rewardCopper,
-          reserveCopper: NPC_COPPER_RESERVE
-        });
+        const reserved = await this.ports
+          .assetsFor(tx)
+          .reserveNpcCopper(actor.id, proposal.rewardCopper, NPC_COPPER_RESERVE);
         if (!reserved) return null;
 
         const task = await repo.createTask({
@@ -235,7 +234,7 @@ export class NpcTaskService {
           createdAt: now,
           expiresAt: new Date(now.getTime() + TASK_TTL_MS)
         });
-        await repo.recordCopperTransfer?.({
+        await this.ports.ledgerFor(tx).recordCopperTransfer({
           operation: "task_escrow",
           fromBucket: "npc",
           fromEntityId: actor.id,
@@ -265,8 +264,8 @@ export class NpcTaskService {
   }
 
   async acceptTask(accountId: string, taskId: string, now = new Date()): Promise<NpcTaskDto[]> {
-    await this.repo.transaction(async (repo) => {
-      await this.expireDueTasksInTransaction(repo, now);
+    await this.repo.transaction(async (repo, tx) => {
+      await this.expireDueTasksInTransaction(repo, tx, now);
       const character = await this.requireCharacter(repo, accountId);
       const task = await this.requireTask(repo, taskId);
 
@@ -290,8 +289,8 @@ export class NpcTaskService {
   }
 
   async completeTask(accountId: string, taskId: string, now = new Date()): Promise<NpcTaskDto[]> {
-    const completedMemory = await this.repo.transaction(async (repo) => {
-      await this.expireDueTasksInTransaction(repo, now);
+    const completedMemory = await this.repo.transaction(async (repo, tx) => {
+      await this.expireDueTasksInTransaction(repo, tx, now);
       const character = await this.requireCharacter(repo, accountId);
       const task = await this.requireTask(repo, taskId);
 
@@ -320,19 +319,16 @@ export class NpcTaskService {
         throw new NpcTaskServiceError("VALIDATION_ERROR", "这个任务不能提交。");
       }
 
-      await repo.transferCharacterItemToNpc({
-        characterId: character.id,
-        actorId: task.npcActorId,
+      await this.ports.itemsFor(tx).transfer({
+        fromOwner: { ownerType: "character", ownerId: character.id },
+        toOwner: { ownerType: "npc", ownerId: task.npcActorId },
         itemId: task.requestedItemId,
         quantity: task.requestedQuantity,
         reason: "npc_task.complete",
         metadata: { taskId: task.id }
       });
-      await repo.incrementCharacterCopper({
-        characterId: character.id,
-        delta: task.escrowCopper
-      });
-      await repo.recordCopperTransfer?.({
+      await this.ports.assetsFor(tx).creditCharacterCopper(character.id, task.escrowCopper);
+      await this.ports.ledgerFor(tx).recordCopperTransfer({
         operation: "task_reward",
         fromBucket: "escrow",
         fromEntityId: task.id,
@@ -364,10 +360,14 @@ export class NpcTaskService {
   }
 
   async expireDueTasks(now: Date) {
-    await this.repo.transaction((repo) => this.expireDueTasksInTransaction(repo, now));
+    await this.repo.transaction((repo, tx) => this.expireDueTasksInTransaction(repo, tx, now));
   }
 
-  private async expireDueTasksInTransaction(repo: NpcTaskRepositoryPort, now: Date) {
+  private async expireDueTasksInTransaction(
+    repo: NpcTaskRepositoryPort,
+    tx: AssetMutationTx,
+    now: Date
+  ) {
     const actors = await repo.listNpcActors();
 
     for (const actor of actors) {
@@ -381,11 +381,8 @@ export class NpcTaskService {
           cancelledAt: now
         });
         if (!updated) continue;
-        await repo.incrementNpcCopper({
-          actorId: actor.id,
-          delta: task.escrowCopper
-        });
-        await repo.recordCopperTransfer?.({
+        await this.ports.assetsFor(tx).creditNpcCopper(actor.id, task.escrowCopper);
+        await this.ports.ledgerFor(tx).recordCopperTransfer({
           operation: "task_refund",
           fromBucket: "escrow",
           fromEntityId: task.id,

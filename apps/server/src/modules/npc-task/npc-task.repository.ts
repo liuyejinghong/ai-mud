@@ -9,10 +9,7 @@ import type { Db } from "../../db/client.js";
 import { characterItems, characters, npcItems, npcTasks, worldActors } from "../../db/schema.js";
 import type { CharacterRecord, InventoryRecord } from "../game/game.repository.js";
 import { serializeHunger } from "../game/game.repository.js";
-import { ItemRepository } from "../item/item.repository.js";
-import { ItemService } from "../item/item.service.js";
-import { LedgerRepository } from "../ledger/ledger.repository.js";
-import { LedgerService, type CopperLedgerWriter } from "../ledger/ledger.service.js";
+import type { AssetMutationTx } from "../ledger/asset-mutation.service.js";
 import type { NpcActorRecord, NpcInventoryRecord } from "../npc/npc.service.js";
 
 type NpcTaskDb = Pick<Db, "insert" | "select" | "update"> & { transaction?: Db["transaction"] };
@@ -132,9 +129,13 @@ function toTask(row: typeof npcTasks.$inferSelect): NpcTaskRecord {
 export class NpcTaskRepository {
   constructor(private readonly db: NpcTaskDb) {}
 
-  async transaction<T>(operation: (repo: NpcTaskRepository) => Promise<T>): Promise<T> {
-    if (!this.db.transaction) return operation(this);
-    return this.db.transaction(async (tx) => operation(new NpcTaskRepository(tx)));
+  async transaction<T>(
+    operation: (repo: NpcTaskRepository, tx: AssetMutationTx) => Promise<T>
+  ): Promise<T> {
+    if (!this.db.transaction) return operation(this, this.db as unknown as AssetMutationTx);
+    return this.db.transaction(async (tx) =>
+      operation(new NpcTaskRepository(tx), tx as unknown as AssetMutationTx)
+    );
   }
 
   async listNpcActors(): Promise<NpcActorRecord[]> {
@@ -178,38 +179,7 @@ export class NpcTaskRepository {
     return Boolean(row);
   }
 
-  async reserveNpcCopper(input: {
-    actorId: string;
-    amountCopper: number;
-    reserveCopper: number;
-  }): Promise<boolean> {
-    const rows = await this.db
-      .update(worldActors)
-      .set({
-        copperBalance: sql`${worldActors.copperBalance} - ${input.amountCopper}`,
-        updatedAt: new Date()
-      })
-      .where(
-        and(
-          eq(worldActors.id, input.actorId),
-          eq(worldActors.actorType, "npc"),
-          eq(worldActors.status, "active"),
-          gte(worldActors.copperBalance, input.amountCopper + input.reserveCopper)
-        )
-      )
-      .returning({ id: worldActors.id });
-    return rows.length > 0;
-  }
 
-  async incrementNpcCopper(input: { actorId: string; delta: number }) {
-    await this.db
-      .update(worldActors)
-      .set({
-        copperBalance: sql`${worldActors.copperBalance} + ${input.delta}`,
-        updatedAt: new Date()
-      })
-      .where(eq(worldActors.id, input.actorId));
-  }
 
   async listNpcInventory(actorId: string): Promise<NpcInventoryRecord[]> {
     const rows = await this.db
@@ -228,18 +198,7 @@ export class NpcTaskRepository {
     return row ? toCharacter(row) : null;
   }
 
-  async incrementCharacterCopper(input: { characterId: string; delta: number }) {
-    await this.db
-      .update(characters)
-      .set({ copperBalance: sql`${characters.copperBalance} + ${input.delta}` })
-      .where(eq(characters.id, input.characterId));
-  }
 
-  async recordCopperTransfer(
-    input: Parameters<CopperLedgerWriter["recordCopperTransfer"]>[0]
-  ): Promise<void> {
-    await new LedgerService(new LedgerRepository(this.db)).recordCopperTransfer(input);
-  }
 
   async listCharacterInventory(characterId: string): Promise<InventoryRecord[]> {
     const rows = await this.db
@@ -250,23 +209,6 @@ export class NpcTaskRepository {
     return rows.map((row) => ({ itemId: row.itemId as ItemId, quantity: row.quantity }));
   }
 
-  async transferCharacterItemToNpc(input: {
-    characterId: string;
-    actorId: string;
-    itemId: ItemId;
-    quantity: number;
-    reason: string;
-    metadata?: Record<string, unknown>;
-  }) {
-    await new ItemService(new ItemRepository(this.db, false)).transfer({
-      fromOwner: { ownerType: "character", ownerId: input.characterId },
-      toOwner: { ownerType: "npc", ownerId: input.actorId },
-      itemId: input.itemId,
-      quantity: input.quantity,
-      reason: input.reason,
-      ...(input.metadata ? { metadata: input.metadata } : {})
-    });
-  }
 
   async listBlockingTasksForNpc(actorId: string): Promise<NpcTaskRecord[]> {
     const rows = await this.db

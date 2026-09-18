@@ -14,7 +14,11 @@ import {
 // escrow amounts (modularity.md §7). Every method MUST be called inside the
 // caller's transaction: this service never opens or commits one.
 
-export type AssetMutationDb = Pick<Db, "insert" | "select" | "update" | "delete">;
+export type AssetMutationTx = Pick<Db, "delete" | "insert" | "select" | "update"> & {
+  transaction?: Db["transaction"];
+};
+
+export type AssetMutationDb = AssetMutationTx;
 
 export interface CommandReceipt {
   actorScope: string;
