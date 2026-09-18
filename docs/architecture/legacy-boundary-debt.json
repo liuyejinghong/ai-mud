@@ -23,7 +23,13 @@
       "reason": "quests 持久层值导入 characters 混合仓储的工具函数",
       "fixTask": "ARCH-05（hunger 序列化为领域值进 shared/domain；任务端口类型归 quests 自有）",
       "removalCondition": "npc-task.repository 不再 import ../game/*",
-      "severity": "target_blocking"
+      "severity": "target_blocking",
+      "targetGlobs": [
+        "apps/server/src/modules/game/game.repository.ts"
+      ],
+      "coveredModuleEdges": [
+        "quests>characters"
+      ]
     },
     {
       "id": "DEBT-002",
@@ -35,7 +41,10 @@
       "reason": "repository 层执行跨域物品转移编排",
       "fixTask": "ARCH-03（UoW 绑定 assets 公开 API；编排上移 application/quests 用例）",
       "removalCondition": "npc-task.repository 不再 import ../item/*",
-      "severity": "target_blocking"
+      "severity": "target_blocking",
+      "targetGlobs": [
+        "apps/server/src/modules/item/item.{repository,service}.ts"
+      ]
     },
     {
       "id": "DEBT-003",
@@ -47,7 +56,10 @@
       "reason": "repository 层直接写资产账本（方向 npc-task→assets 本身合法，违规在层次与直接实例化）",
       "fixTask": "ARCH-03（tx 绑定的 assets 参与API 注入）",
       "removalCondition": "npc-task.repository 不再 import ../ledger/*",
-      "severity": "target_blocking"
+      "severity": "target_blocking",
+      "targetGlobs": [
+        "apps/server/src/modules/ledger/{ledger.repository,ledger.service}.ts"
+      ]
     },
     {
       "id": "DEBT-004",
@@ -59,7 +71,12 @@
       "reason": "type-only import 同样计入依赖图（catalog edgeSemantics）",
       "fixTask": "ARCH-03（quests 定义自有端口类型）",
       "removalCondition": "npc-task.service 不再 import ../game/* ../npc/* ../ledger/*",
-      "severity": "target_blocking"
+      "severity": "target_blocking",
+      "targetGlobs": [
+        "apps/server/src/modules/game/game.repository.ts",
+        "apps/server/src/modules/npc/npc.service.ts",
+        "apps/server/src/modules/ledger/ledger.service.ts"
+      ]
     },
     {
       "id": "DEBT-005",
@@ -71,7 +88,13 @@
       "reason": "characters 混合服务直接调用 assets/social 内部实现",
       "fixTask": "ARCH-03（市场链先行：economy/assets 公开API）；lobby 读取归 observation（ARCH-06）",
       "removalCondition": "game.service 不再 import ../item/* ../ledger/* ../lobby/*",
-      "severity": "target_blocking"
+      "severity": "target_blocking",
+      "targetGlobs": [
+        "apps/server/src/modules/{item,ledger,lobby}/*"
+      ],
+      "coveredModuleEdges": [
+        "characters>social"
+      ]
     },
     {
       "id": "DEBT-006",
@@ -83,7 +106,10 @@
       "reason": "characters 持久层直接执行 assets 物品编排",
       "fixTask": "ARCH-03",
       "removalCondition": "game.repository 不再 import ../item/*",
-      "severity": "target_blocking"
+      "severity": "target_blocking",
+      "targetGlobs": [
+        "apps/server/src/modules/item/*"
+      ]
     },
     {
       "id": "DEBT-007",
@@ -95,7 +121,10 @@
       "reason": "R1：transport 层内嵌组合根并触发世界推进；绕过任何 application 用例层",
       "fixTask": "ARCH-03/06/07（依赖闭包迁 application 用例；enricher 迁 observation）",
       "removalCondition": "game.routes 仅 import application（+protocol/platform/kernel）",
-      "severity": "target_blocking"
+      "severity": "target_blocking",
+      "targetGlobs": [
+        "apps/server/src/modules/{auth,dialogue,item,lobby,npc,npc-task,offline-report,game}/*"
+      ]
     },
     {
       "id": "DEBT-008",
@@ -107,7 +136,10 @@
       "reason": "R1 同型：admin transport 直接依赖业务内部并在读路径推进世界/写种子",
       "fixTask": "ARCH-02/06（读路径不推进世界；admin 面板走 observation）",
       "removalCondition": "admin.routes 仅依赖 application/observation 公开入口",
-      "severity": "target_blocking"
+      "severity": "target_blocking",
+      "targetGlobs": [
+        "apps/server/src/modules/{account-ops,activation-code,ai,announcement,audit,auth,dialogue,game,ledger,npc-memory,npc,world-reset,world-runtime}/*"
+      ]
     },
     {
       "id": "DEBT-009",
@@ -119,7 +151,10 @@
       "reason": "npc 持久层依赖 ai 能力域",
       "fixTask": "ARCH-08（ai 审计读写归 ai/observation 公开入口）",
       "removalCondition": "dialogue.repository 不再 import ../ai/*",
-      "severity": "target_blocking"
+      "severity": "target_blocking",
+      "targetGlobs": [
+        "apps/server/src/modules/ai/ai-governance.service.ts"
+      ]
     },
     {
       "id": "DEBT-010",
@@ -131,7 +166,10 @@
       "reason": "catalog：npc 不依赖 ai；模型调用应由 application 在事务外协调",
       "fixTask": "ARCH-08（AiGateway + application 编排；对话开关与全局用途解耦）",
       "removalCondition": "dialogue.service 不再 import ../ai/*",
-      "severity": "target_blocking"
+      "severity": "target_blocking",
+      "targetGlobs": [
+        "apps/server/src/modules/ai/*"
+      ]
     },
     {
       "id": "DEBT-011",
@@ -143,7 +181,13 @@
       "reason": "npc（对话）穿透 quests 持久层",
       "fixTask": "ARCH-03（quests 公开 Query）",
       "removalCondition": "dialogue.service 不再 import ../npc-task/*",
-      "severity": "target_blocking"
+      "severity": "target_blocking",
+      "targetGlobs": [
+        "apps/server/src/modules/npc-task/npc-task.repository.ts"
+      ],
+      "coveredModuleEdges": [
+        "npc>quests"
+      ]
     },
     {
       "id": "DEBT-012",
@@ -155,7 +199,13 @@
       "reason": "social（传闻）穿透 npc 对话持久层",
       "fixTask": "ARCH-05/06（来源事实经公开 Query/事件读取）",
       "removalCondition": "rumor.service 不再 import ../dialogue/*",
-      "severity": "target_blocking"
+      "severity": "target_blocking",
+      "targetGlobs": [
+        "apps/server/src/modules/dialogue/dialogue.repository.ts"
+      ],
+      "coveredModuleEdges": [
+        "social>npc"
+      ]
     },
     {
       "id": "DEBT-013",
@@ -167,7 +217,10 @@
       "reason": "observation 读模型直接依赖业务内部，且 catalog 未给 observation→ai 边（AI 简报应由 application 事务外协调）",
       "fixTask": "ARCH-06/08（观察聚合走公开 Query；简报模型调用移 application）",
       "removalCondition": "offline-report 仅依赖登记的公开 Query/AI 适配",
-      "severity": "target_blocking"
+      "severity": "target_blocking",
+      "targetGlobs": [
+        "apps/server/src/modules/{ai,dialogue,game}/*"
+      ]
     },
     {
       "id": "DEBT-014",
@@ -191,7 +244,10 @@
       "reason": "生产服务 import 仿真设施（供 verify:npc-simulation 与测试使用）",
       "fixTask": "ARCH-02/MOD-03（仿真编排移出生产图至 scripts/）",
       "removalCondition": "npc.service 不再 import 仿真仓储",
-      "severity": "transitional"
+      "severity": "transitional",
+      "targetGlobs": [
+        "apps/server/src/modules/npc/npc.simulation-repository.ts"
+      ]
     },
     {
       "id": "DEBT-016",
@@ -256,9 +312,9 @@
     {
       "id": "DEBT-021",
       "ruleId": "CROSS_OWNER_COLUMN_WRITE",
-      "source": "item_instances（装备耐久）",
+      "source": "item_instances / character_equipment（装备耐久）",
       "target": "目标唯一写所有者：assets",
-      "symbol": "game.repository.updateEquipmentDurability legacy-first 双写:873-898",
+      "symbol": "game.repository.updateEquipmentDurability legacy-first 双写:873-898（列 currentDurability/maxDurability，两套表示）",
       "evidence": "item 拥有全生命周期（create/move:191,254），game 侧存在耐久 fallback 写",
       "reason": "装备双真源（AR-03）",
       "fixTask": "ARCH-04",
@@ -336,6 +392,252 @@
       "fixTask": "ARCH-02（重置用例迁移后本条改为 application 编调 world 公开维护API）",
       "removalCondition": "重置经唯一维护用例；保留为登记例外直至退役协议落地",
       "severity": "registered_exception"
+    },
+    {
+      "id": "DEBT-027",
+      "ruleId": "TYPE_ONLY_PEER_IMPORT",
+      "source": "apps/server/src/modules/dialogue/dialogue.service.ts",
+      "target": "apps/server/src/modules/game/game.repository.ts",
+      "symbol": "CharacterRecord/InventoryRecord 等类型",
+      "evidence": "MOD-02 首跑 arch:check；dialogue.service.ts import 语句",
+      "reason": "npc（对话）类型导入 characters 混合仓储",
+      "fixTask": "ARCH-03（对话域自有端口类型）",
+      "removalCondition": "dialogue.service 不再 import ../game/*",
+      "severity": "transitional",
+      "inventoryCompletion": "2026-09-18 MOD-02 首跑盘点补登记（非新增违规）",
+      "coveredModuleEdges": [
+        "npc>characters"
+      ]
+    },
+    {
+      "id": "DEBT-028",
+      "ruleId": "TYPE_ONLY_PEER_IMPORT",
+      "source": "apps/server/src/modules/npc-task/npc-task.repository.ts",
+      "target": "apps/server/src/modules/npc/npc.service.ts",
+      "symbol": "NpcActorRecord, NpcInventoryRecord",
+      "evidence": "npc-task.repository.ts:16（首轮审查 import 图在案，台账漏登记，MOD-02 首跑补全）",
+      "reason": "quests 持久层类型导入 npc 服务记录",
+      "fixTask": "ARCH-03（quests 自有端口类型）",
+      "removalCondition": "npc-task.repository 不再 import ../npc/*",
+      "severity": "transitional",
+      "inventoryCompletion": "2026-09-18 MOD-02 首跑盘点补登记（非新增违规）",
+      "coveredModuleEdges": [
+        "quests>npc"
+      ]
+    },
+    {
+      "id": "DEBT-029",
+      "ruleId": "TEST_CROSS_MODULE_FIXTURE",
+      "source": "apps/server/src/db/game-concurrency.integration.test.ts",
+      "target": "真 PG 存储集成 fixture",
+      "symbol": "GameService 真库并发契约",
+      "evidence": "storage integration fixture",
+      "reason": "存储集成测试须驱动真实服务写入",
+      "fixTask": "ARCH-09（抽登记 setup helper 后收敛）",
+      "removalCondition": "集成仅经登记 helper",
+      "severity": "transitional",
+      "inventoryCompletion": "2026-09-18 MOD-02 首跑盘点补登记（非新增违规）",
+      "targetGlobs": [
+        "apps/server/src/modules/game/game.service.ts"
+      ]
+    },
+    {
+      "id": "DEBT-030",
+      "ruleId": "TEST_CROSS_MODULE_FIXTURE",
+      "source": "apps/server/src/modules/ai/ai-layer-boundary.test.ts",
+      "target": "AI 分层边界回归",
+      "symbol": "读取 npc-memory/rumor 内部以断言分层约束",
+      "evidence": "architecture boundary test",
+      "reason": "边界测试需跨模块取证",
+      "fixTask": "ARCH-08（改为只读源码文本断言）",
+      "removalCondition": "边界测试不 import 业务内部",
+      "severity": "transitional",
+      "inventoryCompletion": "2026-09-18 MOD-02 首跑盘点补登记（非新增违规）",
+      "coveredModuleEdges": [
+        "apps/server/src/modules/npc-memory/*",
+        "apps/server/src/modules/rumor/*"
+      ],
+      "targetGlobs": [
+        "apps/server/src/modules/npc-memory/*",
+        "apps/server/src/modules/rumor/*"
+      ]
+    },
+    {
+      "id": "DEBT-031",
+      "ruleId": "TEST_CROSS_MODULE_FIXTURE",
+      "source": "apps/server/src/modules/dialogue/dialogue.service.test.ts",
+      "target": "对话服务白盒测试",
+      "symbol": "ai-orchestrator / game.repository / npc-task.repository",
+      "evidence": "whitebox test",
+      "reason": "对话用例白盒依赖三域内部",
+      "fixTask": "ARCH-03/08（迁移后改公开入口测试）",
+      "removalCondition": "仅测本模块 + 公开入口",
+      "severity": "transitional",
+      "inventoryCompletion": "2026-09-18 MOD-02 首跑盘点补登记（非新增违规）",
+      "coveredModuleEdges": [
+        "apps/server/src/modules/ai/ai-orchestrator.ts",
+        "apps/server/src/modules/game/game.repository.ts",
+        "apps/server/src/modules/npc-task/npc-task.repository.ts"
+      ],
+      "targetGlobs": [
+        "apps/server/src/modules/ai/ai-orchestrator.ts",
+        "apps/server/src/modules/game/game.repository.ts",
+        "apps/server/src/modules/npc-task/npc-task.repository.ts"
+      ]
+    },
+    {
+      "id": "DEBT-032",
+      "ruleId": "TEST_CROSS_MODULE_FIXTURE",
+      "source": "apps/server/src/modules/game/game.repository.test.ts",
+      "target": "game 仓储锁契约测试",
+      "symbol": "item.repository",
+      "evidence": "lock contract test",
+      "reason": "锁契约测试断言 item 台账参与",
+      "fixTask": "ARCH-03/04（迁移后改 assets 公开合同测试）",
+      "removalCondition": "仅测本模块",
+      "severity": "transitional",
+      "inventoryCompletion": "2026-09-18 MOD-02 首跑盘点补登记（非新增违规）",
+      "coveredModuleEdges": [
+        "apps/server/src/modules/item/item.repository.ts"
+      ],
+      "targetGlobs": [
+        "apps/server/src/modules/item/item.repository.ts"
+      ]
+    },
+    {
+      "id": "DEBT-033",
+      "ruleId": "TEST_CROSS_MODULE_FIXTURE",
+      "source": "apps/server/src/modules/game/game.routes.test.ts",
+      "target": "路由装配测试",
+      "symbol": "game.service",
+      "evidence": "route wiring test",
+      "reason": "路由测试透传断言需引用 characters 服务",
+      "fixTask": "ARCH-07（transport 收编后自消）",
+      "removalCondition": "transport 测试仅经 application",
+      "severity": "transitional",
+      "inventoryCompletion": "2026-09-18 MOD-02 首跑盘点补登记（非新增违规）",
+      "coveredModuleEdges": [
+        "apps/server/src/modules/game/game.service.ts"
+      ],
+      "targetGlobs": [
+        "apps/server/src/modules/game/game.service.ts"
+      ]
+    },
+    {
+      "id": "DEBT-034",
+      "ruleId": "TEST_CROSS_MODULE_FIXTURE",
+      "source": "apps/server/src/modules/game/game.service.test.ts",
+      "target": "game 服务串行资产测试",
+      "symbol": "ledger.service / lobby.repository",
+      "evidence": "serialized asset transfer tests",
+      "reason": "结算测试断言账本/大厅参与",
+      "fixTask": "ARCH-03/06",
+      "removalCondition": "迁移后经 assets/observation 公开合同",
+      "severity": "transitional",
+      "inventoryCompletion": "2026-09-18 MOD-02 首跑盘点补登记（非新增违规）",
+      "coveredModuleEdges": [
+        "apps/server/src/modules/ledger/ledger.service.ts",
+        "apps/server/src/modules/lobby/lobby.repository.ts"
+      ],
+      "targetGlobs": [
+        "apps/server/src/modules/ledger/ledger.service.ts",
+        "apps/server/src/modules/lobby/lobby.repository.ts"
+      ]
+    },
+    {
+      "id": "DEBT-035",
+      "ruleId": "TEST_CROSS_MODULE_FIXTURE",
+      "source": "apps/server/src/modules/npc-task/npc-task.service.test.ts",
+      "target": "任务服务测试",
+      "symbol": "game.repository / npc.service 记录类型",
+      "evidence": "type usage in tests",
+      "reason": "任务测试复用两域记录类型",
+      "fixTask": "ARCH-03（自有类型后自消）",
+      "removalCondition": "仅测本模块类型",
+      "severity": "transitional",
+      "inventoryCompletion": "2026-09-18 MOD-02 首跑盘点补登记（非新增违规）",
+      "coveredModuleEdges": [
+        "apps/server/src/modules/game/game.repository.ts",
+        "apps/server/src/modules/npc/npc.service.ts"
+      ],
+      "targetGlobs": [
+        "apps/server/src/modules/game/game.repository.ts",
+        "apps/server/src/modules/npc/npc.service.ts"
+      ]
+    },
+    {
+      "id": "DEBT-036",
+      "ruleId": "TEST_CROSS_MODULE_FIXTURE",
+      "source": "apps/server/src/modules/npc/npc.service.test.ts",
+      "target": "NPC 服务测试",
+      "symbol": "ledger.service 类型",
+      "evidence": "type usage in tests",
+      "reason": "NPC 测试复用账本写端口类型",
+      "fixTask": "ARCH-03",
+      "removalCondition": "经 assets 公开端口类型",
+      "severity": "transitional",
+      "inventoryCompletion": "2026-09-18 MOD-02 首跑盘点补登记（非新增违规）",
+      "coveredModuleEdges": [
+        "apps/server/src/modules/ledger/ledger.service.ts"
+      ],
+      "targetGlobs": [
+        "apps/server/src/modules/ledger/ledger.service.ts"
+      ]
+    },
+    {
+      "id": "DEBT-037",
+      "ruleId": "TEST_CROSS_MODULE_FIXTURE",
+      "source": "apps/server/src/modules/offline-report/offline-report.service.test.ts",
+      "target": "离线简报测试",
+      "symbol": "ai-governance / ai-orchestrator / game.repository / dialogue.repository",
+      "evidence": "read-model test",
+      "reason": "观察读模型测试引用四域内部",
+      "fixTask": "ARCH-06/08",
+      "removalCondition": "仅经 observation 聚合与登记 Query",
+      "severity": "transitional",
+      "inventoryCompletion": "2026-09-18 MOD-02 首跑盘点补登记（非新增违规）",
+      "coveredModuleEdges": [
+        "apps/server/src/modules/{ai,game,dialogue}/*"
+      ],
+      "targetGlobs": [
+        "apps/server/src/modules/{ai,game,dialogue}/*"
+      ]
+    },
+    {
+      "id": "DEBT-038",
+      "ruleId": "TEST_CROSS_MODULE_FIXTURE",
+      "source": "apps/server/src/modules/rumor/rumor.service.test.ts",
+      "target": "传闻服务测试",
+      "symbol": "dialogue.repository",
+      "evidence": "rumor source test",
+      "reason": "传闻测试引用对话持久层来源",
+      "fixTask": "ARCH-05/06",
+      "removalCondition": "经登记事实 Query",
+      "severity": "transitional",
+      "inventoryCompletion": "2026-09-18 MOD-02 首跑盘点补登记（非新增违规）",
+      "coveredModuleEdges": [
+        "apps/server/src/modules/dialogue/dialogue.repository.ts"
+      ],
+      "targetGlobs": [
+        "apps/server/src/modules/dialogue/dialogue.repository.ts"
+      ]
+    },
+    {
+      "id": "DEBT-039",
+      "ruleId": "UNANALYZABLE_SQL_WRITE",
+      "source": "动态 .set 写入点（3 处）",
+      "target": "人工审查清单（constitution §2：无法分析的写法必须精确登记并审查，不默认通过）",
+      "symbol": "game.repository.updateCharacterVitals:580（条件展开，列固定 hp/level/xp/injuryUntil）；npc-task.repository.updateTask:326（条件谓词+列固定任务状态族）；npc.repository.updateMapResourceCharges:170（.set(values) 变量式，列固定 resourceCharges/resourcesRefreshedAt/updatedAt）",
+      "evidence": "MOD-02 首跑 2026-09-18；人工复核：三处列集合均固定且不含跨所有者列",
+      "reason": "检查器 v1 无法解析条件展开/变量式 setter；人工确认无越界列",
+      "fixTask": "ARCH-03（扩展检查器解析 .set(identifier) 的键来源，或改为字面量列白名单写法后删除本条）",
+      "removalCondition": "三处改为可静态分析写法，或检查器升级后自动放行",
+      "severity": "transitional",
+      "manualReview": {
+        "reviewedAt": "2026-09-18",
+        "reviewer": "实施模型 + 台账交叉证据",
+        "verdict": "无越界列，允许保留至 ARCH-03"
+      }
     }
   ],
   "explicitlyNotViolations": [
@@ -343,5 +645,13 @@
     "npc→ledger（type-only CopperLedgerWriter，npc.service.ts:34）：npc→assets 为 catalog 允许边",
     "game.composition.ts→多模块、app.ts→多模块：组合根职权",
     "lobby/announcement 同属 social 的内部互调"
+  ],
+  "amendments": [
+    {
+      "date": "2026-09-18",
+      "kind": "Architecture Policy Change (inventory completion)",
+      "trigger": "MOD-02 检查器首跑 232 条记录甄别：为既有条目补 targetGlobs/coveredModuleEdges 机器字段；补登记 13 条首跑确认的历史项（其中 DEBT-028 在首轮审查 import 图中在案但台账漏登）；DEBT-039 为人工审查清单。",
+      "note": "非新增违规；冻结纪律不变：此后任何新增违规不入列。"
+    }
   ]
 }
