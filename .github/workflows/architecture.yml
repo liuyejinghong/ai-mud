@@ -9,6 +9,21 @@ on:
 jobs:
   gate:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_mud_ci
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:55432/ai_mud_ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,3 +42,9 @@ jobs:
         run: pnpm arch:check
       - name: Architecture gate self-test (NEG probes)
         run: pnpm arch:test
+      - name: Real-PG gates (migrations + concurrency + fault injection)
+        run: |
+          pnpm db:migrate
+          CI=true pnpm test:postgres
+      - name: NPC 7-day economy simulation
+        run: pnpm verify:npc-simulation
