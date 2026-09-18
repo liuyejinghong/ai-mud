@@ -512,18 +512,21 @@ describe("game PostgreSQL concurrency", () => {
         );
         await harness.client.query(
           `
-            INSERT INTO character_equipment (
-              id, character_id, slot, item_key, name, item_level,
-              attack_bonus, defense_bonus, max_durability, current_durability
+            INSERT INTO item_instances (
+              id, item_def_id, owner_type, owner_id, location_type, slot,
+              rarity, item_level, base_stats, affixes, max_durability, current_durability
             )
-            VALUES ($1, $2, 'weapon', 'test_blade', 'Test Blade', 10, 1, 0, 100, 50)
+            VALUES (
+              $1, 'test_blade', 'character', $2, 'equipped', 'weapon',
+              'common', 10, '{"attack":1,"defense":0,"agility":0,"maxHp":0}'::jsonb, '[]'::jsonb, 100, 50
+            )
           `,
           [equipmentId, seeded.characterId]
         );
 
         const results = await runBlockedPair(
           harness,
-          "SELECT id FROM character_equipment WHERE id = $1 FOR UPDATE",
+          "SELECT id FROM item_instances WHERE id = $1 FOR UPDATE",
           [equipmentId],
           () => harness.firstService.repairEquipment(seeded.accountId, { equipmentId }),
           () => harness.secondService.repairEquipment(seeded.accountId, { equipmentId })
@@ -548,7 +551,7 @@ describe("game PostgreSQL concurrency", () => {
               (SELECT count(*)::int FROM item_ledger WHERE from_owner_id = c.id AND reason = 'equipment.repair') AS "itemConsumes"
             FROM characters c
             JOIN character_items ci ON ci.character_id = c.id AND ci.item_id = 'iron_ore'
-            JOIN character_equipment ce ON ce.id = $2
+            JOIN item_instances ce ON ce.id = $2
             WHERE c.id = $1
           `,
           [seeded.characterId, equipmentId]

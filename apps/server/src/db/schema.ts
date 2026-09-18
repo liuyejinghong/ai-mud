@@ -213,30 +213,6 @@ export const characterItems = pgTable(
   })
 );
 
-export const characterEquipment = pgTable(
-  "character_equipment",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    characterId: uuid("character_id").notNull().references(() => characters.id),
-    slot: text("slot").notNull(),
-    itemKey: text("item_key").notNull(),
-    name: text("name").notNull(),
-    itemLevel: integer("item_level").notNull(),
-    attackBonus: integer("attack_bonus").notNull().default(0),
-    defenseBonus: integer("defense_bonus").notNull().default(0),
-    maxDurability: integer("max_durability").notNull().default(100),
-    currentDurability: integer("current_durability").notNull().default(100),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
-  },
-  (table) => ({
-    characterSlotIdx: uniqueIndex("character_equipment_character_slot_idx").on(
-      table.characterId,
-      table.slot
-    )
-  })
-);
-
 export const itemInstances = pgTable(
   "item_instances",
   {

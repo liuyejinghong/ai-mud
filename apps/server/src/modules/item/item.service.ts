@@ -32,6 +32,11 @@ interface ItemRepositoryLike {
   createItemInstance(input: CreateItemInstanceInput): Promise<ItemInstanceRecord>;
   findItemInstance(instanceId: string): Promise<ItemInstanceRecord | null>;
   findEquippedInstanceBySlot(owner: ItemOwner, slot: string): Promise<ItemInstanceRecord | null>;
+  updateItemInstanceDurability(input: {
+    instanceId: string;
+    currentDurability: number;
+    maxDurability: number;
+  }): Promise<void>;
   moveItemInstance(input: {
     instanceId: string;
     fromOwner: ItemOwner;
@@ -187,6 +192,25 @@ export class ItemService {
         eventType: "item.consume",
         stateDirty: true,
         payload: { itemId: input.itemId, quantity: input.quantity, reason: input.reason }
+      });
+    });
+  }
+
+  async updateEquipmentDurability(input: {
+    instanceId: string;
+    currentDurability: number;
+    maxDurability: number;
+  }): Promise<void> {
+    const maxDurability = Math.max(1, Math.floor(input.maxDurability));
+    const currentDurability = Math.min(
+      maxDurability,
+      Math.max(0, Math.floor(input.currentDurability))
+    );
+    await this.repo.transaction(async (repo) => {
+      await repo.updateItemInstanceDurability({
+        instanceId: input.instanceId,
+        currentDurability,
+        maxDurability
       });
     });
   }

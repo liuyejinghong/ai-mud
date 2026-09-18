@@ -1844,6 +1844,13 @@
       "layer": "test",
       "scope": "test",
       "note": "资产故障注入与回执幂等真库测试（G02 证据）"
+    },
+    {
+      "path": "apps/server/src/db/equipment-migration.integration.test.ts",
+      "module": "characters",
+      "layer": "test",
+      "scope": "test",
+      "note": "装备单一真源迁移一致性真库测试（G04 证据）；白盒归属 characters"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",
@@ -1867,6 +1874,11 @@
       "date": "2026-09-18",
       "kind": "ARCH-03a additions",
       "detail": "新增 asset-mutation.service.ts（assets/persistence）与 asset-mutation.integration.test.ts（assets/test）归属登记。"
+    },
+    {
+      "date": "2026-09-18",
+      "kind": "ARCH-04 additions",
+      "detail": "新增 equipment-migration.integration.test.ts 归属登记（characters/test）。"
     }
   ]
 }

@@ -568,8 +568,26 @@ export class GameService {
         hp: maxHp,
         maxHp
       });
+      const starterItems = new ItemRepository(tx, false);
       for (const item of STARTER_EQUIPMENT) {
-        await repo.createEquipment({ characterId: character.id, ...item });
+        await starterItems.createItemInstance({
+          itemDefId: item.itemKey,
+          ownerType: "character",
+          ownerId: character.id,
+          locationType: "equipped",
+          slot: item.slot,
+          rarity: "common",
+          itemLevel: item.itemLevel,
+          baseStats: {
+            attack: item.attackBonus,
+            defense: item.defenseBonus,
+            agility: 0,
+            maxHp: 0
+          },
+          affixes: [],
+          maxDurability: item.maxDurability,
+          currentDurability: item.currentDurability
+        });
       }
       await repo.writeEvent({
         characterId: character.id,
@@ -1299,7 +1317,6 @@ export class GameService {
         throw new GameServiceError("VALIDATION_ERROR", "背包里没有这件装备。");
       }
 
-      await repo.deleteLegacyEquipmentBySlot({ characterId: character.id, slot: equipment.slot });
       await new ItemService(new ItemRepository(tx, false)).equip({
         owner: { ownerType: "character", ownerId: character.id },
         instanceId: input.instanceId,
@@ -1604,15 +1621,15 @@ export class GameService {
     return character;
   }
 
-  private async listEquippedEquipment(repo: GameRepository, characterId: string) {
-    const [legacyEquipment, instanceEquipment] = await Promise.all([
-      repo.listEquipment(characterId),
-      repo.listItemInstances({ characterId, locationType: "equipped" })
-    ]);
-    return [
-      ...legacyEquipment,
-      ...instanceEquipment.map((instance) => equipmentRecordFromInstance(characterId, instance))
-    ];
+  private async listEquippedEquipment(
+    repo: GameRepository,
+    characterId: string
+  ): Promise<EquipmentRecord[]> {
+    const instances = await repo.listItemInstances({
+      characterId,
+      locationType: "equipped"
+    });
+    return instances.map((instance) => equipmentRecordFromInstance(characterId, instance));
   }
 
   private async listBackpackEquipment(repo: GameRepository, characterId: string) {
@@ -1702,8 +1719,8 @@ export class GameService {
       metadata: { equipmentIds: equipment.map((item) => item.id), totalIronOre }
     });
     for (const entry of quotes) {
-      await repo.updateEquipmentDurability({
-        equipmentId: entry.item.id,
+      await repo.itemWriter().updateEquipmentDurability({
+        instanceId: entry.item.id,
         currentDurability: entry.item.maxDurability,
         maxDurability: entry.item.maxDurability
       });
@@ -1876,8 +1893,8 @@ export class GameService {
       for (const item of damagedEquipment) {
         const previous = equipment.find((entry) => entry.id === item.id);
         if (!previous || previous.currentDurability === item.currentDurability) continue;
-        await repo.updateEquipmentDurability({
-          equipmentId: item.id,
+        await repo.itemWriter().updateEquipmentDurability({
+          instanceId: item.id,
           currentDurability: item.currentDurability,
           maxDurability: item.maxDurability
         });
@@ -1961,8 +1978,8 @@ export class GameService {
     for (const item of damagedEquipment) {
       const previous = equipment.find((entry) => entry.id === item.id);
       if (!previous || previous.currentDurability === item.currentDurability) continue;
-      await repo.updateEquipmentDurability({
-        equipmentId: item.id,
+      await repo.itemWriter().updateEquipmentDurability({
+        instanceId: item.id,
         currentDurability: item.currentDurability,
         maxDurability: item.maxDurability
       });
