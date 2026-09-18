@@ -66,12 +66,12 @@ flowchart TB
 
 ## 4. 公开入口与模块内部结构
 
-对已经提取的模块使用一个明确的 `public.ts`：只导出公开类型、错误、查询/事务参与接口。`bootstrap.ts` 仅供 composition/platform 的固定装配清单使用；可创建实现，不能被其他业务模块 import。同一文件不要既是公开合同又导出仓储。
+对已经提取的模块使用一个明确的 `public.ts`：只导出公开类型、错误、查询/事务参与接口。`bootstrap.ts` 仅供 composition 的固定装配清单使用；可创建实现，不能被其他业务模块或 platform import。同一文件不要既是公开合同又导出仓储。
 
 ```text
 modules/<logical-module>/
   public.ts                  # 边界，不做 export * from internal
-  bootstrap.ts               # 装配入口，不是业务 API
+  bootstrap.ts               # 仅composition装配，不是业务API
   internal/                  # 只有本模块可读
     ...domain/application...
     persistence/             # 只有这里可用该模块的数据访问
@@ -80,7 +80,7 @@ modules/<logical-module>/
 
 这是提取完成后的结构示意，不要求旧路径一次搬迁；过渡期用精确文件归属表映射相同边界。允许模块内只有少量文件，不为对称而造空层或通用 BaseRepository。
 
-公開 API 返回不可变快照/值对象、稳定 ID、枚举错误和必要 revision。禁止暴露 Drizzle row/query builder、数据库连接、ORM 推导类型、可被外部修改的 NPC 对象，以及可任意更新字段的 updateAnything/executeSql。
+公开 API 返回不可变快照/值对象、稳定 ID、枚举错误和必要 revision。禁止暴露 Drizzle row/query builder、数据库连接、ORM 推导类型、可被外部修改的 NPC 对象，以及可任意更新字段的 updateAnything/executeSql。
 
 共享包仅保留真正共用的值类型/协议。server-only 模块的全部私有类型不能搬到 shared 来绕过检查；前端不应因此获得世界秘密、provider 密钥或隐藏掉率。协议 DTO 与领域值类型分开。
 
@@ -98,11 +98,15 @@ modules/<logical-module>/
 
 事件语义使用过去式事实（task.completed），命令使用明确动词（completeTask）。订阅清单写明生产者、消费者、payload 版本、受众、是否允许重复/乱序、重试上限。消费者的新动作产生新的 commandId/causationId，并有终止条件；不能无限反向触发同一事实。事件去重键不能只有 actorId+eventType，否则会吞掉第二次真实动作。
 
+事件合同属于生产者public API；消费仍遵守catalog。没有直接依赖许可时，由application的明确事件适配器转换为消费者public输入；不通过shared大合集或字符串总线隐藏依赖。正常世界因果反馈可以跨时间循环，但每次处理必须有状态条件、幂等和工作量上限。
+
 本轮不引入 Kafka/Redis/通用消息总线。现有结构化事实能重建的非关键投影可轮询重建；确需可靠后台交付时才增加最小 PostgreSQL 待处理记录/消费进度，业务提交与待处理记录同事务。不能用内存 EventEmitter 或 bigserial 最大 ID 宣称可靠交付，也不承诺外部副作用 exactly-once。
 
 ## 6. 同一个事务，不允许破坏模块封装
 
 外层命名用例启动 UoW；UoW 提供已经绑定同一真实事务的模块 API，不把裸 tx/SQL 暴露给用例或业务规则。底层 module persistence 使用 tx，不自行提交。跨模块写不经 HTTP，不用分布式事务。
+
+platform底层事务执行器仅知道事务生命周期。composition用闭包将同一tx绑定到各域bootstrap适配；每个application用例的ports类型只引用所需public API。platform不得为实现“统一UoW”反向import业务类型，application也不得通过绑定过程获取raw tx。
 
 以下为设计伪代码，不是现有 SDK：
 
