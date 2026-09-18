@@ -458,7 +458,7 @@ describe("registerGameRoutes", () => {
     expect(settleCalls).toEqual([]);
   });
 
-  it("settles the NPC world before returning game state", async () => {
+  it("returns game state without advancing the world (ARCH-06)", async () => {
     const calls: string[] = [];
     const app = buildGameRouteTestApp({
       settleWorldIfDue: async () => {
@@ -473,7 +473,9 @@ describe("registerGameRoutes", () => {
     const response = await app.inject({ method: "GET", url: "/game/state" });
 
     expect(response.statusCode).toBe(200);
-    expect(calls).toEqual(["settled", "state"]);
+    // World advance is the timer's + explicit admin settle's job; reading
+    // state is a pure read.
+    expect(calls).toEqual(["state"]);
   });
 
   it("returns initial sync state without settling the world", async () => {

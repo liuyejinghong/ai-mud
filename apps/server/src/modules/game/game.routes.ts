@@ -373,7 +373,6 @@ export async function registerGameRoutes(app: FastifyInstance, maybeDependencies
   app.get("/game/state", async (request, reply) => {
     const account = await requireAccount(deps, request, reply);
     if (!account) return reply;
-    await deps.settleWorldIfDue();
     return deps.getState(account.id);
   });
 
