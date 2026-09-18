@@ -266,7 +266,6 @@ async function buildNpcSnapshot(
   service: NpcService,
   now: Date
 ): Promise<NpcSnapshotResponse> {
-  await service.ensureWorldSeeded(now);
   const treasury = await repo.findMunicipalTreasury(BLACKPINE_MARKET_ID);
 
   return {
@@ -336,11 +335,12 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
     getAssetLedgerHealth: async () =>
       new LedgerService(new LedgerRepository(app.di.db)).getHealth(now()),
     getNpcSnapshot: async () => {
+      // ARCH-06: admin panel is a pure read — no world settle, no seeding.
+      // The world advances via its own tick; use POST /admin/npcs/settle for
+      // an explicit on-demand settlement.
       const repo = new NpcRepository(app.di.db);
       const service = new NpcService(repo, new LedgerService(new LedgerRepository(app.di.db)));
-      const timestamp = now();
-      await app.di.worldRuntime.settleDue(timestamp);
-      return buildNpcSnapshot(repo, service, timestamp);
+      return buildNpcSnapshot(repo, service, now());
     },
     getWorldRuntimeStatus: async () => {
       const repo = new WorldRuntimeRepository(app.di.db);

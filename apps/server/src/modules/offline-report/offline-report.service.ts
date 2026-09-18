@@ -63,8 +63,24 @@ export class OfflineReportService {
       }, requestHash);
     }
 
-    const aiResult = await this.options.ai.generateOfflineSummary({ context });
-    return this.logAndBuildReport(accountId, character.id, context, now, aiResult, requestHash);
+    // ARCH-06: the core snapshot must not wait on an optional model call.
+    // Return the template now; kick the real generation off in the background.
+    // The next poll within the same UTC day picks the AI report up from the
+    // ai_call_logs cache.
+    void this.options.ai
+      .generateOfflineSummary({ context })
+      .then((aiResult) =>
+        this.logAndBuildReport(accountId, character.id, context, now, aiResult, requestHash)
+      )
+      .catch(() => {
+        // Generation failures already fall back inside the orchestrator; a
+        // crash here must not take the sync path down. Next poll retries.
+      });
+
+    return this.logAndBuildReport(accountId, character.id, context, now, {
+      ...templateResult(context, "generation_pending"),
+      status: "fallback"
+    }, requestHash);
   }
 
   private async getBudget(now: Date) {

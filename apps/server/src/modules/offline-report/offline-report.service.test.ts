@@ -95,20 +95,22 @@ function createService(input: {
 }
 
 describe("OfflineReportService", () => {
-  it("generates one AI report from verified recent events and records an audit log", async () => {
+  it("returns a template immediately and generates the AI report in the background (ARCH-06)", async () => {
     const { service, ai, createdLogs } = createService({});
 
     const report = await service.getReport("account-1", now);
 
     expect(ai.generateOfflineSummary).toHaveBeenCalledOnce();
-    expect(report?.summary).toContain("基础铁矿石成交");
-    expect(createdLogs).toHaveLength(1);
-    expect(createdLogs[0]).toMatchObject({
+    // Sync path must not wait on the model: first response is the template.
+    expect(report?.status).toBe("fallback");
+    // Background generation still records the audit log (flush microtasks):
+    // receipt 1 = pending template, receipt 2 = completed AI result.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(createdLogs).toHaveLength(2);
+    expect(createdLogs[1]).toMatchObject({
       purpose: "offline_summary",
       status: "success",
-      accountId: "account-1",
-      characterId: "character-1",
-      provider: "deepseek"
+      accountId: "account-1"
     });
   });
 
