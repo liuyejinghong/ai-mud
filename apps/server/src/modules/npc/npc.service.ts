@@ -90,6 +90,7 @@ export interface NpcActionRecord {
 export interface NpcEventRecord {
   id: string;
   actorId: string;
+  eventType: string;
   message: string;
   createdAt: Date;
 }
@@ -353,6 +354,7 @@ export class NpcService {
           })),
           recentEvents: recentEvents.map((event) => ({
             id: event.id,
+            eventType: event.eventType,
             message: event.message,
             createdAt: event.createdAt.toISOString()
           }))

@@ -13,6 +13,10 @@ export interface CombatantStats {
 export interface CombatTimelineEntry {
   atMs: number;
   message: string;
+  /** Structured fact: who delivered this event. Display text is derived, this is not. */
+  actor: "player" | "monster";
+  /** Structured fact: damage dealt to the opposite side by this hit. */
+  damage?: number;
 }
 
 export interface CombatResult {
@@ -121,7 +125,9 @@ export function simulateCombat(input: SimulateCombatInput): CombatResult {
       playerAttackCount += 1;
       timeline.push({
         atMs: now,
-        message: `${player.name} 攻击${target.name}，造成 ${hit} 点伤害。`
+        message: `${player.name} 攻击${target.name}，造成 ${hit} 点伤害。`,
+        actor: "player",
+        damage: hit
       });
     } else {
       const attacker = aliveMonsters.find(
@@ -133,7 +139,9 @@ export function simulateCombat(input: SimulateCombatInput): CombatResult {
       monsterAttackCount += 1;
       timeline.push({
         atMs: now,
-        message: `${attacker.name} 撕咬${player.name}，造成 ${hit} 点伤害。`
+        message: `${attacker.name} 撕咬${player.name}，造成 ${hit} 点伤害。`,
+        actor: "monster",
+        damage: hit
       });
     }
   }

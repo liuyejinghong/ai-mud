@@ -264,6 +264,7 @@ describe("selectRecentLog", () => {
       ...baseState,
       log: Array.from({ length: 5 }, (_, index) => ({
         id: `event-${index + 1}`,
+        eventType: "world.broadcast",
         message: `事件 ${index + 1}`,
         createdAt: `2026-07-13T08:0${index}:00.000Z`
       }))
@@ -284,10 +285,10 @@ describe("selectRecentLog", () => {
   });
 
   it("returns no entries for a non-positive limit", () => {
-    expect(selectRecentLog({ ...baseState, log: [{ id: "1", message: "一", createdAt: "" }] }, 0))
+    expect(selectRecentLog({ ...baseState, log: [{ id: "1", eventType: "world.broadcast", message: "一", createdAt: "" }] }, 0))
       .toEqual([]);
     expect(selectRecentLog(baseState, -1)).toEqual([]);
-    expect(selectRecentLog({ ...baseState, log: [{ id: "1", message: "一", createdAt: "" }] }, 0.5))
+    expect(selectRecentLog({ ...baseState, log: [{ id: "1", eventType: "world.broadcast", message: "一", createdAt: "" }] }, 0.5))
       .toEqual([]);
     expect(selectRecentLog(baseState, Number.NaN)).toEqual([]);
     expect(selectRecentLog(baseState, Number.POSITIVE_INFINITY)).toEqual([]);
@@ -297,9 +298,9 @@ describe("selectRecentLog", () => {
     const state: GameStateDto = {
       ...baseState,
       log: [
-        { id: "1", message: "一", createdAt: "" },
-        { id: "2", message: "二", createdAt: "" },
-        { id: "3", message: "三", createdAt: "" }
+        { id: "1", eventType: "world.broadcast", message: "一", createdAt: "" },
+        { id: "2", eventType: "world.broadcast", message: "二", createdAt: "" },
+        { id: "3", eventType: "world.broadcast", message: "三", createdAt: "" }
       ]
     };
 

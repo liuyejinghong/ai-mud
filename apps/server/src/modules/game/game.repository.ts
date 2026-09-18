@@ -86,6 +86,7 @@ export interface MapInstanceRecord {
 
 export interface GameEventRecord {
   id: string;
+  eventType: string;
   message: string;
   createdAt: Date;
 }
@@ -163,6 +164,8 @@ export interface GatheringActionPayload {
 export interface CombatTimelineEntry {
   atMs: number;
   message: string;
+  actor: "player" | "monster";
+  damage?: number;
 }
 
 export interface CombatActionPayload {
@@ -340,7 +343,10 @@ export function parseActionPayload(
         ? payload.combatTimeline.filter(isCombatTimelineEntry)
         : payload.combatLog.map((message) => ({
             atMs: Number.MAX_SAFE_INTEGER,
-            message
+            message,
+            // Legacy text-only entries carry no structured facts: they display
+            // but contribute zero damage (ARCH-05, no promotion of old prose).
+            actor: "monster" as const
           }));
       const normalized: CombatActionPayload = {
         encounterId: payload.encounterId,
@@ -1101,6 +1107,7 @@ export class GameRepository {
     return this.db
       .select({
         id: gameEvents.id,
+        eventType: gameEvents.eventType,
         message: gameEvents.message,
         createdAt: gameEvents.createdAt
       })

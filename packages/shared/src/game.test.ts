@@ -49,7 +49,7 @@ describe("game contract", () => {
 
   it("exposes v0.10.6 world health compatibility", () => {
     expect(PRODUCT_VERSION).toBe("0.10.6");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(40);
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(41);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(25);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(16);
@@ -370,6 +370,7 @@ describe("game contract", () => {
       recentEvents: [
         {
           id: "event-1",
+          eventType: "action.gathering.start",
           message: "玛拉开始采集野莓。",
           createdAt: "2026-07-01T12:00:00.000Z"
         }

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { GameStateDto } from "@ai-mud/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { TutorialGuide, TUTORIAL_VERSION } from "./TutorialGuide";
+import { TutorialGuide, TUTORIAL_VERSION, inferTutorialProgress } from "./TutorialGuide";
 
 const baseState: GameStateDto = {
   character: {
@@ -86,11 +86,13 @@ describe("TutorialGuide", () => {
       log: [
         {
           id: "movement",
+          eventType: "character.move",
           message: "你向北移动。",
           createdAt: "2026-07-13T10:00:00.000Z"
         },
         {
           id: "gathering",
+          eventType: "action.gathering.start",
           message: "你开始采集旧矿坑铁矿脉。",
           createdAt: "2026-07-13T10:01:00.000Z"
         }
@@ -107,5 +109,111 @@ describe("TutorialGuide", () => {
     expect(await screen.findByText("返回哨站，再处理 NPC、集市和装备。")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "重置" }));
     expect(screen.getByText("前往旧矿坑或腐林，开始第一次野外探索。")).toBeTruthy();
+  });
+
+  it("derives milestones from structured event types instead of log copy", () => {
+    const base = {
+      ...baseState,
+      character: baseState.character!
+    };
+    const withLog = (log: GameStateDto["log"]) => ({ ...base, log });
+
+    // Lv1: location only. At the outpost with an empty log, progress is 0.
+    expect(inferTutorialProgress(withLog([]))).toBe(0);
+    expect(
+      inferTutorialProgress({
+        ...withLog([]),
+        character: { ...base.character!, currentLocation: "old_mine" as const, position: { x: 1, y: 1 } }
+      })
+    ).toBe(1);
+
+    // Lv2: character.move triggers even when the copy never mentions moving.
+    expect(
+      inferTutorialProgress({
+        ...withLog([
+          { id: "move-1", eventType: "character.move", message: "Wandered north.", createdAt: "" }
+        ]),
+        character: { ...base.character!, currentLocation: "old_mine" as const, position: { x: 1, y: 1 } }
+      })
+    ).toBe(2);
+
+    // Chinese movement copy without the event type must not advance to Lv2.
+    expect(
+      inferTutorialProgress({
+        ...withLog([
+          { id: "move-fake", eventType: "world.broadcast", message: "你向北移动。", createdAt: "" }
+        ]),
+        character: { ...base.character!, currentLocation: "old_mine" as const, position: { x: 1, y: 1 } }
+      })
+    ).toBe(1);
+
+    // Lv3: gathering action or action.gathering.start.
+    expect(
+      inferTutorialProgress({
+        ...withLog([
+          { id: "move-1", eventType: "character.move", message: "Wandered north.", createdAt: "" }
+        ]),
+        character: { ...base.character!, currentLocation: "old_mine" as const, position: { x: 1, y: 1 } },
+        currentAction: {
+          id: "action-1",
+          actionType: "gathering",
+          status: "active",
+          description: "gathering",
+          startedAt: "",
+          endsAt: "",
+          progressPct: 0,
+          cycleProgressPct: 0,
+          completedCycles: 0,
+          settledCycles: 0,
+          plannedCycles: 1,
+          expectedYield: [],
+          combatLog: []
+        }
+      })
+    ).toBe(3);
+
+    // Lv4: non-empty inventory unlocks after Lv3, without any harvest copy.
+    const readyForHarvest = {
+      ...withLog([
+        { id: "move-1", eventType: "character.move", message: "Wandered north.", createdAt: "" },
+        {
+          id: "gather-1",
+          eventType: "action.gathering.start",
+          message: "Gathering started.",
+          createdAt: ""
+        }
+      ]),
+      character: { ...base.character!, currentLocation: "old_mine" as const, position: { x: 1, y: 1 } },
+      inventory: [{ itemId: "iron_ore", name: "基础铁矿石", quantity: 1 }]
+    };
+    expect(inferTutorialProgress(readyForHarvest)).toBe(4);
+
+    // Lv5: back at the outpost with zone.return completes the tutorial.
+    expect(
+      inferTutorialProgress({
+        ...readyForHarvest,
+        character: { ...base.character!, currentLocation: "blackpine_outpost" as const, position: null },
+        log: [
+          ...readyForHarvest.log,
+          { id: "return-1", eventType: "zone.return", message: "Back home.", createdAt: "" }
+        ]
+      })
+    ).toBe(5);
+  });
+
+  it("keeps milestones stable when log copy is rewritten with the same event types", () => {
+    const snapshot = (message: string) => ({
+      ...baseState,
+      character: { ...baseState.character!, currentLocation: "blackpine_outpost" as const, position: null },
+      inventory: [{ itemId: "iron_ore", name: "基础铁矿石", quantity: 1 }],
+      log: [
+        { id: "move-1", eventType: "character.move", message, createdAt: "" },
+        { id: "gather-1", eventType: "action.gathering.start", message, createdAt: "" },
+        { id: "return-1", eventType: "zone.return", message, createdAt: "" }
+      ]
+    });
+
+    expect(inferTutorialProgress(snapshot("你向北移动，开始采集，返回黑松哨站。"))).toBe(5);
+    expect(inferTutorialProgress(snapshot("Completely different wording, no keywords."))).toBe(5);
   });
 });

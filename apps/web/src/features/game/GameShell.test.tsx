@@ -312,7 +312,7 @@ const forestState: GameStateDto = {
   market: null,
   currentAction: null,
   availableActions: ["move", "start_gathering", "start_combat", "return_to_village"],
-  log: [{ id: "event-1", message: "你踏入腐林。", createdAt: "2026-07-01T00:00:00.000Z" }]
+  log: [{ id: "event-1", eventType: "zone.enter", message: "你踏入腐林。", createdAt: "2026-07-01T00:00:00.000Z" }]
 };
 
 function isSyncResponse(value: unknown) {
@@ -467,6 +467,7 @@ describe("GameShell", () => {
       ...villageState,
       log: Array.from({ length: 35 }, (_, index) => ({
         id: `event-${index + 1}`,
+        eventType: "world.broadcast",
         message: `事件 ${index + 1}`,
         createdAt: new Date(Date.UTC(2026, 6, 6, 8, index, 0)).toISOString()
       }))
@@ -854,6 +855,7 @@ describe("GameShell", () => {
         log: [
           {
             id: "event-local-time",
+            eventType: "zone.return",
             message: "你抵达黑松哨站。",
             createdAt: "2026-07-02T10:00:00.000Z"
           }

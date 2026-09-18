@@ -191,6 +191,7 @@ function buildService(reply: Partial<AiDialogueReply> = {}) {
         {
           id: "event-1",
           actorId: "npc-blacksmith",
+          eventType: "blacksmith.inventory.low",
           message: "伯林抱怨基础铁矿石库存太少。",
           createdAt: new Date("2026-07-01T11:00:00.000Z")
         }

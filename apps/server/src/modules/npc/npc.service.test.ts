@@ -40,6 +40,7 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
   events: Array<{
     id: string;
     actorId: string;
+    eventType: string;
     message: string;
     createdAt: Date;
   }> = [];
@@ -250,6 +251,7 @@ class InMemoryNpcRepository implements NpcRepositoryPort {
     this.events.push({
       id: `event-${this.events.length + 1}`,
       actorId: input.actorId,
+      eventType: input.eventType,
       message: input.message,
       createdAt: input.createdAt
     });
@@ -976,6 +978,7 @@ describe("NpcService", () => {
     repo.events.push({
       id: "event-1",
       actorId: farmer.id,
+      eventType: "action.gathering.start",
       message: "玛拉开始采集野莓。",
       createdAt: now
     });
@@ -997,6 +1000,7 @@ describe("NpcService", () => {
         recentEvents: [
           {
             id: "event-1",
+            eventType: "action.gathering.start",
             message: "玛拉开始采集野莓。",
             createdAt: "2026-07-01T09:00:00.000Z"
           }

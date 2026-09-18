@@ -144,6 +144,7 @@ export interface MapCellDto {
 
 export interface GameLogEntryDto {
   id: string;
+  eventType: string;
   message: string;
   createdAt: string;
 }

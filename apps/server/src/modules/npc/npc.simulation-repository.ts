@@ -251,6 +251,7 @@ export class NpcSimulationRepository implements NpcRepositoryPort {
     rows.unshift({
       id: `simulation-event-${rows.length + 1}`,
       actorId: input.actorId,
+      eventType: input.eventType,
       message: input.message,
       createdAt: cloneDate(input.createdAt)
     });
