@@ -67,7 +67,6 @@ import {
   newCommandId,
   type AssetMutationPort
 } from "../ledger/asset-mutation.service.js";
-import { worldRuntimeState } from "../db/schema.js";
 import { LedgerRepository } from "../ledger/ledger.repository.js";
 import { LedgerService } from "../ledger/ledger.service.js";
 import { LobbyRepository } from "../lobby/lobby.repository.js";
@@ -477,7 +476,11 @@ export class GameService {
     });
   }
 
-  async getSync(accountId: string, cursor = 0): Promise<GameSyncResponseDto> {
+  async getSync(
+    accountId: string,
+    cursor = 0,
+    worldEpoch = 1
+  ): Promise<GameSyncResponseDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
       const lobby = new LobbyService(new LobbyRepository(tx));
@@ -503,12 +506,6 @@ export class GameService {
         })),
         now
       });
-
-      const runtimeRow = await this.db
-        .select({ worldEpoch: worldRuntimeState.worldEpoch })
-        .from(worldRuntimeState)
-        .limit(1);
-      const worldEpoch = runtimeRow[0]?.worldEpoch ?? 1;
 
       return {
         worldEpoch,

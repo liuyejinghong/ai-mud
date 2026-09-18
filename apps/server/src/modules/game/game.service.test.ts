@@ -22,6 +22,7 @@ afterEach(() => {
 
 function character(overrides: Partial<CharacterRecord> = {}): CharacterRecord {
   return {
+    revision: 1,
     id: "character-1",
     accountId: "account-1",
     name: "Zichen",

@@ -8,25 +8,41 @@ import type {
 import { WorldRuntimeService } from "./world-runtime.service.js";
 
 class InMemoryWorldRuntimeRepository implements WorldRuntimeRepositoryPort {
-  progress: { key: string; lastSettledAt: Date } | null = null;
+  progress: { key: string; lastSettledAt: Date; worldEpoch: number } | null = null;
   savedProgress: string[] = [];
 
   async find() {
-    return this.progress ? { key: this.progress.key, lastSettledAt: new Date(this.progress.lastSettledAt) } : null;
+    return this.progress
+      ? {
+          key: this.progress.key,
+          lastSettledAt: new Date(this.progress.lastSettledAt),
+          worldEpoch: this.progress.worldEpoch
+        }
+      : null;
   }
 
   async ensureRow(key: string, initialLastSettledAt: Date) {
     if (!this.progress) {
-      this.progress = { key, lastSettledAt: new Date(initialLastSettledAt) };
+      this.progress = { key, lastSettledAt: new Date(initialLastSettledAt), worldEpoch: 1 };
     }
   }
 
   async lockAndRead(key: string) {
-    return this.progress ? { key, lastSettledAt: new Date(this.progress.lastSettledAt) } : null;
+    return this.progress
+      ? {
+          key,
+          lastSettledAt: new Date(this.progress.lastSettledAt),
+          worldEpoch: this.progress.worldEpoch
+        }
+      : null;
   }
 
   async saveProgress(input: { key: string; lastSettledAt: Date }) {
-    this.progress = { key: input.key, lastSettledAt: new Date(input.lastSettledAt) };
+    this.progress = {
+      key: input.key,
+      lastSettledAt: new Date(input.lastSettledAt),
+      worldEpoch: this.progress?.worldEpoch ?? 1
+    };
     this.savedProgress.push(input.lastSettledAt.toISOString());
   }
 

@@ -32,6 +32,7 @@ const DAY_MS = 24 * 60 * 60_000;
 type GameDb = Pick<Db, "delete" | "insert" | "select" | "update">;
 
 export interface CharacterRecord {
+  revision: number;
   id: string;
   accountId: string;
   name: string;
@@ -382,6 +383,7 @@ function mapCharacterActionRow(row: typeof characterActions.$inferSelect): Chara
 function mapCharacterRow(row: typeof characters.$inferSelect): CharacterRecord {
   return {
     id: row.id,
+    revision: row.revision,
     accountId: row.accountId,
     name: row.name,
     classId: row.classId,
@@ -480,6 +482,7 @@ export class GameRepository {
 
     return {
       id: row.id,
+      revision: row.revision,
       accountId: row.accountId,
       name: row.name,
       classId: row.classId,

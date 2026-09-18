@@ -51,30 +51,40 @@ export function createRumorService(app: FastifyInstance) {
   );
 }
 
-export function createAiOrchestrator(app: FastifyInstance) {
-  const hasDeepSeekKey =
-    app.config.AI_NPC_DIALOGUE_ENABLED &&
-    app.config.AI_PROVIDER === "deepseek" &&
-    Boolean(app.config.DEEPSEEK_API_KEY);
-  const provider: AiProvider = hasDeepSeekKey
-    ? new DeepSeekAiProvider({
-        apiKey: app.config.DEEPSEEK_API_KEY!,
-        baseUrl: app.config.DEEPSEEK_BASE_URL
-      })
-    : {
-        completeJson: async () => {
-          throw new Error("AI provider is disabled");
-        }
-      };
+// ARCH-08: one orchestrator instance per app; purpose-level admission via
+// enabledFor. AI_NPC_DIALOGUE_ENABLED now governs dialogue only; other
+// purposes follow provider availability.
+const gatewayCache = new WeakMap<FastifyInstance, AiOrchestrator>();
 
-  return new AiOrchestrator({
-    enabled: hasDeepSeekKey,
-    providerName: hasDeepSeekKey ? "deepseek" : "template",
-    model: hasDeepSeekKey ? app.config.DEEPSEEK_MODEL : "template",
-    maxOutputTokens: app.config.AI_DIALOGUE_MAX_OUTPUT_TOKENS,
-    timeoutMs: app.config.AI_DIALOGUE_TIMEOUT_MS,
-    provider
-  });
+export function createAiOrchestrator(app: FastifyInstance): AiOrchestrator {
+  let orchestrator = gatewayCache.get(app);
+  if (!orchestrator) {
+    const providerConfigured =
+      app.config.AI_PROVIDER === "deepseek" && Boolean(app.config.DEEPSEEK_API_KEY);
+    const provider: AiProvider = providerConfigured
+      ? new DeepSeekAiProvider({
+          apiKey: app.config.DEEPSEEK_API_KEY!,
+          baseUrl: app.config.DEEPSEEK_BASE_URL
+        })
+      : {
+          completeJson: async () => {
+            throw new Error("AI provider is disabled");
+          }
+        };
+
+    orchestrator = new AiOrchestrator({
+      provider,
+      providerName: providerConfigured ? "deepseek" : "template",
+      model: providerConfigured ? app.config.DEEPSEEK_MODEL : "template",
+      maxOutputTokens: app.config.AI_DIALOGUE_MAX_OUTPUT_TOKENS,
+      timeoutMs: app.config.AI_DIALOGUE_TIMEOUT_MS,
+      enabledFor: (purpose) =>
+        providerConfigured &&
+        (purpose === "npc_dialogue" ? app.config.AI_NPC_DIALOGUE_ENABLED : true)
+    });
+    gatewayCache.set(app, orchestrator);
+  }
+  return orchestrator;
 }
 
 function createNpcTaskProposalPort(app: FastifyInstance) {

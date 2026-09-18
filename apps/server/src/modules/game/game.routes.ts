@@ -109,6 +109,7 @@ export interface GameRouteDependencies {
   getCurrentAccount(request: FastifyRequest): Promise<PublicAccountRecord | null>;
   verifyGameMutation(request: FastifyRequest): Promise<boolean>;
   settleWorldIfDue(): Promise<void>;
+  getWorldEpoch(): Promise<number>;
   getState(accountId: string): Promise<GameStateDto>;
   syncGame(accountId: string, cursor?: number): Promise<GameSyncResponseDto>;
   sendLobbyChat(accountId: string, body: string): Promise<ChatMessageDto>;
@@ -249,11 +250,16 @@ function createDefaultDependencies(app: FastifyInstance): GameRouteDependencies 
     settleWorldIfDue: async () => {
       await app.di.worldRuntime.settleDue(new Date());
     },
+    getWorldEpoch: async () => {
+      const row = await app.di.worldRuntime.getWorldEpoch();
+      return row;
+    },
     getState: async (accountId) => enrichState(accountId, await game.getState(accountId)),
     syncGame: async (accountId, cursor) => {
+      const epoch = await app.di.worldRuntime.getWorldEpoch();
       const sync = await enrichGameSyncResponse(
         accountId,
-        await game.getSync(accountId, cursor),
+        await game.getSync(accountId, cursor, epoch),
         enrichState
       );
       if ((cursor ?? 0) > 0) return sync;

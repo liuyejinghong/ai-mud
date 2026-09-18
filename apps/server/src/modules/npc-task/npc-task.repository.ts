@@ -82,6 +82,7 @@ function toNpcActor(row: typeof worldActors.$inferSelect): NpcActorRecord {
 
 function toCharacter(row: typeof characters.$inferSelect): CharacterRecord {
   return {
+      revision: row.revision,
     id: row.id,
     accountId: row.accountId,
     name: row.name,

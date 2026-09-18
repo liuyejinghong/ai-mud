@@ -384,6 +384,7 @@ function character(): CharacterRecord {
   return {
     id: "character-1",
     accountId: "account-1",
+      revision: 1,
     name: "阿岚",
     classId: "ranger",
     level: 1,

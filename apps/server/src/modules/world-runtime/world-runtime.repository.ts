@@ -5,6 +5,7 @@ import { worldRuntimeState } from "../../db/schema.js";
 export interface WorldRuntimeProgress {
   key: string;
   lastSettledAt: Date | null;
+  worldEpoch: number;
 }
 
 type WorldRuntimeDb = Pick<Db, "insert" | "select" | "update"> & {
@@ -43,12 +44,12 @@ export class WorldRuntimeRepository implements WorldRuntimeRepositoryPort {
 
   async find(key: string): Promise<WorldRuntimeProgress | null> {
     const [row] = await this.db
-      .select({ lastSettledAt: worldRuntimeState.lastSettledAt })
+      .select({ lastSettledAt: worldRuntimeState.lastSettledAt, worldEpoch: worldRuntimeState.worldEpoch })
       .from(worldRuntimeState)
       .where(eq(worldRuntimeState.key, key))
       .limit(1);
 
-    return row ? { key, lastSettledAt: row.lastSettledAt } : null;
+    return row ? { key, lastSettledAt: row.lastSettledAt, worldEpoch: row.worldEpoch } : null;
   }
 
   async ensureRow(key: string, initialLastSettledAt: Date): Promise<void> {
@@ -61,13 +62,15 @@ export class WorldRuntimeRepository implements WorldRuntimeRepositoryPort {
   // Must run inside the caller's transaction: the row lock is the tick mutex.
   async lockAndRead(key: string): Promise<WorldRuntimeProgress | null> {
     const [row] = await this.db
-      .select({ lastSettledAt: worldRuntimeState.lastSettledAt })
+      .select({ lastSettledAt: worldRuntimeState.lastSettledAt, worldEpoch: worldRuntimeState.worldEpoch })
       .from(worldRuntimeState)
       .where(eq(worldRuntimeState.key, key))
       .limit(1)
       .for("update");
 
-    return row ? { key, lastSettledAt: row.lastSettledAt } : null;
+    return row
+      ? { key, lastSettledAt: row.lastSettledAt, worldEpoch: row.worldEpoch }
+      : null;
   }
 
   // Must run inside the same transaction as lockAndRead.

@@ -10,6 +10,7 @@ const now = new Date("2026-07-02T10:00:00.000Z");
 const character: CharacterRecord = {
   id: "character-1",
   accountId: "account-1",
+    revision: 1,
   name: "伊森",
   classId: "warrior",
   level: 5,

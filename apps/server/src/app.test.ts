@@ -78,6 +78,7 @@ describe("createWorldRuntimeScheduler", () => {
     });
     const scheduler = createWorldRuntimeScheduler({
       settleDue: async () => ({ settledSteps: 1, skipped: false }),
+        getWorldEpoch: async () => 1,
       runPostTick: async () => {
         calls.push("post-tick");
         await postTickPending;
@@ -101,6 +102,7 @@ describe("createWorldRuntimeScheduler", () => {
     ];
     const scheduler = createWorldRuntimeScheduler({
       settleDue: async () => results.shift()!,
+        getWorldEpoch: async () => 1,
       runPostTick: async (now) => {
         postTickCalls.push(now);
       },
@@ -121,6 +123,7 @@ describe("createWorldRuntimeScheduler", () => {
     let postTickCalls = 0;
     const scheduler = createWorldRuntimeScheduler({
       settleDue: async () => ({ settledSteps: 1, skipped: false }),
+        getWorldEpoch: async () => 1,
       runPostTick: async () => {
         postTickCalls += 1;
         await pending;
@@ -139,6 +142,7 @@ describe("createWorldRuntimeScheduler", () => {
     const errors: unknown[] = [];
     const scheduler = createWorldRuntimeScheduler({
       settleDue: async () => ({ settledSteps: 2, skipped: false }),
+        getWorldEpoch: async () => 1,
       runPostTick: async () => {
         throw new Error("AI failed");
       },

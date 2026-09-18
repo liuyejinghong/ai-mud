@@ -35,6 +35,7 @@ declare module "fastify" {
     di: {
       db: Db;
       worldRuntime: {
+        getWorldEpoch(): Promise<number>;
         settleDue(now?: Date): Promise<WorldRuntimeSettleResult>;
         idle(): Promise<void>;
       };
@@ -49,6 +50,7 @@ function isAllowedOrigin(origin: string | undefined, allowedOrigins: string[]) {
 
 export function createWorldRuntimeScheduler(input: {
   settleDue(now: Date): Promise<WorldRuntimeSettleResult>;
+  getWorldEpoch(): Promise<number>;
   runPostTick(now: Date): Promise<void>;
   onPostTickError(error: unknown): void;
 }) {
@@ -72,6 +74,7 @@ export function createWorldRuntimeScheduler(input: {
   };
 
   return {
+    getWorldEpoch: input.getWorldEpoch,
     settleDue: async (now = new Date()): Promise<WorldRuntimeSettleResult> => {
       if (settlementInFlight) return { settledSteps: 0, skipped: true };
       settlementInFlight = Promise.resolve().then(() => input.settleDue(now));
@@ -127,6 +130,10 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
   };
   const worldRuntime = createWorldRuntimeScheduler({
     settleDue: runSettleDue,
+    getWorldEpoch: async () => {
+      const row = await new WorldRuntimeRepository(db).find(NPC_WORLD_RUNTIME_KEY);
+      return row?.worldEpoch ?? 1;
+    },
     runPostTick: async (now) => {
       const postTick = new WorldPostTickService({
         tasks: createNpcTaskService(app),
