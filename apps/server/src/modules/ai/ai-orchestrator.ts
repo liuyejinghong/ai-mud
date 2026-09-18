@@ -18,14 +18,15 @@ import {
   type OfflineSummaryPromptContext,
   type WorldRumorPromptContext
 } from "@ai-mud/ai-prompts";
-import type { AiCallStatus } from "@ai-mud/shared";
+import type { AiCallPurpose, AiCallStatus } from "@ai-mud/shared";
 import type { AiProvider } from "./ai-provider.js";
 import { buildTemplateNpcReply } from "./template-ai-provider.js";
 
 type AiProviderCallStatus = Exclude<AiCallStatus, "disabled">;
 
 export interface AiOrchestratorOptions {
-  enabled: boolean;
+  /** ARCH-08: purpose-level admission replaces the single enabled flag. */
+  enabledFor(purpose: AiCallPurpose): boolean;
   providerName: string;
   model: string;
   maxOutputTokens: number;
@@ -105,6 +106,17 @@ export interface AiOfflineSummaryResult {
 }
 
 export class AiOrchestrator {
+  private readonly purposeQueues = new Map<string, Promise<unknown>>();
+
+  /** ARCH-08 admission: same-purpose provider calls serialize so concurrent
+   * intents never stack on the provider; different purposes are independent. */
+  private enqueueFor<T>(purpose: AiCallPurpose, fn: () => Promise<T>): Promise<T> {
+    const prev = this.purposeQueues.get(purpose) ?? Promise.resolve();
+    const next = prev.then(fn, fn);
+    this.purposeQueues.set(purpose, next.catch(() => undefined));
+    return next;
+  }
+
   constructor(private readonly options: AiOrchestratorOptions) {}
 
   async replyToNpcDialogue(input: {
@@ -113,14 +125,15 @@ export class AiOrchestrator {
     characterId: string;
     npcActorId: string;
   }): Promise<AiDialogueReply> {
-    if (!this.options.enabled) {
+    if (!this.options.enabledFor("npc_dialogue")) {
       return this.templateReply(input.npcContext, "disabled", "fallback");
     }
 
     const prompt = buildNpcDialoguePrompt(input.npcContext);
 
     try {
-      const result = await this.options.provider.completeJson({
+      const result = await this.enqueueFor("npc_dialogue", () =>
+        this.options.provider.completeJson({
         provider: this.options.providerName,
         model: this.options.model,
         messages: [
@@ -130,7 +143,8 @@ export class AiOrchestrator {
         responseFormat: { type: "json_object" },
         maxTokens: this.options.maxOutputTokens,
         timeoutMs: this.options.timeoutMs
-      });
+      })
+      );
       const parsed = parseNpcDialogueOutput(result.rawContent);
 
       if (!parsed.ok) {
@@ -160,14 +174,15 @@ export class AiOrchestrator {
   async polishNpcTaskCopy(input: {
     context: NpcTaskCopyPromptContext;
   }): Promise<AiTaskCopyResult> {
-    if (!this.options.enabled) {
+    if (!this.options.enabledFor("npc_task_copy")) {
       return this.templateTaskCopy(input.context, "disabled", "fallback");
     }
 
     const prompt = buildNpcTaskCopyPrompt(input.context);
 
     try {
-      const result = await this.options.provider.completeJson({
+      const result = await this.enqueueFor("npc_task_copy", () =>
+        this.options.provider.completeJson({
         provider: this.options.providerName,
         model: this.options.model,
         messages: [
@@ -177,7 +192,8 @@ export class AiOrchestrator {
         responseFormat: { type: "json_object" },
         maxTokens: Math.min(this.options.maxOutputTokens, 220),
         timeoutMs: this.options.timeoutMs
-      });
+      })
+      );
       const parsed = parseNpcTaskCopyOutput(result.rawContent);
 
       if (!parsed.ok) {
@@ -208,14 +224,15 @@ export class AiOrchestrator {
   async proposeNpcTask(input: {
     context: NpcTaskProposalPromptContext;
   }): Promise<AiTaskProposalResult> {
-    if (!this.options.enabled) {
+    if (!this.options.enabledFor("npc_task_proposal")) {
       return this.templateTaskProposal(input.context, "disabled", "fallback");
     }
 
     const prompt = buildNpcTaskProposalPrompt(input.context);
 
     try {
-      const result = await this.options.provider.completeJson({
+      const result = await this.enqueueFor("npc_task_proposal", () =>
+        this.options.provider.completeJson({
         provider: this.options.providerName,
         model: this.options.model,
         messages: [
@@ -225,7 +242,8 @@ export class AiOrchestrator {
         responseFormat: { type: "json_object" },
         maxTokens: Math.min(this.options.maxOutputTokens, 220),
         timeoutMs: this.options.timeoutMs
-      });
+      })
+      );
       const parsed = parseNpcTaskProposalOutput(result.rawContent);
 
       if (!parsed.ok) {
@@ -257,14 +275,15 @@ export class AiOrchestrator {
   async compressNpcMemory(input: {
     context: NpcMemoryCompressionPromptContext;
   }): Promise<AiMemoryCompressionResult> {
-    if (!this.options.enabled) {
+    if (!this.options.enabledFor("npc_memory_compression")) {
       return this.templateMemoryCompression(input.context, "disabled", "fallback");
     }
 
     const prompt = buildNpcMemoryCompressionPrompt(input.context);
 
     try {
-      const result = await this.options.provider.completeJson({
+      const result = await this.enqueueFor("npc_memory_compression", () =>
+        this.options.provider.completeJson({
         provider: this.options.providerName,
         model: this.options.model,
         messages: [
@@ -274,7 +293,8 @@ export class AiOrchestrator {
         responseFormat: { type: "json_object" },
         maxTokens: Math.min(this.options.maxOutputTokens, 260),
         timeoutMs: this.options.timeoutMs
-      });
+      })
+      );
       const parsed = parseNpcMemoryCompressionOutput(result.rawContent);
 
       if (!parsed.ok) {
@@ -304,14 +324,15 @@ export class AiOrchestrator {
   async generateWorldRumor(input: {
     context: WorldRumorPromptContext;
   }): Promise<AiWorldRumorResult> {
-    if (!this.options.enabled) {
+    if (!this.options.enabledFor("world_rumor")) {
       return this.templateWorldRumor(input.context, "disabled", "fallback");
     }
 
     const prompt = buildWorldRumorPrompt(input.context);
 
     try {
-      const result = await this.options.provider.completeJson({
+      const result = await this.enqueueFor("world_rumor", () =>
+        this.options.provider.completeJson({
         provider: this.options.providerName,
         model: this.options.model,
         messages: [
@@ -321,7 +342,8 @@ export class AiOrchestrator {
         responseFormat: { type: "json_object" },
         maxTokens: Math.min(this.options.maxOutputTokens, 120),
         timeoutMs: this.options.timeoutMs
-      });
+      })
+      );
       const parsed = parseWorldRumorOutput(result.rawContent);
 
       if (!parsed.ok) {
@@ -351,14 +373,15 @@ export class AiOrchestrator {
   async generateOfflineSummary(input: {
     context: OfflineSummaryPromptContext;
   }): Promise<AiOfflineSummaryResult> {
-    if (!this.options.enabled) {
+    if (!this.options.enabledFor("offline_summary")) {
       return this.templateOfflineSummary(input.context, "disabled", "fallback");
     }
 
     const prompt = buildOfflineSummaryPrompt(input.context);
 
     try {
-      const result = await this.options.provider.completeJson({
+      const result = await this.enqueueFor("offline_summary", () =>
+        this.options.provider.completeJson({
         provider: this.options.providerName,
         model: this.options.model,
         messages: [
@@ -368,7 +391,8 @@ export class AiOrchestrator {
         responseFormat: { type: "json_object" },
         maxTokens: Math.min(this.options.maxOutputTokens, 240),
         timeoutMs: this.options.timeoutMs
-      });
+      })
+      );
       const parsed = parseOfflineSummaryOutput(result.rawContent);
 
       if (!parsed.ok) {

@@ -126,7 +126,7 @@ describe("AiOrchestrator", () => {
   it("uses the template provider when NPC dialogue AI is disabled", async () => {
     const provider = new FakeProvider("{}");
     const orchestrator = new AiOrchestrator({
-      enabled: false,
+      enabledFor: () => false,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -164,7 +164,7 @@ describe("AiOrchestrator", () => {
       })
     );
     const orchestrator = new AiOrchestrator({
-      enabled: true,
+      enabledFor: () => true,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -203,7 +203,7 @@ describe("AiOrchestrator", () => {
       })
     );
     const orchestrator = new AiOrchestrator({
-      enabled: true,
+      enabledFor: () => true,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -230,7 +230,7 @@ describe("AiOrchestrator", () => {
       }
     };
     const orchestrator = new AiOrchestrator({
-      enabled: true,
+      enabledFor: () => true,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -253,7 +253,7 @@ describe("AiOrchestrator", () => {
   it("uses deterministic task copy when AI is disabled", async () => {
     const provider = new FakeProvider("{}");
     const orchestrator = new AiOrchestrator({
-      enabled: false,
+      enabledFor: () => false,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -271,7 +271,7 @@ describe("AiOrchestrator", () => {
   it("uses deterministic task proposal when AI is disabled", async () => {
     const provider = new FakeProvider("{}");
     const orchestrator = new AiOrchestrator({
-      enabled: false,
+      enabledFor: () => false,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -306,7 +306,7 @@ describe("AiOrchestrator", () => {
       })
     );
     const orchestrator = new AiOrchestrator({
-      enabled: true,
+      enabledFor: () => true,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -340,7 +340,7 @@ describe("AiOrchestrator", () => {
       })
     );
     const orchestrator = new AiOrchestrator({
-      enabled: true,
+      enabledFor: () => true,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -363,7 +363,7 @@ describe("AiOrchestrator", () => {
       }
     };
     const orchestrator = new AiOrchestrator({
-      enabled: true,
+      enabledFor: () => true,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -393,7 +393,7 @@ describe("AiOrchestrator", () => {
       })
     );
     const orchestrator = new AiOrchestrator({
-      enabled: true,
+      enabledFor: () => true,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -424,7 +424,7 @@ describe("AiOrchestrator", () => {
       })
     );
     const orchestrator = new AiOrchestrator({
-      enabled: true,
+      enabledFor: () => true,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -442,7 +442,7 @@ describe("AiOrchestrator", () => {
   it("uses deterministic memory compression when AI is disabled", async () => {
     const provider = new FakeProvider("{}");
     const orchestrator = new AiOrchestrator({
-      enabled: false,
+      enabledFor: () => false,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -473,7 +473,7 @@ describe("AiOrchestrator", () => {
       })
     );
     const orchestrator = new AiOrchestrator({
-      enabled: true,
+      enabledFor: () => true,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -504,7 +504,7 @@ describe("AiOrchestrator", () => {
       })
     );
     const orchestrator = new AiOrchestrator({
-      enabled: true,
+      enabledFor: () => true,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -524,7 +524,7 @@ describe("AiOrchestrator", () => {
   it("uses deterministic world rumors when AI is disabled", async () => {
     const provider = new FakeProvider("{}");
     const orchestrator = new AiOrchestrator({
-      enabled: false,
+      enabledFor: () => false,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -553,7 +553,7 @@ describe("AiOrchestrator", () => {
       })
     );
     const orchestrator = new AiOrchestrator({
-      enabled: true,
+      enabledFor: () => true,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,
@@ -582,7 +582,7 @@ describe("AiOrchestrator", () => {
       })
     );
     const orchestrator = new AiOrchestrator({
-      enabled: true,
+      enabledFor: () => true,
       providerName: "deepseek",
       model: "deepseek-v4-flash",
       maxOutputTokens: 400,

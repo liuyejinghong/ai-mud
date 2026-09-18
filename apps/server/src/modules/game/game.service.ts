@@ -476,7 +476,11 @@ export class GameService {
     });
   }
 
-  async getSync(accountId: string, cursor = 0): Promise<GameSyncResponseDto> {
+  async getSync(
+    accountId: string,
+    cursor = 0,
+    worldEpoch = 1
+  ): Promise<GameSyncResponseDto> {
     return this.db.transaction(async (tx) => {
       const repo = new GameRepository(tx);
       const lobby = new LobbyService(new LobbyRepository(tx));
@@ -504,6 +508,8 @@ export class GameService {
       });
 
       return {
+        worldEpoch,
+        characterRevision: character?.revision ?? null,
         stateVersion: nextCursor,
         state: includeState ? await this.buildState(repo, accountId, now) : null,
         events: events.map((event) => ({

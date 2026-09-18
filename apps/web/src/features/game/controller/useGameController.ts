@@ -15,6 +15,7 @@ import {
   type EquipmentItemDto,
   type GameStateDto,
   type GameSyncEventDto,
+  type GameSyncResponseDto,
   type InventoryItemDto,
   type LeaderboardEntryDto,
   type MarketDto,
@@ -326,6 +327,7 @@ export function useGameController({
 }: UseGameControllerOptions): GameController {
   const [state, setGameState] = useState<GameStateDto>(initialState);
   const currentCharacterIdRef = useRef<string | null>(initialState.character?.id ?? null);
+  const characterRevisionRef = useRef<{ epoch: number; revision: number } | null>(null);
   const [name, setName] = useState("Zichen");
   const [classId, setClassId] = useState<CharacterClassId>("ranger");
   const [activeModal, setActiveModal] = useState<ActiveModal | null>(null);
@@ -348,7 +350,38 @@ export function useGameController({
   const [isBusy, setIsBusy] = useState(false);
 
   const applyState = useCallback((nextState: GameStateDto) => {
-    currentCharacterIdRef.current = nextState.character?.id ?? null;
+    const nextCharacterId = nextState.character?.id ?? null;
+    if (nextCharacterId !== currentCharacterIdRef.current) {
+      currentCharacterIdRef.current = nextCharacterId;
+      characterRevisionRef.current = null;
+    }
+    setGameState(nextState);
+  }, []);
+
+  const applySyncState = useCallback((nextState: GameStateDto, response: GameSyncResponseDto) => {
+    const nextCharacterId = nextState.character?.id ?? null;
+    if (nextCharacterId !== currentCharacterIdRef.current) {
+      currentCharacterIdRef.current = nextCharacterId;
+      characterRevisionRef.current =
+        response.characterRevision === null
+          ? null
+          : { epoch: response.worldEpoch, revision: response.characterRevision };
+      setGameState(nextState);
+      return;
+    }
+    const nextRevision = response.characterRevision;
+    const stored = characterRevisionRef.current;
+    if (
+      nextRevision !== null &&
+      stored !== null &&
+      response.worldEpoch === stored.epoch &&
+      nextRevision < stored.revision
+    ) {
+      return;
+    }
+    if (nextRevision !== null) {
+      characterRevisionRef.current = { epoch: response.worldEpoch, revision: nextRevision };
+    }
     setGameState(nextState);
   }, []);
 
@@ -369,8 +402,9 @@ export function useGameController({
   }, []);
 
   const sync = useGameSync({
+    characterId: state.character?.id ?? null,
     activeAction: state.currentAction,
-    onState: applyState,
+    onState: applySyncState,
     onEvents: handleSyncEvents,
     onLobby: applyLobbySync,
     onOfflineReport: setOfflineReport

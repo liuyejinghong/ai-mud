@@ -32,6 +32,7 @@ const DAY_MS = 24 * 60 * 60_000;
 type GameDb = Pick<Db, "delete" | "insert" | "select" | "update">;
 
 export interface CharacterRecord {
+  revision: number;
   id: string;
   accountId: string;
   name: string;
@@ -382,6 +383,7 @@ function mapCharacterActionRow(row: typeof characterActions.$inferSelect): Chara
 function mapCharacterRow(row: typeof characters.$inferSelect): CharacterRecord {
   return {
     id: row.id,
+    revision: row.revision,
     accountId: row.accountId,
     name: row.name,
     classId: row.classId,
@@ -480,6 +482,7 @@ export class GameRepository {
 
     return {
       id: row.id,
+      revision: row.revision,
       accountId: row.accountId,
       name: row.name,
       classId: row.classId,
@@ -506,7 +509,7 @@ export class GameRepository {
   }): Promise<boolean> {
     const rows = await this.db
       .update(characters)
-      .set({ lastReliefClaimedAt: input.claimedAt })
+      .set({ lastReliefClaimedAt: input.claimedAt, revision: sql`${characters.revision} + 1` })
       .where(
         and(
           eq(characters.id, input.characterId),
@@ -529,7 +532,8 @@ export class GameRepository {
       .update(characters)
       .set({
         hunger: serializeHunger(input.hunger),
-        lastHungerSettledAt: input.lastHungerSettledAt
+        lastHungerSettledAt: input.lastHungerSettledAt,
+        revision: sql`${characters.revision} + 1`
       })
       .where(eq(characters.id, input.characterId));
   }
@@ -547,7 +551,8 @@ export class GameRepository {
         hp: input.hp,
         ...(input.level === undefined ? {} : { level: input.level }),
         ...(input.xp === undefined ? {} : { xp: input.xp }),
-        ...(input.injuryUntil === undefined ? {} : { injuryUntil: input.injuryUntil })
+        ...(input.injuryUntil === undefined ? {} : { injuryUntil: input.injuryUntil }),
+        revision: sql`${characters.revision} + 1`
       })
       .where(eq(characters.id, input.characterId));
   }
@@ -561,7 +566,8 @@ export class GameRepository {
       .update(characters)
       .set({
         currentLocation: input.currentLocation,
-        position: input.position
+        position: input.position,
+        revision: sql`${characters.revision} + 1`
       })
       .where(eq(characters.id, input.characterId));
   }

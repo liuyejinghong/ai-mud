@@ -151,9 +151,10 @@ function buildGameRouteTestApp(overrides: Partial<GameRouteDependencies> = {}) {
     getCurrentAccount: async () => activeAccount,
     verifyGameMutation: async () => true,
     settleWorldIfDue: async () => undefined,
+    getWorldEpoch: async () => 1,
     getState: async () => baseState,
     syncGame: async (_accountId, cursor = 0) => ({
-      stateVersion: cursor,
+      worldEpoch: 1, characterRevision: null, stateVersion: cursor,
       state: cursor > 0 ? null : baseState,
       events: [],
       chat: [],
@@ -302,7 +303,7 @@ describe("registerGameRoutes", () => {
     const response = await enrichGameSyncResponse(
       "account-1",
       {
-        stateVersion: 3,
+        worldEpoch: 1, characterRevision: null, stateVersion: 3,
         state: mineState,
         events: [],
         chat: [],
@@ -428,7 +429,7 @@ describe("registerGameRoutes", () => {
       }
     });
     const sync: GameSyncResponseDto = {
-      stateVersion: 3,
+      worldEpoch: 1, characterRevision: null, stateVersion: 3,
       state: null,
       events: [],
       chat: [],
@@ -464,6 +465,7 @@ describe("registerGameRoutes", () => {
       settleWorldIfDue: async () => {
         calls.push("settled");
       },
+      getWorldEpoch: async () => 1,
       getState: async () => {
         calls.push("state");
         return baseState;
@@ -484,10 +486,11 @@ describe("registerGameRoutes", () => {
       settleWorldIfDue: async () => {
         calls.push("settled");
       },
+      getWorldEpoch: async () => 1,
       syncGame: async (accountId, cursor) => {
         calls.push(`sync:${accountId}:${cursor ?? 0}`);
         return {
-          stateVersion: 0,
+          worldEpoch: 1, characterRevision: null, stateVersion: 0,
           state: baseState,
           events: [],
           nextCursor: 0
@@ -505,7 +508,7 @@ describe("registerGameRoutes", () => {
   it("passes sync cursors through without forcing full state", async () => {
     const app = buildGameRouteTestApp({
       syncGame: async (_accountId, cursor): Promise<GameSyncResponseDto> => ({
-        stateVersion: 9,
+        worldEpoch: 1, characterRevision: null, stateVersion: 9,
         state: null,
         events: [
           {
@@ -883,6 +886,7 @@ describe("registerGameRoutes", () => {
       settleWorldIfDue: async () => {
         calls.push("settled");
       },
+      getWorldEpoch: async () => 1,
       listDialogueTargets: async () => {
         calls.push("targets");
         return [dialogueTarget];

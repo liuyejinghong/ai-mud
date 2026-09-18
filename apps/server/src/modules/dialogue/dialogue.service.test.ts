@@ -16,6 +16,7 @@ import type { NpcTaskRecord } from "../npc-task/npc-task.repository.js";
 const character = {
   id: "character-1",
   accountId: "account-1",
+    revision: 1,
   name: "Zichen",
   classId: "warrior" as const,
   level: 3,

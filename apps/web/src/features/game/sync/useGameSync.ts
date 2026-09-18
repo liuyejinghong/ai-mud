@@ -22,11 +22,12 @@ export interface LobbySyncPayload {
 export interface UseGameSyncOptions {
   enabled?: boolean;
   initialCursor?: number;
+  characterId?: string | null;
   activeAction?: GameStateDto["currentAction"];
   idleIntervalMs?: number;
   activeIntervalMs?: number;
   fetchSync?: (cursor?: number, signal?: AbortSignal) => Promise<GameSyncResponseDto>;
-  onState?: (state: GameStateDto) => void;
+  onState?: (state: GameStateDto, response: GameSyncResponseDto) => void;
   onEvents?: (events: GameSyncEventDto[]) => void;
   onLobby?: (payload: LobbySyncPayload) => void;
   onOfflineReport?: (report: OfflineReportDto) => void;
@@ -36,6 +37,7 @@ export function useGameSync(options: UseGameSyncOptions = {}) {
   const {
     enabled = true,
     initialCursor = 0,
+    characterId = null,
     activeAction = null,
     idleIntervalMs = 15_000,
     activeIntervalMs = 3_000,
@@ -48,6 +50,7 @@ export function useGameSync(options: UseGameSyncOptions = {}) {
   const activeActionId = activeAction?.id ?? null;
   const actionIsActive = activeAction?.status === "active";
   const cursorRef = useRef(initialCursor);
+  const lastEpochRef = useRef<number | null>(null);
   const timerRef = useRef<number | null>(null);
   const mountedRef = useRef(false);
   const rescheduleRef = useRef<(() => void) | null>(null);
@@ -65,11 +68,18 @@ export function useGameSync(options: UseGameSyncOptions = {}) {
   const applyResponse = useCallback((next: GameSyncResponseDto) => {
     if (!mountedRef.current) return;
 
+    const epoch = next.worldEpoch ?? null;
+    if (epoch !== null && lastEpochRef.current !== null && epoch < lastEpochRef.current) {
+      return;
+    }
+    if (epoch !== null) {
+      lastEpochRef.current = epoch;
+    }
     cursorRef.current = next.nextCursor;
     setCursor(next.nextCursor);
     setError(null);
     const callbacks = callbacksRef.current;
-    if (next.state) callbacks.onState?.(next.state);
+    if (next.state) callbacks.onState?.(next.state, next);
     if (next.events.length > 0) callbacks.onEvents?.(next.events);
     if (next.offlineReport) callbacks.onOfflineReport?.(next.offlineReport);
     if (next.chat || next.presence || next.leaderboards) {
@@ -95,6 +105,10 @@ export function useGameSync(options: UseGameSyncOptions = {}) {
     cursorRef.current = initialCursor;
     setCursor(initialCursor);
   }, [initialCursor]);
+
+  useEffect(() => {
+    lastEpochRef.current = null;
+  }, [characterId]);
 
   useEffect(() => {
     if (!enabled) {

@@ -1851,6 +1851,20 @@
       "layer": "test",
       "scope": "test",
       "note": "装备单一真源迁移一致性真库测试（G04 证据）；白盒归属 characters"
+    },
+    {
+      "path": "apps/server/src/modules/ai/ai-gateway.ts",
+      "module": "ai",
+      "layer": "capability",
+      "scope": "production",
+      "note": "应用级 AI 准入网关（用途开关/并发准入）；ARCH-08 新增"
+    },
+    {
+      "path": "apps/web/src/features/game/controller/useGameController.test.tsx",
+      "module": "client_session",
+      "layer": "test",
+      "scope": "test",
+      "note": "同步守卫用例；ARCH-07 新增"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",

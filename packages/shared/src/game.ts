@@ -186,6 +186,8 @@ export interface LeaderboardEntryDto {
 }
 
 export interface GameSyncResponseDto {
+  worldEpoch: number;
+  characterRevision: number | null;
   stateVersion: number;
   state: GameStateDto | null;
   events: GameSyncEventDto[];
