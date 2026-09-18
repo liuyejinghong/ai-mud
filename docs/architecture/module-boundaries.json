@@ -1816,6 +1816,20 @@
       "layer": "kernel",
       "scope": "production",
       "note": "版本常量唯一事实源"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/world-clock.ts",
+      "module": "world",
+      "layer": "platform",
+      "scope": "production",
+      "note": "时钟注入抽象（ADR-04：真实时间与历史 tickAt 分离）；ARCH-02 新增"
+    },
+    {
+      "path": "apps/server/src/db/world-runtime.integration.test.ts",
+      "module": "world",
+      "layer": "test",
+      "scope": "test",
+      "note": "世界 tick 互斥真 PG 并发测试（G01 证据）；白盒归属 world"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",
@@ -1829,6 +1843,11 @@
       "date": "2026-09-18",
       "kind": "classification correction",
       "detail": "world-post-tick.service.test.ts 由 world 修正为 application（目录前缀规则遮蔽了精确规则）。"
+    },
+    {
+      "date": "2026-09-18",
+      "kind": "ARCH-02 additions",
+      "detail": "新增 world-clock.ts 与 world-runtime.integration.test.ts 两个文件的归属登记。"
     }
   ]
 }

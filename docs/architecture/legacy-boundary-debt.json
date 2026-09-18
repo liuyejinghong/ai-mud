@@ -235,21 +235,6 @@
       "severity": "target_blocking"
     },
     {
-      "id": "DEBT-015",
-      "ruleId": "PROD_IMPORTS_SIMULATION_FIXTURE",
-      "source": "apps/server/src/modules/npc/npc.service.ts",
-      "target": "apps/server/src/modules/npc/npc.simulation-repository.ts",
-      "symbol": "NpcSimulationRepository（内存仿真替身）",
-      "evidence": "npc.service.ts:35",
-      "reason": "生产服务 import 仿真设施（供 verify:npc-simulation 与测试使用）",
-      "fixTask": "ARCH-02/MOD-03（仿真编排移出生产图至 scripts/）",
-      "removalCondition": "npc.service 不再 import 仿真仓储",
-      "severity": "transitional",
-      "targetGlobs": [
-        "apps/server/src/modules/npc/npc.simulation-repository.ts"
-      ]
-    },
-    {
       "id": "DEBT-016",
       "ruleId": "CROSS_OWNER_COLUMN_WRITE",
       "source": "characters.copper_balance",
@@ -320,19 +305,6 @@
       "fixTask": "ARCH-04",
       "removalCondition": "legacy character_equipment 路径删除，耐久仅 item 写",
       "severity": "target_blocking"
-    },
-    {
-      "id": "DEBT-022",
-      "ruleId": "CROSS_OWNER_COLUMN_WRITE",
-      "source": "map_instances.resourceCharges",
-      "target": "目标所有者（已裁定）：玩家个人状态侧；世界时间仅经公开触发API报时，不持有写权",
-      "symbol": "game.repository.updateMapResourceCharges:1227（采集扣减）；npc.repository.updateMapResourceCharges:182（每日重置，世界 tick 写玩家个人实例）",
-      "evidence": "两个模块写同一列；npc 侧写入跨 scope（共享 tick 写个人副本资源）",
-      "reason": "PC-02 + AR-08 scope 债务，且含跨 scope 写入语义问题",
-      "fixTask": "ARCH-02（世界 tick 改为触发 characters 侧正规结算入口完成恢复；NPC 侧直写路径删除）",
-      "removalCondition": "该列唯一写者为玩家个人状态 persistence；世界侧仅存触发调用",
-      "severity": "target_blocking",
-      "adjudicated": "2026-09-18，所有者裁定归玩家个人状态"
     },
     {
       "id": "DEBT-023",
@@ -638,6 +610,21 @@
         "reviewer": "实施模型 + 台账交叉证据",
         "verdict": "无越界列，允许保留至 ARCH-03"
       }
+    },
+    {
+      "id": "DEBT-040",
+      "ruleId": "TEST_CROSS_MODULE_FIXTURE",
+      "source": "apps/server/src/db/world-runtime.integration.test.ts",
+      "target": "世界 tick 互斥真库测试（G01 证据）：驱动真实 npc 结算与角色侧日刷参与方",
+      "symbol": "NpcService/NpcRepository/GameRepository/LedgerRepository/LedgerService",
+      "evidence": "ARCH-02 新增；world-runtime.integration.test.ts imports",
+      "reason": "真库并发契约测试须组装真实模块参与方",
+      "fixTask": "ARCH-09（测试基建统一时收敛为登记 helper）",
+      "removalCondition": "集成测试仅经登记的 setup helper 组装",
+      "severity": "transitional",
+      "targetGlobs": [
+        "apps/server/src/modules/{npc,game,ledger}/*"
+      ]
     }
   ],
   "explicitlyNotViolations": [
@@ -652,6 +639,16 @@
       "kind": "Architecture Policy Change (inventory completion)",
       "trigger": "MOD-02 检查器首跑 232 条记录甄别：为既有条目补 targetGlobs/coveredModuleEdges 机器字段；补登记 13 条首跑确认的历史项（其中 DEBT-028 在首轮审查 import 图中在案但台账漏登）；DEBT-039 为人工审查清单。",
       "note": "非新增违规；冻结纪律不变：此后任何新增违规不入列。"
+    },
+    {
+      "date": "2026-09-18",
+      "kind": "debt retirement (ARCH-02)",
+      "detail": "DEBT-015 销账：npc.service 不再导入仿真仓储，编排入口移至 runNpcSimulationOnSnapshot（脚本/管理端调用）。DEBT-022 销账：世界 tick 不再直写个人副本资源，删除 npc 侧 updateMapResourceCharges；日刷改为 GameRepository.refreshDueInstanceResources 经 tick 参与方在同一事务执行（世界侧仅存触发，兑现所有者裁定）。removalCondition 均已达成。"
+    },
+    {
+      "date": "2026-09-18",
+      "kind": "ARCH-02 fixture registration",
+      "detail": "新增 DEBT-040：世界 tick 真 PG 并发测试的跨模块夹具登记（与 DEBT-029 同类）。"
     }
   ]
 }
