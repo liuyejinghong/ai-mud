@@ -562,6 +562,9 @@ export interface EconomySnapshotDto {
 export interface MarketTradeRequestDto {
   itemId: ItemId;
   quantity: number;
+  /** Client-generated idempotency key: retrying the same command replays the
+   * original result instead of executing twice. Optional for compatibility. */
+  commandId?: string | undefined;
 }
 
 export interface RepairQuoteDto {

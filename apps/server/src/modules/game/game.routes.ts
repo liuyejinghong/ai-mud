@@ -72,7 +72,8 @@ const knownItemIdSchema = z
 
 const marketTradeSchema = z.object({
   itemId: knownItemIdSchema,
-  quantity: z.number().int().min(1).max(999)
+  quantity: z.number().int().min(1).max(999),
+  commandId: z.string().uuid().optional()
 });
 
 const repairEquipmentSchema = z.object({

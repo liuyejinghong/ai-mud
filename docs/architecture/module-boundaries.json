@@ -1830,6 +1830,20 @@
       "layer": "test",
       "scope": "test",
       "note": "世界 tick 互斥真 PG 并发测试（G01 证据）；白盒归属 world"
+    },
+    {
+      "path": "apps/server/src/modules/ledger/asset-mutation.service.ts",
+      "module": "assets",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "统一资产写入能力（铜币/库存/金库/回执）；ARCH-03 新增，modularity §7 唯一写所有者的执行者"
+    },
+    {
+      "path": "apps/server/src/db/asset-mutation.integration.test.ts",
+      "module": "assets",
+      "layer": "test",
+      "scope": "test",
+      "note": "资产故障注入与回执幂等真库测试（G02 证据）"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",
@@ -1848,6 +1862,11 @@
       "date": "2026-09-18",
       "kind": "ARCH-02 additions",
       "detail": "新增 world-clock.ts 与 world-runtime.integration.test.ts 两个文件的归属登记。"
+    },
+    {
+      "date": "2026-09-18",
+      "kind": "ARCH-03a additions",
+      "detail": "新增 asset-mutation.service.ts（assets/persistence）与 asset-mutation.integration.test.ts（assets/test）归属登记。"
     }
   ]
 }

@@ -738,7 +738,9 @@ describe("GameShell", () => {
       expect(fetchMock).toHaveBeenCalledWith(
         "http://127.0.0.1:3000/game/market/sell",
         expect.objectContaining({
-          body: JSON.stringify({ itemId: "iron_ore", quantity: 1 }),
+          body: expect.stringMatching(
+            /^\{"itemId":"iron_ore","quantity":1,"commandId":"[0-9a-f-]{36}"\}$/
+          ),
           method: "POST"
         })
       );

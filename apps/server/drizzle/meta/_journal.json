@@ -176,6 +176,13 @@
       "when": 1783919333000,
       "tag": "0025_item_ledger_system_source",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1789740806348,
+      "tag": "0026_command_receipts",
+      "breakpoints": true
     }
   ]
 }
