@@ -17,6 +17,11 @@ import {
   NpcMemoryService,
   type NpcMemoryCompressorPort
 } from "../npc-memory/npc-memory.service.js";
+import { ItemRepository } from "../item/item.repository.js";
+import { ItemService } from "../item/item.service.js";
+import { AssetMutationService } from "../ledger/asset-mutation.service.js";
+import { LedgerRepository } from "../ledger/ledger.repository.js";
+import { LedgerService } from "../ledger/ledger.service.js";
 import { NpcTaskRepository } from "../npc-task/npc-task.repository.js";
 import {
   NpcTaskService,
@@ -28,6 +33,11 @@ import { RumorService } from "../rumor/rumor.service.js";
 export function createNpcTaskService(app: FastifyInstance) {
   return new NpcTaskService(
     new NpcTaskRepository(app.di.db),
+    {
+      assetsFor: (tx) => new AssetMutationService(tx),
+      ledgerFor: (tx) => new LedgerService(new LedgerRepository(tx)),
+      itemsFor: (tx) => new ItemService(new ItemRepository(tx))
+    },
     createNpcMemoryService(app),
     createNpcTaskProposalPort(app)
   );
