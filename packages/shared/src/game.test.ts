@@ -47,12 +47,12 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.10.5 world health compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.10.5");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(38);
+  it("exposes v0.10.6 world health compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.10.6");
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(39);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(25);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
-    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(15);
+    expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(16);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(12);
     expect(WORLD_COMPATIBILITY.promptVersion).toBe(8);
     expect(WORLD_COMPATIBILITY.economyVersion).toBe(4);
