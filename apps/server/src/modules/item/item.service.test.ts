@@ -6,6 +6,7 @@ import type {
   WriteLedgerInput,
   WriteSyncEventInput
 } from "./item.repository.js";
+import { ItemRepository } from "./item.repository.js";
 import { ItemService, ItemServiceError } from "./item.service.js";
 
 class FakeItemRepo {
@@ -130,6 +131,37 @@ class FakeItemRepo {
 
 const characterOwner: ItemOwner = { ownerType: "character", ownerId: "character-1" };
 const npcOwner: ItemOwner = { ownerType: "npc", ownerId: "npc-1" };
+
+it("clamps equipment durability when updating via the item service", async () => {
+    const updates: Array<{ currentDurability: number; maxDurability: number }> = [];
+    const db = {
+      update: () => ({
+        set: (values: { currentDurability: number; maxDurability: number }) => {
+          updates.push(values);
+          return { where: async () => undefined };
+        }
+      }),
+      select: () => ({ from: async () => [] }),
+      insert: () => ({ values: async () => undefined })
+    };
+    const service = new ItemService(new ItemRepository(db as never, false));
+
+    await service.updateEquipmentDurability({
+      instanceId: "instance-1",
+      currentDurability: 150,
+      maxDurability: 100
+    });
+    await service.updateEquipmentDurability({
+      instanceId: "instance-1",
+      currentDurability: -5,
+      maxDurability: 100
+    });
+
+    expect(updates.map((u) => [u.currentDurability, u.maxDurability])).toEqual([
+      [100, 100],
+      [0, 100]
+    ]);
+  });
 
 describe("ItemService", () => {
   it("grants stackable items through a transaction and ledger entry", async () => {

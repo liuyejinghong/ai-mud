@@ -566,6 +566,22 @@
         "apps/server/src/modules/item/*",
         "apps/server/src/modules/ledger/*"
       ]
+    },
+    {
+      "id": "DEBT-044",
+      "ruleId": "TEST_CROSS_MODULE_FIXTURE",
+      "source": "apps/server/src/modules/game/game.repository.test.ts",
+      "target": "救济审计集成测试：驱动真实 ItemService 写物品账本与同步事件",
+      "symbol": "ItemRepository/ItemService",
+      "evidence": "ARCH-04 测试迁移时发现该文件另有救济审计用例依赖物品模块",
+      "reason": "审计断言须覆盖 asset_ledger + item_ledger + sync_events 三账本联动",
+      "fixTask": "ARCH-09（测试基建统一时收敛为登记 helper）",
+      "removalCondition": "审计测试仅经登记 helper 组装",
+      "severity": "transitional",
+      "targetGlobs": [
+        "apps/server/src/modules/item/*",
+        "apps/server/src/modules/ledger/*"
+      ]
     }
   ],
   "explicitlyNotViolations": [
@@ -620,6 +636,11 @@
       "date": "2026-09-18",
       "kind": "debt retirement (ARCH-04)",
       "detail": "DEBT-021 销账：装备双真源模型移除——迁移 0027 将 legacy 装备迁入 item_instances（原ID、幂等、不覆盖）并删除 character_equipment 表；修理/耐久/换装/新角色全部单一真源。"
+    },
+    {
+      "date": "2026-09-18",
+      "kind": "ARCH-04 fixture registration",
+      "detail": "新增 DEBT-044：救济审计用例的物品模块依赖登记（与 040/041/042 同类）。"
     }
   ]
 }

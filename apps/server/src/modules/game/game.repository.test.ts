@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ItemRepository } from "../item/item.repository.js";
+import { ItemService } from "../item/item.service.js";
 import {
   GameRepository,
   parseActionPayload,
@@ -81,40 +82,6 @@ describe("game repository helpers", () => {
     expect(parseActionPayload("gathering", serializeActionPayload(payload))).toEqual(payload);
   });
 
-  it("clamps equipment durability when updating via the item writer", async () => {
-    const updates: Array<{ currentDurability: number; maxDurability: number }> = [];
-    const db = {
-      update: vi.fn(() => ({
-        set: (values: { currentDurability: number; maxDurability: number }) => {
-          updates.push(values);
-          return {
-            where: async () => undefined
-          };
-        }
-      })),
-      select: vi.fn(() => ({ from: async () => [] })),
-      insert: vi.fn(() => ({ values: async () => undefined }))
-    };
-    const { ItemService } = await import("../item/item.service.js");
-    const { ItemRepository } = await import("../item/item.repository.js");
-    const service = new ItemService(new ItemRepository(db as never, false));
-
-    await service.updateEquipmentDurability({
-      instanceId: "instance-1",
-      currentDurability: 150,
-      maxDurability: 100
-    });
-    await service.updateEquipmentDurability({
-      instanceId: "instance-1",
-      currentDurability: -5,
-      maxDurability: 100
-    });
-
-    expect(updates.map((u) => [u.currentDurability, u.maxDurability])).toEqual([
-      [100, 100],
-      [0, 100]
-    ]);
-  });
 
   it("serializes hunger with clamped integer values", () => {
     expect(serializeHunger(8)).toBe(5);
