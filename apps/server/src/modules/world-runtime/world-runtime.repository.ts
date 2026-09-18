@@ -1,125 +1,80 @@
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
 import { worldRuntimeState } from "../../db/schema.js";
 
-export interface WorldRuntimeRecord {
+export interface WorldRuntimeProgress {
   key: string;
   lastSettledAt: Date | null;
-  leaseOwner: string | null;
-  leaseUntil: Date | null;
 }
 
-type WorldRuntimeDb = Pick<Db, "insert" | "select" | "update">;
+type WorldRuntimeDb = Pick<Db, "insert" | "select" | "update"> & {
+  transaction?: Db["transaction"];
+};
 
-export class WorldRuntimeRepository {
+// Tick participants receive this handle: broad enough to construct any module
+// persistence (npc/game/ledger) bound to the same transaction.
+export type WorldRuntimeTx = Pick<Db, "delete" | "insert" | "select" | "update"> & {
+  transaction?: Db["transaction"];
+};
+
+export interface WorldRuntimeRepositoryPort {
+  find(key: string): Promise<WorldRuntimeProgress | null>;
+  ensureRow(key: string, initialLastSettledAt: Date): Promise<void>;
+  lockAndRead(key: string): Promise<WorldRuntimeProgress | null>;
+  saveProgress(input: { key: string; lastSettledAt: Date; now: Date }): Promise<void>;
+  transaction<T>(
+    operation: (txRepo: WorldRuntimeRepositoryPort, tx: WorldRuntimeTx) => Promise<T>
+  ): Promise<T>;
+}
+
+export class WorldRuntimeRepository implements WorldRuntimeRepositoryPort {
   constructor(private readonly db: WorldRuntimeDb) {}
 
-  async find(key: string): Promise<WorldRuntimeRecord | null> {
+  async transaction<T>(
+    operation: (txRepo: WorldRuntimeRepositoryPort, tx: WorldRuntimeTx) => Promise<T>
+  ): Promise<T> {
+    if (!this.db.transaction) {
+      return operation(this, this.db as unknown as WorldRuntimeTx);
+    }
+    return this.db.transaction(async (tx) =>
+      operation(new WorldRuntimeRepository(tx), tx as unknown as WorldRuntimeTx)
+    );
+  }
+
+  async find(key: string): Promise<WorldRuntimeProgress | null> {
     const [row] = await this.db
-      .select()
+      .select({ lastSettledAt: worldRuntimeState.lastSettledAt })
       .from(worldRuntimeState)
       .where(eq(worldRuntimeState.key, key))
       .limit(1);
 
-    return row
-      ? {
-          key: row.key,
-          lastSettledAt: row.lastSettledAt,
-          leaseOwner: row.leaseOwner,
-          leaseUntil: row.leaseUntil
-        }
-      : null;
+    return row ? { key, lastSettledAt: row.lastSettledAt } : null;
   }
 
-  async upsert(input: WorldRuntimeRecord): Promise<void> {
-    const existing = await this.find(input.key);
-    if (existing) {
-      await this.db
-        .update(worldRuntimeState)
-        .set({
-          lastSettledAt: input.lastSettledAt,
-          leaseOwner: input.leaseOwner,
-          leaseUntil: input.leaseUntil,
-          updatedAt: new Date()
-        })
-        .where(eq(worldRuntimeState.key, input.key));
-      return;
-    }
-
-    await this.db.insert(worldRuntimeState).values({
-      key: input.key,
-      lastSettledAt: input.lastSettledAt,
-      leaseOwner: input.leaseOwner,
-      leaseUntil: input.leaseUntil
-    });
-  }
-
-  async acquireLease(input: {
-    key: string;
-    ownerId: string;
-    now: Date;
-    leaseUntil: Date;
-    initialLastSettledAt: Date;
-  }): Promise<WorldRuntimeRecord | null> {
-    const [row] = await this.db
+  async ensureRow(key: string, initialLastSettledAt: Date): Promise<void> {
+    await this.db
       .insert(worldRuntimeState)
-      .values({
-        key: input.key,
-        lastSettledAt: input.initialLastSettledAt,
-        leaseOwner: input.ownerId,
-        leaseUntil: input.leaseUntil
-      })
-      .onConflictDoUpdate({
-        target: worldRuntimeState.key,
-        set: {
-          leaseOwner: input.ownerId,
-          leaseUntil: input.leaseUntil,
-          updatedAt: input.now
-        },
-        where: sql`${worldRuntimeState.leaseUntil} IS NULL OR ${worldRuntimeState.leaseUntil} <= ${input.now}`
-      })
-      .returning();
-
-    return row
-      ? {
-          key: row.key,
-          lastSettledAt: row.lastSettledAt,
-          leaseOwner: row.leaseOwner,
-          leaseUntil: row.leaseUntil
-        }
-      : null;
+      .values({ key, lastSettledAt: initialLastSettledAt })
+      .onConflictDoNothing({ target: worldRuntimeState.key });
   }
 
-  async saveProgress(input: {
-    key: string;
-    lastSettledAt: Date;
-    leaseOwner: string;
-    leaseUntil: Date;
-  }): Promise<void> {
-    await this.db
-      .update(worldRuntimeState)
-      .set({
-        lastSettledAt: input.lastSettledAt,
-        leaseOwner: input.leaseOwner,
-        leaseUntil: input.leaseUntil,
-        updatedAt: new Date()
-      })
-      .where(eq(worldRuntimeState.key, input.key));
+  // Must run inside the caller's transaction: the row lock is the tick mutex.
+  async lockAndRead(key: string): Promise<WorldRuntimeProgress | null> {
+    const [row] = await this.db
+      .select({ lastSettledAt: worldRuntimeState.lastSettledAt })
+      .from(worldRuntimeState)
+      .where(eq(worldRuntimeState.key, key))
+      .limit(1)
+      .for("update");
+
+    return row ? { key, lastSettledAt: row.lastSettledAt } : null;
   }
 
-  async releaseLease(input: {
-    key: string;
-    ownerId: string;
-    lastSettledAt: Date;
-  }): Promise<void> {
+  // Must run inside the same transaction as lockAndRead.
+  async saveProgress(input: { key: string; lastSettledAt: Date; now: Date }): Promise<void> {
     await this.db
       .update(worldRuntimeState)
-      .set({
-        lastSettledAt: input.lastSettledAt,
-        leaseOwner: null,
-        leaseUntil: null,
-        updatedAt: new Date()
-      })
+      .set({ lastSettledAt: input.lastSettledAt, updatedAt: input.now })
       .where(eq(worldRuntimeState.key, input.key));
   }
 }

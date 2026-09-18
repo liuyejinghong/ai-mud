@@ -1,205 +1,188 @@
 import { describe, expect, it } from "vitest";
-import type { WorldRuntimeRecord, WorldRuntimeRepository } from "./world-runtime.repository.js";
+import type { WorldClock } from "./world-clock.js";
+import type {
+  WorldRuntimeProgress,
+  WorldRuntimeRepositoryPort,
+  WorldRuntimeTx
+} from "./world-runtime.repository.js";
 import { WorldRuntimeService } from "./world-runtime.service.js";
 
-class InMemoryWorldRuntimeRepository
-  implements Pick<WorldRuntimeRepository, "acquireLease" | "find" | "releaseLease" | "saveProgress">
-{
-  record: WorldRuntimeRecord | null = null;
+class InMemoryWorldRuntimeRepository implements WorldRuntimeRepositoryPort {
+  progress: { key: string; lastSettledAt: Date } | null = null;
+  savedProgress: string[] = [];
 
   async find() {
-    return this.record;
+    return this.progress ? { key: this.progress.key, lastSettledAt: new Date(this.progress.lastSettledAt) } : null;
   }
 
-  async acquireLease(input: {
-    key: string;
-    ownerId: string;
-    now: Date;
-    leaseUntil: Date;
-    initialLastSettledAt: Date;
-  }) {
-    if (this.record?.leaseUntil && this.record.leaseUntil.getTime() > input.now.getTime()) {
-      return null;
+  async ensureRow(key: string, initialLastSettledAt: Date) {
+    if (!this.progress) {
+      this.progress = { key, lastSettledAt: new Date(initialLastSettledAt) };
     }
-
-    this.record = {
-      key: input.key,
-      lastSettledAt: this.record?.lastSettledAt
-        ? new Date(this.record.lastSettledAt)
-        : new Date(input.initialLastSettledAt),
-      leaseOwner: input.ownerId,
-      leaseUntil: new Date(input.leaseUntil)
-    };
-    return this.record;
   }
 
-  async saveProgress(input: {
-    key: string;
-    lastSettledAt: Date;
-    leaseOwner: string;
-    leaseUntil: Date;
-  }) {
-    this.record = {
-      ...input,
-      lastSettledAt: new Date(input.lastSettledAt),
-      leaseUntil: new Date(input.leaseUntil)
-    };
+  async lockAndRead(key: string) {
+    return this.progress ? { key, lastSettledAt: new Date(this.progress.lastSettledAt) } : null;
   }
 
-  async releaseLease(input: { key: string; ownerId: string; lastSettledAt: Date }) {
-    this.record = {
-      key: input.key,
-      lastSettledAt: new Date(input.lastSettledAt),
-      leaseOwner: null,
-      leaseUntil: null
-    };
+  async saveProgress(input: { key: string; lastSettledAt: Date }) {
+    this.progress = { key: input.key, lastSettledAt: new Date(input.lastSettledAt) };
+    this.savedProgress.push(input.lastSettledAt.toISOString());
+  }
+
+  async transaction<T>(
+    operation: (txRepo: WorldRuntimeRepositoryPort, tx: WorldRuntimeTx) => Promise<T>
+  ): Promise<T> {
+    return operation(this, this as unknown as WorldRuntimeTx);
   }
 }
 
+function clockAt(at: Date): WorldClock {
+  return { now: () => new Date(at) };
+}
+
 describe("WorldRuntimeService", () => {
-  it("initializes runtime state without backfilling old history", async () => {
+  it("initializes the runtime row and waits a full interval before the first tick", async () => {
     const repo = new InMemoryWorldRuntimeRepository();
-    const settledAt: string[] = [];
+    const settled: string[] = [];
     const service = new WorldRuntimeService({
       repo,
-      ownerId: "test-owner",
-      settleNpcWorld: async (now) => {
-        settledAt.push(now.toISOString());
-      }
+      clock: clockAt(new Date("2026-07-01T12:34:56.000Z")),
+      participants: [
+        async (_tx, tickAt) => {
+          settled.push(tickAt.toISOString());
+        }
+      ]
     });
 
-    const result = await service.settleDue(new Date("2026-07-01T12:34:56.000Z"));
+    const result = await service.settleDue();
 
-    expect(result).toEqual({ settledSteps: 0, skipped: false });
-    expect(repo.record?.lastSettledAt?.toISOString()).toBe("2026-07-01T12:34:00.000Z");
-    expect(repo.record?.leaseOwner).toBeNull();
-    expect(settledAt).toEqual([]);
+    expect(result).toEqual({ settledSteps: 0, skipped: true });
+    expect(repo.progress?.lastSettledAt?.toISOString()).toBe("2026-07-01T12:34:00.000Z");
+    expect(settled).toEqual([]);
   });
 
   it("settles one minute at a time up to the max step limit", async () => {
     const repo = new InMemoryWorldRuntimeRepository();
-    repo.record = {
-      key: "npc_world",
-      lastSettledAt: new Date("2026-07-01T12:00:00.000Z"),
-      leaseOwner: null,
-      leaseUntil: null
-    };
-    const settledAt: string[] = [];
+    await repo.ensureRow("npc_world", new Date("2026-07-01T12:00:00.000Z"));
+    const settled: string[] = [];
     const service = new WorldRuntimeService({
       repo,
-      ownerId: "test-owner",
+      clock: clockAt(new Date("2026-07-01T12:10:00.000Z")),
       maxStepsPerRun: 3,
-      settleNpcWorld: async (now) => {
-        settledAt.push(now.toISOString());
-      }
+      participants: [
+        async (_tx, tickAt) => {
+          settled.push(tickAt.toISOString());
+        }
+      ]
     });
 
-    const result = await service.settleDue(new Date("2026-07-01T12:10:00.000Z"));
+    const result = await service.settleDue();
 
     expect(result).toEqual({ settledSteps: 3, skipped: false });
-    expect(settledAt).toEqual([
+    expect(settled).toEqual([
       "2026-07-01T12:01:00.000Z",
       "2026-07-01T12:02:00.000Z",
       "2026-07-01T12:03:00.000Z"
     ]);
-    expect(repo.record?.lastSettledAt?.toISOString()).toBe("2026-07-01T12:03:00.000Z");
+    expect(repo.progress?.lastSettledAt?.toISOString()).toBe("2026-07-01T12:03:00.000Z");
   });
 
-  it("skips settlement while another owner lease is active", async () => {
+  it("skips settlement when the world is already caught up", async () => {
     const repo = new InMemoryWorldRuntimeRepository();
-    repo.record = {
-      key: "npc_world",
-      lastSettledAt: new Date("2026-07-01T12:00:00.000Z"),
-      leaseOwner: "other-owner",
-      leaseUntil: new Date("2026-07-01T12:01:00.000Z")
-    };
+    await repo.ensureRow("npc_world", new Date("2026-07-01T12:10:00.000Z"));
+    const settled: string[] = [];
     const service = new WorldRuntimeService({
       repo,
-      ownerId: "test-owner",
-      settleNpcWorld: async () => {
-        throw new Error("should not settle");
-      }
+      clock: clockAt(new Date("2026-07-01T12:10:30.000Z")),
+      participants: [
+        async () => {
+          throw new Error("should not settle");
+        }
+      ]
     });
 
-    await expect(service.settleDue(new Date("2026-07-01T12:00:30.000Z"))).resolves.toEqual({
-      settledSteps: 0,
-      skipped: true
-    });
+    await expect(service.settleDue()).resolves.toEqual({ settledSteps: 0, skipped: true });
+    expect(settled).toEqual([]);
   });
 
-  it("skips settlement while the same owner already has an active lease", async () => {
+  it("runs participants in order inside the same tick transaction", async () => {
     const repo = new InMemoryWorldRuntimeRepository();
-    repo.record = {
-      key: "npc_world",
-      lastSettledAt: new Date("2026-07-01T12:00:00.000Z"),
-      leaseOwner: "test-owner",
-      leaseUntil: new Date("2026-07-01T12:01:00.000Z")
-    };
+    await repo.ensureRow("npc_world", new Date("2026-07-01T12:00:00.000Z"));
+    const calls: string[] = [];
     const service = new WorldRuntimeService({
       repo,
-      ownerId: "test-owner",
-      settleNpcWorld: async () => {
-        throw new Error("should not settle");
-      }
+      clock: clockAt(new Date("2026-07-01T12:02:00.000Z")),
+      participants: [
+        async (_tx, tickAt) => {
+          calls.push(`npc@${tickAt.toISOString()}`);
+        },
+        async (_tx, tickAt) => {
+          calls.push(`instances@${tickAt.toISOString()}`);
+        }
+      ]
     });
 
-    await expect(service.settleDue(new Date("2026-07-01T12:00:30.000Z"))).resolves.toEqual({
-      settledSteps: 0,
-      skipped: true
-    });
+    const result = await service.settleDue();
+
+    expect(result).toEqual({ settledSteps: 2, skipped: false });
+    expect(calls).toEqual([
+      "npc@2026-07-01T12:01:00.000Z",
+      "instances@2026-07-01T12:01:00.000Z",
+      "npc@2026-07-01T12:02:00.000Z",
+      "instances@2026-07-01T12:02:00.000Z"
+    ]);
   });
 
-  it("allows callers to save tick progress inside a custom settlement boundary", async () => {
+  it("does not advance progress when a participant fails, and retries the same tick next run", async () => {
     const repo = new InMemoryWorldRuntimeRepository();
-    repo.record = {
-      key: "npc_world",
-      lastSettledAt: new Date("2026-07-01T12:00:00.000Z"),
-      leaseOwner: null,
-      leaseUntil: null
-    };
-    const settlementBoundaries: string[] = [];
+    await repo.ensureRow("npc_world", new Date("2026-07-01T12:00:00.000Z"));
+    let failFirstTick = true;
+    const settled: string[] = [];
     const service = new WorldRuntimeService({
       repo,
-      ownerId: "test-owner",
-      maxStepsPerRun: 1,
-      settleNpcWorld: async () => {
-        throw new Error("custom tick should be used");
+      clock: clockAt(new Date("2026-07-01T12:02:00.000Z")),
+      participants: [
+        async (_tx, tickAt) => {
+          if (failFirstTick && tickAt.toISOString() === "2026-07-01T12:01:00.000Z") {
+            throw new Error("settlement failed");
+          }
+          settled.push(tickAt.toISOString());
+        }
+      ]
+    });
+
+    await expect(service.settleDue()).rejects.toThrow("settlement failed");
+    expect(repo.progress?.lastSettledAt?.toISOString()).toBe("2026-07-01T12:00:00.000Z");
+
+    failFirstTick = false;
+    const retry = await service.settleDue();
+    expect(retry).toEqual({ settledSteps: 2, skipped: false });
+    expect(settled).toEqual([
+      "2026-07-01T12:01:00.000Z",
+      "2026-07-01T12:02:00.000Z"
+    ]);
+    expect(repo.progress?.lastSettledAt?.toISOString()).toBe("2026-07-01T12:02:00.000Z");
+  });
+
+  it("uses the injected clock when no explicit now is passed", async () => {
+    const repo = new InMemoryWorldRuntimeRepository();
+    await repo.ensureRow("npc_world", new Date("2026-07-01T12:00:00.000Z"));
+    let observedNow: Date | null = null;
+    const service = new WorldRuntimeService({
+      repo,
+      clock: {
+        now: () => {
+          observedNow = new Date("2026-07-01T12:01:00.000Z");
+          return new Date(observedNow);
+        }
       },
-      settleTick: async (now, progress) => {
-        settlementBoundaries.push(now.toISOString());
-        await repo.saveProgress(progress);
-      }
+      participants: [async () => {}]
     });
 
-    await expect(service.settleDue(new Date("2026-07-01T12:05:00.000Z"))).resolves.toEqual({
-      settledSteps: 1,
-      skipped: false
-    });
-    expect(settlementBoundaries).toEqual(["2026-07-01T12:01:00.000Z"]);
-    expect(repo.record?.lastSettledAt?.toISOString()).toBe("2026-07-01T12:01:00.000Z");
-    expect(repo.record?.leaseOwner).toBeNull();
-  });
+    await service.settleDue();
 
-  it("does not advance the cursor when tick settlement fails", async () => {
-    const repo = new InMemoryWorldRuntimeRepository();
-    repo.record = {
-      key: "npc_world",
-      lastSettledAt: new Date("2026-07-01T12:00:00.000Z"),
-      leaseOwner: null,
-      leaseUntil: null
-    };
-    const service = new WorldRuntimeService({
-      repo,
-      ownerId: "test-owner",
-      settleNpcWorld: async () => {
-        throw new Error("settlement failed");
-      }
-    });
-
-    await expect(service.settleDue(new Date("2026-07-01T12:05:00.000Z"))).rejects.toThrow(
-      "settlement failed"
-    );
-    expect(repo.record?.lastSettledAt?.toISOString()).toBe("2026-07-01T12:00:00.000Z");
-    expect(repo.record?.leaseOwner).toBe("test-owner");
+    expect(observedNow).not.toBeNull();
+    expect(repo.savedProgress).toEqual(["2026-07-01T12:01:00.000Z"]);
   });
 });

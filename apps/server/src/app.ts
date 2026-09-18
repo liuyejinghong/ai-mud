@@ -13,13 +13,17 @@ import {
   createNpcTaskService,
   createRumorService
 } from "./modules/game/game.composition.js";
+import { GameRepository } from "./modules/game/game.repository.js";
 import { LedgerRepository } from "./modules/ledger/ledger.repository.js";
 import { LedgerService } from "./modules/ledger/ledger.service.js";
 import { NpcRepository } from "./modules/npc/npc.repository.js";
 import { NpcService } from "./modules/npc/npc.service.js";
+import { systemWorldClock } from "./modules/world-runtime/world-clock.js";
 import { WorldRuntimeRepository } from "./modules/world-runtime/world-runtime.repository.js";
 import { WorldPostTickService } from "./modules/world-runtime/world-post-tick.service.js";
 import {
+  floorToTick,
+  NPC_WORLD_RUNTIME_KEY,
   WorldRuntimeService,
   type WorldRuntimeSettleResult
 } from "./modules/world-runtime/world-runtime.service.js";
@@ -31,6 +35,7 @@ declare module "fastify" {
       db: Db;
       worldRuntime: {
         settleDue(now?: Date): Promise<WorldRuntimeSettleResult>;
+        idle(): Promise<void>;
       };
     };
   }
@@ -76,6 +81,12 @@ export function createWorldRuntimeScheduler(input: {
       } finally {
         settlementInFlight = null;
       }
+    },
+    // Shutdown ordering: stop accepting (timer cleared by caller) -> drain the
+    // bounded in-flight settlement/post-tick work -> caller closes connections.
+    idle: async () => {
+      if (settlementInFlight) await settlementInFlight.catch(() => {});
+      if (postTickInFlight) await postTickInFlight.catch(() => {});
     }
   };
 }
@@ -92,29 +103,23 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
     dbConnection = createDb(config.DATABASE_URL);
     db = dbConnection.db;
   }
-  const runSettleDue = async (now = new Date()) => {
-    const repo = new WorldRuntimeRepository(db);
+  const runSettleDue = async (now = systemWorldClock.now()) => {
     const runtime = new WorldRuntimeService({
-      repo,
-      ownerId: `server-${process.pid}`,
+      repo: new WorldRuntimeRepository(db),
+      clock: systemWorldClock,
       maxStepsPerRun: config.WORLD_TICK_MAX_STEPS,
-      settleNpcWorld: async (tickAt) => {
-        const npcRepo = new NpcRepository(db);
-        const npcService = new NpcService(npcRepo, new LedgerService(new LedgerRepository(db)));
-        await npcService.settleNpcWorld(tickAt);
-      },
-      settleTick: async (tickAt, progress) => {
-        await db.transaction(async (tx) => {
-          const txNpcRepo = new NpcRepository(tx);
-          const txNpcService = new NpcService(
-            txNpcRepo,
+      participants: [
+        async (tx, tickAt) => {
+          const npcService = new NpcService(
+            new NpcRepository(tx),
             new LedgerService(new LedgerRepository(tx))
           );
-          const txRuntimeRepo = new WorldRuntimeRepository(tx);
-          await txNpcService.settleNpcWorld(tickAt);
-          await txRuntimeRepo.saveProgress(progress);
-        });
-      }
+          await npcService.settleNpcWorld(tickAt);
+        },
+        async (tx, tickAt) => {
+          await new GameRepository(tx).refreshDueInstanceResources({ now: tickAt });
+        }
+      ]
     });
     return runtime.settleDue(now);
   };
@@ -141,6 +146,15 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
 
   app.decorate("config", config);
   app.decorate("di", { db, worldRuntime });
+
+  try {
+    await new WorldRuntimeRepository(db).ensureRow(
+      NPC_WORLD_RUNTIME_KEY,
+      floorToTick(systemWorldClock.now())
+    );
+  } catch (error) {
+    app.log.warn({ err: error }, "world runtime row preflight failed; first tick will retry");
+  }
 
   app.setErrorHandler((error, _request, reply) => {
     app.log.error({ err: error }, "request failed");
@@ -174,6 +188,7 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
 
   app.addHook("onClose", async () => {
     if (worldTickTimer) clearInterval(worldTickTimer);
+    await worldRuntime.idle();
   });
 
   if (dbConnection) {

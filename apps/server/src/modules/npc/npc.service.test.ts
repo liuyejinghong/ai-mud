@@ -4,6 +4,7 @@ import type { GameLocationId } from "@ai-mud/shared";
 import type { NpcDefinition } from "@ai-mud/content";
 import { CORRUPT_FOREST, FIRST_NPCS, OLD_MINE, WORLD_ZONES } from "@ai-mud/content";
 import type { CopperLedgerWriter } from "../ledger/ledger.service.js";
+import { runNpcSimulationOnSnapshot } from "./npc.simulation-repository.js";
 import {
   NpcService,
   type MapInstanceResourceRecord,
@@ -560,7 +561,7 @@ describe("NpcService", () => {
     expect(farmer.lastHungerSettledAt.toISOString()).toBe("2026-07-01T09:00:00.000Z");
   });
 
-  it("restores shared and character map resource charges from the world tick", async () => {
+  it("restores shared world resource charges from the world tick", async () => {
     const repo = new InMemoryNpcRepository();
     const service = new NpcService(repo);
     const seededAt = new Date("2026-07-01T00:00:00.000Z");
@@ -572,39 +573,15 @@ describe("NpcService", () => {
     )!;
     sharedNode.charges = 0;
     sharedNode.lastRefreshedAt = seededAt;
-    repo.mapInstances.push({
-      id: "map-1",
-      zoneId: "corrupt_forest",
-      resourceCharges: {
-        forest_berry_patch_01: 0,
-        abandoned_iron_vein_01: 0
-      },
-      resourcesRefreshedAt: seededAt
-    });
-    repo.mapInstances.push({
-      id: "map-2",
-      zoneId: "old_mine",
-      resourceCharges: {
-        old_mine_iron_vein_01: 0,
-        old_mine_coppery_iron_vein_01: 0
-      },
-      resourcesRefreshedAt: seededAt
-    });
 
     await service.settleNpcWorld(refreshedAt);
 
     expect(sharedNode.charges).toBe(3);
     expect(sharedNode.lastRefreshedAt).toBe(refreshedAt);
-    expect(repo.mapInstances[0]?.resourceCharges).toMatchObject({
-      forest_berry_patch_01: 3,
-      abandoned_iron_vein_01: 120
-    });
-    expect(repo.mapInstances[0]?.resourcesRefreshedAt).toBe(refreshedAt);
-    expect(repo.mapInstances[1]?.resourceCharges).toMatchObject({
-      old_mine_iron_vein_01: 80,
-      old_mine_coppery_iron_vein_01: 50
-    });
-    expect(repo.mapInstances[1]?.resourcesRefreshedAt).toBe(refreshedAt);
+    // Personal-instance charges are no longer refreshed by the npc world tick:
+    // that write belongs to the character side (see GameRepository
+    // refreshDueInstanceResources), triggered as a separate tick participant.
+    expect(repo.mapInstances).toEqual([]);
   });
 
   it("pays scheduled NPC wages from the municipal treasury on the daily tick", async () => {
@@ -953,7 +930,7 @@ describe("NpcService", () => {
     const service = new NpcService(repo);
     const startAt = new Date("2026-07-01T00:00:00.000Z");
 
-    const report = await service.runNpcSimulation(1, startAt);
+    const report = await service.runNpcSimulationInPlace(1, startAt);
 
     expect(report).toMatchObject({
       startedAt: "2026-07-01T00:00:00.000Z",
@@ -996,7 +973,7 @@ describe("NpcService", () => {
       baseSellPriceCopper: 8
     });
 
-    const report = await service.runNpcSimulation(1, startAt);
+    const report = await service.runNpcSimulationInPlace(1, startAt);
 
     expect(report.metrics.starvingNpcCount).toBe(0);
     expect(report.metrics.idleRate).toBeLessThan(0.3);
@@ -1024,7 +1001,7 @@ describe("NpcService", () => {
       transactions: structuredClone(repo.transactions)
     };
 
-    const report = await service.runNpcSimulation(1, startAt);
+    const report = await runNpcSimulationOnSnapshot(repo, 1, startAt);
 
     expect(report.days).toBe(1);
     expect(report.metrics.completedActionCount).toBeGreaterThan(0);
@@ -1070,17 +1047,10 @@ describe("NpcService", () => {
       (actor) => actor.npcKey === "blackpine_blacksmith_borin"
     )!;
     await service.addNpcInventoryItem(blacksmith.id, "iron_ore", 7);
-    repo.mapInstances.push({
-      id: "map-old-mine",
-      zoneId: OLD_MINE.id,
-      resourceCharges: {
-        old_mine_iron_vein_01: 0,
-        old_mine_coppery_iron_vein_01: 0
-      },
-      resourcesRefreshedAt: startAt
-    });
+    // Personal-instance refresh is no longer part of the npc simulation:
+    // it runs as a character-side tick participant (ARCH-02 / DEBT-022).
 
-    const report = await service.runNpcSimulation(7, startAt);
+    const report = await runNpcSimulationOnSnapshot(repo, 7, startAt);
 
     expect(report).toMatchObject({
       days: 7,
@@ -1111,16 +1081,6 @@ describe("NpcService", () => {
           resourceId: "old_mine_iron_vein_01",
           remainingCharges: 80
         })
-      ])
-    );
-    expect(report.mapResourceSnapshots).toEqual(
-      expect.arrayContaining([
-        {
-          zoneId: OLD_MINE.id,
-          resourceCount: OLD_MINE.resources.length,
-          depletedResourceCount: 0,
-          refreshedAt: "2026-07-08T00:00:00.000Z"
-        }
       ])
     );
   });

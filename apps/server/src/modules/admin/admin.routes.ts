@@ -47,6 +47,7 @@ import { NpcRepository } from "../npc/npc.repository.js";
 import { NpcMemoryRepository } from "../npc-memory/npc-memory.repository.js";
 import { NpcMemoryService } from "../npc-memory/npc-memory.service.js";
 import { NpcService } from "../npc/npc.service.js";
+import { runNpcSimulationOnSnapshot } from "../npc/npc.simulation-repository.js";
 import { WorldRuntimeRepository } from "../world-runtime/world-runtime.repository.js";
 import {
   NPC_WORLD_RUNTIME_KEY,
@@ -285,13 +286,15 @@ async function buildWorldRuntimeStatus(
     ? new Date(record.lastSettledAt.getTime() + WORLD_RUNTIME_TICK_MS)
     : null;
 
+  // Lease columns are retired by ARCH-02 (row-lock mutex); the DTO fields stay
+  // null until the compatibility migration drops them.
   return {
     key: NPC_WORLD_RUNTIME_KEY,
     generatedAt: now.toISOString(),
     lastSettledAt: record?.lastSettledAt?.toISOString() ?? null,
     nextTickAt: nextTickAt?.toISOString() ?? null,
-    leaseOwner: record?.leaseOwner ?? null,
-    leaseUntil: record?.leaseUntil?.toISOString() ?? null
+    leaseOwner: null,
+    leaseUntil: null
   };
 }
 
@@ -401,9 +404,7 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
       return buildNpcSnapshot(repo, service, timestamp);
     },
     runNpcSimulation: async (input) => {
-      const repo = new NpcRepository(app.di.db);
-      const service = new NpcService(repo);
-      return service.runNpcSimulation(input.days, input.startAt);
+      return runNpcSimulationOnSnapshot(new NpcRepository(app.di.db), input.days, input.startAt);
     },
     publishSystemAnnouncement: async (input) =>
       app.di.db.transaction(async (tx) => {

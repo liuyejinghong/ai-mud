@@ -9,6 +9,7 @@ import { LedgerRepository } from "../src/modules/ledger/ledger.repository.js";
 import { LedgerService } from "../src/modules/ledger/ledger.service.js";
 import { NpcRepository } from "../src/modules/npc/npc.repository.js";
 import { NpcService } from "../src/modules/npc/npc.service.js";
+import { runNpcSimulationOnSnapshot } from "../src/modules/npc/npc.simulation-repository.js";
 
 interface Journal {
   entries: Array<{ idx: number; tag: string }>;
@@ -93,7 +94,7 @@ async function verifySimulation(targetDatabaseUrl: string) {
     await seedMarket(new GameRepository(connection.db));
 
     const ledgerBefore = await ledger.getHealth(startAt);
-    const report = await npcService.runNpcSimulation(7, startAt);
+    const report = await runNpcSimulationOnSnapshot(new NpcRepository(connection.db), 7, startAt);
     const ledgerAfter = await ledger.getHealth(new Date(report.endedAt));
 
     assertCondition(

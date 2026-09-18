@@ -167,23 +167,6 @@ export class NpcRepository implements NpcRepositoryPort {
     }));
   }
 
-  async updateMapResourceCharges(input: {
-    mapInstanceId: string;
-    resourceCharges: Record<string, number>;
-    resourcesRefreshedAt?: Date;
-  }): Promise<void> {
-    const values: Partial<typeof mapInstances.$inferInsert> = {
-      resourceCharges: { ...input.resourceCharges },
-      updatedAt: new Date()
-    };
-    if (input.resourcesRefreshedAt) values.resourcesRefreshedAt = input.resourcesRefreshedAt;
-
-    await this.db
-      .update(mapInstances)
-      .set(values)
-      .where(eq(mapInstances.id, input.mapInstanceId));
-  }
-
   async findMunicipalTreasury(settlementId: "blackpine_outpost") {
     const [row] = await this.db
       .select()

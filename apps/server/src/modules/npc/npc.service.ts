@@ -6,7 +6,6 @@ import {
   getFoodItemById,
   getNpcByKey,
   getResourceById,
-  getZoneById,
   isFoodDefinition,
   type NpcDefinition
 } from "@ai-mud/content";
@@ -32,7 +31,6 @@ import type {
   NpcSummaryDto
 } from "@ai-mud/shared";
 import type { CopperLedgerWriter } from "../ledger/ledger.service.js";
-import { NpcSimulationRepository } from "./npc.simulation-repository.js";
 
 const BLACKPINE_MARKET_ID = "blackpine_outpost" as const;
 const INITIAL_TREASURY_COPPER = 10_000;
@@ -118,11 +116,6 @@ export interface NpcRepositoryPort {
     lastRefreshedAt?: Date;
   }): Promise<void>;
   listMapInstances(): Promise<MapInstanceResourceRecord[]>;
-  updateMapResourceCharges(input: {
-    mapInstanceId: string;
-    resourceCharges: Record<string, number>;
-    resourcesRefreshedAt?: Date;
-  }): Promise<void>;
   findMunicipalTreasury(settlementId: typeof BLACKPINE_MARKET_ID): Promise<{
     settlementId: typeof BLACKPINE_MARKET_ID;
     copperBalance: number;
@@ -384,12 +377,6 @@ export class NpcService {
         };
       })
     );
-  }
-
-  async runNpcSimulation(days: number, startAt: Date): Promise<NpcSimulationReportDto> {
-    const simulationRepo = await NpcSimulationRepository.fromLive(this.repo);
-    const simulationService = new NpcService(simulationRepo);
-    return simulationService.runNpcSimulationInPlace(days, startAt);
   }
 
   async runNpcSimulationInPlace(days: number, startAt: Date): Promise<NpcSimulationReportDto> {
@@ -939,20 +926,6 @@ export class NpcService {
         lastRefreshedAt: now
       });
     }
-
-    const maps = await this.repo.listMapInstances();
-    for (const map of maps) {
-      if (!this.isDailyRefreshDue(map.resourcesRefreshedAt, now)) continue;
-
-      const charges = this.initialResourceChargesForZone(map.zoneId);
-      if (!charges) continue;
-
-      await this.repo.updateMapResourceCharges({
-        mapInstanceId: map.id,
-        resourceCharges: charges,
-        resourcesRefreshedAt: now
-      });
-    }
   }
 
   private async settleNpcHunger(actor: NpcActorRecord, now: Date): Promise<NpcActorRecord> {
@@ -1078,13 +1051,6 @@ export class NpcService {
 
     if (timestamps.at(-1) !== endedAt.getTime()) timestamps.push(endedAt.getTime());
     return timestamps;
-  }
-
-  private initialResourceChargesForZone(zoneId: GameLocationId) {
-    const zone = getZoneById(zoneId);
-    if (!zone) return null;
-
-    return Object.fromEntries(zone.resources.map((resource) => [resource.id, resource.charges]));
   }
 
   private async settleNpcAction(actor: NpcActorRecord, action: NpcActionRecord, now: Date) {
