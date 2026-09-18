@@ -1,0 +1,1821 @@
+{
+  "schemaVersion": 1,
+  "architectureVersion": "3.0",
+  "status": "DRAFT_PENDING_INDEPENDENT_REVIEW",
+  "sourceBaseline": "d9f97ddc5bfb6e4093ede2cfabc7f659d5434e08",
+  "sourceBaselineNote": "分支 arch/v0.11.0-arch01-mod01（main 690cbc8 + PR#1 head dab2893 合并）",
+  "purpose": "MOD-01 交付物：每个生产源文件的唯一归属分类，作为 MOD-02 检查器的实际输入。记录当前事实状态与目标逻辑模块；当前代码尚不符合 catalog 允许边，违规逐条登记于 legacy-boundary-debt.json。",
+  "truthPolicy": [
+    "module=目标逻辑模块（catalog ID）；flags.legacy_mixed 表示该文件含多个未来所有者，方法级迁移目标见 docs/reviews/module-boundary-inventory.md",
+    "当前不存在任何 public.ts/bootstrap.ts（modules.*.currentPublicEntry 全为 null），公开入口规则在提取完成前不可执行",
+    "scope=test/tooling/config 的文件不参与业务依赖图；测试文件归属其被测模块，白盒/集成 fixture 策略由 MOD-02 细化",
+    "本文件不是门禁：在 MOD-02 创建并验证检查器前，不可声称 arch:check 可运行（NOT_CREATED）"
+  ],
+  "layerVocabulary": [
+    "entry",
+    "transport",
+    "application",
+    "domain",
+    "persistence",
+    "composition",
+    "platform",
+    "protocol",
+    "kernel",
+    "content",
+    "rules",
+    "capability",
+    "read_model",
+    "client_state",
+    "client_view",
+    "tooling",
+    "config",
+    "test"
+  ],
+  "modules": {
+    "kernel": {
+      "catalogKind": "pure",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "content": {
+      "catalogKind": "pure",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "rules": {
+      "catalogKind": "pure",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "protocol": {
+      "catalogKind": "contract",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "platform": {
+      "catalogKind": "infrastructure",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "identity": {
+      "catalogKind": "business",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "world": {
+      "catalogKind": "business",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "assets": {
+      "catalogKind": "business",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "characters": {
+      "catalogKind": "business",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "economy": {
+      "catalogKind": "business",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "npc": {
+      "catalogKind": "business",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "quests": {
+      "catalogKind": "business",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "social": {
+      "catalogKind": "business",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "ai": {
+      "catalogKind": "capability",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "observation": {
+      "catalogKind": "read_model",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "application": {
+      "catalogKind": "orchestration",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "transport": {
+      "catalogKind": "adapter",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "composition": {
+      "catalogKind": "composition",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "client_session": {
+      "catalogKind": "client",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "client_text": {
+      "catalogKind": "client",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "client_pixel": {
+      "catalogKind": "client_design_only",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    }
+  },
+  "stats": {
+    "totalFiles": 214,
+    "unmatched": 0,
+    "byModule": {
+      "platform": {
+        "production": 6,
+        "test": 7,
+        "tooling": 4,
+        "config": 1
+      },
+      "composition": {
+        "production": 3,
+        "test": 1,
+        "tooling": 0,
+        "config": 0
+      },
+      "identity": {
+        "production": 8,
+        "test": 5,
+        "tooling": 0,
+        "config": 0
+      },
+      "transport": {
+        "production": 2,
+        "test": 2,
+        "tooling": 0,
+        "config": 0
+      },
+      "ai": {
+        "production": 13,
+        "test": 10,
+        "tooling": 0,
+        "config": 0
+      },
+      "social": {
+        "production": 6,
+        "test": 4,
+        "tooling": 0,
+        "config": 0
+      },
+      "application": {
+        "production": 4,
+        "test": 1,
+        "tooling": 0,
+        "config": 0
+      },
+      "npc": {
+        "production": 7,
+        "test": 3,
+        "tooling": 0,
+        "config": 0
+      },
+      "characters": {
+        "production": 2,
+        "test": 2,
+        "tooling": 0,
+        "config": 0
+      },
+      "assets": {
+        "production": 4,
+        "test": 4,
+        "tooling": 0,
+        "config": 0
+      },
+      "quests": {
+        "production": 2,
+        "test": 1,
+        "tooling": 0,
+        "config": 0
+      },
+      "observation": {
+        "production": 1,
+        "test": 1,
+        "tooling": 0,
+        "config": 0
+      },
+      "world": {
+        "production": 2,
+        "test": 2,
+        "tooling": 0,
+        "config": 0
+      },
+      "client_text": {
+        "production": 40,
+        "test": 22,
+        "tooling": 0,
+        "config": 3
+      },
+      "client_session": {
+        "production": 6,
+        "test": 2,
+        "tooling": 0,
+        "config": 0
+      },
+      "content": {
+        "production": 3,
+        "test": 2,
+        "tooling": 0,
+        "config": 0
+      },
+      "rules": {
+        "production": 15,
+        "test": 5,
+        "tooling": 0,
+        "config": 0
+      },
+      "protocol": {
+        "production": 4,
+        "test": 2,
+        "tooling": 0,
+        "config": 0
+      },
+      "kernel": {
+        "production": 2,
+        "test": 0,
+        "tooling": 0,
+        "config": 0
+      }
+    }
+  },
+  "files": [
+    {
+      "path": "apps/server/drizzle.config.ts",
+      "module": "platform",
+      "layer": "config",
+      "scope": "config",
+      "note": "drizzle-kit 配置"
+    },
+    {
+      "path": "apps/server/scripts/run-real-player-e2e.ts",
+      "module": "platform",
+      "layer": "tooling",
+      "scope": "tooling",
+      "note": "开发/验证脚本（verify-migrations / verify-npc-simulation / verify-world-reset / run-real-player-e2e）"
+    },
+    {
+      "path": "apps/server/scripts/verify-migrations.ts",
+      "module": "platform",
+      "layer": "tooling",
+      "scope": "tooling",
+      "note": "开发/验证脚本（verify-migrations / verify-npc-simulation / verify-world-reset / run-real-player-e2e）"
+    },
+    {
+      "path": "apps/server/scripts/verify-npc-simulation.ts",
+      "module": "platform",
+      "layer": "tooling",
+      "scope": "tooling",
+      "note": "开发/验证脚本（verify-migrations / verify-npc-simulation / verify-world-reset / run-real-player-e2e）"
+    },
+    {
+      "path": "apps/server/scripts/verify-world-reset.ts",
+      "module": "platform",
+      "layer": "tooling",
+      "scope": "tooling",
+      "note": "开发/验证脚本（verify-migrations / verify-npc-simulation / verify-world-reset / run-real-player-e2e）"
+    },
+    {
+      "path": "apps/server/src/app.test.ts",
+      "module": "composition",
+      "layer": "test",
+      "scope": "test",
+      "note": "白盒测试：归属被测模块；跨模块集成 fixture 策略由 MOD-02 细化"
+    },
+    {
+      "path": "apps/server/src/app.ts",
+      "module": "composition",
+      "layer": "composition",
+      "scope": "production",
+      "flags": [
+        "legacy_mixed"
+      ],
+      "note": "当前唯一组合根：buildApp 装配路由/依赖闭包/世界调度器/onClose；含 transport 引导与调度装配，目标拆分至 composition 与 application（ARCH-02）"
+    },
+    {
+      "path": "apps/server/src/config/env.test.ts",
+      "module": "platform",
+      "layer": "test",
+      "scope": "test",
+      "note": "白盒测试：归属被测模块；跨模块集成 fixture 策略由 MOD-02 细化"
+    },
+    {
+      "path": "apps/server/src/config/env.ts",
+      "module": "platform",
+      "layer": "platform",
+      "scope": "production",
+      "note": "env 解析（zod）"
+    },
+    {
+      "path": "apps/server/src/db/client.test.ts",
+      "module": "platform",
+      "layer": "test",
+      "scope": "test",
+      "note": "Db client 与 schema 共置（modularity §7 允许的暂时共置例外；写权限不随共置开放）"
+    },
+    {
+      "path": "apps/server/src/db/client.ts",
+      "module": "platform",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "Db client 与 schema 共置（modularity §7 允许的暂时共置例外；写权限不随共置开放）"
+    },
+    {
+      "path": "apps/server/src/db/game-concurrency.integration.test.ts",
+      "module": "platform",
+      "layer": "test",
+      "scope": "test",
+      "note": "Db client 与 schema 共置（modularity §7 允许的暂时共置例外；写权限不随共置开放）"
+    },
+    {
+      "path": "apps/server/src/db/migration-journal.test.ts",
+      "module": "platform",
+      "layer": "test",
+      "scope": "test",
+      "note": "Db client 与 schema 共置（modularity §7 允许的暂时共置例外；写权限不随共置开放）"
+    },
+    {
+      "path": "apps/server/src/db/postgres-integration.test.ts",
+      "module": "platform",
+      "layer": "test",
+      "scope": "test",
+      "note": "Db client 与 schema 共置（modularity §7 允许的暂时共置例外；写权限不随共置开放）"
+    },
+    {
+      "path": "apps/server/src/db/schema.test.ts",
+      "module": "platform",
+      "layer": "test",
+      "scope": "test",
+      "note": "Db client 与 schema 共置（modularity §7 允许的暂时共置例外；写权限不随共置开放）"
+    },
+    {
+      "path": "apps/server/src/db/schema.ts",
+      "module": "platform",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "Db client 与 schema 共置（modularity §7 允许的暂时共置例外；写权限不随共置开放）"
+    },
+    {
+      "path": "apps/server/src/main.ts",
+      "module": "composition",
+      "layer": "entry",
+      "scope": "production",
+      "note": "进程入口"
+    },
+    {
+      "path": "apps/server/src/modules/account-ops/account-ops.repository.ts",
+      "module": "identity",
+      "layer": "persistence",
+      "scope": "production"
+    },
+    {
+      "path": "apps/server/src/modules/account-ops/account-ops.service.test.ts",
+      "module": "identity",
+      "layer": "test",
+      "scope": "test"
+    },
+    {
+      "path": "apps/server/src/modules/account-ops/account-ops.service.ts",
+      "module": "identity",
+      "layer": "persistence",
+      "scope": "production"
+    },
+    {
+      "path": "apps/server/src/modules/activation-code/activation-code.repository.ts",
+      "module": "identity",
+      "layer": "persistence",
+      "scope": "production"
+    },
+    {
+      "path": "apps/server/src/modules/activation-code/activation-code.service.test.ts",
+      "module": "identity",
+      "layer": "test",
+      "scope": "test"
+    },
+    {
+      "path": "apps/server/src/modules/activation-code/activation-code.service.ts",
+      "module": "identity",
+      "layer": "persistence",
+      "scope": "production"
+    },
+    {
+      "path": "apps/server/src/modules/admin/admin.routes.test.ts",
+      "module": "transport",
+      "layer": "test",
+      "scope": "test",
+      "note": "白盒测试：归属被测模块；跨模块集成 fixture 策略由 MOD-02 细化"
+    },
+    {
+      "path": "apps/server/src/modules/admin/admin.routes.ts",
+      "module": "transport",
+      "layer": "transport",
+      "scope": "production",
+      "flags": [
+        "legacy_mixed"
+      ],
+      "note": "admin HTTP 面：含观察读取、世界推进触发(settleDue)与种子写入、直接 import 13 个模块 repo/service——R1 债务主体（ARCH-06/ARCH-07 收编）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/ai-governance.service.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "provider/orchestrator/policy/governance；ai_call_logs 表物理写入目前在 dialogue.repository（归属债务 → ARCH-08）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/ai-governance.service.ts",
+      "module": "ai",
+      "layer": "capability",
+      "scope": "production",
+      "note": "provider/orchestrator/policy/governance；ai_call_logs 表物理写入目前在 dialogue.repository（归属债务 → ARCH-08）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/ai-layer-boundary.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "provider/orchestrator/policy/governance；ai_call_logs 表物理写入目前在 dialogue.repository（归属债务 → ARCH-08）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/ai-orchestrator.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "provider/orchestrator/policy/governance；ai_call_logs 表物理写入目前在 dialogue.repository（归属债务 → ARCH-08）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/ai-orchestrator.ts",
+      "module": "ai",
+      "layer": "capability",
+      "scope": "production",
+      "note": "provider/orchestrator/policy/governance；ai_call_logs 表物理写入目前在 dialogue.repository（归属债务 → ARCH-08）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/ai-provider.ts",
+      "module": "ai",
+      "layer": "capability",
+      "scope": "production",
+      "note": "provider/orchestrator/policy/governance；ai_call_logs 表物理写入目前在 dialogue.repository（归属债务 → ARCH-08）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/ai-purpose-policy.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "provider/orchestrator/policy/governance；ai_call_logs 表物理写入目前在 dialogue.repository（归属债务 → ARCH-08）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/ai-purpose-policy.ts",
+      "module": "ai",
+      "layer": "capability",
+      "scope": "production",
+      "note": "provider/orchestrator/policy/governance；ai_call_logs 表物理写入目前在 dialogue.repository（归属债务 → ARCH-08）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/deepseek-ai-provider.ts",
+      "module": "ai",
+      "layer": "capability",
+      "scope": "production",
+      "note": "provider/orchestrator/policy/governance；ai_call_logs 表物理写入目前在 dialogue.repository（归属债务 → ARCH-08）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/template-ai-provider.ts",
+      "module": "ai",
+      "layer": "capability",
+      "scope": "production",
+      "note": "provider/orchestrator/policy/governance；ai_call_logs 表物理写入目前在 dialogue.repository（归属债务 → ARCH-08）"
+    },
+    {
+      "path": "apps/server/src/modules/announcement/announcement.repository.ts",
+      "module": "social",
+      "layer": "domain",
+      "scope": "production"
+    },
+    {
+      "path": "apps/server/src/modules/announcement/announcement.service.test.ts",
+      "module": "social",
+      "layer": "test",
+      "scope": "test"
+    },
+    {
+      "path": "apps/server/src/modules/announcement/announcement.service.ts",
+      "module": "social",
+      "layer": "domain",
+      "scope": "production"
+    },
+    {
+      "path": "apps/server/src/modules/audit/audit.repository.ts",
+      "module": "platform",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "admin/运维审计设施（audit_logs 唯一写者）；业务模块→platform 方向合法"
+    },
+    {
+      "path": "apps/server/src/modules/audit/audit.service.ts",
+      "module": "platform",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "admin/运维审计设施（audit_logs 唯一写者）；业务模块→platform 方向合法"
+    },
+    {
+      "path": "apps/server/src/modules/auth/admin-bootstrap.service.test.ts",
+      "module": "identity",
+      "layer": "test",
+      "scope": "test",
+      "note": "auth.routes=transport 层文件；service/repository=identity 域"
+    },
+    {
+      "path": "apps/server/src/modules/auth/admin-bootstrap.service.ts",
+      "module": "identity",
+      "layer": "transport",
+      "scope": "production",
+      "note": "auth.routes=transport 层文件；service/repository=identity 域"
+    },
+    {
+      "path": "apps/server/src/modules/auth/auth.repository.ts",
+      "module": "identity",
+      "layer": "transport",
+      "scope": "production",
+      "note": "auth.routes=transport 层文件；service/repository=identity 域"
+    },
+    {
+      "path": "apps/server/src/modules/auth/auth.routes.test.ts",
+      "module": "identity",
+      "layer": "test",
+      "scope": "test",
+      "note": "auth.routes=transport 层文件；service/repository=identity 域"
+    },
+    {
+      "path": "apps/server/src/modules/auth/auth.routes.ts",
+      "module": "identity",
+      "layer": "transport",
+      "scope": "production",
+      "note": "auth.routes=transport 层文件；service/repository=identity 域"
+    },
+    {
+      "path": "apps/server/src/modules/auth/auth.service.test.ts",
+      "module": "identity",
+      "layer": "test",
+      "scope": "test",
+      "note": "auth.routes=transport 层文件；service/repository=identity 域"
+    },
+    {
+      "path": "apps/server/src/modules/auth/auth.service.ts",
+      "module": "identity",
+      "layer": "transport",
+      "scope": "production",
+      "note": "auth.routes=transport 层文件；service/repository=identity 域"
+    },
+    {
+      "path": "apps/server/src/modules/dialogue/dialogue-resource-transfer.repository.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "flags": [
+        "legacy_misplaced"
+      ],
+      "note": "跨域资源转移用例（NPC↔玩家铜币/物品）：repository 承担用例并自管事务，直接实例化 item/ledger 服务——目标：application 命名用例 + assets/npc 公开API（ARCH-03）"
+    },
+    {
+      "path": "apps/server/src/modules/dialogue/dialogue.repository.ts",
+      "module": "npc",
+      "layer": "domain",
+      "scope": "production",
+      "flags": [
+        "legacy_mixed"
+      ],
+      "note": "对话域（npc 归属）：dialogue.service 混合对话编排/AI 调用/关系维护；dialogue.repository 写 npc_dialogue_messages/npc_relationships + ai_call_logs（ai 审计归属债务）"
+    },
+    {
+      "path": "apps/server/src/modules/dialogue/dialogue.service.test.ts",
+      "module": "npc",
+      "layer": "test",
+      "scope": "test",
+      "flags": [
+        "legacy_mixed"
+      ],
+      "note": "对话域（npc 归属）：dialogue.service 混合对话编排/AI 调用/关系维护；dialogue.repository 写 npc_dialogue_messages/npc_relationships + ai_call_logs（ai 审计归属债务）"
+    },
+    {
+      "path": "apps/server/src/modules/dialogue/dialogue.service.ts",
+      "module": "npc",
+      "layer": "domain",
+      "scope": "production",
+      "flags": [
+        "legacy_mixed"
+      ],
+      "note": "对话域（npc 归属）：dialogue.service 混合对话编排/AI 调用/关系维护；dialogue.repository 写 npc_dialogue_messages/npc_relationships + ai_call_logs（ai 审计归属债务）"
+    },
+    {
+      "path": "apps/server/src/modules/game/game.composition.ts",
+      "module": "composition",
+      "layer": "composition",
+      "scope": "production",
+      "note": "事实组合根片段：装配 AI orchestrator×5、任务/记忆/传闻端口"
+    },
+    {
+      "path": "apps/server/src/modules/game/game.repository.test.ts",
+      "module": "characters",
+      "layer": "test",
+      "scope": "test",
+      "note": "白盒测试：归属被测模块；跨模块集成 fixture 策略由 MOD-02 细化"
+    },
+    {
+      "path": "apps/server/src/modules/game/game.repository.ts",
+      "module": "characters",
+      "layer": "persistence",
+      "scope": "production",
+      "flags": [
+        "legacy_mixed"
+      ],
+      "note": "1342 行混合 SQL：角色/行动/地图→characters+world；铜币/金库/市场库存→assets；市场成交→economy；事件/同步→world/observation（ARCH-03/05）"
+    },
+    {
+      "path": "apps/server/src/modules/game/game.routes.test.ts",
+      "module": "transport",
+      "layer": "test",
+      "scope": "test",
+      "note": "白盒测试：归属被测模块；跨模块集成 fixture 策略由 MOD-02 细化"
+    },
+    {
+      "path": "apps/server/src/modules/game/game.routes.ts",
+      "module": "transport",
+      "layer": "transport",
+      "scope": "production",
+      "flags": [
+        "legacy_mixed"
+      ],
+      "note": "R1 债务主体：createDefaultDependencies 内嵌组合根，import 13 模块 repo/service 并直接 new；目标 transport→application（ARCH-03/07）"
+    },
+    {
+      "path": "apps/server/src/modules/game/game.service.test.ts",
+      "module": "characters",
+      "layer": "test",
+      "scope": "test",
+      "note": "白盒测试：归属被测模块；跨模块集成 fixture 策略由 MOD-02 细化"
+    },
+    {
+      "path": "apps/server/src/modules/game/game.service.ts",
+      "module": "characters",
+      "layer": "domain",
+      "scope": "production",
+      "flags": [
+        "legacy_mixed"
+      ],
+      "note": "2197 行混合体，方法级迁移目标：角色/战斗/采集/懒结算→characters；市场买卖→economy+assets；sync/getState 编排→application；状态投影→observation（ARCH-03/05/06）"
+    },
+    {
+      "path": "apps/server/src/modules/item/item-architecture.test.ts",
+      "module": "assets",
+      "layer": "test",
+      "scope": "test",
+      "note": "堆叠物品+装备实例全生命周期（ownsTransaction 布尔模式，ARCH-03 改造点）"
+    },
+    {
+      "path": "apps/server/src/modules/item/item.repository.test.ts",
+      "module": "assets",
+      "layer": "test",
+      "scope": "test",
+      "note": "堆叠物品+装备实例全生命周期（ownsTransaction 布尔模式，ARCH-03 改造点）"
+    },
+    {
+      "path": "apps/server/src/modules/item/item.repository.ts",
+      "module": "assets",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "堆叠物品+装备实例全生命周期（ownsTransaction 布尔模式，ARCH-03 改造点）"
+    },
+    {
+      "path": "apps/server/src/modules/item/item.service.test.ts",
+      "module": "assets",
+      "layer": "test",
+      "scope": "test",
+      "note": "堆叠物品+装备实例全生命周期（ownsTransaction 布尔模式，ARCH-03 改造点）"
+    },
+    {
+      "path": "apps/server/src/modules/item/item.service.ts",
+      "module": "assets",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "堆叠物品+装备实例全生命周期（ownsTransaction 布尔模式，ARCH-03 改造点）"
+    },
+    {
+      "path": "apps/server/src/modules/ledger/ledger.repository.ts",
+      "module": "assets",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "asset_ledger 唯一写者；LedgerDb 无 transaction 字段=纯参与者（方向正确）"
+    },
+    {
+      "path": "apps/server/src/modules/ledger/ledger.service.test.ts",
+      "module": "assets",
+      "layer": "test",
+      "scope": "test",
+      "note": "asset_ledger 唯一写者；LedgerDb 无 transaction 字段=纯参与者（方向正确）"
+    },
+    {
+      "path": "apps/server/src/modules/ledger/ledger.service.ts",
+      "module": "assets",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "asset_ledger 唯一写者；LedgerDb 无 transaction 字段=纯参与者（方向正确）"
+    },
+    {
+      "path": "apps/server/src/modules/lobby/lobby.repository.ts",
+      "module": "social",
+      "layer": "domain",
+      "scope": "production"
+    },
+    {
+      "path": "apps/server/src/modules/lobby/lobby.service.test.ts",
+      "module": "social",
+      "layer": "test",
+      "scope": "test"
+    },
+    {
+      "path": "apps/server/src/modules/lobby/lobby.service.ts",
+      "module": "social",
+      "layer": "domain",
+      "scope": "production"
+    },
+    {
+      "path": "apps/server/src/modules/npc-memory/npc-memory.repository.ts",
+      "module": "npc",
+      "layer": "domain",
+      "scope": "production",
+      "note": "NPC 记忆事实（npc_memory_entries/fragments 唯一写者）"
+    },
+    {
+      "path": "apps/server/src/modules/npc-memory/npc-memory.service.test.ts",
+      "module": "npc",
+      "layer": "test",
+      "scope": "test",
+      "note": "NPC 记忆事实（npc_memory_entries/fragments 唯一写者）"
+    },
+    {
+      "path": "apps/server/src/modules/npc-memory/npc-memory.service.ts",
+      "module": "npc",
+      "layer": "domain",
+      "scope": "production",
+      "note": "NPC 记忆事实（npc_memory_entries/fragments 唯一写者）"
+    },
+    {
+      "path": "apps/server/src/modules/npc-task/npc-task.repository.ts",
+      "module": "quests",
+      "layer": "domain",
+      "scope": "production",
+      "flags": [
+        "legacy_mixed"
+      ],
+      "note": "任务状态机（quests 归属）；repository 内含托管扣款/物品转移/台账编排并直接实例化 item/ledger/game 服务（ARCH-03 迁移为 quests+assets 公开API）"
+    },
+    {
+      "path": "apps/server/src/modules/npc-task/npc-task.service.test.ts",
+      "module": "quests",
+      "layer": "test",
+      "scope": "test",
+      "flags": [
+        "legacy_mixed"
+      ],
+      "note": "任务状态机（quests 归属）；repository 内含托管扣款/物品转移/台账编排并直接实例化 item/ledger/game 服务（ARCH-03 迁移为 quests+assets 公开API）"
+    },
+    {
+      "path": "apps/server/src/modules/npc-task/npc-task.service.ts",
+      "module": "quests",
+      "layer": "domain",
+      "scope": "production",
+      "flags": [
+        "legacy_mixed"
+      ],
+      "note": "任务状态机（quests 归属）；repository 内含托管扣款/物品转移/台账编排并直接实例化 item/ledger/game 服务（ARCH-03 迁移为 quests+assets 公开API）"
+    },
+    {
+      "path": "apps/server/src/modules/npc/npc.repository.ts",
+      "module": "npc",
+      "layer": "domain",
+      "scope": "production",
+      "note": "NPC 域（service 混合日常结算/市场买卖/工资/资源刷新编排，ARCH-02/03 参与方）"
+    },
+    {
+      "path": "apps/server/src/modules/npc/npc.service.test.ts",
+      "module": "npc",
+      "layer": "test",
+      "scope": "test",
+      "note": "NPC 域（service 混合日常结算/市场买卖/工资/资源刷新编排，ARCH-02/03 参与方）"
+    },
+    {
+      "path": "apps/server/src/modules/npc/npc.service.ts",
+      "module": "npc",
+      "layer": "domain",
+      "scope": "production",
+      "note": "NPC 域（service 混合日常结算/市场买卖/工资/资源刷新编排，ARCH-02/03 参与方）"
+    },
+    {
+      "path": "apps/server/src/modules/npc/npc.simulation-repository.ts",
+      "module": "npc",
+      "layer": "persistence",
+      "scope": "production",
+      "flags": [
+        "simulation_fixture"
+      ],
+      "note": "内存仿真替身：仅 verify:npc-simulation 与测试消费；但被 npc.service.ts 生产 import（债务：仿真设施应在 MOD-01 后移出生产图）"
+    },
+    {
+      "path": "apps/server/src/modules/offline-report/offline-report.service.test.ts",
+      "module": "observation",
+      "layer": "test",
+      "scope": "test",
+      "note": "离线简报读取模型：读 game repository + AI 日志聚合；模型调用事务外（ARCH-06/08 边界）"
+    },
+    {
+      "path": "apps/server/src/modules/offline-report/offline-report.service.ts",
+      "module": "observation",
+      "layer": "read_model",
+      "scope": "production",
+      "note": "离线简报读取模型：读 game repository + AI 日志聚合；模型调用事务外（ARCH-06/08 边界）"
+    },
+    {
+      "path": "apps/server/src/modules/rate-limit/rate-limit.service.test.ts",
+      "module": "platform",
+      "layer": "test",
+      "scope": "test",
+      "note": "内存限流（有界机制）"
+    },
+    {
+      "path": "apps/server/src/modules/rate-limit/rate-limit.service.ts",
+      "module": "platform",
+      "layer": "platform",
+      "scope": "production",
+      "note": "内存限流（有界机制）"
+    },
+    {
+      "path": "apps/server/src/modules/rumor/rumor.repository.test.ts",
+      "module": "social",
+      "layer": "test",
+      "scope": "test",
+      "note": "传闻公开发布；rumor.service import dialogue.repository（peer persistence 债务 → ARCH-05/06）"
+    },
+    {
+      "path": "apps/server/src/modules/rumor/rumor.repository.ts",
+      "module": "social",
+      "layer": "domain",
+      "scope": "production",
+      "note": "传闻公开发布；rumor.service import dialogue.repository（peer persistence 债务 → ARCH-05/06）"
+    },
+    {
+      "path": "apps/server/src/modules/rumor/rumor.service.test.ts",
+      "module": "social",
+      "layer": "test",
+      "scope": "test",
+      "note": "传闻公开发布；rumor.service import dialogue.repository（peer persistence 债务 → ARCH-05/06）"
+    },
+    {
+      "path": "apps/server/src/modules/rumor/rumor.service.ts",
+      "module": "social",
+      "layer": "domain",
+      "scope": "production",
+      "note": "传闻公开发布；rumor.service import dialogue.repository（peer persistence 债务 → ARCH-05/06）"
+    },
+    {
+      "path": "apps/server/src/modules/world-reset/world-reset.repository.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "flags": [
+        "infra_exception"
+      ],
+      "note": "世界重置=维护用例；repository 横切清表 33 表——按 PC-02 作为精确登记的基础设施例外，非模块任意写库豁免"
+    },
+    {
+      "path": "apps/server/src/modules/world-reset/world-reset.service.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "flags": [
+        "infra_exception"
+      ],
+      "note": "世界重置=维护用例；repository 横切清表 33 表——按 PC-02 作为精确登记的基础设施例外，非模块任意写库豁免"
+    },
+    {
+      "path": "apps/server/src/modules/world-reset/world-reset.service.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "flags": [
+        "infra_exception"
+      ],
+      "note": "世界重置=维护用例；repository 横切清表 33 表——按 PC-02 作为精确登记的基础设施例外，非模块任意写库豁免"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/world-post-tick.service.test.ts",
+      "module": "world",
+      "layer": "test",
+      "scope": "test",
+      "note": "世界进度/租约（AR-01 缺口：saveProgress/releaseLease 无 owner 条件，ARCH-02）"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/world-post-tick.service.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "tick 后提交协调（任务候选/传闻），不在数据库事务内（方向符合 ADR-04）"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/world-runtime.repository.ts",
+      "module": "world",
+      "layer": "domain",
+      "scope": "production",
+      "note": "世界进度/租约（AR-01 缺口：saveProgress/releaseLease 无 owner 条件，ARCH-02）"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/world-runtime.service.test.ts",
+      "module": "world",
+      "layer": "test",
+      "scope": "test",
+      "note": "世界进度/租约（AR-01 缺口：saveProgress/releaseLease 无 owner 条件，ARCH-02）"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/world-runtime.service.ts",
+      "module": "world",
+      "layer": "domain",
+      "scope": "production",
+      "note": "世界进度/租约（AR-01 缺口：saveProgress/releaseLease 无 owner 条件，ARCH-02）"
+    },
+    {
+      "path": "apps/web/e2e/auth-smoke.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "playwright e2e（不计入 vitest）"
+    },
+    {
+      "path": "apps/web/e2e/playable-loop.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "playwright e2e（不计入 vitest）"
+    },
+    {
+      "path": "apps/web/e2e/real-player-loop.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "playwright e2e（不计入 vitest）"
+    },
+    {
+      "path": "apps/web/playwright.config.ts",
+      "module": "client_text",
+      "layer": "config",
+      "scope": "config",
+      "note": "前端工具/环境配置"
+    },
+    {
+      "path": "apps/web/src/App.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/App.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/AccountOpsAdmin.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/AccountOpsAdmin.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/ActivationCodeAdmin.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/ActivationCodeAdmin.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/AiCallAdmin.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/AiCallAdmin.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/AiLayerStatusAdmin.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/AiLayerStatusAdmin.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/AssetLedgerHealthAdmin.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/AssetLedgerHealthAdmin.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/EconomyAdmin.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/EconomyAdmin.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/NpcAdmin.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/NpcAdmin.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/NpcMemoryAdmin.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/NpcMemoryAdmin.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/SystemAnnouncementAdmin.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/SystemAnnouncementAdmin.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/WorldHealthAdmin.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/WorldHealthAdmin.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/WorldResetAdmin.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/WorldResetAdmin.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/admin/adminApi.ts",
+      "module": "client_session",
+      "layer": "client_state",
+      "scope": "production",
+      "note": "非权威状态容器/轮询/命令与同步传输客户端"
+    },
+    {
+      "path": "apps/web/src/features/auth/AuthPage.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/auth/AuthPage.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/auth/authApi.ts",
+      "module": "client_session",
+      "layer": "client_state",
+      "scope": "production",
+      "note": "非权威状态容器/轮询/命令与同步传输客户端"
+    },
+    {
+      "path": "apps/web/src/features/game/GameShell.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/GameShell.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/controller/gameSelectors.test.ts",
+      "module": "client_session",
+      "layer": "test",
+      "scope": "test",
+      "note": "非权威状态容器/轮询/命令与同步传输客户端"
+    },
+    {
+      "path": "apps/web/src/features/game/controller/gameSelectors.ts",
+      "module": "client_session",
+      "layer": "client_state",
+      "scope": "production",
+      "note": "非权威状态容器/轮询/命令与同步传输客户端"
+    },
+    {
+      "path": "apps/web/src/features/game/controller/useGameController.ts",
+      "module": "client_session",
+      "layer": "client_state",
+      "scope": "production",
+      "note": "非权威状态容器/轮询/命令与同步传输客户端"
+    },
+    {
+      "path": "apps/web/src/features/game/gameApi.test.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/gameApi.ts",
+      "module": "client_session",
+      "layer": "client_state",
+      "scope": "production",
+      "note": "非权威状态容器/轮询/命令与同步传输客户端"
+    },
+    {
+      "path": "apps/web/src/features/game/input/HotkeyRegistry.ts",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/input/InputContext.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/input/input.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/layout/GameHud.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/modals/CombatModal.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/modals/DialogueModal.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/modals/EquipmentModal.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/modals/GameModalContent.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/modals/ItemModal.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/modals/MarketModal.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/modals/modalFormatters.ts",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/modals/modalTypes.ts",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/panels/ActionPanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/panels/AuxiliaryPanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/panels/CharacterStatusPanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/panels/EquipmentPanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/panels/EventLogPanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/panels/InventoryPanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/panels/LobbyPanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/panels/ScenePanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/panels/TaskTrackerPanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/panels/panelFormatters.ts",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/sync/useGameSync.test.tsx",
+      "module": "client_session",
+      "layer": "test",
+      "scope": "test",
+      "note": "非权威状态容器/轮询/命令与同步传输客户端"
+    },
+    {
+      "path": "apps/web/src/features/game/sync/useGameSync.ts",
+      "module": "client_session",
+      "layer": "client_state",
+      "scope": "production",
+      "note": "非权威状态容器/轮询/命令与同步传输客户端"
+    },
+    {
+      "path": "apps/web/src/features/game/ui/AdminShell.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/ui/ModalManager.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/ui/ModalManager.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/ui/TutorialGuide.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/ui/TutorialGuide.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/ui/panelRegistry.test.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/features/game/ui/panelRegistry.ts",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/main.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "React 视图与用户意图采集"
+    },
+    {
+      "path": "apps/web/src/vite-env.d.ts",
+      "module": "client_text",
+      "layer": "config",
+      "scope": "config",
+      "note": "前端工具/环境配置"
+    },
+    {
+      "path": "apps/web/vitest.config.ts",
+      "module": "client_text",
+      "layer": "config",
+      "scope": "config",
+      "note": "前端工具/环境配置"
+    },
+    {
+      "path": "packages/ai-prompts/src/index.ts",
+      "module": "ai",
+      "layer": "capability",
+      "scope": "production",
+      "note": "prompt 构建+结构化解析+安全拒绝（ai 适配域）"
+    },
+    {
+      "path": "packages/ai-prompts/src/npc-dialogue.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "prompt 构建+结构化解析+安全拒绝（ai 适配域）"
+    },
+    {
+      "path": "packages/ai-prompts/src/npc-dialogue.ts",
+      "module": "ai",
+      "layer": "capability",
+      "scope": "production",
+      "note": "prompt 构建+结构化解析+安全拒绝（ai 适配域）"
+    },
+    {
+      "path": "packages/ai-prompts/src/npc-memory-compression.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "prompt 构建+结构化解析+安全拒绝（ai 适配域）"
+    },
+    {
+      "path": "packages/ai-prompts/src/npc-memory-compression.ts",
+      "module": "ai",
+      "layer": "capability",
+      "scope": "production",
+      "note": "prompt 构建+结构化解析+安全拒绝（ai 适配域）"
+    },
+    {
+      "path": "packages/ai-prompts/src/npc-task-copy.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "prompt 构建+结构化解析+安全拒绝（ai 适配域）"
+    },
+    {
+      "path": "packages/ai-prompts/src/npc-task-copy.ts",
+      "module": "ai",
+      "layer": "capability",
+      "scope": "production",
+      "note": "prompt 构建+结构化解析+安全拒绝（ai 适配域）"
+    },
+    {
+      "path": "packages/ai-prompts/src/npc-task-proposal.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "prompt 构建+结构化解析+安全拒绝（ai 适配域）"
+    },
+    {
+      "path": "packages/ai-prompts/src/npc-task-proposal.ts",
+      "module": "ai",
+      "layer": "capability",
+      "scope": "production",
+      "note": "prompt 构建+结构化解析+安全拒绝（ai 适配域）"
+    },
+    {
+      "path": "packages/ai-prompts/src/offline-summary.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "prompt 构建+结构化解析+安全拒绝（ai 适配域）"
+    },
+    {
+      "path": "packages/ai-prompts/src/offline-summary.ts",
+      "module": "ai",
+      "layer": "capability",
+      "scope": "production",
+      "note": "prompt 构建+结构化解析+安全拒绝（ai 适配域）"
+    },
+    {
+      "path": "packages/ai-prompts/src/world-rumor.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "prompt 构建+结构化解析+安全拒绝（ai 适配域）"
+    },
+    {
+      "path": "packages/ai-prompts/src/world-rumor.ts",
+      "module": "ai",
+      "layer": "capability",
+      "scope": "production",
+      "note": "prompt 构建+结构化解析+安全拒绝（ai 适配域）"
+    },
+    {
+      "path": "packages/content/src/index.ts",
+      "module": "content",
+      "layer": "content",
+      "scope": "production",
+      "note": "静态世界内容（纯）"
+    },
+    {
+      "path": "packages/content/src/items.test.ts",
+      "module": "content",
+      "layer": "test",
+      "scope": "test",
+      "note": "静态世界内容（纯）"
+    },
+    {
+      "path": "packages/content/src/items.ts",
+      "module": "content",
+      "layer": "content",
+      "scope": "production",
+      "note": "静态世界内容（纯）"
+    },
+    {
+      "path": "packages/content/src/world.test.ts",
+      "module": "content",
+      "layer": "test",
+      "scope": "test",
+      "note": "静态世界内容（纯）"
+    },
+    {
+      "path": "packages/content/src/world.ts",
+      "module": "content",
+      "layer": "content",
+      "scope": "production",
+      "note": "静态世界内容（纯）"
+    },
+    {
+      "path": "packages/game-rules/src/available-actions.test.ts",
+      "module": "rules",
+      "layer": "test",
+      "scope": "test",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/available-actions.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/combat-rules.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/economy-rules.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/engine.test.ts",
+      "module": "rules",
+      "layer": "test",
+      "scope": "test",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/engine.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/equipment-rules.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/gathering-rules.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/index.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/inventory-rules.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/item-rules.test.ts",
+      "module": "rules",
+      "layer": "test",
+      "scope": "test",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/item-rules.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/loot-rules.test.ts",
+      "module": "rules",
+      "layer": "test",
+      "scope": "test",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/loot-rules.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/map-rules.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/needs-rules.test.ts",
+      "module": "rules",
+      "layer": "test",
+      "scope": "test",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/needs-rules.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/npc-request-rules.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/npc-rules.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/game-rules/src/progression-rules.ts",
+      "module": "rules",
+      "layer": "rules",
+      "scope": "production",
+      "note": "确定性规则（纯）；combat 规则构造中文日志=ARCH-05 表现分离点"
+    },
+    {
+      "path": "packages/shared/src/admin.ts",
+      "module": "protocol",
+      "layer": "protocol",
+      "scope": "production",
+      "note": "外部协议 DTO（admin/auth）与 barrel（注意 index.ts re-export 方式，catalog deny publicWildcardReexports 的过渡现实）"
+    },
+    {
+      "path": "packages/shared/src/auth.ts",
+      "module": "protocol",
+      "layer": "protocol",
+      "scope": "production",
+      "note": "外部协议 DTO（admin/auth）与 barrel（注意 index.ts re-export 方式，catalog deny publicWildcardReexports 的过渡现实）"
+    },
+    {
+      "path": "packages/shared/src/errors.ts",
+      "module": "kernel",
+      "layer": "kernel",
+      "scope": "production",
+      "note": "错误词汇表"
+    },
+    {
+      "path": "packages/shared/src/game.test.ts",
+      "module": "protocol",
+      "layer": "test",
+      "scope": "test",
+      "note": "外部协议 DTO（admin/auth）与 barrel（注意 index.ts re-export 方式，catalog deny publicWildcardReexports 的过渡现实）"
+    },
+    {
+      "path": "packages/shared/src/game.ts",
+      "module": "protocol",
+      "layer": "protocol",
+      "scope": "production",
+      "flags": [
+        "legacy_mixed"
+      ],
+      "note": "混合协议 DTO 与领域值（GridPosition 等）；MOD-01 要求 shared 按 domain/protocol 分区，方法级目标见 boundary-inventory（ARCH-05）"
+    },
+    {
+      "path": "packages/shared/src/index.ts",
+      "module": "protocol",
+      "layer": "protocol",
+      "scope": "production",
+      "note": "外部协议 DTO（admin/auth）与 barrel（注意 index.ts re-export 方式，catalog deny publicWildcardReexports 的过渡现实）"
+    },
+    {
+      "path": "packages/shared/src/version.test.ts",
+      "module": "protocol",
+      "layer": "test",
+      "scope": "test",
+      "note": "外部协议 DTO（admin/auth）与 barrel（注意 index.ts re-export 方式，catalog deny publicWildcardReexports 的过渡现实）"
+    },
+    {
+      "path": "packages/shared/src/version.ts",
+      "module": "kernel",
+      "layer": "kernel",
+      "scope": "production",
+      "note": "版本常量唯一事实源"
+    }
+  ]
+}
