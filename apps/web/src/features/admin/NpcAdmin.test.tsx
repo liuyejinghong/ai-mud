@@ -29,6 +29,7 @@ const npcSnapshot: NpcSnapshotResponse = {
       recentEvents: [
         {
           id: "event-1",
+          eventType: "action.gathering.start",
           message: "玛拉开始采集野莓。",
           createdAt: "2026-07-01T09:00:00.000Z"
         }

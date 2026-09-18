@@ -6,7 +6,7 @@ describe("version constants", () => {
     expect(PRODUCT_VERSION).toBe("0.10.6");
     expect(WORLD_COMPATIBILITY).toEqual({
       schemaVersion: 25,
-      apiVersion: 40,
+      apiVersion: 41,
       engineVersion: 2,
       rulesetVersion: 16,
       contentVersion: 12,

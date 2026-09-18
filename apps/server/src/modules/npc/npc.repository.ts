@@ -370,6 +370,7 @@ export class NpcRepository implements NpcRepositoryPort {
     return rows.map((row) => ({
       id: row.id,
       actorId: row.actorId,
+      eventType: row.eventType,
       message: row.message,
       createdAt: row.createdAt
     }));

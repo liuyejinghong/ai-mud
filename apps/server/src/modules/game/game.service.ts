@@ -279,13 +279,18 @@ function visibleCombatLog(payload: CombatActionPayload, startedAt: Date, now: Da
   return playedCombatTimeline(payload, startedAt, now).map((entry) => entry.message);
 }
 
-function playerDamageFromCombatLog(messages: string[], characterName: string) {
-  return messages
-    .filter((message) => !message.startsWith(`${characterName} 攻击`))
-    .reduce((sum, message) => {
-      const damage = message.match(/造成\s+(\d+)\s+点伤害/)?.[1];
-      return sum + (damage ? Number.parseInt(damage, 10) : 0);
-    }, 0);
+function playerDamageFromFacts(
+  timeline: CombatTimelineEntry[],
+  playedUntilMs: number
+) {
+  return timeline
+    .filter(
+      (entry) =>
+        entry.atMs <= playedUntilMs &&
+        entry.actor === "monster" &&
+        typeof entry.damage === "number"
+    )
+    .reduce((sum, entry) => sum + (entry.damage ?? 0), 0);
 }
 
 function toNeedsDto(character: CharacterRecord, now: Date): NeedsDto {
@@ -1879,8 +1884,8 @@ export class GameService {
     now: Date
   ) {
     const payload = action.payload as CombatActionPayload;
-    const playedMessages = visibleCombatLog(payload, action.startedAt, now);
-    const damageTaken = playerDamageFromCombatLog(playedMessages, character.name);
+    const playedUntilMs = now.getTime() - action.startedAt.getTime();
+    const damageTaken = playerDamageFromFacts(payload.combatTimeline, playedUntilMs);
 
     if (damageTaken > 0) {
       await repo.updateCharacterVitals({
@@ -2227,6 +2232,7 @@ export class GameService {
         availableActions,
         log: log.map((entry) => ({
           id: entry.id,
+          eventType: entry.eventType,
           message: entry.message,
           createdAt: entry.createdAt.toISOString()
         }))
@@ -2263,6 +2269,7 @@ export class GameService {
       availableActions,
       log: log.map((entry) => ({
         id: entry.id,
+        eventType: entry.eventType,
         message: entry.message,
         createdAt: entry.createdAt.toISOString()
       }))

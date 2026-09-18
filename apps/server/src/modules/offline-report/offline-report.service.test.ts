@@ -27,6 +27,7 @@ const character: CharacterRecord = {
 const events: GameEventRecord[] = [
   {
     id: "event-1",
+    eventType: "market.sell",
     message: "集市记录了基础铁矿石成交。",
     createdAt: new Date("2026-07-02T09:00:00.000Z")
   }

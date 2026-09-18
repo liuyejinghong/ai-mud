@@ -638,8 +638,8 @@ describe("GameService action settlement", () => {
           encounterId: "corrupt_wolf_pack_01",
           combatLog: ["旧日志不应直接透出"],
           combatTimeline: [
-            { atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。" },
-            { atMs: 5_000, message: "腐化野狼 撕咬Zichen，造成 7 点伤害。" }
+            { atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。", actor: "player", damage: 16 },
+            { atMs: 5_000, message: "腐化野狼 撕咬Zichen，造成 7 点伤害。", actor: "monster", damage: 7 }
           ],
           expectedEndsAtMs: startedAt.getTime() + 10_000,
           outcome: "victory",
@@ -691,7 +691,7 @@ describe("GameService action settlement", () => {
     const payload: CombatActionPayload = {
       encounterId: "corrupt_wolf_pack_01",
       combatLog: ["Zichen 攻击腐化野狼，造成 16 点伤害。"],
-      combatTimeline: [{ atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。" }],
+      combatTimeline: [{ atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。", actor: "player", damage: 16 }],
       expectedEndsAtMs: new Date("2026-07-02T08:01:00.000Z").getTime(),
       outcome: "victory",
       playerRemainingHp: 64,
@@ -753,7 +753,7 @@ describe("GameService action settlement", () => {
     const payload: CombatActionPayload = {
       encounterId: "corrupt_wolf_pack_01",
       combatLog: ["Zichen 攻击腐化野狼，造成 16 点伤害。"],
-      combatTimeline: [{ atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。" }],
+      combatTimeline: [{ atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。", actor: "player", damage: 16 }],
       expectedEndsAtMs: new Date("2026-07-02T08:01:00.000Z").getTime(),
       outcome: "victory",
       playerRemainingHp: 64,
@@ -959,9 +959,9 @@ describe("GameService action settlement", () => {
       encounterId: "corrupt_wolf_pack_01",
       combatLog: [],
       combatTimeline: [
-        { atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。" },
-        { atMs: 2_000, message: "腐化野狼 撕咬Zichen，造成 7 点伤害。" },
-        { atMs: 8_000, message: "腐化野狼 撕咬Zichen，造成 99 点伤害。" }
+        { atMs: 1_000, message: "Zichen 攻击腐化野狼，造成 16 点伤害。", actor: "player", damage: 16 },
+        { atMs: 2_000, message: "腐化野狼 撕咬Zichen，造成 7 点伤害。", actor: "monster", damage: 7 },
+        { atMs: 8_000, message: "腐化野狼 撕咬Zichen，造成 99 点伤害。", actor: "monster", damage: 99 }
       ],
       expectedEndsAtMs: startedAt.getTime() + 10_000,
       outcome: "injury",
@@ -993,6 +993,124 @@ describe("GameService action settlement", () => {
       "listItemInstances",
       "updateEquipmentDurability"
     ]);
+  });
+});
+
+describe("GameService combat facts (ARCH-05)", () => {
+  const T0 = new Date("2026-07-02T08:00:00.000Z");
+
+  function escapeRepo(state: { hp: number }) {
+    return {
+      findActiveActionByCharacterId: async () => null,
+      listItemInstances: async () => [],
+      updateCharacterVitals: async (input: { hp: number }) => {
+        state.hp = input.hp;
+      },
+      updateEquipmentDurability: async () => {},
+      itemWriter: () => ({
+        updateEquipmentDurability: async () => {}
+      })
+    };
+  }
+
+  function escapeAction(timeline: unknown[]) {
+    return {
+      ...combatAction({
+        encounterId: "corrupt_wolf_pack_01",
+        combatLog: [],
+        combatTimeline: timeline as never,
+        expectedEndsAtMs: T0.getTime() + 10_000,
+        outcome: "victory",
+        playerRemainingHp: 73,
+        xp: 4,
+        loot: []
+      }),
+      startedAt: T0,
+      endsAt: new Date(T0.getTime() + 10_000)
+    };
+  }
+
+  it("derives escape damage from structured facts, not display text", async () => {
+    const state = { hp: 80 };
+    const service = new GameService({ transaction: async (op: (tx: unknown) => unknown) => op({}) } as never, {
+      testGatheringCycleMs: 0
+    });
+    const timeline = [
+      { atMs: 1_000, message: "任意中文都能改。", actor: "monster", damage: 7 },
+      { atMs: 2_000, message: "Completely different English text.", actor: "monster", damage: 3 }
+    ];
+    await (service as unknown as {
+      settleCombatEscapeCost(
+        repo: object,
+        character: CharacterRecord,
+        action: CharacterActionRecord,
+        now: Date
+      ): Promise<void>;
+    }).settleCombatEscapeCost(
+      escapeRepo(state),
+      character({ hp: 80 }),
+      escapeAction(timeline),
+      new Date(T0.getTime() + 2_500)
+    );
+    // Both monster hits land within the played window: 7 + 3 = 10.
+    expect(state.hp).toBe(70);
+  });
+
+  it("keeps milestones and costs stable when display text changes", async () => {
+    const state = { hp: 80 };
+    const service = new GameService({ transaction: async (op: (tx: unknown) => unknown) => op({}) } as never, {
+      testGatheringCycleMs: 0
+    });
+    const timelineA = [
+      { atMs: 1_000, message: "腐化野狼 撕咬Zichen，造成 7 点伤害。", actor: "monster", damage: 7 }
+    ];
+    const timelineB = [
+      { atMs: 1_000, message: "Wolf bites you for seven.", actor: "monster", damage: 7 }
+    ];
+    const run = async (timeline: unknown[]) => {
+      const s = { ...state };
+      await (service as unknown as {
+        settleCombatEscapeCost(
+          repo: object,
+          character: CharacterRecord,
+          action: CharacterActionRecord,
+          now: Date
+        ): Promise<void>;
+      }).settleCombatEscapeCost(
+        escapeRepo(s),
+        character({ hp: 80 }),
+        escapeAction(timeline),
+        new Date(T0.getTime() + 2_500)
+      );
+      return s.hp;
+    };
+    expect(await run(timelineB)).toBe(await run(timelineA));
+  });
+
+  it("never promotes legacy text-only timeline entries into damage facts", async () => {
+    const state = { hp: 80 };
+    const service = new GameService({ transaction: async (op: (tx: unknown) => unknown) => op({}) } as never, {
+      testGatheringCycleMs: 0
+    });
+    const legacyTimeline = [
+      { atMs: 1_000, message: "腐化野狼 撕咬Zichen，造成 7 点伤害。" }
+    ];
+    await (service as unknown as {
+      settleCombatEscapeCost(
+        repo: object,
+        character: CharacterRecord,
+        action: CharacterActionRecord,
+        now: Date
+      ): Promise<void>;
+    }).settleCombatEscapeCost(
+      escapeRepo(state),
+      character({ hp: 80 }),
+      escapeAction(legacyTimeline),
+      new Date(T0.getTime() + 2_500)
+    );
+    // Old prose is display-only: without structured facts there is no trusted
+    // damage evidence, so escape costs nothing (no regex promotion).
+    expect(state.hp).toBe(80);
   });
 });
 

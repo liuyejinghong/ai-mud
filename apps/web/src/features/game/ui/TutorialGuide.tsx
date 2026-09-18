@@ -60,17 +60,18 @@ function writeTutorialState(key: string, state: StoredTutorialState) {
 export function inferTutorialProgress(state: TutorialSnapshot) {
   let progress = 0;
   const location = state.character.currentLocation;
-  const logText = state.log.map((entry) => entry.message).join(" ");
+  const hasEventType = (eventType: string) =>
+    state.log.some((entry) => entry.eventType === eventType);
 
   if (location !== "blackpine_outpost") progress = 1;
-  if (/移动|抵达/u.test(logText)) progress = Math.max(progress, 2);
-  if (state.currentAction?.actionType === "gathering" || /采集/u.test(logText)) {
+  if (hasEventType("character.move")) progress = Math.max(progress, 2);
+  if (state.currentAction?.actionType === "gathering" || hasEventType("action.gathering.start")) {
     progress = Math.max(progress, 3);
   }
-  if (progress >= 3 && (state.inventory.length > 0 || /获得|入账/u.test(logText))) {
+  if (progress >= 3 && state.inventory.length > 0) {
     progress = Math.max(progress, 4);
   }
-  if (location === "blackpine_outpost" && progress >= 4 && /返回.*哨站|回到.*哨站/u.test(logText)) {
+  if (location === "blackpine_outpost" && progress >= 4 && hasEventType("zone.return")) {
     progress = tutorialSteps.length;
   }
 
