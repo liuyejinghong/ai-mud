@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "architectureVersion": "3.0",
-  "status": "DRAFT_PENDING_INDEPENDENT_REVIEW",
+  "status": "FROZEN_2026-09-18",
   "sourceBaseline": "d9f97ddc5bfb6e4093ede2cfabc7f659d5434e08",
   "sourceBaselineNote": "分支 arch/v0.11.0-arch01-mod01（main 690cbc8 + PR#1 head dab2893 合并）",
   "purpose": "MOD-01 交付物：每个生产源文件的唯一归属分类，作为 MOD-02 检查器的实际输入。记录当前事实状态与目标逻辑模块；当前代码尚不符合 catalog 允许边，违规逐条登记于 legacy-boundary-debt.json。",
@@ -1817,5 +1817,6 @@
       "scope": "production",
       "note": "版本常量唯一事实源"
     }
-  ]
+  ],
+  "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。"
 }

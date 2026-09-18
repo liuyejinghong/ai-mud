@@ -5,7 +5,7 @@
 - 配套机读文件（本切片同时新增）：
   - `docs/architecture/module-boundaries.json` —— 214 个 TS/TSX 文件的唯一归属分类（0 未分类、0 重复、模块 ID ⊆ catalog），MOD-02 检查器的实际输入
   - `docs/architecture/legacy-boundary-debt.json` —— 26 条精确债务 + 1 条登记例外（REG-001）
-- 状态：DRAFT_PENDING_INDEPENDENT_REVIEW（M01 验收要求"经独立审查后冻结"，冻结动作在审查后）
+- 状态：**FROZEN_2026-09-18**（所有者已确认 §2 裁决；后续修改须走 Architecture Policy Change）
 
 ## 1. 归类规则摘要（module-boundaries.json 的生成口径）
 
@@ -36,11 +36,11 @@
 
 全仓**不存在任何 public.ts / bootstrap.ts**（find 实证），故 boundaries.json 中 `currentPublicEntry` 全为 null——公开入口规则在提取完成前不可执行，不得伪称已生效。
 
-## 2. 裁决记录（需独立审查确认）
+## 2. 裁决记录（所有者 2026-09-18 已确认）
 
-- **R1（routes 归类）**：game.routes.ts / admin.routes.ts 的 `createDefaultDependencies` 是事实组合根（import 13 模块 repo/service 并直接 new、路由层触发世界推进）。裁决：归类为 transport 层 `legacy_mixed`，整体登记 DEBT-007/008；目标形态 transport→application；**不**为过检强行归类为 composition。
-- **R2（debt 粒度）**：登记粒度=文件×符号（导入边/写函数），逐条绑定 ARCH 切片与删除条件；不用行号做唯一身份；不设 glob 豁免；新增违规（含 legacy 文件内新增符号）不豁免（NEG-08/09）。
-- **未决（需 ARCH-02 前裁决）**：`map_instances.resourceCharges` 的唯一写所有者——现状是 game（采集扣减）+ npc（世界 tick 每日重置写个人实例）双写且跨 scope（DEBT-022）。
+- **R1（routes 归类）**：game.routes.ts / admin.routes.ts 的 `createDefaultDependencies` 是事实组合根（import 13 模块 repo/service 并直接 new、路由层触发世界推进）。裁决：归类为 transport 层 `legacy_mixed`，整体登记 DEBT-007/008；目标形态 transport→application；**不**为过检强行归类为 composition。✅ 所有者接受默认方案。
+- **R2（debt 粒度）**：登记粒度=文件×符号（导入边/写函数），逐条绑定 ARCH 切片与删除条件；不用行号做唯一身份；不设 glob 豁免；新增违规（含 legacy 文件内新增符号）不豁免（NEG-08/09）。✅ 所有者接受默认方案。
+- **DEBT-022（已裁定，2026-09-18）**：玩家个人副本的资源量（`map_instances.resourceCharges`）**归玩家个人状态**——世界时间只负责"到点"触发，恢复动作必须经玩家侧正规入口执行，共享世界模拟不得直接写该数据。修复落点：ARCH-02 删除世界侧直写路径、改为触发玩家侧结算入口。
 
 ## 3. 混合文件方法级迁移目标
 
@@ -89,8 +89,7 @@
 - debt 每条含 ruleId/source/target/symbol/evidence/fixTask/removalCondition：26+1 条 ✓。
 - 不能解析的文件明确失败：生成器 unmatched 非空即失败（本轮为 0）；MOD-02 的 NEG-08 将门禁化。
 
-## 6. 冻结前待办
+## 6. 冻结记录
 
-1. 独立审查确认 R1/R2 裁决与 DEBT-022 未决项。
-2. RF-01（shared 陈旧断言）裁决（见 architecture-baseline-inventory.md §2）。
-3. 审查确认后，将两份 JSON 的 `status` 置为 `FROZEN_<date>`，此后改动须走 Architecture Policy Change。
+1. R1/R2 裁决与 DEBT-022 归属已由所有者于 2026-09-18 确认（见 §2）。
+2. 两份机读文件状态已置 `FROZEN_2026-09-18`；此后任何改动（含给债务清单加条目）必须走 Architecture Policy Change 并单独审查，实现模型不得自行放宽。

@@ -1,14 +1,16 @@
 {
   "schemaVersion": 1,
   "architectureVersion": "3.0",
-  "status": "DRAFT_PENDING_INDEPENDENT_REVIEW",
+  "status": "FROZEN_2026-09-18",
+  "freezeBasis": "项目所有者 2026-09-18 裁决：R1/R2 按默认方案接受；DEBT-022 归属裁定为玩家个人状态（世界时钟仅触发，不持有写权）。此后新增违规不得入列，修改须走 Architecture Policy Change。",
   "sourceBaseline": "d9f97ddc5bfb6e4093ede2cfabc7f659d5434e08",
   "baselineOrigin": "main@690cbc8 + PR#1 head dab2893（文档合并）",
   "purpose": "MOD-01 交付物：当前源码相对 module-catalog.json 目标合同的精确既有违规（legacy debt）。每条 = 文件×符号粒度，绑定修复任务与删除条件。新增违规不在本名单豁免范围内（constitution §7 / MOD-02 NEG-09）。",
   "decisionLog": {
-    "R1_routes_as_composition": "game.routes.ts / admin.routes.ts 的 createDefaultDependencies 内嵌组合根现实存在；归类为 transport 层 legacy_mixed 文件并整体登记为债务（目标 transport→application），不强行归类为 composition。",
-    "R2_debt_granularity": "登记粒度=文件×符号（导入边/写函数），逐条绑定 ARCH 切片；不使用行号作为唯一身份，不设 glob 豁免。",
-    "column_ownership": "共表列级写冲突按 constitution/modularity 作为 CROSS_OWNER_COLUMN_WRITE 债务登记，不立即拆表。"
+    "R1_routes_as_composition": "game.routes.ts / admin.routes.ts 的 createDefaultDependencies 内嵌组合根现实存在；归类为 transport 层 legacy_mixed 文件并整体登记为债务（目标 transport→application），不强行归类为 composition。所有者 2026-09-18 接受默认方案。",
+    "R2_debt_granularity": "登记粒度=文件×符号（导入边/写函数），逐条绑定 ARCH 切片；不使用行号作为唯一身份，不设 glob 豁免。所有者 2026-09-18 接受默认方案。",
+    "column_ownership": "共表列级写冲突按 constitution/modularity 作为 CROSS_OWNER_COLUMN_WRITE 债务登记，不立即拆表。",
+    "DEBT-022_adjudication": "所有者 2026-09-18 裁定：个人副本资源量（map_instances.resourceCharges）归属玩家个人状态；世界时间只负责'到点'触发，恢复动作必须经玩家侧正规入口执行，共享世界模拟不得直接写该数据。"
   },
   "entries": [
     {
@@ -267,13 +269,14 @@
       "id": "DEBT-022",
       "ruleId": "CROSS_OWNER_COLUMN_WRITE",
       "source": "map_instances.resourceCharges",
-      "target": "目标所有者待 ARCH-02/06 裁决（world 进度 vs characters 个人实例）",
+      "target": "目标所有者（已裁定）：玩家个人状态侧；世界时间仅经公开触发API报时，不持有写权",
       "symbol": "game.repository.updateMapResourceCharges:1227（采集扣减）；npc.repository.updateMapResourceCharges:182（每日重置，世界 tick 写玩家个人实例）",
       "evidence": "两个模块写同一列；npc 侧写入跨 scope（共享 tick 写个人副本资源）",
       "reason": "PC-02 + AR-08 scope 债务，且含跨 scope 写入语义问题",
-      "fixTask": "ARCH-02（裁决所有者与 scope；MOD-02 前需用户/独立审查确认）",
-      "removalCondition": "该列唯一写者落定",
-      "severity": "target_blocking"
+      "fixTask": "ARCH-02（世界 tick 改为触发 characters 侧正规结算入口完成恢复；NPC 侧直写路径删除）",
+      "removalCondition": "该列唯一写者为玩家个人状态 persistence；世界侧仅存触发调用",
+      "severity": "target_blocking",
+      "adjudicated": "2026-09-18，所有者裁定归玩家个人状态"
     },
     {
       "id": "DEBT-023",

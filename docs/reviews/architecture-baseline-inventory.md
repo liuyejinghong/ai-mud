@@ -23,7 +23,9 @@
 
 ## 2. 门槛执行记录（实际运行）
 
-运行环境：本机，`CI=true`。`pnpm -r test` 因 shared 失败按 pnpm 递归策略中止，故 server/web/content/game-rules 单独补跑取得计数。
+运行环境：本机，`CI=true`。首轮运行（2026-09-18 18:50，Docker 未启动）与复跑（2026-09-18，RF-01 修复 + Docker 启动后）结果如下；`pnpm -r test` 首轮因 shared 失败按 pnpm 递归策略中止，故 server/web/content/game-rules 曾单独补跑取得计数。
+
+### 2.1 首轮（发现问题时）
 
 | 命令 | 结果 | 明细 |
 |---|---|---|
@@ -31,24 +33,30 @@
 | `CI=true pnpm -r lint` | **PASS**（exit 0） | ⚠️ 与 typecheck 同一证据（见 §1） |
 | `CI=true pnpm -r build` | **PASS**（exit 0） | server tsc + web vite（83 modules）等 |
 | `CI=true pnpm -r test` | **FAIL**（exit 1） | shared 1 例失败后递归中止 |
-| `pnpm --filter @ai-mud/shared test`（随上） | **FAIL** | 21/22 过，1 失败：`src/game.test.ts:50-53` "exposes v0.10.5 world health compatibility" 断言 `PRODUCT_VERSION === "0.10.5"`、`apiVersion === 38`，实值 `0.10.6` / `39` |
-| `pnpm --filter @ai-mud/server test` | **PASS** | 37 文件：352 passed + 6 skipped（跳过=两个真 PG 集成文件，无可用 DATABASE_URL 环境） |
+| `pnpm --filter @ai-mud/shared test`（随上） | **FAIL** | 21/22 过，1 失败：`src/game.test.ts:50-53` "exposes v0.10.5 world health compatibility" 断言 `PRODUCT_VERSION === "0.10.5"`、`apiVersion === 38`、`rulesetVersion === 15`，实值 `0.10.6` / `39` / `16` |
+| `pnpm --filter @ai-mud/server test` | **PASS** | 37 文件：352 passed + 6 skipped（当时 Docker 未启动） |
 | `pnpm --filter @ai-mud/web test` | **PASS** | 21 文件 103 passed |
-| `pnpm --filter @ai-mud/content test` | **PASS** | 2 文件 14 passed |
-| `pnpm --filter @ai-mud/game-rules test` | **PASS** | 5 文件 61 passed |
-| `pnpm --filter @ai-mud/ai-prompts test`（随 -r） | **PASS** | 6 文件 35 passed |
-| `pnpm db:up` / `db:migrate` / `db:verify-migrations` | **NOT_RUN** | Docker 守护进程不可用，无法启动本地 PG |
-| `pnpm test:postgres`（postgres-integration + game-concurrency） | **NOT_RUN** | 同上；单测内以 skip 呈现（6 例 skipped） |
-| `pnpm verify:npc-simulation` | **NOT_RUN** | 同上（该脚本无 URL 直接失败，不跳过） |
-| `pnpm --filter @ai-mud/web e2e`（playwright mock+real） | **NOT_RUN** | 需运行中的 server+PG |
+| content / game-rules / ai-prompts | **PASS** | 14 / 61 / 35 passed |
 
-合计实跑用例：593（592 过 / 1 失败 / 6 跳过）。
+### 2.2 复跑（RF-01 修复后，2026-09-18）
 
-### 红旗（基线内已知失败，按纪律不在本切片修）
+| 命令 | 结果 | 明细 |
+|---|---|---|
+| `CI=true pnpm -r test` | **PASS**（exit 0） | shared 22/22（含修复后的兼容断言）+ ai-prompts 35 + content 14 + game-rules 61 + web 103 + server 352 过/6 跳过（当时 PG 未起） |
+| `pnpm db:verify-migrations` | **PASS**（exit 0） | Docker 启动后，25 个迁移链校验通过 |
+| `CI=true pnpm test:postgres` | **PASS** | 真库 2 文件 6/6 通过（全量迁移链应用到临时库 + 并发契约：库存抢购互斥、结算幂等等） |
+| `pnpm verify:npc-simulation` | **PASS**（exit 0） | 建临时库跑 7 天经济仿真：`ok: true`，闲置率 0，饿死 NPC 数 0，仿真前后账本核对均 `ok`、铜币零偏差 |
+| `pnpm db:migrate` | 已执行 | 其效果由 verify-migrations 与真库测试独立佐证 |
+| `pnpm --filter @ai-mud/web e2e`（playwright mock+real） | **NOT_RUN** | 需运行中的 server 进程与浏览器环境；留待 ARCH-09 门禁建设 |
 
-- **RF-01**：`packages/shared/src/game.test.ts` 的兼容块断言停留在 v0.10.5（版本与 apiVersion 均过期）。0.10.6 发版时漏更新该测试。修复=把断言对齐 0.10.6 实际兼容块，属版本工程决策，须对照 v0.10.6 发布说明逐字段核实后单独提交；**不得删用例变绿**。此红旗阻塞 `pnpm -r test` 作为整体门槛，需在进入 ARCH-02 前由用户裁决修复方式。
-- **RF-02**：真 PG 证据整体缺失（同 tick 租约并发、跨模块回滚、迁移链应用均只有内存替身或 NOT_RUN）。这是 ARCH-02/03 验收的硬前置。
-- **RF-03**：`apps/server/src/db/client.test.ts` 硬编码 `127.0.0.1:5432` 且无跳过保护（当前仅建连不查询所以通过）；ARCH-09 应纳入隔离要求。
+合计（复跑口径）：593 例中 592 直接通过、6 例跳过后经独立真库运行 6/6 通过；唯一失败项已修复。
+
+### 红旗（状态更新于 2026-09-18 复跑）
+
+- **RF-01（已解决）**：shared 兼容断言停留在 v0.10.5，0.10.6 发版时漏更新。已按所有者授权将断言对齐 v0.10.6 实际值（版本 0.10.6、apiVersion 39、rulesetVersion 16，对照 `docs/releases/v0.10.6.md` 发版记录核实），全量测试链恢复全绿。
+- **RF-02（部分解决）**：真 PG 证据缺口收窄——迁移链校验、真库并发契约（库存抢购/结算幂等）、7 天经济仿真均已真实通过。**仍缺**：世界时钟租约的并发竞争测试（属于 ARCH-02 要新建的测试，非环境问题）。
+- **RF-03（未变）**：`apps/server/src/db/client.test.ts` 硬编码本机库地址且无跳过保护；ARCH-09 纳入隔离要求。
+- **裁决记录**：DEBT-022（个人副本资源的每日恢复归属）已由所有者裁定归玩家个人状态——世界时间只负责"到点"触发，不得直接写该数据；台账两份 JSON 已于 2026-09-18 冻结（FROZEN_2026-09-18）。
 
 ## 3. 七类事实清单（真源 / 写路径 / 锁根 / 事务 / 账本事件 / 测试）
 
@@ -130,9 +138,9 @@
 | AR-07 模型接口/治理绑定对话 | 确认（createAiOrchestrator×5 实例化；AI_NPC_DIALOGUE_ENABLED 统辖全部用途；无统一预算准入） | ARCH-08 |
 | AR-08 实例 scope | 确认（§3.6，且发现 map_instances 跨 scope 写入待裁决） | ARCH-02/06 |
 
-## 6. 进入 ARCH-02 的前置状态
+## 6. 进入 ARCH-02 的前置状态（2026-09-18 更新）
 
-1. RF-01（shared 陈旧断言）需裁决修复方式；否则 `-r test` 无法作为整链绿灯证据。
-2. RF-02：真 PG 环境必须可用（Docker），否则 ARCH-02 的 G01 验收天然 BLOCKED。
-3. DEBT-022（map_instances.resourceCharges 所有者）与 R1/R2 裁决记录需独立审查确认（见 module-boundary-inventory.md §decisionLog）。
+1. ~~RF-01 需裁决~~ **已解决**：断言已对齐 v0.10.6，`pnpm -r test` 全绿。
+2. ~~真 PG 环境缺失~~ **已解决**：Docker + 本地 PG 可用，真库门槛全部实跑通过。ARCH-02 可直接使用该环境做租约并发验收（G01）。
+3. ~~R1/R2/DEBT-022 待裁决~~ **已裁决并冻结**：所有者 2026-09-18 确认 R1/R2，DEBT-022 裁定为归玩家个人状态；两份 JSON 状态 FROZEN_2026-09-18，此后修改须走 Architecture Policy Change。
 4. 本清单与 MOD-01 三交付物共同构成冻结基线；后续切片以 actual HEAD 重新核对，本文件不自动顺延。
