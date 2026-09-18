@@ -1,0 +1,29 @@
+name: architecture
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: CI=true pnpm -r typecheck
+      - name: Tests (PG integration auto-skip without DATABASE_URL)
+        run: CI=true pnpm -r test
+      - name: Architecture gate (baseline + new violations)
+        run: pnpm arch:check
+      - name: Architecture gate self-test (NEG probes)
+        run: pnpm arch:test

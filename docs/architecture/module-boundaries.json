@@ -567,14 +567,14 @@
     {
       "path": "apps/server/src/modules/auth/admin-bootstrap.service.ts",
       "module": "identity",
-      "layer": "transport",
+      "layer": "domain",
       "scope": "production",
       "note": "auth.routes=transport 层文件；service/repository=identity 域"
     },
     {
       "path": "apps/server/src/modules/auth/auth.repository.ts",
       "module": "identity",
-      "layer": "transport",
+      "layer": "persistence",
       "scope": "production",
       "note": "auth.routes=transport 层文件；service/repository=identity 域"
     },
@@ -602,7 +602,7 @@
     {
       "path": "apps/server/src/modules/auth/auth.service.ts",
       "module": "identity",
-      "layer": "transport",
+      "layer": "domain",
       "scope": "production",
       "note": "auth.routes=transport 层文件；service/repository=identity 域"
     },
@@ -948,10 +948,10 @@
     },
     {
       "path": "apps/server/src/modules/world-runtime/world-post-tick.service.test.ts",
-      "module": "world",
+      "module": "application",
       "layer": "test",
       "scope": "test",
-      "note": "世界进度/租约（AR-01 缺口：saveProgress/releaseLease 无 owner 条件，ARCH-02）"
+      "note": "tick 后提交协调的白盒测试，归属 application（前缀规则误归 world，MOD-02 修正）"
     },
     {
       "path": "apps/server/src/modules/world-runtime/world-post-tick.service.ts",
@@ -1256,17 +1256,17 @@
     },
     {
       "path": "apps/web/src/features/game/input/HotkeyRegistry.ts",
-      "module": "client_text",
-      "layer": "client_view",
+      "module": "client_session",
+      "layer": "client_state",
       "scope": "production",
-      "note": "React 视图与用户意图采集"
+      "note": "用户意图采集/分发，归属会话态（ADR-07 client_session 拥有命令与意图）；MOD-02 修正"
     },
     {
       "path": "apps/web/src/features/game/input/InputContext.tsx",
-      "module": "client_text",
-      "layer": "client_view",
+      "module": "client_session",
+      "layer": "client_state",
       "scope": "production",
-      "note": "React 视图与用户意图采集"
+      "note": "用户意图采集/分发，归属会话态（ADR-07 client_session 拥有命令与意图）；MOD-02 修正"
     },
     {
       "path": "apps/web/src/features/game/input/input.test.tsx",
@@ -1818,5 +1818,17 @@
       "note": "版本常量唯一事实源"
     }
   ],
-  "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。"
+  "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",
+  "amendments": [
+    {
+      "date": "2026-09-18",
+      "kind": "classification correction",
+      "detail": "input/HotkeyRegistry.ts 与 input/InputContext.tsx 由 client_text 修正为 client_session（意图采集属会话态），共 2 处。"
+    },
+    {
+      "date": "2026-09-18",
+      "kind": "classification correction",
+      "detail": "world-post-tick.service.test.ts 由 world 修正为 application（目录前缀规则遮蔽了精确规则）。"
+    }
+  ]
 }

@@ -31,7 +31,7 @@
 - 事实产生文案；Query只读；保留独立角色懒结算，不因重构删离线收益。
 - 不在shared堆私有类型，不创建无调用者的未来模块，不用export *把internal全部公开。
 - 新增/删除能力按change-spec模板说明归属、API、资产/义务生命周期与验收。边界策略/allowlist变更须单列审查，不由实现模型为了变绿自行放宽。
-- `module-catalog.json` 是目标合同，当前不是可执行门禁。只有MOD-02实际创建和验证后才能声称arch:check可运行；缺验证写NOT_RUN。
+- `module-catalog.json` 是目标合同。MOD-02 已于 2026-09-18 交付并验证 `pnpm arch:check` 与 `pnpm arch:test`（实现位于 `scripts/architecture/`，规则由冻结的 catalog/boundaries/debt 三份 JSON 程序化推导，不得手工复制放宽）。存量违规以 `docs/architecture/legacy-boundary-debt.json` 为唯一豁免依据；新增违规 arch:check 立即失败，不得通过改台账/删测试变绿。无检查环境时缺验证仍写 NOT_RUN。
 - 架构例外精确登记、限期移除，不自动批准新增违规。存档迁移不可静默丢数据，功能停用不得遗留无人处理的托管/预留。
 - 不引入微服务、通用工作流/事件溯源/动态插件沙箱；Phaser像素仍DESIGN_ONLY，不因本次架构设计自动开工。
 
