@@ -126,6 +126,7 @@ export const characters = pgTable(
     position: jsonb("position"),
     injuryUntil: timestamp("injury_until", { withTimezone: true }),
     lastReliefClaimedAt: timestamp("last_relief_claimed_at", { withTimezone: true }),
+    revision: integer("revision").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
@@ -527,6 +528,7 @@ export const worldRuntimeState = pgTable(
   {
     key: text("key").primaryKey(),
     lastSettledAt: timestamp("last_settled_at", { withTimezone: true }),
+    worldEpoch: integer("world_epoch").notNull().default(1),
     leaseOwner: text("lease_owner"),
     leaseUntil: timestamp("lease_until", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()

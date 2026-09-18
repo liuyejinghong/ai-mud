@@ -99,7 +99,17 @@ export class WorldResetRepository implements WorldResetRepositoryPort {
     await this.db.delete(worldResourceNodes);
     await this.db.delete(marketInventory);
     await this.db.delete(municipalTreasury);
+    const [runtimeRow] = await this.db
+      .select({ worldEpoch: worldRuntimeState.worldEpoch })
+      .from(worldRuntimeState)
+      .limit(1);
+    const nextEpoch = (runtimeRow?.worldEpoch ?? 0) + 1;
     await this.db.delete(worldRuntimeState);
+    await this.db.insert(worldRuntimeState).values({
+      key: "npc_world",
+      lastSettledAt: new Date(0),
+      worldEpoch: nextEpoch
+    });
     await this.db.delete(itemInstances);
     await this.db.delete(characters);
     await this.db.delete(worldActors);

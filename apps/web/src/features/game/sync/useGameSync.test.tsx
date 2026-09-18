@@ -51,10 +51,31 @@ async function advanceTimersByTime(ms: number): Promise<void> {
 
 function syncResponse(overrides: Partial<GameSyncResponseDto> = {}): GameSyncResponseDto {
   return {
+    worldEpoch: 1,
+    characterRevision: 1,
     stateVersion: 1,
     state: null,
     events: [],
     nextCursor: 1,
+    ...overrides
+  };
+}
+
+function gameState(overrides: Partial<GameStateDto> = {}): GameStateDto {
+  return {
+    character: null,
+    locationTitle: "黑松哨站",
+    locationDescription: "潮湿黑松围住木墙。",
+    map: null,
+    inventory: [],
+    equipment: [],
+    backpackEquipment: [],
+    market: null,
+    npcTasks: [],
+    currentAction: null,
+    rumors: [],
+    availableActions: [],
+    log: [],
     ...overrides
   };
 }
@@ -388,5 +409,73 @@ describe("useGameSync", () => {
         highlights: ["集市记录了基础铁矿石成交。"]
       })
     );
+  });
+
+  it("discards a response whose worldEpoch regressed", async () => {
+    vi.useFakeTimers();
+    const onState = vi.fn();
+    const onEvents = vi.fn();
+    const fetchSync = vi.fn().mockResolvedValue(syncResponse({ nextCursor: 2 }));
+    const { result } = renderHook(() =>
+      useGameSync({ fetchSync, onState, onEvents, idleIntervalMs: 1_000 })
+    );
+
+    await flushPoll();
+
+    const stale = syncResponse({
+      worldEpoch: 0,
+      state: gameState({ locationTitle: "旧世界" }),
+      events: [
+        {
+          id: 99,
+          eventType: "system.announcement",
+          stateDirty: false,
+          payload: {},
+          source: "admin",
+          createdAt: "2026-07-02T08:00:00.000Z"
+        }
+      ],
+      nextCursor: 99
+    });
+    act(() => {
+      result.current.applyResponse(syncResponse({ worldEpoch: 3, nextCursor: 3 }));
+    });
+    expect(result.current.cursor).toBe(3);
+
+    act(() => {
+      result.current.applyResponse(stale);
+    });
+
+    expect(result.current.cursor).toBe(3);
+    expect(onState).not.toHaveBeenCalledWith(
+      expect.objectContaining({ locationTitle: "旧世界" }),
+      expect.anything()
+    );
+    expect(onEvents).not.toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ id: 99 })])
+    );
+  });
+
+  it("clears the epoch guard when the character changes", async () => {
+    vi.useFakeTimers();
+    const fetchSync = vi.fn().mockResolvedValue(syncResponse({ nextCursor: 2 }));
+    const { result, rerender } = renderHook(
+      ({ characterId }) => useGameSync({ fetchSync, characterId, idleIntervalMs: 1_000 }),
+      { initialProps: { characterId: "character-1" as string | null } }
+    );
+
+    await flushPoll();
+
+    act(() => {
+      result.current.applyResponse(syncResponse({ worldEpoch: 5, nextCursor: 5 }));
+    });
+    expect(result.current.cursor).toBe(5);
+
+    rerender({ characterId: "character-2" });
+
+    act(() => {
+      result.current.applyResponse(syncResponse({ worldEpoch: 1, nextCursor: 6 }));
+    });
+    expect(result.current.cursor).toBe(6);
   });
 });

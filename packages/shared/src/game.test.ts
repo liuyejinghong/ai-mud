@@ -99,6 +99,8 @@ describe("game contract", () => {
       wealthCopper: 3500
     };
     const response: GameSyncResponseDto = {
+      worldEpoch: 1,
+      characterRevision: null,
       stateVersion: 12,
       state: null,
       nextCursor: 12,

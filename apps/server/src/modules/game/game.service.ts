@@ -67,6 +67,7 @@ import {
   newCommandId,
   type AssetMutationPort
 } from "../ledger/asset-mutation.service.js";
+import { worldRuntimeState } from "../db/schema.js";
 import { LedgerRepository } from "../ledger/ledger.repository.js";
 import { LedgerService } from "../ledger/ledger.service.js";
 import { LobbyRepository } from "../lobby/lobby.repository.js";
@@ -503,7 +504,15 @@ export class GameService {
         now
       });
 
+      const runtimeRow = await this.db
+        .select({ worldEpoch: worldRuntimeState.worldEpoch })
+        .from(worldRuntimeState)
+        .limit(1);
+      const worldEpoch = runtimeRow[0]?.worldEpoch ?? 1;
+
       return {
+        worldEpoch,
+        characterRevision: character?.revision ?? null,
         stateVersion: nextCursor,
         state: includeState ? await this.buildState(repo, accountId, now) : null,
         events: events.map((event) => ({

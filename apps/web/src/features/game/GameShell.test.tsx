@@ -326,6 +326,8 @@ function isSyncResponse(value: unknown) {
 
 function emptySyncResponse(overrides: Partial<GameSyncResponseDto> = {}): GameSyncResponseDto {
   return {
+    worldEpoch: 1,
+    characterRevision: 1,
     stateVersion: 1,
     state: null,
     events: [],
@@ -553,6 +555,8 @@ describe("GameShell", () => {
   it("renders loot and level feedback from the sync event stream", async () => {
     mockFetchWithStates([
       {
+        worldEpoch: 1,
+        characterRevision: 1,
         stateVersion: 4,
         state: forestState,
         nextCursor: 4,
@@ -595,6 +599,8 @@ describe("GameShell", () => {
   it("renders public world broadcasts from other characters and skips self duplicates", async () => {
     mockFetchWithStates([
       {
+        worldEpoch: 1,
+        characterRevision: 1,
         stateVersion: 5,
         state: forestState,
         nextCursor: 6,
@@ -941,6 +947,8 @@ describe("GameShell", () => {
   it("renders asset feedback from the sync event stream", async () => {
     mockFetchWithStates([
       {
+        worldEpoch: 1,
+        characterRevision: 1,
         stateVersion: 3,
         state: forestState,
         events: [
