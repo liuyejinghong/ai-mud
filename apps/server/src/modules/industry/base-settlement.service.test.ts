@@ -89,7 +89,7 @@ function makeProject(overrides: Partial<BaseProjectRecord> = {}): BaseProjectRec
 }
 
 class FakeClock implements SettlementClockPort {
-  bases: Array<{ baseId: string; simTime: Date; speed: number; deltaSimMs: number; nextLastAdvancedAt: Date }> = [];
+  bases: Array<{ baseId: string; simTime: Date; speed: number; deltaSimMs: number; nextLastAdvancedAt: Date; catchUp: boolean }> = [];
   saved: Array<{ baseId: string; simTime: Date; lastAdvancedAt: Date }> = [];
 
   async lockAdvanceableBases(_tx: IndustryTx, _now: Date) {
@@ -159,9 +159,23 @@ class FakeIndustry implements IndustryReadPort, IndustrySettlementWriter {
     patch: { storageWh: number; lastLoadW: number }
   ) {
     this.savedPower.push({ baseId, storageWh: patch.storageWh, lastLoadW: patch.lastLoadW });
+    const stored = this.power.get(baseId);
+    if (stored) {
+      stored.storageWh = patch.storageWh;
+      stored.lastLoadW = patch.lastLoadW;
+    }
   }
   async saveStepUpdates(_tx: IndustryTx, updates: BaseTickStepUpdate[]) {
     this.savedSteps.push(...updates);
+    for (const update of updates) {
+      const stored = this.steps.find(
+        (step) => step.projectId === update.projectId && step.stepIndex === update.stepIndex
+      );
+      if (!stored) continue;
+      stored.workDone = update.workDone;
+      stored.status = update.status as BaseStepRecord["status"];
+      stored.blockedReason = update.blockedReason;
+    }
   }
   async addGenerationWPeak(tx: unknown, baseId: string, deltaW: number): Promise<void> {
     this.generationBumps.push({ baseId, deltaW });
@@ -180,6 +194,17 @@ class FakeRobots implements SettlementRobotPort {
   }
   async applyRobotUpdates(_tx: IndustryTx, updates: BaseTickRobotUpdate[]) {
     this.applied.push(...updates);
+    const byId = new Map(updates.map((update) => [update.operatorId, update]));
+    for (const list of this.operators.values()) {
+      for (const operator of list) {
+        const update = byId.get(operator.operatorId);
+        if (!update) continue;
+        operator.batteryWh = update.batteryWh;
+        operator.status = update.status;
+        operator.currentProjectId = update.currentProjectId;
+        operator.currentStepIndex = update.currentStepIndex;
+      }
+    }
   }
 }
 
@@ -209,7 +234,7 @@ interface ScenarioOptions {
 }
 
 function seedStandardBase(harness: ReturnType<typeof makeHarness>, options: ScenarioOptions = {}) {
-  harness.clock.bases.push({ baseId: "base-1", simTime: T0, speed: 1, deltaSimMs: TICK_MS, nextLastAdvancedAt: new Date(T0.getTime() + TICK_MS) });
+  harness.clock.bases.push({ baseId: "base-1", simTime: T0, speed: 1, deltaSimMs: TICK_MS, nextLastAdvancedAt: new Date(T0.getTime() + TICK_MS), catchUp: false });
   harness.industry.power.set("base-1", makePower());
   harness.industry.projects.set("base-1", [
     makeProject({ templateRevision: options.templateRevision ?? 1 })
@@ -351,5 +376,109 @@ describe("BaseSettlementService.settleBases", () => {
     expect(harness.industry.savedPower).toHaveLength(0);
     expect(harness.industry.savedSteps).toHaveLength(0);
     expect(harness.robots.applied).toHaveLength(0);
+  });
+});
+
+describe("BaseSettlementService.settleBases > sub-tick scaling", () => {
+  it("×4 模拟步长拆 4 个子 tick：工作量与能耗按模拟时长推进", async () => {
+    const harness = makeHarness();
+    harness.industry.power.set("base-1", makePower());
+    harness.industry.projects.set("base-1", [makeProject({ status: "active", currentStepIndex: 0 })]);
+    harness.industry.steps = [
+      {
+        projectId: "p1",
+        stepIndex: 0,
+        kind: "installation",
+        groupId: "engineering",
+        status: "running",
+        workRequired: 80,
+        workDone: 0,
+        blockedReason: null
+      }
+    ];
+    harness.robots.operators.set("base-1", [
+      {
+        operatorId: "op-1",
+        deviceId: "dev-1",
+        deviceDefId: "yd-e1",
+        groupId: "engineering",
+        batteryWh: 30_000,
+        batteryCapacityWh: 30_000,
+        status: "working",
+        currentProjectId: "p1",
+        currentStepIndex: 0
+      }
+    ]);
+    harness.catalog.projects.set("install_solar_array", {
+      ...PROJECT_TEMPLATE,
+      ref: { kind: "project", stableId: "install_solar_array", revision: 1 }
+    });
+    harness.clock.bases.push({
+      baseId: "base-1",
+      simTime: T0,
+      speed: 4,
+      deltaSimMs: TICK_MS * 4,
+      nextLastAdvancedAt: new Date(T0.getTime() + TICK_MS),
+      catchUp: false
+    });
+
+    const tx = {} as IndustryTx;
+    await harness.service.settleBases(tx, new Date(T0.getTime() + TICK_MS));
+
+    const step = harness.industry.savedSteps.at(-1);
+    expect(step?.workDone).toBe(4);
+  });
+});
+
+describe("BaseSettlementService.settleBases > catch-up steps", () => {
+  it("追补步只推时钟：不产工作量、不落盘生产状态，仅 saveSimAdvance", async () => {
+    const harness = makeHarness();
+    harness.industry.power.set("base-1", makePower());
+    harness.industry.projects.set("base-1", [makeProject({ status: "active", currentStepIndex: 0 })]);
+    harness.industry.steps = [
+      {
+        projectId: "p1",
+        stepIndex: 0,
+        kind: "installation",
+        groupId: "engineering",
+        status: "running",
+        workRequired: 80,
+        workDone: 10,
+        blockedReason: null
+      }
+    ];
+    harness.robots.operators.set("base-1", [
+      {
+        operatorId: "op-1",
+        deviceId: "dev-1",
+        deviceDefId: "yd-e1",
+        groupId: "engineering",
+        batteryWh: 30_000,
+        batteryCapacityWh: 30_000,
+        status: "idle",
+        currentProjectId: null,
+        currentStepIndex: null
+      }
+    ]);
+    harness.clock.bases.push({
+      baseId: "base-1",
+      simTime: T0,
+      speed: 1,
+      deltaSimMs: TICK_MS,
+      nextLastAdvancedAt: new Date(T0.getTime() + TICK_MS),
+      catchUp: true
+    });
+
+    const tx = {} as IndustryTx;
+    const settled = await harness.service.settleBases(tx, new Date(T0.getTime() + TICK_MS));
+
+    expect(settled).toBe(1);
+    expect(harness.clock.saved).toEqual([
+      {
+        baseId: "base-1",
+        simTime: new Date(T0.getTime() + TICK_MS),
+        lastAdvancedAt: new Date(T0.getTime() + TICK_MS)
+      }
+    ]);
   });
 });

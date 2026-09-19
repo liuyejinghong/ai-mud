@@ -51,6 +51,7 @@ export interface AdvanceableBaseRecord {
   speed: number;
   deltaSimMs: number;
   nextLastAdvancedAt: Date;
+  catchUp: boolean;
 }
 
 export interface BaseCommandReceipt {
@@ -354,7 +355,10 @@ export class BaseRepository {
         simTime: row.simTime,
         speed: row.speed,
         deltaSimMs: deltaWallMs * row.speed,
-        nextLastAdvancedAt: wallNow
+        nextLastAdvancedAt: wallNow,
+        // 世界 tick 落后墙钟期间的追补步：只推时钟，不生产（不把停服时间当生产时间）。
+        // 正常运行时结算执行点天然落后墙钟至多一个 tick 间隔（60s），阈值取 1.5 个间隔。
+        catchUp: now.getTime() < wallNow.getTime() - 90_000
       });
     }
     return advanceable;

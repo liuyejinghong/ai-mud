@@ -37,6 +37,7 @@ export interface SettlementClockPort {
       speed: number;
       deltaSimMs: number;
       nextLastAdvancedAt: Date;
+      catchUp: boolean;
     }>
   >;
   saveSimAdvance(tx: IndustryTx, baseId: string, simTime: Date, lastAdvancedAt: Date): Promise<void>;
@@ -77,6 +78,9 @@ export interface BaseSettlementDeps {
   openRobots: (tx: IndustryTx) => SettlementRobotPort;
 }
 
+// 基地结算的最小模拟步长（与 world tick 同粒度）。
+const BASE_SUB_TICK_MS = 60_000;
+
 export class BaseSettlementService {
   constructor(private readonly deps: BaseSettlementDeps) {}
 
@@ -85,7 +89,19 @@ export class BaseSettlementService {
     const bases = await this.deps.clock.lockAdvanceableBases(tx, now);
     for (const base of bases) {
       const nextSimTime = new Date(base.simTime.getTime() + base.deltaSimMs);
-      await this.settleBase(tx, base.baseId, base.simTime, base.deltaSimMs, nextSimTime);
+      if (base.catchUp) {
+        // 世界 tick 追补步：只推基地时钟，不生产/不耗能（不把停服时间当生产时间）。
+        await this.deps.clock.saveSimAdvance(tx, base.baseId, nextSimTime, base.nextLastAdvancedAt);
+        continue;
+      }
+      // 按模拟时长拆子 tick：工作量/能耗与 simTime 同比例推进（×4 速度 = 4 倍产出与能耗）。
+      const subTicks = Math.max(1, Math.min(10, Math.round(base.deltaSimMs / BASE_SUB_TICK_MS)));
+      const subDelta = Math.round(base.deltaSimMs / subTicks);
+      for (let i = 0; i < subTicks; i += 1) {
+        const from = new Date(base.simTime.getTime() + subDelta * i);
+        const to = new Date(base.simTime.getTime() + subDelta * (i + 1));
+        await this.settleBase(tx, base.baseId, from, to.getTime() - from.getTime(), to);
+      }
       await this.deps.clock.saveSimAdvance(tx, base.baseId, nextSimTime, base.nextLastAdvancedAt);
     }
     return bases.length;
