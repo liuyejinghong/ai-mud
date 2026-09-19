@@ -741,8 +741,7 @@ describe("BaseService.snapshot", () => {
           status: "idle",
           batteryWh: 30000,
           batteryCapacityWh: 30000,
-          currentAssignment: null,
-    description: "工程维护组：清场、安装、接线、检修。"
+          currentAssignment: null
         }
       ],
       projects: [
