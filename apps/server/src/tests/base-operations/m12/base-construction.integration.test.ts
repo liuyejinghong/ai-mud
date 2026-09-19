@@ -159,6 +159,9 @@ function buildControlledOperations(db: Db, clock: { now(): Date }): ControlledOp
     robotRead: robotRuntime,
     manufacturingRead: {
       listJobsForBase: async () => []
+    },
+    cooperationRead: {
+      listByBase: async () => []
     }
   });
 

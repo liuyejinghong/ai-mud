@@ -6,6 +6,7 @@ import type {
   BaseRobotGroupId,
   BaseSiteDto,
   BaseSnapshotDto,
+  CooperationStatus,
   BaseTimeMode,
   DefinitionRefDto,
   ManufacturingJobStatus,
@@ -179,6 +180,21 @@ export interface BaseServiceDeps {
   catalog: ContentCatalogPort;
   industryRead: BaseIndustryReadPort;
   robotRead: BaseRobotReadPort;
+  cooperationRead: {
+    listByBase(baseId: string): Promise<
+      Array<{
+        id: string;
+        projectId: string;
+        stepIndex: number;
+        fromGroupId: string;
+        helperGroupId: string;
+        status: string;
+        helperOperatorId: string | null;
+        question: string;
+        createdAt: Date | null;
+      }>
+    >;
+  };
   manufacturingRead: {
     listJobsForBase(baseId: string): Promise<
       Array<{
@@ -456,6 +472,21 @@ export class BaseService {
           workPerUnit: recipe.workPerUnit,
           output: { ...recipe.output }
         })),
+        cooperationRequests: (await this.deps.cooperationRead.listByBase(baseId)).map(
+          (request) => ({
+            requestId: request.id,
+            projectId: request.projectId,
+            projectName:
+              projects.find((project) => project.projectId === request.projectId)?.name ?? "",
+            stepIndex: request.stepIndex,
+            fromGroupId: request.fromGroupId,
+            helperGroupId: request.helperGroupId,
+            status: request.status as CooperationStatus,
+            helperOperatorId: request.helperOperatorId,
+            question: request.question,
+            createdAt: request.createdAt?.toISOString() ?? ""
+          })
+        ),
         manufacturingJobs: (await this.deps.manufacturingRead.listJobsForBase(baseId)).map(
           (job) => ({
             jobId: job.id,

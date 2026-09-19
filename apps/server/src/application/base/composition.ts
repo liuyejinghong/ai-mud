@@ -12,6 +12,13 @@ import { ContentAdminService } from "../../modules/content-catalog/content-admin
 import { BaseSettlementService } from "../../modules/industry/base-settlement.service.js";
 import { ManufacturingService } from "../../modules/industry/manufacturing.service.js";
 import { ManufacturingRepository } from "../../modules/industry/manufacturing.repository.js";
+import { decisionRecords } from "../../db/schema.js";
+import {
+  detectAndResolveCooperation,
+  applyAcceptedHelpers
+} from "../../modules/industry/cooperation.service.js";
+import { CooperationRepository } from "../../modules/industry/cooperation.repository.js";
+import { DecisionGateway } from "../../modules/ai/decision-gateway.js";
 import { settleManufacturing } from "../../modules/industry/manufacturing.settlement.js";
 import {
   ContentAdminUseCases
@@ -68,6 +75,23 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     manufacturingRead: {
       listJobsForBase: async (baseId: string) =>
         new ManufacturingRepository(db).listJobsForBase(db, baseId)
+    },
+    cooperationRead: {
+      listByBase: async (baseId: string) => {
+        const repo = new CooperationRepository(db);
+        const rows = await repo.listByBase(db, baseId);
+        return rows.map((row) => ({
+          id: row.requestId,
+          projectId: row.projectId,
+          stepIndex: row.stepIndex,
+          fromGroupId: row.fromGroupId,
+          helperGroupId: row.helperGroupId,
+          status: row.status,
+          helperOperatorId: row.helperOperatorId,
+          question: row.question,
+          createdAt: row.createdAt
+        }));
+      }
     }
   });
 
@@ -165,6 +189,49 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     cancel: new CancelProjectCase(db, construction)
   };
 
+  const decisionGateway = new DecisionGateway({
+    recordAudit: async (row) => {
+      await db.insert(decisionRecords).values(row);
+    }
+  });
+  const cooperation = {
+    detectAndResolve: (
+      tx: Parameters<typeof detectAndResolveCooperation>[0],
+      baseId: string,
+      runningSteps: Parameters<typeof detectAndResolveCooperation>[2],
+      meta: { baseRevision: number; epoch: number; clock: { now(): Date } }
+    ) =>
+      detectAndResolveCooperation(tx, baseId, runningSteps, {
+        robots: new RobotRuntimeService(db),
+        gateway: decisionGateway,
+        clock: meta.clock,
+        baseRevision: meta.baseRevision,
+        epoch: meta.epoch,
+        openCooperation: (coopTx) => new CooperationRepository(coopTx)
+      }),
+    applyAcceptedHelpers: (
+      tx: Parameters<typeof applyAcceptedHelpers>[0],
+      baseId: string,
+      clock: { now(): Date }
+    ) =>
+      applyAcceptedHelpers(tx, baseId, {
+        robots: new RobotRuntimeService(db),
+        openCooperation: (coopTx) => new CooperationRepository(coopTx)
+      }),
+    markFulfilledByProject: async (
+      tx: Parameters<typeof applyAcceptedHelpers>[0],
+      baseId: string,
+      projectId: string
+    ) => {
+      const repo = new CooperationRepository(tx);
+      const steps = await repo.listByBase(tx, baseId);
+      for (const request of steps) {
+        if (request.projectId !== projectId) continue;
+        await repo.markFulfilledByStep(tx, baseId, projectId, request.stepIndex);
+      }
+    }
+  };
+
   const settlement = new BaseSettlementService({
     clock: baseRepo,
     sites: baseRepo,
@@ -172,6 +239,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     catalog,
     openIndustry: (tx) => new IndustryRepository(tx),
     openRobots: (tx) => (tx === db ? robotRuntime : new RobotRuntimeService(tx)),
+    cooperation,
     manufacturing: {
       settle: (tx, now, input) =>
         settleManufacturing(tx, now, {
@@ -188,6 +256,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
         })
     }
   });
+
 
   const contentAdmin = new ContentAdminUseCases(
     db,

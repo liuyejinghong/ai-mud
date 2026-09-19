@@ -1,3 +1,4 @@
+import type { CooperationRequestDto } from "./decision.js";
 import type {
   ManufacturingJobDto,
   RecipeTemplateDto
@@ -186,6 +187,7 @@ export interface BaseSnapshotDto {
   }>;
   manufacturingJobs: ManufacturingJobDto[];
   availableRecipes: RecipeTemplateDto[];
+  cooperationRequests: CooperationRequestDto[];
   controlLease: BaseControlLeaseDto;
 }
 

@@ -393,7 +393,8 @@ function createFixture(options: {
     catalog,
     industryRead,
     robotRead,
-    manufacturingRead: { listJobsForBase: async () => [] }
+    manufacturingRead: { listJobsForBase: async () => [] },
+    cooperationRead: { listByBase: async () => [] }
   });
   return { service, repo, assets, robots, industryInit, catalog, industryRead, robotRead };
 }
@@ -801,6 +802,7 @@ describe("BaseService.snapshot", () => {
       ],
       availableRecipes: [],
       manufacturingJobs: [],
+      cooperationRequests: [],
       controlLease: {
         heldByThisSession: true,
         leaseUntil: new Date(T1.getTime() + 60_000).toISOString()

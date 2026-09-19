@@ -47,8 +47,8 @@ describe("game contract", () => {
     expect(isDirection("up")).toBe(false);
   });
 
-  it("exposes v0.13.0 world health compatibility", () => {
-    expect(PRODUCT_VERSION).toBe("0.13.0");
+  it("exposes v0.14.0 world health compatibility", () => {
+    expect(PRODUCT_VERSION).toBe("0.14.0");
     expect(WORLD_COMPATIBILITY.apiVersion).toBe(43);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(30);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);

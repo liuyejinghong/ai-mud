@@ -108,6 +108,9 @@ export interface ComputeBaseTickInput {
   projects: BaseProjectRecord[];
   steps: BaseStepRecord[];
   robots: BaseRobotRecord[];
+  // M14 跨组支援：accepted 协作的 helper 机器人（operatorId）——豁免编组匹配，
+  // 允许其计入目标步骤的工作量（协作调度事实由 industry/cooperation 提供）。
+  helperOperatorIds?: ReadonlySet<string>;
   templates: {
     robotByStableId: Map<string, RobotTemplateDto>;
     projectByStableId: Map<string, ProjectTemplateDto>;
@@ -272,7 +275,8 @@ export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
     const assignable =
       target !== undefined &&
       robot.hasWorkTemplate &&
-      robot.record.groupId === target.record.groupId &&
+      (robot.record.groupId === target.record.groupId ||
+        (input.helperOperatorIds?.has(robot.record.operatorId) ?? false)) &&
       (target.status === "running" || target.status === "ready") &&
       !target.powerBlockedThisTick &&
       robot.battery >= ROBOT_WORK_DRAIN_WH;
@@ -302,7 +306,12 @@ export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
         if (robot.wasWorkingAtStart) continue;
         if (robot.status !== "idle" && robot.status !== "charging") continue;
         if (!robot.hasWorkTemplate) continue;
-        if (robot.record.groupId !== step.record.groupId) continue;
+        if (
+          robot.record.groupId !== step.record.groupId &&
+          !(input.helperOperatorIds?.has(robot.record.operatorId) ?? false)
+        ) {
+          continue;
+        }
         if (robot.battery < ROBOT_WORK_DRAIN_WH) continue;
         robot.status = "working";
         robot.projectId = step.record.projectId;
@@ -356,7 +365,12 @@ export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
         if (!robot.workedThisTick) continue;
         if (robot.projectId !== step.record.projectId) continue;
         if (robot.stepIndex !== step.record.stepIndex) continue;
-        if (robot.record.groupId !== step.record.groupId) continue;
+        if (
+          robot.record.groupId !== step.record.groupId &&
+          !(input.helperOperatorIds?.has(robot.record.operatorId) ?? false)
+        ) {
+          continue;
+        }
         contribution += robot.workRate;
       }
       if (contribution <= 0) continue;

@@ -71,6 +71,25 @@ export interface BaseSettlementDeps {
   clock: SettlementClockPort;
   // M13-C 制造结算（可选：未绑定时跳过，v0.12 行为不变）。
   manufacturing?: BaseManufacturingSettlePort;
+  // M14 协作（可选：未绑定时跳过）。
+  cooperation?: {
+    // 检测缺工步骤→发起/决策协作请求→接受 helper 绑定（M14-B 服务）。
+    detectAndResolve(
+      tx: IndustryTx,
+      baseId: string,
+      runningSteps: Array<{
+        projectId: string;
+        projectName: string;
+        stepIndex: number;
+        groupId: string;
+      }>,
+      meta: { baseRevision: number; epoch: number; clock: { now(): Date } }
+    ): Promise<unknown>;
+    // accepted helper 转入 working。
+    applyAcceptedHelpers(tx: IndustryTx, baseId: string, clock: { now(): Date }): Promise<unknown>;
+    // 项目完成时标记相关协作 fulfilled。
+    markFulfilledByProject(tx: IndustryTx, baseId: string, projectId: string): Promise<unknown>;
+  };
   sites: SettlementSitePort;
   assets: SettlementAssetPort;
   catalog: SettlementCatalogPort;
@@ -245,6 +264,38 @@ export class BaseSettlementService {
     // ---------- 落盘：作业者（npc 唯一写者） ----------
     if (result.robotUpdates.length > 0) await robots.applyRobotUpdates(tx, result.robotUpdates);
 
+    // ---------- M14 协作：缺工步骤检测/决策/accepted helper 绑定 ----------
+    if (this.deps.cooperation) {
+      // 缺工步骤 = 本 tick 后仍 running 的步骤；组信息从持久化步骤读。
+      const runningStepUpdates = result.stepUpdates.filter((step) => step.status === "running");
+      const runningSteps: Array<{
+        projectId: string;
+        projectName: string;
+        stepIndex: number;
+        groupId: string;
+      }> = [];
+      for (const step of runningStepUpdates) {
+        const project = matchedProjects.find((entry) => entry.id === step.projectId);
+        if (!project) continue;
+        const template = matchedTemplates.get(step.projectId);
+        const stepRecord = (await industry.listSteps([project.id])).find(
+          (entry) => entry.stepIndex === step.stepIndex
+        );
+        runningSteps.push({
+          projectId: step.projectId,
+          projectName: template?.name ?? step.projectId,
+          stepIndex: step.stepIndex,
+          groupId: stepRecord?.groupId ?? "engineering"
+        });
+      }
+      await this.deps.cooperation.detectAndResolve(tx, baseId, runningSteps, {
+        baseRevision: 1,
+        epoch: 1,
+        clock: { now: () => simTime }
+      });
+      await this.deps.cooperation.applyAcceptedHelpers(tx, baseId, { now: () => simTime });
+    }
+
     // ---------- 完成项目：消耗全部预留 + 站点 built（原子在同一 tick 事务内） ----------
     for (const completion of result.projectCompletions) {
       const project = matchedProjects.find((entry) => entry.id === completion.projectId);
@@ -266,6 +317,9 @@ export class BaseSettlementService {
       );
       // 设施投产：供能上限并入基地（m12-p-contract §3.3，G03「投产后供能改变」）。
       await industry.addGenerationWPeak(tx, baseId, template.outputFacility.generationWPeak);
+      if (this.deps.cooperation) {
+        await this.deps.cooperation.markFulfilledByProject(tx, baseId, project.id);
+      }
     }
   }
 }

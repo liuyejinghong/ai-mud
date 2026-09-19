@@ -8,6 +8,7 @@ import type {
   RobotStatus
 } from "@ai-mud/shared";
 import { BaseMap } from "./BaseMap.js";
+import { CooperationPanel } from "./CooperationPanel.js";
 import { ManufacturingBoard } from "./ManufacturingBoard.js";
 import { ObjectPanel } from "./ObjectPanel.js";
 import { ProjectBoard } from "./ProjectBoard.js";
@@ -199,6 +200,7 @@ export function BaseShell({
         onCancelProject={onCancelProject}
       />
 
+      <CooperationPanel requests={snapshot.cooperationRequests} />
       <ManufacturingBoard
         jobs={snapshot.manufacturingJobs}
         recipes={snapshot.availableRecipes}
