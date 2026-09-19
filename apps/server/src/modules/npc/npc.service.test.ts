@@ -445,7 +445,7 @@ describe("NpcService", () => {
     );
     expect(repo.treasury).toEqual({
       settlementId: "blackpine_outpost",
-      copperBalance: 10_000
+      copperBalance: 50_000
     });
   });
 
@@ -575,7 +575,7 @@ describe("NpcService", () => {
 
     expect(payment).toEqual({ paidCopper: 25, shortfallCopper: 0 });
     expect(farmer.copperBalance).toBe(previousCopper + 25);
-    expect(repo.treasury?.copperBalance).toBe(9_975);
+    expect(repo.treasury?.copperBalance).toBe(49_975);
     expect(assets.assetCalls).toBe(2);
   });
 
@@ -633,6 +633,38 @@ describe("NpcService", () => {
     expect(repo.mapInstances).toEqual([]);
   });
 
+  it("stops selling surplus when the market stock has reached its target", async () => {
+    const repo = new InMemoryNpcRepository();
+    const { service, assets } = serviceWithAssets(repo);
+    const now = new Date("2026-07-01T08:00:00.000Z");
+
+    await service.ensureWorldSeeded(now);
+    repo.seedMarketItem({
+      itemId: "wild_berry",
+      quantity: 20,
+      targetQuantity: 20,
+      baseBuyPriceCopper: 3,
+      baseSellPriceCopper: 5
+    });
+    const farmer = repo.actors.find((actor) => actor.npcKey === "blackpine_farmer_mara")!;
+    farmer.currentLocation = "blackpine_outpost";
+    farmer.position = null;
+    farmer.copperBalance = 0;
+    await service.addNpcInventoryItem(farmer.id, "wild_berry", 2);
+    const treasuryBefore = repo.treasury?.copperBalance;
+
+    await service.settleNpcWorld(now);
+
+    // Saturated market: the NPC keeps the surplus and the treasury is untouched.
+    expect(await repo.listNpcInventory(farmer.id)).toEqual([
+      { itemId: "wild_berry", quantity: 2 }
+    ]);
+    expect(repo.marketInventory.get("wild_berry")?.quantity).toBe(20);
+    expect(farmer.copperBalance).toBe(0);
+    expect(repo.treasury?.copperBalance).toBe(treasuryBefore);
+    expect(assets.assetCalls).toBe(0);
+  });
+
   it("pays scheduled NPC wages from the municipal treasury on the daily tick", async () => {
     const repo = new InMemoryNpcRepository();
     const { service, assets } = serviceWithAssets(repo);
@@ -654,7 +686,7 @@ describe("NpcService", () => {
     expect(miner.copperBalance).toBe(65);
     expect(blacksmith.copperBalance).toBe(155);
     expect(officer.copperBalance).toBe(120);
-    expect(repo.treasury?.copperBalance).toBe(9_870);
+    expect(repo.treasury?.copperBalance).toBe(49_870);
     expect(assets.assetCalls).toBeGreaterThan(0);
   });
 
@@ -684,7 +716,7 @@ describe("NpcService", () => {
     ]);
     expect(repo.marketInventory.get("wild_berry")?.quantity).toBe(11);
     expect(farmer.copperBalance).toBe(5);
-    expect(repo.treasury?.copperBalance).toBe(9_995);
+    expect(repo.treasury?.copperBalance).toBe(49_995);
     expect(assets.assetCalls).toBe(3);
     expect(repo.transactions).toEqual([
       expect.objectContaining({
@@ -726,7 +758,7 @@ describe("NpcService", () => {
     ]);
     expect(repo.marketInventory.get("wild_berry")?.quantity).toBe(10);
     expect(farmer.copperBalance).toBe(0);
-    expect(repo.treasury?.copperBalance).toBe(10_000);
+    expect(repo.treasury?.copperBalance).toBe(50_000);
     expect(repo.transactions).toEqual([]);
     expect(ledgerEntries).toEqual([]);
   });
@@ -755,7 +787,7 @@ describe("NpcService", () => {
     ]);
     expect(repo.marketInventory.get("wild_berry")?.quantity).toBe(10);
     expect(farmer.copperBalance).toBe(0);
-    expect(repo.treasury?.copperBalance).toBe(10_000);
+    expect(repo.treasury?.copperBalance).toBe(50_000);
     expect(repo.transactions).toEqual([]);
     expect(ledgerEntries).toEqual([]);
   });
@@ -816,7 +848,7 @@ describe("NpcService", () => {
 
     expect(miner.hunger).toBe(2);
     expect(miner.copperBalance).toBe(84);
-    expect(repo.treasury?.copperBalance).toBe(10_016);
+    expect(repo.treasury?.copperBalance).toBe(50_016);
     expect(repo.marketInventory.get("wild_berry")?.quantity).toBe(2);
     expect(assets.assetCalls).toBe(3);
     expect(await repo.findActiveNpcAction(miner.id)).toBeNull();
@@ -855,7 +887,7 @@ describe("NpcService", () => {
 
     expect(miner.hunger).toBe(1);
     expect(miner.copperBalance).toBe(100);
-    expect(repo.treasury?.copperBalance).toBe(10_000);
+    expect(repo.treasury?.copperBalance).toBe(50_000);
     expect(repo.marketInventory.get("wild_berry")?.quantity).toBe(3);
     expect(repo.transactions).toEqual([]);
     expect(ledgerEntries).toEqual([]);
@@ -882,7 +914,7 @@ describe("NpcService", () => {
 
     expect(miner.hunger).toBe(1);
     expect(miner.copperBalance).toBe(100);
-    expect(repo.treasury?.copperBalance).toBe(10_000);
+    expect(repo.treasury?.copperBalance).toBe(50_000);
     expect(repo.marketInventory.get("wild_berry")?.quantity).toBe(3);
     expect(repo.transactions).toEqual([]);
     expect(ledgerEntries).toEqual([]);

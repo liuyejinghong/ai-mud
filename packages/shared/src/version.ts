@@ -4,7 +4,7 @@ export const WORLD_COMPATIBILITY = {
   schemaVersion: 28,
   apiVersion: 41,
   engineVersion: 2,
-  rulesetVersion: 16,
+  rulesetVersion: 17,
   contentVersion: 12,
   promptVersion: 8,
   economyVersion: 4,
