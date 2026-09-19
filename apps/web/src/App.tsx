@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AuthPage } from "./features/auth/AuthPage";
 import { getCurrentSession, logout, type AuthSessionDto } from "./features/auth/authApi";
-import { GameShell } from "./features/game/GameShell";
+import { BaseApp } from "./features/base/BaseApp";
 import { AdminShell } from "./features/game/ui/AdminShell";
 
 type Workspace = "game" | "admin";
@@ -46,16 +46,11 @@ export function App() {
   }
 
   const isAdmin = session.user.role === "admin" || session.user.role === "super_admin";
-  const gameShell = (
-    <GameShell
-      csrfToken={session.csrfToken}
-      onAuthExpired={expireSession}
-      onLogout={endSession}
-    />
-  );
+  // v0.12：玩家默认进入火星基地客户端；旧西幻 GameShell 归档保留（管理员工作区可切换）。
+  const baseApp = <BaseApp initialCsrfToken={session.csrfToken} onLogout={endSession} />;
 
   if (!isAdmin) {
-    return gameShell;
+    return baseApp;
   }
 
   return (
@@ -67,7 +62,7 @@ export function App() {
             aria-pressed={activeWorkspace === "game"}
             onClick={() => setActiveWorkspace("game")}
           >
-            游戏
+            基地
           </button>
           <button
             type="button"
@@ -78,7 +73,7 @@ export function App() {
           </button>
         </nav>
       </header>
-      {activeWorkspace === "admin" ? <AdminShell csrfToken={session.csrfToken} /> : gameShell}
+      {activeWorkspace === "admin" ? <AdminShell csrfToken={session.csrfToken} /> : baseApp}
     </div>
   );
 }

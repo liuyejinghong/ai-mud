@@ -192,3 +192,18 @@ input {
     grid-template-columns: 1fr;
   }
 }
+
+.auth-switch-links {
+  margin: 0 0 12px;
+  color: #9fc9d6;
+  font-size: 13px;
+}
+.auth-link-button {
+  border: none;
+  background: none;
+  color: #29d7b1;
+  cursor: pointer;
+  font: inherit;
+  padding: 0 4px;
+  text-decoration: underline;
+}

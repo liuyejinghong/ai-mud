@@ -5,6 +5,7 @@ import type { Db } from "./db/client.js";
 
 const testEnv = {
   NODE_ENV: "test" as const,
+  PLAYTEST_REGISTRATION_ENABLED: false,
   SERVER_HOST: "127.0.0.1",
   SERVER_PORT: 3000,
   DATABASE_URL: "postgres://example",

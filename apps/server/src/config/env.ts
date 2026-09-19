@@ -3,6 +3,10 @@ import { z } from "zod";
 const envSchema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+    PLAYTEST_REGISTRATION_ENABLED: z
+      .string()
+      .optional()
+      .transform((value) => (value === undefined ? false : value === "true")),
     SERVER_HOST: z.string().default("127.0.0.1"),
     SERVER_PORT: z.coerce.number().int().positive().default(3000),
     DATABASE_URL: z.string().min(1),
