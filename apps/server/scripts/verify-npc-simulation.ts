@@ -86,6 +86,9 @@ async function seedMarket(repository: GameRepository) {
 
 async function verifySimulation(targetDatabaseUrl: string) {
   const connection = createDb(targetDatabaseUrl);
+  // The final DROP WITH (FORCE) can land a terminate notice on an
+  // already-closing socket; swallow it so cleanup never crashes the run.
+  connection.pool.on("error", () => undefined);
   const ledger = new LedgerService(new LedgerRepository(connection.db));
   const npcService = new NpcService(
     new NpcRepository(connection.db),
@@ -159,6 +162,7 @@ async function main() {
 
   const databaseName = `ai_mud_npc_sim_verify_${Date.now()}_${process.pid}`;
   const admin = new Client({ connectionString: databaseUrl });
+  admin.on("error", () => undefined);
   let target: pg.Client | null = null;
   await admin.connect();
 
