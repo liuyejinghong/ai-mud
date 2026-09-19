@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "a0-2026-09-19",
+  "status": "CONTRACT_READY_A004_APPROVED",
+  "baselineHead": "7d8f242",
+  "note": "v0.12 文件所有权提议清单。A0-04 已批准（见 a0-review.md）；其 §4 九项非阻塞修正随 M12-P 首个冻结动作落实（迁移路径已按审查修正）。M12-P 落地时可细化路径，但每文件至多一个 active owner、语义不得收缩；任何 NEW 生产文件必须先登记 module-boundaries 才可创建（arch:test 负例强制）。跨线改动走 P 握手（02-parallel §5）。",
+  "sharedSingleWriter": {
+    "owner": "M12-P",
+    "files": [
+      "packages/shared/src/base.ts (NEW)",
+      "packages/shared/src/errors.ts (扩展)",
+      "apps/server/src/db/schema.ts (扩展)",
+      "apps/server/drizzle/ 新迁移与 meta/_journal.json (NEW，编号由P定)",
+      "apps/server/src/app.ts (装配与路由注册)",
+      "docs/architecture/module-catalog.json (登记 industry/content-catalog/边)",
+      "docs/architecture/module-boundaries.json (登记本清单全部文件)",
+      "client session 与公共 API client 共享文件 (apps/web)",
+      "package.json / pnpm-lock.yaml / tsconfig / CI"
+    ]
+  },
+  "lanes": {
+    "M12-A": {
+      "scope": "identity 试玩注册策略 + world 基地子域 + provisioning 用例",
+      "files": [
+        "apps/server/src/modules/auth/ 注册策略对应文件 (已有，仅授权注册策略改动)",
+        "apps/server/src/modules/world-runtime/base.service.ts (NEW)",
+        "apps/server/src/modules/world-runtime/base.repository.ts (NEW)",
+        "apps/server/src/application/base/provision-base.ts (NEW)"
+      ],
+      "tests": "同名 unit test 归本线；权限/重复注册/初始化失败用例先写"
+    },
+    "M12-B": {
+      "scope": "industry 建设与供能 + npc 作业者子域 + 纯规则",
+      "files": [
+        "apps/server/src/modules/industry/construction.service.ts (NEW)",
+        "apps/server/src/modules/industry/construction.repository.ts (NEW)",
+        "apps/server/src/modules/industry/power.service.ts (NEW)",
+        "apps/server/src/modules/industry/industry.pure.ts (NEW)",
+        "apps/server/src/modules/npc/robot-factory.ts (NEW)",
+        "apps/server/src/modules/npc/robot-runtime.ts (NEW)"
+      ],
+      "tests": "纯规则 fixture 与同事务失败用例归本线；不改共享 schema，由 P 集成其声明"
+    },
+    "M12-C": {
+      "scope": "鼠标优先基地客户端",
+      "files": [
+        "apps/web/src/features/base/ (NEW 整目录: BaseShell/BaseMap/ObjectPanel/ProjectBoard/styles)"
+      ],
+      "tests": "同名组件测试归本线；数据只从 P 的 session/API 合同取；不改 GameShell 控制器（P/I 切换入口）"
+    },
+    "M12-D": {
+      "scope": "内容定义 + content-catalog 只读 bootstrap",
+      "files": [
+        "packages/content/src/base/schemas.ts (NEW)",
+        "packages/content/src/base/default-release.ts (NEW)",
+        "packages/content/src/base/scenario.ts (NEW)",
+        "apps/server/src/modules/content-catalog/catalog.service.ts (NEW)",
+        "apps/server/src/modules/content-catalog/catalog.repository.ts (NEW)",
+        "apps/server/src/modules/content-catalog/bootstrap-release.ts (NEW)"
+      ],
+      "tests": "schemas 校验测试归本线；不能访问玩家存档；fixture 数值以 A0-02 L-20/L-21 为占位基线"
+    },
+    "M12-Q": {
+      "scope": "独立合同/PG/浏览器验收",
+      "files": ["tests/base-operations/m12/ (NEW 整目录)"],
+      "tests": "最终通过必须在集成候选 HEAD 上成立；runner 由 P 接入；不修改业务代码"
+    },
+    "M12-I": {
+      "scope": "集成与交付",
+      "files": [
+        "apps/server/src/composition 装配收口 (P 交付后由 I 接管)",
+        "packages/shared/src/version.ts (仅发版时)"
+      ]
+    }
+  },
+  "proposedModuleEdges": {
+    "newModules": [
+      { "id": "industry", "allowedDependencies": ["kernel", "content", "rules", "platform", "world", "assets", "npc", "content-catalog"] },
+      { "id": "content-catalog", "allowedDependencies": ["kernel", "content", "platform"] }
+    ],
+    "extendedEdges": [
+      "application -> industry",
+      "application -> content-catalog",
+      "observation -> industry",
+      "composition -> industry",
+      "composition -> content-catalog"
+    ],
+    "landingOwner": "M12-P（唯一写者，单列登记提交；本提案不使存量违规变绿）"
+  },
+  "rules": [
+    "每文件至多一个 active owner；大目录描述仅为参考范围，不是通配写授权",
+    "共享 fixture 由 P 创建冻结版，Q 可提补充，其他线只消费",
+    "独立 worktree/测试DB/端口按 02-parallel §4 执行",
+    "交接按 templates/evidence.md，含 NOT_RUN 与 PARTIAL_MOCK 标注"
+  ]
+}

@@ -1,38 +1,43 @@
-# AI MUD 开发入口（架构3.0）
+# AI MUD /《余电》基地经营开发入口
 
-## 当前状态
+## 当前基线与授权
 
-当前默认任务是架构/模块化设计，非游戏开发。审查源码基线 `690cbc816051b30e323bb005c93c1396e1303c3c`，产品以shared/version.ts为准（0.10.6）。本PR只改设计文档和目标合同，尚未实现模块API、CI护栏或游戏功能。
+2026-09-19确认的源码基线为 `e2677eab514ab7e347a340163282b2d48aeb2788`，产品版本 `packages/shared/src/version.ts` 为0.11.0。每次实施核对actual HEAD/工作树；不要把旧文档的0.10.6、PROPOSED或“未实现检查器”当当前结论。
 
-先读：
-1. `docs/implementation/2026-09-18/README.md`：唯一当前总控3.0。
-2. `docs/architecture/project-constitution.md`：PC-01—16项目约束。
-3. `docs/architecture/modularity.md` 与 `module-catalog.json`：模块归属、公开API和目标允许边。
-4. `docs/architecture/target.md`：运行、事务、时钟、事实、AI、观察与部署语义。
-5. `docs/architecture/2026-09-18-review.md`：源码发现与证据限制。
-6. 经用户明确选定实施时，再读 `architecture-baseline.md`、`modularity-baseline.md` 和对应任务。
+用户已批准新的基地经营里程碑并授权提交文档PR；不代表已实现，也不授权自动实施全路线、合并、生产操作或付费批测。先等待本轮明确指定的A0或Mxx工作包。
 
-以上未带全路径的同名架构包位于 `docs/implementation/2026-09-18/`；module-catalog位于 `docs/architecture/`。原 `docs/architecture.md` 是现状说明，不得把其中未来能力或未验证保证当实现证据。
+## 唯一后续排期入口
 
-## 文档优先级
+1. `docs/implementation/2026-09-19-base-operations/README.md`
+2. 同目录 `00-scope-and-a0.md`、`01-domain-contracts.md`、`02-parallel-development.md`
+3. 用户指定的一个版本包及 `templates/` 内提示词/单线合同/证据模板。
+4. `docs/architecture/project-constitution.md`、`modularity.md` 的通用PC/封装约束，以及真实源码/边界台账。
 
-系统/用户本次明确要求 > 本文件与3.0总控的范围约束 > project-constitution/modularity/target（各管项目、模块、运行合同） > modularity-baseline对ARCH的明确增补 + architecture-baseline > 已重基线且明确选中的功能包 > 历史实现参考。
+新路线：A0 → v0.12接管基地 → v0.13内容/制造 → v0.14Jev协作 → v0.15能源/尘暴 → v0.16经营 → v1.0内测。v1.1像素仍DESIGN_ONLY，另行授权。
 
-旧v0.11.0-foundation、v0.12—v1.1文件、00/01旧合同和旧implementation-prompt仍为REFERENCE_ONLY，不能凭文件中READY或旧F11编号开工。新版v0.11.0是架构收敛，MOD任务包含在其中，不是另一条并行路线。
+`docs/implementation/2026-09-18/`、superpowers历史计划及PR #18原三线改名方案仅作历史排期/实现参考；不得凭旧READY或F11/ARCH编号自动开工，不重复已交付v0.11工作。旧角色/共享镇的产品假设由新scope合同替代，资产/事务/权限等不变量继续。
 
-## 必须遵守
+## 约束优先级
 
-- 没有实施授权，不修改源码、依赖、运行配置、数据库、产品版本或生产；不自动合并PR。
-- 实施时只执行指定ARCH/MOD切片。顺序：ARCH-01→MOD-01→MOD-02→ARCH-02—08（逐项完成MOD-03）→ARCH-09→MOD-04→ARCH-10。
-- 跨模块仅用登记public API；禁止peer internal/repo、裸SQL、万能service locator或本地HTTP绕行。公开type-only import也要遵守依赖图。
-- 一事实一写所有者；共表按列约束。用例协调事务，UoW注入tx绑定模块API；platform不反向依赖业务模块，composition负责绑定。资产、义务、必要可信事实及收据原子提交。
-- 关键一致性走同事务命令；非关键传播可用提交后事件。不能靠可丢事件完成付款/任务，也不能在事务里等待模型。
-- 模型只给非权威选择/表达；Decision/Narrative分离。世界事实、原始玩家意图、模型判断不能混为一谈。
-- 事实产生文案；Query只读；保留独立角色懒结算，不因重构删离线收益。
-- 不在shared堆私有类型，不创建无调用者的未来模块，不用export *把internal全部公开。
-- 新增/删除能力按change-spec模板说明归属、API、资产/义务生命周期与验收。边界策略/allowlist变更须单列审查，不由实现模型为了变绿自行放宽。
-- `module-catalog.json` 是目标合同。MOD-02 已于 2026-09-18 交付并验证 `pnpm arch:check` 与 `pnpm arch:test`（实现位于 `scripts/architecture/`，规则由冻结的 catalog/boundaries/debt 三份 JSON 程序化推导，不得手工复制放宽）。存量违规以 `docs/architecture/legacy-boundary-debt.json` 为唯一豁免依据；新增违规 arch:check 立即失败，不得通过改台账/删测试变绿。无检查环境时缺验证仍写 NOT_RUN。
-- 架构例外精确登记、限期移除，不自动批准新增违规。存档迁移不可静默丢数据，功能停用不得遗留无人处理的托管/预留。
-- 不引入微服务、通用工作流/事件溯源/动态插件沙箱；Phaser像素仍DESIGN_ONLY，不因本次架构设计自动开工。
+系统/用户本次明确要求 > 本文件与新总控的授权/范围 > 新领域合同对基地/内容/时间的明确变更＋通用PC/模块化纪律 > 新版指定工作包 > 旧实现参考。
 
-实跑命令参考CLAUDE.md/package.json，不把lint=tsc当两种独立证据；不把mock当PG/真实模型/真人试玩。启动与验收模板见 `docs/implementation/2026-09-18/templates/architecture-prompt.md`。
+新增industry/content-catalog等允许边与字段归属在A0/P单列Architecture Policy Change并独立确认；新玩法不是绕过当前arch检查的理由。当前检查器已存在，实际命令以package.json为准。更新其配置只能为批准的边界，不为让违规变绿。
+
+## 必守开发规则
+
+- 无实施授权只读/规划；不改源码、依赖、配置、版本、DB或生产，不自动合并PR。
+- 一版本一授权批次；先P冻结public合同/共同fixtures/精确文件所有权，再A—D并发，Q独立验收，I统一交付。每线独立worktree/测试DB/端口。
+- public API是类型化进程内能力，不做跨模块localhost HTTP；禁止peer internal/repo、ORM记录泄漏、全局db逃生口和service locator。
+- 一事实一写者；UoW绑定模块public参与接口，应用用例不执行任意SQL，platform不反向import业务。资源、义务、产出、可信事实与receipt按合同原子提交。
+- 已执行迁移不可改；新增迁移编号/journal/schema/shared协议/组合根/lockfile/版本/架构策略有唯一写者。
+- 模板/配方/发布内容与运行实例分离；发布内容不发资产，批量制造按工单/ordinal幂等产出。停用不删在途义务/历史定义。
+- BaseId与CharacterId分开；独立基地simTime与墙钟分开。早期离线暂停，玩家快进不进入共享实时经济；前端帧率/轮询不决定收益。
+- 地图/项目板/机器人todo消费同一真实计划；缺电/缺料/缺设备不能倒计时到点自动完成，文字不能反推规则。
+- Jev只给有限选择/提案，执行前重验；普通调度/算术/验收是代码。模型网络在事务外，预算/超时/取消/迟到保护必需，不维持每机常驻大模型。
+- 开发试玩可无邀请码/验证/强密码，但保留哈希/会话/CSRF/基地隔离与预算；普通账号无内容发布/资产补偿管理权。
+- 内容/新手保持简单；不因为小说有某概念就先建复杂制度；不把新游戏写成西幻对象改名。
+- 不增微服务、万能工作流/脚本平台或权威DuckDB。DuckDB若使用，只处理隔离分析导出；像素引擎不提前安装。
+- 验证区分静态/mock/真PG/E2E/真人/真实模型。零测试、历史CI、lint=tsc不能伪作独立证据；无环境写NOT_RUN。
+- 不修改allowlist/删失败测试掩盖问题；约束变更单列审查。游戏退役测试逐项说明保留/替换/移除理由。
+
+运行命令参考CLAUDE.md与实际package.json，不沿用旧排期。DB脚本可能读取.env，先确认隔离测试源；不能操作未知生产数据。每次交付精确HEAD、API/文件变化、实际测试与回退。文档批准或测试通过都不是自动上线授权。
