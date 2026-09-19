@@ -12,6 +12,7 @@ import type {
   ManufacturingJobStatus,
   ProjectStatus,
   RobotStatus,
+  OrderStatus,
   StepKind,
   StepStatus,
   WeatherType
@@ -111,6 +112,8 @@ export interface ContentCatalogPort {
   getItemInfo(): Record<string, { name: string; description: string }>;
   getRecipeTemplate(stableId: string): RecipeTemplateSpec | null;
   listRecipes(): RecipeTemplateSpec[];
+  getOrderTemplate(stableId: string): ProjectTemplateSpec | null;
+  listOrderTemplates(): ProjectTemplateSpec[];
   getRobotTemplate(stableId: string): RobotTemplateSpec | null;
   getFacilityInfo(stableId: string): {
     name: string;
@@ -182,6 +185,32 @@ export interface BaseServiceDeps {
   catalog: ContentCatalogPort;
   industryRead: BaseIndustryReadPort;
   robotRead: BaseRobotReadPort;
+  economyRead: {
+    getCredits(baseId: string): Promise<number>;
+    listOrdersForBase(baseId: string): Promise<
+      Array<{
+        id: string;
+        orderDefId: string;
+        orderRevision: number;
+        status: string;
+        requiredItemId: string;
+        quantity: number;
+        rewardCredits: number;
+        deadlineSim: Date | null;
+        acceptedAtSim: Date | null;
+      }>
+    >;
+    listPurchasesForBase(baseId: string): Promise<
+      Array<{
+        id: string;
+        itemId: string;
+        quantity: number;
+        costCredits: number;
+        status: string;
+        arrivesAtSim: Date;
+      }>
+    >;
+  };
   cooperationRead: {
     listByBase(baseId: string): Promise<
       Array<{
@@ -496,6 +525,34 @@ export class BaseService {
               }),
           dustLevel: powerRecord?.dustLevel ?? 30
         },
+        credits: await this.deps.economyRead.getCredits(baseId),
+        orders: (
+          await this.deps.economyRead.listOrdersForBase(baseId)
+        ).map((order) => {
+          const template = this.deps.catalog.getOrderTemplate(order.orderDefId);
+          return {
+            orderId: order.id,
+            orderRef: { kind: "order" as const, stableId: order.orderDefId, revision: order.orderRevision },
+            name: template?.name ?? order.orderDefId,
+            status: order.status as OrderStatus,
+            requiredItemId: order.requiredItemId,
+            requiredItemName:
+              this.deps.catalog.getItemInfo()[order.requiredItemId]?.name ?? order.requiredItemId,
+            quantity: order.quantity,
+            rewardCredits: order.rewardCredits,
+            deadlineSim: order.deadlineSim?.toISOString() ?? null,
+            acceptedAtSim: order.acceptedAtSim?.toISOString() ?? null
+          };
+        }),
+        purchases: (await this.deps.economyRead.listPurchasesForBase(baseId)).map((purchase) => ({
+          purchaseId: purchase.id,
+          itemId: purchase.itemId,
+          itemName: this.deps.catalog.getItemInfo()[purchase.itemId]?.name ?? purchase.itemId,
+          quantity: purchase.quantity,
+          costCredits: purchase.costCredits,
+          status: purchase.status as "in_transit" | "delivered",
+          arrivesAtSim: purchase.arrivesAtSim.toISOString()
+        })),
         cooperationRequests: (await this.deps.cooperationRead.listByBase(baseId)).map(
           (request) => ({
             requestId: request.id,

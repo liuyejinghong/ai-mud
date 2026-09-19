@@ -6,8 +6,10 @@ import {
   BASE_FACILITY_INFO as FACILITY_INFO,
   DEFAULT_BASE_CONTENT_RELEASE,
   type ContentItemInfo,
+  type ContentOrderTemplate,
   type ContentRecipeTemplate,
   validateItemNames,
+  validateOrderTemplate,
   validateRecipeTemplate,
   validateProjectTemplate,
   validateProvisionSeed,
@@ -17,14 +19,14 @@ import {
   type ContentProvisionSeed,
   type ContentRobotTemplate
 } from "@ai-mud/content";
-import type { ProjectTemplateDto, RecipeTemplateDto, RobotTemplateDto } from "@ai-mud/shared";
+import type { OrderTemplateDto, ProjectTemplateDto, RecipeTemplateDto, RobotTemplateDto } from "@ai-mud/shared";
 // 结构等价镜像 application/base/ports.ts 的 ContentCatalogPort（content-catalog 不允许
 // 依赖 application；composition 按结构绑定，漂移由 catalog.service.test.ts 锁定）。
 interface ProvisionSeedSiteDto {
   siteKey: string;
   name: string;
   state: "free" | "built";
-  facilityRef?: { kind: "project" | "robot_template" | "facility" | "recipe"; stableId: string; revision: number };
+  facilityRef?: { kind: "project" | "robot_template" | "facility" | "recipe" | "order"; stableId: string; revision: number };
 }
 
 interface ProvisionSeedDto {
@@ -46,6 +48,8 @@ export interface ContentCatalogPort {
   getItemInfo(): Record<string, ContentItemInfo>;
   getRecipeTemplate(stableId: string): RecipeTemplateDto | null;
   listRecipes(): RecipeTemplateDto[];
+  getOrderTemplate(stableId: string): OrderTemplateDto | null;
+  listOrderTemplates(): OrderTemplateDto[];
   getFacilityInfo(stableId: string): {
     name: string;
     note: string;
@@ -118,8 +122,26 @@ function toRecipeTemplateDto(recipe: ContentRecipeTemplate): RecipeTemplateDto {
   };
 }
 
+function toOrderTemplateDto(order: ContentOrderTemplate): OrderTemplateDto {
+  return {
+    ref: { ...order.ref },
+    name: order.name,
+    description: order.description,
+    requiredItemId: order.requiredItemId,
+    quantity: order.quantity,
+    rewardCredits: order.rewardCredits,
+    deadlineSimHours: order.deadlineSimHours
+  };
+}
+
 function assertReleaseValid(release: ContentBaseRelease): void {
   const failures: string[] = [];
+  for (const order of release.orderTemplates ?? []) {
+    const errors = validateOrderTemplate(order);
+    if (errors.length > 0) {
+      failures.push(`order "${order.ref?.stableId ?? "?"}": ${errors.join("; ")}`);
+    }
+  }
   for (const recipe of release.recipes ?? []) {
     const errors = validateRecipeTemplate(recipe);
     if (errors.length > 0) {
@@ -185,6 +207,9 @@ export function createContentCatalog(
   const recipesByStableId = new Map(
     release.recipes.map((recipe) => [recipe.ref.stableId, recipe] as const)
   );
+  const ordersByStableId = new Map(
+    release.orderTemplates.map((order) => [order.ref.stableId, order] as const)
+  );
 
   return {
     releaseId: () => release.releaseId,
@@ -201,6 +226,11 @@ export function createContentCatalog(
       return recipe === undefined ? null : toRecipeTemplateDto(recipe);
     },
     listRecipes: (): RecipeTemplateDto[] => release.recipes.map(toRecipeTemplateDto),
+    getOrderTemplate: (stableId: string): OrderTemplateDto | null => {
+      const order = ordersByStableId.get(stableId);
+      return order === undefined ? null : toOrderTemplateDto(order);
+    },
+    listOrderTemplates: (): OrderTemplateDto[] => release.orderTemplates.map(toOrderTemplateDto),
     listTemplates: () => ({
       robots: release.robots.map(toRobotTemplateDto),
       projects: release.projects.map(toProjectTemplateDto)

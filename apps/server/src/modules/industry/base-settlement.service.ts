@@ -71,6 +71,11 @@ export interface BaseSettlementDeps {
   clock: SettlementClockPort;
   // M13-C 制造结算（可选：未绑定时跳过，v0.12 行为不变）。
   manufacturing?: BaseManufacturingSettlePort;
+  // M16 订单/采购 tick（可选：未绑定时跳过）。
+  economy?: {
+    markExpiredAndRefresh(tx: IndustryTx, baseId: string, sim: Date): Promise<unknown>;
+    settlePurchases(tx: IndustryTx, baseId: string, sim: Date): Promise<unknown>;
+  };
   // M14 协作（可选：未绑定时跳过）。
   cooperation?: {
     // 检测缺工步骤→发起/决策协作请求→接受 helper 绑定（M14-B 服务）。
@@ -150,6 +155,12 @@ export class BaseSettlementService {
     deltaSimMs: number,
     nextSimTime: Date
   ): Promise<void> {
+    // ---------- M16 经济 tick：过期订单→failed、补单、采购到货入库 ----------
+    if (this.deps.economy) {
+      await this.deps.economy.markExpiredAndRefresh(tx, baseId, simTime);
+      await this.deps.economy.settlePurchases(tx, baseId, simTime);
+    }
+
     const industry = this.deps.openIndustry(tx);
     const robots = this.deps.openRobots(tx);
     const power = await industry.getPowerState(baseId);

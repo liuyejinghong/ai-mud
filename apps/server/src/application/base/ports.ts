@@ -5,6 +5,7 @@ import type {
   CreateProjectInputDto,
   CreateProjectResultDto,
   DefinitionRefDto,
+  OrderTemplateDto,
   ProjectTemplateDto,
   RecipeTemplateDto,
   RobotTemplateDto
@@ -68,6 +69,8 @@ export interface ContentCatalogPort {
   getItemInfo(): Record<string, { name: string; description: string }>;
   getRecipeTemplate(stableId: string): RecipeTemplateDto | null;
   listRecipes(): RecipeTemplateDto[];
+  getOrderTemplate(stableId: string): OrderTemplateDto | null;
+  listOrderTemplates(): OrderTemplateDto[];
   getFacilityInfo(stableId: string): BaseFacilityInfoDto | null;
   getRobotTemplate(stableId: string): RobotTemplateDto | null;
   getProjectTemplate(stableId: string): ProjectTemplateDto | null;

@@ -162,6 +162,11 @@ function buildControlledOperations(db: Db, clock: { now(): Date }): ControlledOp
     },
     cooperationRead: {
       listByBase: async () => []
+    },
+    economyRead: {
+      getCredits: async () => 500,
+      listOrdersForBase: async () => [],
+      listPurchasesForBase: async () => []
     }
   });
 

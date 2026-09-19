@@ -1,4 +1,5 @@
 import type { CooperationRequestDto } from "./decision.js";
+import type { BaseOrderDto, PurchaseOrderDto } from "./economy.js";
 import type {
   ManufacturingJobDto,
   RecipeTemplateDto
@@ -48,7 +49,7 @@ export const SIM_DAYLIGHT_END_HOUR = 18;
 
 // 内容目录引用：kind + 稳定 ID + 修订。运行实例固定开工时修订，不静默升级。
 export interface DefinitionRefDto {
-  kind: "robot_template" | "project" | "facility" | "recipe";
+  kind: "robot_template" | "project" | "facility" | "recipe" | "order";
   stableId: string;
   revision: number;
 }
@@ -203,6 +204,9 @@ export interface BaseSnapshotDto {
   manufacturingJobs: ManufacturingJobDto[];
   availableRecipes: RecipeTemplateDto[];
   cooperationRequests: CooperationRequestDto[];
+  credits: number;
+  orders: BaseOrderDto[];
+  purchases: PurchaseOrderDto[];
   weather: BaseWeatherDto;
   controlLease: BaseControlLeaseDto;
 }

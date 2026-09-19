@@ -18,7 +18,7 @@ export const CONTENT_SEED_SITE_STATES = ["free", "built"] as const;
 export type ContentSeedSiteState = (typeof CONTENT_SEED_SITE_STATES)[number];
 
 export interface ContentDefinitionRef {
-  kind: "robot_template" | "project" | "facility" | "recipe";
+  kind: "robot_template" | "project" | "facility" | "recipe" | "order";
   stableId: string;
   revision: number;
 }
@@ -91,6 +91,7 @@ export interface ContentBaseRelease {
   robots: ContentRobotTemplate[];
   projects: ContentProjectTemplate[];
   recipes: ContentRecipeTemplate[];
+  orderTemplates: ContentOrderTemplate[];
   provisionSeed: ContentProvisionSeed;
 }
 
@@ -466,6 +467,16 @@ export interface ContentRecipeTemplate {
   output: { templateStableId: string; initialBatteryWh: number };
 }
 
+export interface ContentOrderTemplate {
+  ref: ContentDefinitionRef;
+  name: string;
+  description: string;
+  requiredItemId: string;
+  quantity: number;
+  rewardCredits: number;
+  deadlineSimHours: number;
+}
+
 export interface ContentItemInfo {
   name: string;
   description: string;
@@ -530,6 +541,42 @@ export function validateRecipeTemplate(recipe: ContentRecipeTemplate): string[] 
     if (!isPositiveInteger(output.initialBatteryWh)) {
       errors.push(`${label}.output.initialBatteryWh must be a positive integer`);
     }
+  }
+  return errors;
+}
+
+const ORDER_KEYS = [
+  "ref",
+  "name",
+  "description",
+  "requiredItemId",
+  "quantity",
+  "rewardCredits",
+  "deadlineSimHours"
+] as const;
+
+export function validateOrderTemplate(order: ContentOrderTemplate): string[] {
+  const errors: string[] = [];
+  const label = `order "${order.ref?.stableId ?? "?"}"`;
+  collectUnknownKeys(order, ORDER_KEYS, label, errors);
+  validateDefinitionRef(order.ref, "order", label, errors);
+  if (!isNonEmptyString(order.name)) {
+    errors.push(`${label}.name must be a non-empty string`);
+  }
+  if (!isNonEmptyString(order.description)) {
+    errors.push(`${label}.description must be a non-empty string`);
+  }
+  if (!isNonEmptyString(order.requiredItemId)) {
+    errors.push(`${label}.requiredItemId must be a non-empty string`);
+  }
+  if (!isPositiveInteger(order.quantity)) {
+    errors.push(`${label}.quantity must be a positive integer`);
+  }
+  if (!isPositiveInteger(order.rewardCredits)) {
+    errors.push(`${label}.rewardCredits must be a positive integer`);
+  }
+  if (!isPositiveInteger(order.deadlineSimHours)) {
+    errors.push(`${label}.deadlineSimHours must be a positive integer`);
   }
   return errors;
 }

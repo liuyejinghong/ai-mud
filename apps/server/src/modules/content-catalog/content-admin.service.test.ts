@@ -331,6 +331,7 @@ describe("ContentAdminService publish", () => {
       robots: [...DEFAULT_BASE_CONTENT_RELEASE.robots, robotPayload],
       projects: [...DEFAULT_BASE_CONTENT_RELEASE.projects],
       recipes: [recipePayload, ...DEFAULT_BASE_CONTENT_RELEASE.recipes.slice(1)],
+      orderTemplates: [...DEFAULT_BASE_CONTENT_RELEASE.orderTemplates],
       provisionSeed: { ...DEFAULT_BASE_CONTENT_RELEASE.provisionSeed }
     };
     const expectedHash = createHash("sha256").update(JSON.stringify(expectedBody)).digest("hex");

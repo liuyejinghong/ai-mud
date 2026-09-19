@@ -114,7 +114,8 @@
         "content",
         "rules",
         "platform",
-        "assets"
+        "assets",
+        "industry"
       ],
       "owns": "Quotes, trade policy, economic recipes and trade records; stock quantities are assets."
     },

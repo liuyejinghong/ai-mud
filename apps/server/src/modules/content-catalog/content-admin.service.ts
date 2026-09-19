@@ -3,11 +3,13 @@ import {
   DEFAULT_BASE_CONTENT_RELEASE,
   type ContentBaseRelease,
   type ContentItemInfo,
+  type ContentOrderTemplate,
   type ContentProjectTemplate,
   type ContentProvisionSeed,
   type ContentRecipeTemplate,
   type ContentRobotTemplate,
   validateItemNames,
+  validateOrderTemplate,
   validateProjectTemplate,
   validateProvisionSeed,
   validateRecipeTemplate,
@@ -120,6 +122,7 @@ interface MergedPackageBody {
   robots: ContentRobotTemplate[];
   projects: ContentProjectTemplate[];
   recipes: ContentRecipeTemplate[];
+  orderTemplates: ContentOrderTemplate[];
   provisionSeed: ContentProvisionSeed;
 }
 
@@ -148,12 +151,14 @@ function mergePackage(drafts: readonly ContentDraftRecord[]): MergedPackageBody 
     robots: [...builtIn.robots],
     projects: [...builtIn.projects],
     recipes: [...builtIn.recipes],
+    orderTemplates: [...builtIn.orderTemplates],
     provisionSeed: { ...builtIn.provisionSeed }
   };
   for (const draft of drafts) {
     if (draft.kind === "robot_template") upsertByStableId(body.robots, draft);
     else if (draft.kind === "project") upsertByStableId(body.projects, draft);
     else if (draft.kind === "recipe") upsertByStableId(body.recipes, draft);
+    else if (draft.kind === "order") upsertByStableId(body.orderTemplates, draft);
   }
   return body;
 }
@@ -215,6 +220,7 @@ function toReleasePayload(releaseId: string, body: MergedPackageBody): ContentBa
     robots: body.robots,
     projects: body.projects,
     recipes: body.recipes,
+    orderTemplates: body.orderTemplates,
     provisionSeed: { ...body.provisionSeed, releaseId }
   };
 }

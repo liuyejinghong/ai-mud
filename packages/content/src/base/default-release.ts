@@ -6,6 +6,7 @@ import type {
   ContentBaseRelease,
   ContentFacilityInfo,
   ContentItemInfo,
+  ContentOrderTemplate,
   ContentRecipeTemplate,
   ContentProjectTemplate,
   ContentProvisionSeed,
@@ -246,11 +247,42 @@ export const BASE_RECIPE_TEMPLATES: ContentRecipeTemplate[] = [
   }
 ];
 
+export const BASE_ORDER_TEMPLATES: ContentOrderTemplate[] = [
+  {
+    ref: { kind: "order", stableId: "order-solar-buyback", revision: 1 },
+    name: "补给站收购太阳电池组件",
+    description: "着陆区补给站长期收购太阳电池组件，交付后结清账款。",
+    requiredItemId: "solar_panel_set",
+    quantity: 4,
+    rewardCredits: 700,
+    deadlineSimHours: 48
+  },
+  {
+    ref: { kind: "order", stableId: "order-frame-tender", revision: 1 },
+    name: "前哨建设招标：支架结构件",
+    description: "第二施工队急需支架结构件，愿意溢价收购。",
+    requiredItemId: "support_frame",
+    quantity: 6,
+    rewardCredits: 500,
+    deadlineSimHours: 48
+  },
+  {
+    ref: { kind: "order", stableId: "order-maintenance-restock", revision: 1 },
+    name: "设备维护耗材采购",
+    description: "维护工位补给通用备件，用于基地设备例行检修。",
+    requiredItemId: "spare_parts",
+    quantity: 10,
+    rewardCredits: 450,
+    deadlineSimHours: 72
+  }
+];
+
 export const DEFAULT_BASE_CONTENT_RELEASE: ContentBaseRelease = {
   releaseId: RELEASE_ID,
   itemNames: BASE_ITEM_INFO,
   robots: BASE_ROBOT_TEMPLATES,
   projects: BASE_PROJECT_TEMPLATES,
   recipes: BASE_RECIPE_TEMPLATES,
+  orderTemplates: BASE_ORDER_TEMPLATES,
   provisionSeed: BASE_PROVISION_SEED
 };

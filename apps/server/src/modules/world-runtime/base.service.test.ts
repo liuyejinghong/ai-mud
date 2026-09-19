@@ -238,7 +238,7 @@ class FakeIndustryInit implements Pick<BaseServiceDeps["industryInit"], "ensureP
   }
 }
 
-class FakeCatalog implements Pick<ContentCatalogPort, "getProvisionSeed" | "getRobotTemplate" | "getProjectTemplate" | "listTemplates" | "getRecipeTemplate" | "listRecipes"> {
+class FakeCatalog implements Pick<ContentCatalogPort, "getProvisionSeed" | "getRobotTemplate" | "getProjectTemplate" | "listTemplates" | "getRecipeTemplate" | "listRecipes" | "getOrderTemplate" | "listOrderTemplates"> {
   seed: ProvisionSeedSpec;
   robots = new Map<string, RobotTemplateSpec>();
   projects = new Map<string, ProjectTemplateSpec>();
@@ -252,6 +252,14 @@ class FakeCatalog implements Pick<ContentCatalogPort, "getProvisionSeed" | "getR
   }
 
   listRecipes() {
+    return [];
+  }
+
+  getOrderTemplate(stableId: string) {
+    return null;
+  }
+
+  listOrderTemplates() {
     return [];
   }
 
@@ -394,7 +402,12 @@ function createFixture(options: {
     industryRead,
     robotRead,
     manufacturingRead: { listJobsForBase: async () => [] },
-    cooperationRead: { listByBase: async () => [] }
+    cooperationRead: { listByBase: async () => [] },
+    economyRead: {
+      getCredits: async () => 500,
+      listOrdersForBase: async () => [],
+      listPurchasesForBase: async () => []
+    }
   });
   return { service, repo, assets, robots, industryInit, catalog, industryRead, robotRead };
 }
@@ -804,6 +817,9 @@ describe("BaseService.snapshot", () => {
       availableRecipes: [],
       manufacturingJobs: [],
       cooperationRequests: [],
+      credits: 500,
+      orders: [],
+      purchases: [],
       weather: {
         current: "clear",
         lightFactor: 1.0,

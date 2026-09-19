@@ -19,6 +19,9 @@ import {
 } from "../../modules/industry/cooperation.service.js";
 import { CooperationRepository } from "../../modules/industry/cooperation.repository.js";
 import { DecisionGateway } from "../../modules/ai/decision-gateway.js";
+import { createEconomyUseCases } from "../economy/usecases.js";
+import { OrderRepository } from "../../modules/economy/order.repository.js";
+import { PurchaseRepository } from "../../modules/economy/purchase.repository.js";
 import { WeatherService } from "../../modules/world-runtime/weather.service.js";
 import { settleManufacturing } from "../../modules/industry/manufacturing.settlement.js";
 import {
@@ -80,6 +83,13 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     weather: {
       current: (baseId: string, simTime: Date) =>
         new WeatherService(db).current(db, baseId, simTime)
+    },
+    economyRead: {
+      getCredits: async (baseId: string) => (await new PurchaseRepository(db).getCredits(db, baseId)) ?? 0,
+      listOrdersForBase: async (baseId: string) =>
+        new OrderRepository(db).listOrdersForBase(db, baseId),
+      listPurchasesForBase: async (baseId: string) =>
+        new PurchaseRepository(db).listPurchasesForBase(db, baseId)
     },
     cooperationRead: {
       listByBase: async (baseId: string) => {
@@ -237,6 +247,23 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     }
   };
 
+
+
+  const economy = createEconomyUseCases(db, catalog);
+  const economyTick = {
+    markExpiredAndRefresh: (tx: IndustryTx, baseId: string, sim: Date) =>
+      new OrderRepository(tx)
+        .markExpiredOrders(tx, baseId, sim)
+        .then(() => economy.orders.ensureOrders(tx, baseId, sim)),
+    settlePurchases: (tx: IndustryTx, baseId: string, sim: Date) =>
+      economy.purchases.settlePurchases(tx, baseId, sim)
+  };
+
+  const contentAdmin = new ContentAdminUseCases(
+    db,
+    new ContentAdminService((tx) => new ContentAdminRepository(tx))
+  );
+
   const settlement = new BaseSettlementService({
     clock: baseRepo,
     sites: baseRepo,
@@ -245,6 +272,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     openIndustry: (tx) => new IndustryRepository(tx),
     openRobots: (tx) => (tx === db ? robotRuntime : new RobotRuntimeService(tx)),
     cooperation,
+    economy: economyTick,
     manufacturing: {
       settle: (tx, now, input) =>
         settleManufacturing(tx, now, {
@@ -262,11 +290,6 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     }
   });
 
-
-  const contentAdmin = new ContentAdminUseCases(
-    db,
-    new ContentAdminService((tx) => new ContentAdminRepository(tx))
-  );
 
   // 管理员会话门面（M13-B 路由消费；与 admin.routes 默认实现同语义）。
   const adminSession = {
@@ -288,5 +311,13 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     }
   };
 
-  return { session, projects, settlement, manufacturingJobs, contentAdmin, adminSession };
+  return {
+    session,
+    projects,
+    settlement,
+    manufacturingJobs,
+    contentAdmin,
+    adminSession,
+    economy
+  };
 }
