@@ -122,7 +122,15 @@ export interface BaseAuthFacade {
 
 export interface PlaytestRegistrationFacade {
   checkRateLimit(input: { email: string; ip: string }): Promise<{ ok: boolean; retryAfterSeconds: number }>;
-  createPlaytestAccount(input: { email: string; password: string }): Promise<{ accountId: string }>;
+  createPlaytestAccount(input: {
+    email: string;
+    password: string;
+  }): Promise<{ accountId: string; email: string; sessionToken: string; csrfToken: string }>;
+}
+
+// world：账号 → 初始基地（一账号一基地）
+export interface BaseLookupPort {
+  findBaseIdByAccount(tx: BaseTx, accountId: string): Promise<string | null>;
 }
 
 export interface ProvisionUseCase {
