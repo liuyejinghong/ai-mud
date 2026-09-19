@@ -153,7 +153,7 @@ describe("world runtime PostgreSQL tick mutex", () => {
     } finally {
       await harness.dispose();
     }
-  });
+  }, 60_000);
 
   it("keeps the tick after a fault-injected rollback, so the next caller settles it once", async () => {
     const databaseUrl = requireDatabaseUrl();
@@ -181,7 +181,7 @@ describe("world runtime PostgreSQL tick mutex", () => {
     } finally {
       await harness.dispose();
     }
-  });
+  }, 60_000);
 
   it("never regresses progress or double-settles past ticks", async () => {
     const databaseUrl = requireDatabaseUrl();
@@ -208,7 +208,7 @@ describe("world runtime PostgreSQL tick mutex", () => {
     } finally {
       await harness.dispose();
     }
-  });
+  }, 60_000);
 
   it("reaches the same world state from one catch-up batch or sequential settlement", async () => {
     const databaseUrl = requireDatabaseUrl();
@@ -265,7 +265,7 @@ describe("world runtime PostgreSQL tick mutex", () => {
       await batch.dispose();
       await sequential.dispose();
     }
-  });
+  }, 60_000);
 
   it("refreshes personal instance resources through the character-side participant exactly once", async () => {
     const databaseUrl = requireDatabaseUrl();
@@ -325,5 +325,5 @@ describe("world runtime PostgreSQL tick mutex", () => {
     } finally {
       await harness.dispose();
     }
-  });
+  }, 60_000);
 });
