@@ -2388,6 +2388,97 @@
       "layer": "test",
       "scope": "test",
       "note": "M13-Q 制造全链/ordinal 幂等/故障注入（真 PG）"
+    },
+    {
+      "path": "packages/shared/src/decision.ts",
+      "module": "protocol",
+      "layer": "protocol",
+      "scope": "production",
+      "note": "M14-P 决策与协作协议"
+    },
+    {
+      "path": "apps/server/src/modules/ai/decision-provider.ts",
+      "module": "ai",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M14-A 规则决策提供者 + 三模式 seam"
+    },
+    {
+      "path": "apps/server/src/modules/ai/decision-gateway.ts",
+      "module": "ai",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M14-A 决策网关（超时/审计/decision_records 写者）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/decision-provider.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14-A"
+    },
+    {
+      "path": "apps/server/src/modules/ai/decision-gateway.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14-A"
+    },
+    {
+      "path": "apps/server/src/modules/industry/cooperation.service.ts",
+      "module": "industry",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M14-B 协作请求/决策/跨组支援调度"
+    },
+    {
+      "path": "apps/server/src/modules/industry/cooperation.repository.ts",
+      "module": "industry",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "M14-B cooperation_requests 访问"
+    },
+    {
+      "path": "apps/server/src/modules/industry/cooperation.service.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14-B"
+    },
+    {
+      "path": "apps/web/src/features/base/CooperationPanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M14-C 协作状态展示"
+    },
+    {
+      "path": "apps/web/src/features/base/CooperationPanel.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14-C"
+    },
+    {
+      "path": "packages/ai-prompts/src/decision.ts",
+      "module": "ai",
+      "layer": "content",
+      "scope": "production",
+      "note": "M14-D 决策中文表达模板"
+    },
+    {
+      "path": "packages/ai-prompts/src/decision.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14-D"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/m14/cooperation.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14-Q 真 PG 协作闭环"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",

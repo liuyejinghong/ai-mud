@@ -1,3 +1,8 @@
+import type {
+  ManufacturingJobDto,
+  RecipeTemplateDto
+} from "./content-admin.js";
+
 // 基地经营公共协议（M12-P 冻结，contractVersion 0.12.0-p1）。
 // 事实唯一写者与接口语义见 docs/reviews/base-operations/contracts.md §4—§6。
 // 纯类型与常量：不包含服务端实现，不得 import 服务端模块。

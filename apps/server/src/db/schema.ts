@@ -1189,3 +1189,67 @@ export const baseManufacturingOutputs = pgTable(
     )
   })
 );
+
+// ---------------------------------------------------------------------------
+// Jev 协作与决策审计（v0.14，M14-P）：决策记录只审计不授权；协作请求是
+// industry 的真实调度事实（跨组支援），RULE 模式下由规则决策。
+// ---------------------------------------------------------------------------
+
+export const decisionRecords = pgTable(
+  "decision_records",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    decisionId: text("decision_id").notNull().unique(),
+    purpose: text("purpose").notNull(),
+    mode: text("mode").notNull(),
+    provider: text("provider").notNull(),
+    baseId: uuid("base_id").references(() => bases.id),
+    planRevision: integer("plan_revision").notNull(),
+    question: text("question").notNull(),
+    candidates: jsonb("candidates").notNull().default([]),
+    selectedCandidateId: text("selected_candidate_id"),
+    latencyMs: integer("latency_ms").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    purposeIdx: index("decision_records_purpose_idx").on(table.purpose, table.createdAt),
+    modeCheck: check(
+      "decision_records_mode_check",
+      sql`${table.mode} IN ('rule', 'shadow', 'live')`
+    ),
+    purposeCheck: check(
+      "decision_records_purpose_check",
+      sql`${table.purpose} IN ('transport_assistance', 'work_assignment')`
+    )
+  })
+);
+
+export const cooperationRequests = pgTable(
+  "cooperation_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    baseId: uuid("base_id")
+      .notNull()
+      .references(() => bases.id),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => baseProjects.id),
+    stepIndex: integer("step_index").notNull(),
+    fromGroupId: text("from_group_id").notNull(),
+    helperGroupId: text("helper_group_id").notNull(),
+    status: text("status").notNull().default("pending"),
+    helperOperatorId: uuid("helper_operator_id"),
+    decisionId: text("decision_id"),
+    question: text("question").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true })
+  },
+  (table) => ({
+    baseStatusIdx: index("cooperation_requests_base_status_idx").on(table.baseId, table.status),
+    baseProjectIdx: index("cooperation_requests_base_project_idx").on(table.baseId),
+    statusCheck: check(
+      "cooperation_requests_status_check",
+      sql`${table.status} IN ('pending', 'accepted', 'declined', 'expired', 'fulfilled')`
+    )
+  })
+);
