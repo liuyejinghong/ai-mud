@@ -1002,6 +1002,8 @@ export const basePowerState = pgTable(
     storageWh: integer("storage_wh").notNull(),
     storageCapacityWh: integer("storage_capacity_wh").notNull(),
     lastLoadW: integer("last_load_w").notNull().default(0),
+    // 积尘等级 0—100（M15）：尘暴期间上升，晴天下缓慢沉降；清洁工程归零。
+    dustLevel: integer("dust_level").notNull().default(30),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
@@ -1250,6 +1252,31 @@ export const cooperationRequests = pgTable(
     statusCheck: check(
       "cooperation_requests_status_check",
       sql`${table.status} IN ('pending', 'accepted', 'declined', 'expired', 'fulfilled')`
+    )
+  })
+);
+
+// 天气日程（M15-P）：确定性循环序列，provision 时生成；结算按 simTime 查当前段。
+export const weatherSchedule = pgTable(
+  "base_weather_schedule",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    baseId: uuid("base_id")
+      .notNull()
+      .references(() => bases.id),
+    seq: integer("seq").notNull(),
+    weather: text("weather").notNull(),
+    startSim: timestamp("start_sim", { withTimezone: true }).notNull(),
+    endSim: timestamp("end_sim", { withTimezone: true }).notNull()
+  },
+  (table) => ({
+    baseStartIdx: uniqueIndex("base_weather_schedule_base_start_idx").on(
+      table.baseId,
+      table.startSim
+    ),
+    weatherCheck: check(
+      "base_weather_schedule_weather_check",
+      sql`${table.weather} IN ('clear', 'warning', 'storm')`
     )
   })
 );

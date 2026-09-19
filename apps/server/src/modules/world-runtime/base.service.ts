@@ -13,7 +13,8 @@ import type {
   ProjectStatus,
   RobotStatus,
   StepKind,
-  StepStatus
+  StepStatus,
+  WeatherType
 } from "@ai-mud/shared";
 import { BASE_LEASE_TTL_MS, BASE_SPEEDS, definitionRefKey } from "@ai-mud/shared";
 import type { ErrorCode } from "@ai-mud/shared";
@@ -128,6 +129,7 @@ export interface BaseIndustryReadPort {
     storageWh: number;
     storageCapacityWh: number;
     lastLoadW: number;
+    dustLevel: number;
   } | null>;
   listProjects(baseId: string): Promise<
     Array<{
@@ -194,6 +196,14 @@ export interface BaseServiceDeps {
         createdAt: Date | null;
       }>
     >;
+  };
+  weather?: {
+    current(baseId: string, simTime: Date): Promise<{
+      current: WeatherType;
+      lightFactor: number;
+      nextChangeAt: Date;
+      nextWeather: WeatherType;
+    }>;
   };
   manufacturingRead: {
     listJobsForBase(baseId: string): Promise<
@@ -472,6 +482,20 @@ export class BaseService {
           workPerUnit: recipe.workPerUnit,
           output: { ...recipe.output }
         })),
+        weather: {
+          ...(this.deps.weather
+            ? await this.deps.weather.current(baseId, base.simTime).then((weather) => ({
+                ...weather,
+                nextChangeAt: weather.nextChangeAt.toISOString()
+              }))
+            : {
+                current: "clear" as WeatherType,
+                lightFactor: 1.0,
+                nextChangeAt: base.simTime.toISOString(),
+                nextWeather: "clear" as WeatherType
+              }),
+          dustLevel: powerRecord?.dustLevel ?? 30
+        },
         cooperationRequests: (await this.deps.cooperationRead.listByBase(baseId)).map(
           (request) => ({
             requestId: request.id,

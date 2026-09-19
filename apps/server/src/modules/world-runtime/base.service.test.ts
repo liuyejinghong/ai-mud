@@ -638,7 +638,8 @@ describe("BaseService.snapshot", () => {
       generationWPeak: 15000,
       storageWh: 100000,
       storageCapacityWh: 200000,
-      lastLoadW: 1000
+      lastLoadW: 1000,
+      dustLevel: 30
     };
     fx.industryRead.projects = [
       {
@@ -803,6 +804,13 @@ describe("BaseService.snapshot", () => {
       availableRecipes: [],
       manufacturingJobs: [],
       cooperationRequests: [],
+      weather: {
+        current: "clear",
+        lightFactor: 1.0,
+        dustLevel: 30,
+        nextChangeAt: "2026-09-19T02:00:00.000Z", // fallback：无天气绑定 → base.simTime
+        nextWeather: "clear"
+      },
       controlLease: {
         heldByThisSession: true,
         leaseUntil: new Date(T1.getTime() + 60_000).toISOString()

@@ -68,7 +68,8 @@ function makePower(): BasePowerRecord {
     generationWPeak: 15_000,
     storageWh: 100_000,
     storageCapacityWh: 200_000,
-    lastLoadW: 0
+    lastLoadW: 0,
+    dustLevel: 0
   };
 }
 

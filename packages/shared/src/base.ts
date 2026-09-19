@@ -165,6 +165,21 @@ export interface BaseControlLeaseDto {
   leaseUntil: string | null;
 }
 
+// ---------- 天气（M15，确定性循环序列，无随机） ----------
+export const WEATHER_TYPES = ["clear", "warning", "storm"] as const;
+export type WeatherType = (typeof WEATHER_TYPES)[number];
+
+export interface BaseWeatherDto {
+  current: WeatherType;
+  // 当前天气对太阳出力的光照系数（storm 0.25 / warning 0.7 / clear 1.0；积尘另算）。
+  lightFactor: number;
+  // 当前积尘衰减（0—1，发电再乘 (1 - dustLevel/200)）。
+  dustLevel: number;
+  // 下一段天气切换的基地时间（ISO）。
+  nextChangeAt: string;
+  nextWeather: WeatherType;
+}
+
 export interface BaseSnapshotDto {
   name: string;
   baseId: string;
@@ -188,6 +203,7 @@ export interface BaseSnapshotDto {
   manufacturingJobs: ManufacturingJobDto[];
   availableRecipes: RecipeTemplateDto[];
   cooperationRequests: CooperationRequestDto[];
+  weather: BaseWeatherDto;
   controlLease: BaseControlLeaseDto;
 }
 

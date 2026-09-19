@@ -19,6 +19,7 @@ import {
 } from "../../modules/industry/cooperation.service.js";
 import { CooperationRepository } from "../../modules/industry/cooperation.repository.js";
 import { DecisionGateway } from "../../modules/ai/decision-gateway.js";
+import { WeatherService } from "../../modules/world-runtime/weather.service.js";
 import { settleManufacturing } from "../../modules/industry/manufacturing.settlement.js";
 import {
   ContentAdminUseCases
@@ -75,6 +76,10 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     manufacturingRead: {
       listJobsForBase: async (baseId: string) =>
         new ManufacturingRepository(db).listJobsForBase(db, baseId)
+    },
+    weather: {
+      current: (baseId: string, simTime: Date) =>
+        new WeatherService(db).current(db, baseId, simTime)
     },
     cooperationRead: {
       listByBase: async (baseId: string) => {

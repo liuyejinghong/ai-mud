@@ -72,6 +72,13 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
     manufacturingJobs: [],
     availableRecipes: [],
     cooperationRequests: [],
+    weather: {
+      current: "clear",
+      lightFactor: 1.0,
+      dustLevel: 30,
+      nextChangeAt: "2126-01-01T20:00:00.000Z",
+      nextWeather: "warning"
+    },
   controlLease: { heldByThisSession: true, leaseUntil: "2126-01-01T08:02:00.000Z" },
     ...overrides
   };

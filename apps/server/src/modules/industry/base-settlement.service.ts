@@ -97,6 +97,10 @@ export interface BaseSettlementDeps {
   openIndustry: (tx: IndustryTx) => IndustryReadPort & IndustrySettlementWriter;
   // 生产绑定：(tx) => new RobotRuntimeService(tx)
   openRobots: (tx: IndustryTx) => SettlementRobotPort;
+  // M15 天气光照（可选：未绑定时 1.0）。
+  weather?: {
+    current(baseId: string, simTime: Date): Promise<{ lightFactor: number }>;
+  };
 }
 
 // 基地结算的最小模拟步长（与 world tick 同粒度）。
@@ -180,20 +184,32 @@ export class BaseSettlementService {
 
     const steps = await industry.listSteps(matchedProjects.map((project) => project.id));
 
+    const weatherLight = this.deps.weather
+      ? (await this.deps.weather.current(baseId, simTime)).lightFactor
+      : 1;
     const result = computeBaseTick({
       simTime,
       deltaSimMs,
       power,
+      weatherLight,
       projects: matchedProjects,
       steps,
       robots: robotRecords,
       templates: { robotByStableId, projectByStableId }
     });
 
-    // ---------- 落盘：电力 ----------
+    // ---------- 落盘：电力（含 M15 积尘演化：尘暴 +8/h，晴 -1/h，工程清洁归零） ----------
+    const dustDelta = Math.round(
+      (weatherLight <= 0.3 ? 8 : weatherLight <= 0.8 ? 2 : -1) * (deltaSimMs / 3_600_000)
+    );
+    const dustLevel = Math.min(
+      100,
+      Math.max(0, (power.dustLevel ?? 30) + dustDelta)
+    );
     await industry.savePowerState(tx, baseId, {
       storageWh: result.storageWh,
-      lastLoadW: result.lastLoadW
+      lastLoadW: result.lastLoadW,
+      dustLevel
     });
 
     // ---------- 制造结算（M13-C）：电力池扣减后按剩余能推进工单 ----------

@@ -216,6 +216,7 @@ export interface BasePowerRecordDto {
   storageWh: number;
   storageCapacityWh: number;
   lastLoadW: number;
+  dustLevel: number;
 }
 
 export interface BaseIndustryProjectRecordDto {

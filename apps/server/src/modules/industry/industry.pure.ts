@@ -43,6 +43,7 @@ export interface BasePowerRecord {
   storageWh: number;
   storageCapacityWh: number;
   lastLoadW: number;
+  dustLevel: number;
 }
 
 export interface BaseProjectRecord {
@@ -111,6 +112,8 @@ export interface ComputeBaseTickInput {
   // M14 跨组支援：accepted 协作的 helper 机器人（operatorId）——豁免编组匹配，
   // 允许其计入目标步骤的工作量（协作调度事实由 industry/cooperation 提供）。
   helperOperatorIds?: ReadonlySet<string>;
+  // M15 天气光照系数（clear 1.0 / warning 0.7 / storm 0.25），缺省 1。
+  weatherLight?: number;
   templates: {
     robotByStableId: Map<string, RobotTemplateDto>;
     projectByStableId: Map<string, ProjectTemplateDto>;
@@ -177,7 +180,10 @@ export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
   const dh = Math.max(0, input.deltaSimMs) / 3_600_000;
   const hour = input.simTime.getUTCHours();
   const isDaylight = hour >= SIM_DAYLIGHT_START_HOUR && hour < SIM_DAYLIGHT_END_HOUR;
-  const generationW = isDaylight ? input.power.generationWPeak * ARRAY_DUST_FACTOR : 0;
+  const dustFactor = 1 - Math.min(100, Math.max(0, input.power.dustLevel ?? 30)) / 200;
+  const generationW = isDaylight
+    ? input.power.generationWPeak * ARRAY_DUST_FACTOR * (input.weatherLight ?? 1) * dustFactor
+    : 0;
   const capacity = input.power.storageCapacityWh;
 
   const energy = { value: generationW * dh };

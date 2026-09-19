@@ -54,6 +54,7 @@ function makePower(overrides: Partial<BasePowerRecord> = {}): BasePowerRecord {
     storageWh: 100_000,
     storageCapacityWh: 200_000,
     lastLoadW: 0,
+    dustLevel: 0,
     ...overrides
   };
 }

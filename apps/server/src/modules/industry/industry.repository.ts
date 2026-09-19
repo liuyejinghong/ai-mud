@@ -48,7 +48,7 @@ export interface IndustrySettlementWriter {
   savePowerState(
     tx: IndustryTx,
     baseId: string,
-    patch: { storageWh: number; lastLoadW: number }
+    patch: { storageWh: number; lastLoadW: number; dustLevel?: number }
   ): Promise<void>;
   saveStepUpdates(tx: IndustryTx, updates: BaseTickStepUpdate[]): Promise<void>;
   saveProjectUpdates(tx: IndustryTx, updates: ProjectRecordPatch[]): Promise<void>;
@@ -126,7 +126,8 @@ export class IndustryRepository
           generationWPeak: row.generationWPeak,
           storageWh: row.storageWh,
           storageCapacityWh: row.storageCapacityWh,
-          lastLoadW: row.lastLoadW
+          lastLoadW: row.lastLoadW,
+          dustLevel: row.dustLevel
         }
       : null;
   }
@@ -134,11 +135,15 @@ export class IndustryRepository
   async savePowerState(
     tx: IndustryTx,
     baseId: string,
-    patch: { storageWh: number; lastLoadW: number }
+    patch: { storageWh: number; lastLoadW: number; dustLevel?: number }
   ): Promise<void> {
     await tx
       .update(basePowerState)
-      .set({ storageWh: patch.storageWh, lastLoadW: patch.lastLoadW, updatedAt: new Date() })
+      .set({
+        storageWh: patch.storageWh,
+        lastLoadW: patch.lastLoadW,
+        dustLevel: patch.dustLevel ?? sql`${basePowerState.dustLevel}`,
+        updatedAt: new Date() })
       .where(eq(basePowerState.baseId, baseId));
   }
 
