@@ -4,6 +4,9 @@ import type {
   BaseClockCommandInputDto,
   BaseSnapshotDto,
   BaseTimeMode,
+  CancelManufacturingJobResultDto,
+  CreateManufacturingJobInputDto,
+  CreateManufacturingJobResultDto,
   CreateProjectInputDto
 } from "@ai-mud/shared";
 
@@ -171,6 +174,32 @@ export function cancelProject(
     csrfToken,
     body: { commandId }
   });
+}
+
+export function createManufacturingJob(
+  input: CreateManufacturingJobInputDto,
+  csrfToken: string
+): Promise<CreateManufacturingJobResultDto> {
+  return request<CreateManufacturingJobResultDto>("/base/manufacturing", {
+    method: "POST",
+    csrfToken,
+    body: input
+  });
+}
+
+export function cancelManufacturingJob(
+  jobId: string,
+  commandId: string,
+  csrfToken: string
+): Promise<CancelManufacturingJobResultDto> {
+  return request<CancelManufacturingJobResultDto>(
+    `/base/manufacturing/${encodeURIComponent(jobId)}/cancel`,
+    {
+      method: "POST",
+      csrfToken,
+      body: { commandId }
+    }
+  );
 }
 
 export function login(input: PlaytestRegisterInputDto): Promise<AuthLoginResultDto> {

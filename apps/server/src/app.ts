@@ -5,10 +5,14 @@ import { createBaseOperations } from "./application/base/composition.js";
 import { loadEnv, type Env } from "./config/env.js";
 import { createDb, type Db, type DbConnection } from "./db/client.js";
 import { registerAdminRoutes } from "./modules/admin/admin.routes.js";
+import {
+  registerContentAdminRoutes
+} from "./modules/admin/content-admin.routes.js";
 import { AdminBootstrapService } from "./modules/auth/admin-bootstrap.service.js";
 import { AuthRepository } from "./modules/auth/auth.repository.js";
 import { registerAuthRoutes } from "./modules/auth/auth.routes.js";
 import { AuthService } from "./modules/auth/auth.service.js";
+import { registerBaseManufacturingRoutes } from "./modules/industry/base-manufacturing.routes.js";
 import { registerBaseProjectsRoutes } from "./modules/industry/base-projects.routes.js";
 import { registerBaseSessionRoutes } from "./modules/world-runtime/base-session.routes.js";
 import { registerGameRoutes } from "./modules/game/game.routes.js";
@@ -225,6 +229,20 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
   await app.register(registerAdminRoutes);
   await app.register((instance) => registerBaseSessionRoutes(instance, baseOps.session));
   await app.register((instance) => registerBaseProjectsRoutes(instance, baseOps.projects));
+  await app.register((instance) =>
+    registerBaseManufacturingRoutes(instance, {
+      auth: baseOps.session.auth,
+      create: baseOps.manufacturingJobs.create,
+      cancel: baseOps.manufacturingJobs.cancel
+    })
+  );
+  await app.register((instance) =>
+    registerContentAdminRoutes(instance, {
+      getCurrentAdmin: baseOps.adminSession.getCurrentAdmin,
+      verifyAdminMutation: baseOps.adminSession.verifyAdminMutation,
+      contentAdmin: baseOps.contentAdmin
+    })
+  );
 
   app.get("/health", async () => ({ ok: true, service: "ai-mud-server" }));
 

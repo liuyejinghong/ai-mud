@@ -1,12 +1,14 @@
 // 基地主壳：四区布局。只转发快照与回调，自己不发任何请求。
 import type {
   BaseClockCommandInputDto,
+  CreateManufacturingJobInputDto,
   BaseDeviceDto,
   BaseSnapshotDto,
   CreateProjectInputDto,
   RobotStatus
 } from "@ai-mud/shared";
 import { BaseMap } from "./BaseMap.js";
+import { ManufacturingBoard } from "./ManufacturingBoard.js";
 import { ObjectPanel } from "./ObjectPanel.js";
 import { ProjectBoard } from "./ProjectBoard.js";
 import "./base.css";
@@ -28,6 +30,7 @@ function kwh(wattHours: number): string {
 
 export interface BaseShellProps {
   snapshot: BaseSnapshotDto;
+  selectedJobId: string | null;
   selectedResourceId: string | null;
   csrfToken: string | null;
   selectedSiteId: string | null;
@@ -43,10 +46,14 @@ export interface BaseShellProps {
   onSetSpeed: (speed: number) => void;
   onSelectResource: (itemId: string) => void;
   onLogout: () => void;
+  onCreateJob: (input: CreateManufacturingJobInputDto) => void;
+  onCancelJob: (jobId: string) => void;
+  onSelectJob: (jobId: string) => void;
 }
 
 export function BaseShell({
   snapshot,
+  selectedJobId,
   selectedResourceId,
   csrfToken,
   selectedSiteId,
@@ -61,7 +68,10 @@ export function BaseShell({
   onClockCommand,
   onSetSpeed,
   onSelectResource,
-  onLogout
+  onLogout,
+  onCreateJob,
+  onCancelJob,
+  onSelectJob
 }: BaseShellProps) {
   const isPaused = snapshot.timeMode === "paused";
   const deviceSummary = snapshot.devices.map((device: BaseDeviceDto) => (
@@ -189,6 +199,15 @@ export function BaseShell({
         onCancelProject={onCancelProject}
       />
 
+      <ManufacturingBoard
+        jobs={snapshot.manufacturingJobs}
+        recipes={snapshot.availableRecipes}
+        isBusy={isBusy}
+        selectedJobId={selectedJobId}
+        onSelectJob={onSelectJob}
+        onCreateJob={onCreateJob}
+        onCancelJob={onCancelJob}
+      />
       <ProjectBoard
         projects={snapshot.projects}
         buildableProjects={snapshot.buildableProjects}

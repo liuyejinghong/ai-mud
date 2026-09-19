@@ -2,12 +2,24 @@ import type { Env } from "../../config/env.js";
 import type { Db } from "../../db/client.js";
 import { DrizzleAuditWriter } from "../../modules/audit/audit.repository.js";
 import { AuthRepository } from "../../modules/auth/auth.repository.js";
+import type { FastifyRequest } from "fastify";
 import { AuthService } from "../../modules/auth/auth.service.js";
 import { AssetMutationService } from "../../modules/ledger/asset-mutation.service.js";
 import { BaseAssetService } from "../../modules/ledger/base-asset.service.js";
 import { createContentCatalog } from "../../modules/content-catalog/catalog.service.js";
+import { ContentAdminRepository } from "../../modules/content-catalog/content-admin.repository.js";
+import { ContentAdminService } from "../../modules/content-catalog/content-admin.service.js";
 import { BaseSettlementService } from "../../modules/industry/base-settlement.service.js";
+import { ManufacturingService } from "../../modules/industry/manufacturing.service.js";
+import { ManufacturingRepository } from "../../modules/industry/manufacturing.repository.js";
+import { settleManufacturing } from "../../modules/industry/manufacturing.settlement.js";
+import {
+  ContentAdminUseCases
+} from "../content-admin/usecases.js";
+import { CancelManufacturingJobCase } from "../manufacturing/cancel-job.js";
+import { CreateManufacturingJobCase } from "../manufacturing/create-job.js";
 import { ConstructionService } from "../../modules/industry/construction.service.js";
+import type { IndustryTx } from "../../modules/industry/industry.repository.js";
 import { IndustryRepository } from "../../modules/industry/industry.repository.js";
 import { RobotFactory } from "../../modules/npc/robot-factory.js";
 import { RobotRuntimeService } from "../../modules/npc/robot-runtime.js";
@@ -52,7 +64,20 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     industryInit: industryRepo,
     catalog,
     industryRead: industryRepo,
-    robotRead: robotRuntime
+    robotRead: robotRuntime,
+    manufacturingRead: {
+      listJobsForBase: async (baseId: string) =>
+        new ManufacturingRepository(db).listJobsForBase(db, baseId)
+    }
+  });
+
+  const baseAssetsService = baseAssets;
+  const manufacturing = new ManufacturingService({
+    lookup: baseRepo,
+    assets: baseAssetsService,
+    catalog,
+    store: new ManufacturingRepository(db),
+    receipts: (tx) => new AssetMutationService(tx)
   });
 
   const construction = new ConstructionService({
@@ -123,6 +148,11 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
   // 开工动员：创建项目提交后立即结算一个模拟步，机器人马上到位出工，
   // 消除"下一分钟才有动静"的空窗（玩家视角：点下建设就看到设备进场）。
   const createCase = new CreateProjectCase(db, construction);
+  const manufacturingJobs = {
+    create: new CreateManufacturingJobCase(db, manufacturing),
+    cancel: new CancelManufacturingJobCase(db, manufacturing)
+  };
+
   const projects: BaseProjectsRouteDeps = {
     auth: authFacade,
     create: {
@@ -141,8 +171,48 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     assets: baseAssets,
     catalog,
     openIndustry: (tx) => new IndustryRepository(tx),
-    openRobots: (tx) => (tx === db ? robotRuntime : new RobotRuntimeService(tx))
+    openRobots: (tx) => (tx === db ? robotRuntime : new RobotRuntimeService(tx)),
+    manufacturing: {
+      settle: (tx, now, input) =>
+        settleManufacturing(tx, now, {
+          availableEnergyWh: input.availableEnergyWh,
+          powerW: input.powerW,
+          deltaSimMs: input.deltaSimMs,
+          catalog,
+          settleAssets: baseAssets,
+          settleRobots: {
+            initializeOperator: (settleTx: IndustryTx, input) =>
+              new RobotFactory(settleTx).initializeOperator(settleTx, input)
+          },
+          openManufacturing: (settleTx) => new ManufacturingRepository(settleTx)
+        })
+    }
   });
 
-  return { session, projects, settlement };
+  const contentAdmin = new ContentAdminUseCases(
+    db,
+    new ContentAdminService((tx) => new ContentAdminRepository(tx))
+  );
+
+  // 管理员会话门面（M13-B 路由消费；与 admin.routes 默认实现同语义）。
+  const adminSession = {
+    getCurrentAdmin: async (request: FastifyRequest) => {
+      const token = request.cookies[config.SESSION_COOKIE_NAME];
+      if (!token) return null;
+      const account = await new AuthRepository(db).findAccountBySessionTokenHash(
+        auth.hashToken(token)
+      );
+      if (!account || account.status !== "active") return null;
+      if (account.role !== "admin" && account.role !== "super_admin") return null;
+      return { accountId: account.id, role: account.role };
+    },
+    verifyAdminMutation: async (request: FastifyRequest) => {
+      const token = request.cookies[config.SESSION_COOKIE_NAME];
+      const csrfToken = request.headers["x-ai-mud-csrf"];
+      if (!token || typeof csrfToken !== "string") return false;
+      return auth.verifyCsrfToken(token, config.SESSION_SECRET, csrfToken);
+    }
+  };
+
+  return { session, projects, settlement, manufacturingJobs, contentAdmin, adminSession };
 }

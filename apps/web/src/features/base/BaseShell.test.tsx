@@ -69,6 +69,8 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
       }
     ],
     buildableProjects: [],
+    manufacturingJobs: [],
+    availableRecipes: [],
   controlLease: { heldByThisSession: true, leaseUntil: "2126-01-01T08:02:00.000Z" },
     ...overrides
   };
@@ -91,6 +93,10 @@ function renderShell(snapshot: BaseSnapshotDto) {
       onCreateProject={noop}
       onCancelProject={noop}
       onLogout={() => undefined}
+        onCreateJob={() => undefined}
+        onCancelJob={() => undefined}
+        onSelectJob={() => undefined}
+        selectedJobId={null}
         onSelectResource={() => undefined}
         selectedResourceId={null}
         onSetSpeed={() => undefined}
@@ -143,6 +149,10 @@ describe("BaseShell", () => {
         onCreateProject={noop}
         onCancelProject={noop}
         onLogout={() => undefined}
+        onCreateJob={() => undefined}
+        onCancelJob={() => undefined}
+        onSelectJob={() => undefined}
+        selectedJobId={null}
         onSelectResource={() => undefined}
         selectedResourceId={null}
         onSetSpeed={() => undefined}
@@ -173,6 +183,10 @@ describe("BaseShell", () => {
         onCreateProject={noop}
         onCancelProject={noop}
         onLogout={() => undefined}
+        onCreateJob={() => undefined}
+        onCancelJob={() => undefined}
+        onSelectJob={() => undefined}
+        selectedJobId={null}
         onSelectResource={() => undefined}
         selectedResourceId={null}
         onSetSpeed={() => undefined}
@@ -204,6 +218,10 @@ describe("BaseShell > logout", () => {
         onCancelProject={() => undefined}
         onClockCommand={() => undefined}
         onSetSpeed={() => undefined}
+        onCreateJob={() => undefined}
+        onCancelJob={() => undefined}
+        onSelectJob={() => undefined}
+        selectedJobId={null}
         onSelectResource={() => undefined}
         onLogout={onLogout}
       />

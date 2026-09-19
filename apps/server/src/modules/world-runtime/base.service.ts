@@ -8,6 +8,7 @@ import type {
   BaseSnapshotDto,
   BaseTimeMode,
   DefinitionRefDto,
+  ManufacturingJobStatus,
   ProjectStatus,
   RobotStatus,
   StepKind,
@@ -108,6 +109,7 @@ export interface ContentCatalogPort {
   getItemInfo(): Record<string, { name: string; description: string }>;
   getRecipeTemplate(stableId: string): RecipeTemplateSpec | null;
   listRecipes(): RecipeTemplateSpec[];
+  getRobotTemplate(stableId: string): RobotTemplateSpec | null;
   getFacilityInfo(stableId: string): {
     name: string;
     note: string;
@@ -177,6 +179,20 @@ export interface BaseServiceDeps {
   catalog: ContentCatalogPort;
   industryRead: BaseIndustryReadPort;
   robotRead: BaseRobotReadPort;
+  manufacturingRead: {
+    listJobsForBase(baseId: string): Promise<
+      Array<{
+        id: string;
+        recipeDefId: string;
+        recipeRevision: number;
+        status: string;
+        outputsPlanned: number;
+        outputsDone: number;
+        currentUnitWorkDone: number;
+        blockedReason: string | null;
+      }>
+    >;
+  };
 }
 
 // 领域错误：code 为 shared ErrorCode。transport 不 import 本类，
@@ -432,6 +448,31 @@ export class BaseService {
           name: project.name,
           description: project.description
         })),
+        availableRecipes: this.deps.catalog.listRecipes().map((recipe) => ({
+          ref: recipe.ref,
+          name: recipe.name,
+          description: recipe.description,
+          inputs: recipe.inputs.map((input) => ({ ...input })),
+          workPerUnit: recipe.workPerUnit,
+          output: { ...recipe.output }
+        })),
+        manufacturingJobs: (await this.deps.manufacturingRead.listJobsForBase(baseId)).map(
+          (job) => ({
+            jobId: job.id,
+            recipeRef: {
+              kind: "recipe" as const,
+              stableId: job.recipeDefId,
+              revision: job.recipeRevision
+            },
+            recipeName:
+              this.deps.catalog.getRecipeTemplate(job.recipeDefId)?.name ?? job.recipeDefId,
+            status: job.status as ManufacturingJobStatus,
+            outputsPlanned: job.outputsPlanned,
+            outputsDone: job.outputsDone,
+            currentUnitWorkDone: job.currentUnitWorkDone,
+            blockedReason: job.blockedReason
+          })
+        ),
         controlLease: {
           heldByThisSession: lease ? lease.leaseUntil.getTime() > now.getTime() : false,
           leaseUntil: lease ? lease.leaseUntil.toISOString() : null

@@ -156,7 +156,10 @@ function buildControlledOperations(db: Db, clock: { now(): Date }): ControlledOp
     industryInit: industryRepo,
     catalog,
     industryRead: industryRepo,
-    robotRead: robotRuntime
+    robotRead: robotRuntime,
+    manufacturingRead: {
+      listJobsForBase: async () => []
+    }
   });
 
   const construction = new ConstructionService({

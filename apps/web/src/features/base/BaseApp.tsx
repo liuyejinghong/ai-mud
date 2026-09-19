@@ -2,10 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   BaseClockCommandInputDto,
   BaseSnapshotDto,
+  CreateManufacturingJobInputDto,
   CreateProjectInputDto
 } from "@ai-mud/shared";
 import {
   BaseApiError,
+  cancelManufacturingJob,
+  createManufacturingJob,
   createProject,
   cancelProject,
   getSnapshot,
@@ -159,6 +162,7 @@ export function BaseApp({
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [introDismissed, setIntroDismissed] = useState(() => globalThis.localStorage?.getItem("base-intro-dismissed") === "1");
 
   const refreshSnapshot = useCallback(async () => {
@@ -318,6 +322,30 @@ export function BaseApp({
     setSelectedDeviceId(null);
   }, []);
 
+  const handleCreateJob = useCallback(
+    (input: CreateManufacturingJobInputDto) => {
+      if (csrfToken === null) return;
+      void runCommand(() => createManufacturingJob(input, csrfToken));
+    },
+    [csrfToken, runCommand]
+  );
+
+  const handleCancelJob = useCallback(
+    (jobId: string) => {
+      if (csrfToken === null) return;
+      void runCommand(() => cancelManufacturingJob(jobId, crypto.randomUUID(), csrfToken));
+    },
+    [csrfToken, runCommand]
+  );
+
+  const handleSelectJob = useCallback((jobId: string) => {
+    setSelectedJobId((current) => (current === jobId ? null : jobId));
+    setSelectedSiteId(null);
+    setSelectedProjectId(null);
+    setSelectedDeviceId(null);
+    setSelectedResourceId(null);
+  }, []);
+
   if (phase !== "ready" || snapshot === null) {
     if (phase === "unauthenticated") {
       return (
@@ -386,6 +414,10 @@ export function BaseApp({
         onSetSpeed={(speed) => handleClockCommand({ command: "set_speed", speed })}
         onSelectResource={handleSelectResource}
         selectedResourceId={selectedResourceId}
+        onCreateJob={handleCreateJob}
+        onCancelJob={handleCancelJob}
+        onSelectJob={handleSelectJob}
+        selectedJobId={selectedJobId}
         onLogout={() => void handleLogout()}
         isBusy={isActionBusy}
       />

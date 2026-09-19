@@ -52,6 +52,8 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
     devices: [],
     projects: [],
     buildableProjects: [],
+    manufacturingJobs: [],
+    availableRecipes: [],
   controlLease: { heldByThisSession: true, leaseUntil: "2126-01-01T08:02:00.000Z" },
     ...overrides
   };

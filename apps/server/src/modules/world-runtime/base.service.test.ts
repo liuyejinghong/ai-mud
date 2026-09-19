@@ -392,7 +392,8 @@ function createFixture(options: {
     industryInit,
     catalog,
     industryRead,
-    robotRead
+    robotRead,
+    manufacturingRead: { listJobsForBase: async () => [] }
   });
   return { service, repo, assets, robots, industryInit, catalog, industryRead, robotRead };
 }
@@ -798,6 +799,8 @@ describe("BaseService.snapshot", () => {
           description: "把运抵的太阳电池阵安装到建设位并并网。"
         }
       ],
+      availableRecipes: [],
+      manufacturingJobs: [],
       controlLease: {
         heldByThisSession: true,
         leaseUntil: new Date(T1.getTime() + 60_000).toISOString()

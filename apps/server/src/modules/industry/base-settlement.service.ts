@@ -69,6 +69,8 @@ export interface SettlementRobotPort {
 
 export interface BaseSettlementDeps {
   clock: SettlementClockPort;
+  // M13-C 制造结算（可选：未绑定时跳过，v0.12 行为不变）。
+  manufacturing?: BaseManufacturingSettlePort;
   sites: SettlementSitePort;
   assets: SettlementAssetPort;
   catalog: SettlementCatalogPort;
@@ -80,6 +82,17 @@ export interface BaseSettlementDeps {
 
 // 基地结算的最小模拟步长（与 world tick 同粒度）。
 const BASE_SUB_TICK_MS = 60_000;
+
+// 制造负载功率（M13-P fixture §5）。
+export const MANUFACTURING_POWER_W = 1500;
+
+export interface BaseManufacturingSettlePort {
+  settle(
+    tx: IndustryTx,
+    now: Date,
+    input: { availableEnergyWh: number; powerW: number; deltaSimMs: number }
+  ): Promise<{ unitsProduced: number; jobsCompleted: number }>;
+}
 
 export class BaseSettlementService {
   constructor(private readonly deps: BaseSettlementDeps) {}
@@ -163,6 +176,16 @@ export class BaseSettlementService {
       storageWh: result.storageWh,
       lastLoadW: result.lastLoadW
     });
+
+    // ---------- 制造结算（M13-C）：电力池扣减后按剩余能推进工单 ----------
+    if (this.deps.manufacturing) {
+      const availableEnergyWh = Math.max(0, result.storageWh);
+      await this.deps.manufacturing.settle(tx, simTime, {
+        availableEnergyWh,
+        powerW: MANUFACTURING_POWER_W,
+        deltaSimMs
+      });
+    }
 
     // ---------- 落盘：步骤（含内容缺失项目的全量阻塞） ----------
     const stepUpdates: BaseTickStepUpdate[] = [...result.stepUpdates];

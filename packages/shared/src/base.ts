@@ -179,6 +179,8 @@ export interface BaseSnapshotDto {
     name: string;
     description: string;
   }>;
+  manufacturingJobs: ManufacturingJobDto[];
+  availableRecipes: RecipeTemplateDto[];
   controlLease: BaseControlLeaseDto;
 }
 
@@ -189,6 +191,7 @@ export interface BaseAuthzDto {
   baseId: string;
 }
 
+// 制造/配方 DTO 在 content-admin.ts，此处 re-export 引用（快照字段）。
 export interface CreateProjectInputDto {
   definitionRef: DefinitionRefDto;
   siteId: string;
