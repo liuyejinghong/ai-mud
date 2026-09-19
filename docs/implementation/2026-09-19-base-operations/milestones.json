@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "planId": "yudian-base-operations-20260919",
+  "planVersion": "1.0",
+  "status": "ROADMAP_APPROVED_IMPLEMENTATION_NOT_STARTED",
+  "sourceCommit": "e2677eab514ab7e347a340163282b2d48aeb2788",
+  "currentProductVersion": "0.11.0",
+  "authority": "Planning and documentation PR approved; implementation batches, merge, production changes and paid model experiments require explicit scope authorization.",
+  "roleTemplate": {
+    "roles": ["P", "A", "B", "C", "D", "Q", "I"],
+    "dependencies": {"P": [], "A": ["P"], "B": ["P"], "C": ["P"], "D": ["P"], "Q": ["A", "B", "C", "D"], "I": ["Q"]},
+    "qaPreparationAfter": "P",
+    "meaning": "Q dependencies describe final acceptance. Test design may run after P; I assembles candidate heads throughout and signs off only after Q."
+  },
+  "preparation": {
+    "id": "A0",
+    "spec": "00-scope-and-a0.md",
+    "tasks": [
+      {"id": "A0-01", "dependsOn": [], "deliverable": "Current source and evidence inventory"},
+      {"id": "A0-02", "dependsOn": [], "deliverable": "Scenario, canon, units, rights and data lifecycle"},
+      {"id": "A0-03", "dependsOn": ["A0-01", "A0-02"], "deliverable": "Public contracts and exact file ownership"},
+      {"id": "A0-04", "dependsOn": ["A0-03"], "deliverable": "Independent A0 review"}
+    ],
+    "gateIds": ["A0-G01", "A0-G02", "A0-G03", "A0-G04", "A0-G05"]
+  },
+  "milestones": [
+    {"version": "0.12.0", "prefix": "M12", "spec": "v0.12.0-first-base.md", "startsAfter": "A0-04", "lanes": {"A": "Access and base provisioning", "B": "Construction and robot execution", "C": "Mouse-first base client", "D": "Definitions and read-only catalog"}, "gateIds": ["M12-G01", "M12-G02", "M12-G03", "M12-G04", "M12-G05", "M12-G06", "M12-G07", "M12-G08"]},
+    {"version": "0.13.0", "prefix": "M13", "spec": "v0.13.0-content-manufacturing.md", "startsAfter": "M12-I", "lanes": {"A": "Content publishing", "B": "Content administration client", "C": "Manufacturing", "D": "Robot outputs and fleet"}, "gateIds": ["M13-G01", "M13-G02", "M13-G03", "M13-G04", "M13-G05", "M13-G06", "M13-G07", "M13-G08", "M13-G09"]},
+    {"version": "0.14.0", "prefix": "M14", "spec": "v0.14.0-jev-cooperation.md", "startsAfter": "M13-I", "lanes": {"A": "Jev adapter and gateway", "B": "Cooperation and plan revisions", "C": "Project and robot task views", "D": "Decision profiles and narrative templates"}, "gateIds": ["M14-G01", "M14-G02", "M14-G03", "M14-G04", "M14-G05", "M14-G06", "M14-G07", "M14-G08", "M14-G09"], "liveModelGateIsSeparate": true},
+    {"version": "0.15.0", "prefix": "M15", "spec": "v0.15.0-energy-storm.md", "startsAfter": "M14-I", "lanes": {"A": "Weather", "B": "Energy and maintenance", "C": "Risk and policy UI", "D": "Time and offline policy"}, "gateIds": ["M15-G01", "M15-G02", "M15-G03", "M15-G04", "M15-G05", "M15-G06", "M15-G07", "M15-G08"], "upstreamRuleModeEngineeringAllowed": true},
+    {"version": "0.16.0", "prefix": "M16", "spec": "v0.16.0-economy-growth.md", "startsAfter": "M15-I", "lanes": {"A": "Orders and settlement", "B": "Procurement and logistics", "C": "Industry content and growth", "D": "Economy client"}, "gateIds": ["M16-G01", "M16-G02", "M16-G03", "M16-G04", "M16-G05", "M16-G06", "M16-G07", "M16-G08"]},
+    {"version": "1.0.0", "prefix": "M10", "spec": "v1.0.0-playtest-release.md", "startsAfter": "M16-I", "lanes": {"A": "Onboarding and usability", "B": "Balance and content", "C": "Operations and recovery", "D": "Performance and cost"}, "gateIds": ["M10-G01", "M10-G02", "M10-G03", "M10-G04", "M10-G05", "M10-G06", "M10-G07", "M10-G08"], "unmetLiveModelGateRequiresExplicitScopeDecision": true}
+  ],
+  "future": {"version": "1.1.0", "spec": "v1.1.0-pixel-design-only.md", "status": "DESIGN_ONLY_NOT_AUTHORIZED"},
+  "earlyResearch": [
+    {"workPackage": "M14-A", "afterContract": "M12-P", "limit": "Isolated adapter and evaluation preparation; no automatic paid calls or game activation"},
+    {"workPackage": "M13-B", "afterContract": "M12-P", "limit": "Prototype against frozen catalog schemas; not a live editor of player state"},
+    {"workPackage": "M15-A", "afterContract": "M12-P", "limit": "Pure environment fixtures; final M15 contracts still required"},
+    {"workPackage": "M16-D", "afterContract": "M13-P", "limit": "Isolated UI prototype; no independent wallet or shared market"}
+  ],
+  "earlyResearchDoesNotSatisfyMilestoneDependencies": true,
+  "fileOwnership": "P must create exact per-file active-owner manifests using templates/lane-contract.md. Spec path examples are proposed locations, not blanket write permissions.",
+  "sharedFilesSingleWriter": ["public contracts", "schema and migration journal", "composition", "client session and public API client", "package and lock files", "compatibility versions", "architecture policies and CI"],
+  "statusesAreSeparate": ["CONTRACT_READY", "ENGINEERING_PASS", "PLAYTEST_PASS", "LIVE_MODEL_GATE_PASS", "RELEASE_READY"],
+  "checksNotPerformedByThisManifest": ["Current source dependency scan", "Public API implementation", "PostgreSQL", "Browser E2E", "Playtest", "Live model evaluation", "Performance and recovery"],
+  "expectedCounts": {"implementationMilestones": 6, "workPackagesIncludingA0": 46, "acceptanceGatesIncludingA0": 55}
+}
