@@ -49,13 +49,13 @@ describe("game contract", () => {
 
   it("exposes v0.16.0 world health compatibility", () => {
     expect(PRODUCT_VERSION).toBe("0.16.0");
-    expect(WORLD_COMPATIBILITY.apiVersion).toBe(45);
+    expect(WORLD_COMPATIBILITY.apiVersion).toBe(46);
     expect(WORLD_COMPATIBILITY.schemaVersion).toBe(31);
     expect(WORLD_COMPATIBILITY.engineVersion).toBe(2);
     expect(WORLD_COMPATIBILITY.rulesetVersion).toBe(17);
     expect(WORLD_COMPATIBILITY.contentVersion).toBe(14);
     expect(WORLD_COMPATIBILITY.promptVersion).toBe(8);
-    expect(WORLD_COMPATIBILITY.economyVersion).toBe(4);
+    expect(WORLD_COMPATIBILITY.economyVersion).toBe(5);
   });
 
   it("keeps item ids as DTO strings instead of a shared content catalog", () => {
