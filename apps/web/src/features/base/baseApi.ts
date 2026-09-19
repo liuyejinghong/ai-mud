@@ -2,6 +2,9 @@
 // 数据只来自冻结 REST 面（docs/reviews/base-operations/m12-p-contract.md §6）与 @ai-mud/shared DTO。
 import type {
   BaseClockCommandInputDto,
+  AcceptOrderInputDto,
+  CreatePurchaseInputDto,
+  DeliverOrderInputDto,
   BaseSnapshotDto,
   BaseTimeMode,
   CancelManufacturingJobResultDto,
@@ -200,6 +203,46 @@ export function cancelManufacturingJob(
       body: { commandId }
     }
   );
+}
+
+export function acceptOrder(
+  orderId: string,
+  commandId: string,
+  csrfToken: string
+): Promise<{ accepted: boolean }> {
+  return request<{ accepted: boolean }>(
+    `/base/orders/${encodeURIComponent(orderId)}/accept`,
+    {
+      method: "POST",
+      csrfToken,
+      body: { commandId }
+    }
+  );
+}
+
+export function deliverOrder(
+  input: DeliverOrderInputDto,
+  csrfToken: string
+): Promise<{ delivered: boolean; rewardCredits?: number }> {
+  return request<{ delivered: boolean }>(
+    `/base/orders/${encodeURIComponent(input.orderId)}/deliver`,
+    {
+      method: "POST",
+      csrfToken,
+      body: { commandId: input.commandId }
+    }
+  );
+}
+
+export function createPurchase(
+  input: CreatePurchaseInputDto,
+  csrfToken: string
+): Promise<{ purchaseId: string; duplicate: boolean }> {
+  return request<{ purchaseId: string; duplicate: boolean }>("/base/purchases", {
+    method: "POST",
+    csrfToken,
+    body: input
+  });
 }
 
 export function login(input: PlaytestRegisterInputDto): Promise<AuthLoginResultDto> {

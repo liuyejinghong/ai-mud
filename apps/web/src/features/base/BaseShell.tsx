@@ -9,6 +9,7 @@ import type {
 } from "@ai-mud/shared";
 import { BaseMap } from "./BaseMap.js";
 import { CooperationPanel } from "./CooperationPanel.js";
+import { EconomyBoard } from "./EconomyBoard.js";
 import { ManufacturingBoard } from "./ManufacturingBoard.js";
 import { ObjectPanel } from "./ObjectPanel.js";
 import { ProjectBoard } from "./ProjectBoard.js";
@@ -50,6 +51,11 @@ export interface BaseShellProps {
   onCreateJob: (input: CreateManufacturingJobInputDto) => void;
   onCancelJob: (jobId: string) => void;
   onSelectJob: (jobId: string) => void;
+  onAcceptOrder: (orderId: string) => void;
+  onDeliverOrder: (orderId: string) => void;
+  onPurchase: (itemId: string, quantity: number) => void;
+  onSelectOrder: (orderId: string) => void;
+  selectedOrderId: string | null;
 }
 
 export function BaseShell({
@@ -72,7 +78,12 @@ export function BaseShell({
   onLogout,
   onCreateJob,
   onCancelJob,
-  onSelectJob
+  onSelectJob,
+  onAcceptOrder,
+  onDeliverOrder,
+  onPurchase,
+  onSelectOrder,
+  selectedOrderId
 }: BaseShellProps) {
   const isPaused = snapshot.timeMode === "paused";
   const deviceSummary = snapshot.devices.map((device: BaseDeviceDto) => (
@@ -200,6 +211,18 @@ export function BaseShell({
         onCancelProject={onCancelProject}
       />
 
+      <EconomyBoard
+        credits={snapshot.credits}
+        orders={snapshot.orders}
+        purchases={snapshot.purchases}
+        resources={snapshot.resources}
+        isBusy={isBusy}
+        selectedOrderId={selectedOrderId}
+        onSelectOrder={onSelectOrder}
+        onAcceptOrder={onAcceptOrder}
+        onDeliverOrder={onDeliverOrder}
+        onPurchase={onPurchase}
+      />
       <CooperationPanel requests={snapshot.cooperationRequests} />
       <ManufacturingBoard
         jobs={snapshot.manufacturingJobs}

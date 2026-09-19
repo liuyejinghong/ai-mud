@@ -72,6 +72,9 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
     manufacturingJobs: [],
     availableRecipes: [],
     cooperationRequests: [],
+    credits: 500,
+    orders: [],
+    purchases: [],
     weather: {
       current: "clear",
       lightFactor: 1.0,
@@ -103,6 +106,11 @@ function renderShell(snapshot: BaseSnapshotDto) {
       onLogout={() => undefined}
         onCreateJob={() => undefined}
         onCancelJob={() => undefined}
+        onAcceptOrder={() => undefined}
+        onDeliverOrder={() => undefined}
+        onPurchase={() => undefined}
+        onSelectOrder={() => undefined}
+        selectedOrderId={null}
         onSelectJob={() => undefined}
         selectedJobId={null}
         onSelectResource={() => undefined}
@@ -159,6 +167,11 @@ describe("BaseShell", () => {
         onLogout={() => undefined}
         onCreateJob={() => undefined}
         onCancelJob={() => undefined}
+        onAcceptOrder={() => undefined}
+        onDeliverOrder={() => undefined}
+        onPurchase={() => undefined}
+        onSelectOrder={() => undefined}
+        selectedOrderId={null}
         onSelectJob={() => undefined}
         selectedJobId={null}
         onSelectResource={() => undefined}
@@ -193,6 +206,11 @@ describe("BaseShell", () => {
         onLogout={() => undefined}
         onCreateJob={() => undefined}
         onCancelJob={() => undefined}
+        onAcceptOrder={() => undefined}
+        onDeliverOrder={() => undefined}
+        onPurchase={() => undefined}
+        onSelectOrder={() => undefined}
+        selectedOrderId={null}
         onSelectJob={() => undefined}
         selectedJobId={null}
         onSelectResource={() => undefined}
@@ -228,6 +246,11 @@ describe("BaseShell > logout", () => {
         onSetSpeed={() => undefined}
         onCreateJob={() => undefined}
         onCancelJob={() => undefined}
+        onAcceptOrder={() => undefined}
+        onDeliverOrder={() => undefined}
+        onPurchase={() => undefined}
+        onSelectOrder={() => undefined}
+        selectedOrderId={null}
         onSelectJob={() => undefined}
         selectedJobId={null}
         onSelectResource={() => undefined}

@@ -6,8 +6,11 @@ import type {
   CreateProjectInputDto
 } from "@ai-mud/shared";
 import {
+  acceptOrder,
   BaseApiError,
   cancelManufacturingJob,
+  createPurchase,
+  deliverOrder,
   createManufacturingJob,
   createProject,
   cancelProject,
@@ -163,6 +166,7 @@ export function BaseApp({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [introDismissed, setIntroDismissed] = useState(() => globalThis.localStorage?.getItem("base-intro-dismissed") === "1");
 
   const refreshSnapshot = useCallback(async () => {
@@ -346,6 +350,41 @@ export function BaseApp({
     setSelectedResourceId(null);
   }, []);
 
+  const handleSelectOrder = useCallback((orderId: string) => {
+    setSelectedOrderId((current) => (current === orderId ? null : orderId));
+    setSelectedSiteId(null);
+    setSelectedProjectId(null);
+    setSelectedDeviceId(null);
+    setSelectedResourceId(null);
+    setSelectedJobId(null);
+  }, []);
+
+  const handleAcceptOrder = useCallback(
+    (orderId: string) => {
+      if (csrfToken === null) return;
+      void runCommand(() => acceptOrder(orderId, crypto.randomUUID(), csrfToken));
+    },
+    [csrfToken, runCommand]
+  );
+
+  const handleDeliverOrder = useCallback(
+    (orderId: string) => {
+      if (csrfToken === null) return;
+      void runCommand(() => deliverOrder({ orderId, commandId: crypto.randomUUID() }, csrfToken));
+    },
+    [csrfToken, runCommand]
+  );
+
+  const handlePurchase = useCallback(
+    (itemId: string, quantity: number) => {
+      if (csrfToken === null) return;
+      void runCommand(() =>
+        createPurchase({ itemId, quantity, commandId: crypto.randomUUID() }, csrfToken)
+      );
+    },
+    [csrfToken, runCommand]
+  );
+
   if (phase !== "ready" || snapshot === null) {
     if (phase === "unauthenticated") {
       return (
@@ -418,6 +457,11 @@ export function BaseApp({
         onCancelJob={handleCancelJob}
         onSelectJob={handleSelectJob}
         selectedJobId={selectedJobId}
+        onAcceptOrder={handleAcceptOrder}
+        onDeliverOrder={handleDeliverOrder}
+        onPurchase={handlePurchase}
+        onSelectOrder={handleSelectOrder}
+        selectedOrderId={selectedOrderId}
         onLogout={() => void handleLogout()}
         isBusy={isActionBusy}
       />

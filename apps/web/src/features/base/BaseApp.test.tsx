@@ -55,6 +55,9 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
     manufacturingJobs: [],
     availableRecipes: [],
     cooperationRequests: [],
+    credits: 500,
+    orders: [],
+    purchases: [],
     weather: {
       current: "clear",
       lightFactor: 1.0,
