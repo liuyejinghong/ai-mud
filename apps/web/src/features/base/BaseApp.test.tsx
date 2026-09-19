@@ -47,8 +47,8 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
       storageCapacityWh: 200000,
       loadW: 1000
     },
-    resources: [{ itemId: "spare_parts", name: "备件", quantity: 30 }],
-    sites: [{ siteId: "site-a", name: "测试站点", siteKey: "array", state: "built" }],
+    resources: [{ itemId: "spare_parts", name: "备件", quantity: 30, description: "测试物资说明" }],
+    sites: [{ siteId: "site-a", name: "测试站点", siteKey: "array", state: "built", description: null, attributes: [] }],
     devices: [],
     projects: [],
     buildableProjects: [],

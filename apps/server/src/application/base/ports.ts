@@ -55,9 +55,16 @@ export interface ProvisionSeedDto {
   devices: ProvisionSeedDeviceDto[];
 }
 
+export interface BaseFacilityInfoDto {
+  name: string;
+  description: string;
+  attributes: Array<{ label: string; value: string }>;
+}
+
 export interface ContentCatalogPort {
   releaseId(): string;
-  getItemNames(): Record<string, string>;
+  getItemInfo(): Record<string, { name: string; description: string }>;
+  getFacilityInfo(stableId: string): BaseFacilityInfoDto | null;
   getRobotTemplate(stableId: string): RobotTemplateDto | null;
   getProjectTemplate(stableId: string): ProjectTemplateDto | null;
   listTemplates(): { robots: RobotTemplateDto[]; projects: ProjectTemplateDto[] };

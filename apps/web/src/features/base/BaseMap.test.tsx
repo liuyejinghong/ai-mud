@@ -4,9 +4,9 @@ import type { BaseProjectDto, BaseSiteDto } from "@ai-mud/shared";
 import { BaseMap } from "./BaseMap.js";
 
 const sites: BaseSiteDto[] = [
-  { siteId: "site-array", name: "测试站点", siteKey: "array", state: "built" },
-  { siteId: "site-a", name: "测试站点", siteKey: "site_a", state: "free" },
-  { siteId: "site-b", name: "测试站点", siteKey: "site_b", state: "reserved" }
+  { siteId: "site-array", name: "测试站点", siteKey: "array", state: "built", description: null, attributes: [] },
+  { siteId: "site-a", name: "测试站点", siteKey: "site_a", state: "free", description: null, attributes: [] },
+  { siteId: "site-b", name: "测试站点", siteKey: "site_b", state: "reserved", description: null, attributes: [] }
 ];
 
 const projects: BaseProjectDto[] = [

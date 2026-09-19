@@ -21,12 +21,12 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
       loadW: 1000
     },
     resources: [
-      { itemId: "solar_panel_set", name: "太阳能板组", quantity: 6 },
-      { itemId: "anchor", name: "地锚", quantity: 8 }
+      { itemId: "solar_panel_set", name: "太阳能板组", quantity: 6, description: "测试物资说明" },
+      { itemId: "anchor", name: "地锚", quantity: 8, description: "测试物资说明" }
     ],
     sites: [
-      { siteId: "site-array", name: "测试站点", siteKey: "array", state: "built" },
-      { siteId: "site-a", name: "测试站点", siteKey: "site_a", state: "free" }
+      { siteId: "site-array", name: "测试站点", siteKey: "array", state: "built", description: null, attributes: [] },
+      { siteId: "site-a", name: "测试站点", siteKey: "site_a", state: "free", description: null, attributes: [] }
     ],
     devices: [
       {
@@ -37,8 +37,7 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
         status: "working",
         batteryWh: 12000,
         batteryCapacityWh: 20000,
-        currentAssignment: null
-      }
+        currentAssignment: null, description: "测试设备说明" }
     ],
     projects: [
       {
@@ -91,7 +90,9 @@ function renderShell(snapshot: BaseSnapshotDto) {
       onSelectDevice={noop}
       onCreateProject={noop}
       onCancelProject={noop}
-      onSetSpeed={() => undefined}
+      onSelectResource={() => undefined}
+        selectedResourceId={null}
+        onSetSpeed={() => undefined}
         onClockCommand={noop}
     />
   );
@@ -140,6 +141,8 @@ describe("BaseShell", () => {
         onSelectDevice={noop}
         onCreateProject={noop}
         onCancelProject={noop}
+        onSelectResource={() => undefined}
+        selectedResourceId={null}
         onSetSpeed={() => undefined}
         onClockCommand={onClockCommand}
       />
@@ -167,6 +170,8 @@ describe("BaseShell", () => {
         onSelectDevice={onSelectDevice}
         onCreateProject={noop}
         onCancelProject={noop}
+        onSelectResource={() => undefined}
+        selectedResourceId={null}
         onSetSpeed={() => undefined}
         onClockCommand={noop}
       />

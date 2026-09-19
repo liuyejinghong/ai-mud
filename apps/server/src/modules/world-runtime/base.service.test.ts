@@ -247,8 +247,21 @@ class FakeCatalog implements Pick<ContentCatalogPort, "getProvisionSeed" | "getR
     return { robots: [...this.robots.values()], projects: [...this.projects.values()] };
   }
 
-  getItemNames(): Record<string, string> {
-    return { anchor: "锚固件", spare_parts: "通用备件", solar_panel_set: "太阳电池阵组件" };
+  getItemInfo(): Record<string, { name: string; description: string }> {
+    return {
+      anchor: { name: "锚固件", description: "地基锚固件" },
+      spare_parts: { name: "通用备件", description: "维修耗材" }
+    };
+  }
+
+  getFacilityInfo(stableId: string) {
+    return stableId === "solar_array_unit"
+      ? {
+          name: "太阳能阵列单元",
+          description: "现场安装并网的阵列单元。",
+          attributes: [{ label: "峰值发电", value: "5.0 kW" }]
+        }
+      : null;
   }
 
   constructor(seed: ProvisionSeedSpec) {
@@ -342,12 +355,14 @@ function createFixture(options: {
     ref: { kind: "robot_template", stableId: "yd-h1", revision: 1 },
     name: "驮运机器人 YD-H1",
     groupId: "transport",
+    description: "资源运输组：货场与建设位之间的往返搬运。",
     batteryCapacityWh: 20000
   });
   catalog.robots.set("yd-e1", {
     ref: { kind: "robot_template", stableId: "yd-e1", revision: 2 },
     name: "筑垒机器人 YD-E1",
     groupId: "engineering",
+    description: "工程维护组：清场、安装、接线、检修。",
     batteryCapacityWh: 30000
   });
   catalog.projects.set("install_solar_array", {
@@ -691,12 +706,19 @@ describe("BaseService.snapshot", () => {
         loadW: 1000
       },
       resources: [
-        { itemId: "anchor", name: "锚固件", quantity: 8 },
-        { itemId: "spare_parts", name: "通用备件", quantity: 30 }
+        { itemId: "anchor", name: "锚固件", quantity: 8, description: "地基锚固件" },
+        { itemId: "spare_parts", name: "通用备件", quantity: 30, description: "维修耗材" }
       ],
       sites: [
-        { siteId: "site-b", siteKey: "storage", name: "储能间", state: "built" },
-        { siteId: "site-a", siteKey: "site_a", name: "建设位 A", state: "free" }
+        {
+          siteId: "site-b",
+          siteKey: "storage",
+          name: "储能间",
+          state: "built",
+          description: "现场安装并网的阵列单元。",
+          attributes: [{ label: "峰值发电", value: "5.0 kW" }]
+        },
+        { siteId: "site-a", siteKey: "site_a", name: "建设位 A", state: "free", description: null, attributes: [] }
       ],
       devices: [
         {
@@ -704,6 +726,7 @@ describe("BaseService.snapshot", () => {
           operatorId: "op-1",
           name: "驮运机器人 YD-H1",
           groupId: "transport",
+          description: "资源运输组：货场与建设位之间的往返搬运。",
           status: "working",
           batteryWh: 12000,
           batteryCapacityWh: 20000,
@@ -714,10 +737,12 @@ describe("BaseService.snapshot", () => {
           operatorId: "op-2",
           name: "筑垒机器人 YD-E1",
           groupId: "engineering",
+          description: "工程维护组：清场、安装、接线、检修。",
           status: "idle",
           batteryWh: 30000,
           batteryCapacityWh: 30000,
-          currentAssignment: null
+          currentAssignment: null,
+    description: "工程维护组：清场、安装、接线、检修。"
         }
       ],
       projects: [

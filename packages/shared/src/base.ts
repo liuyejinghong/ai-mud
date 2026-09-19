@@ -104,6 +104,12 @@ export interface BaseResourceDto {
   itemId: string;
   name: string;
   quantity: number;
+  description: string;
+}
+
+export interface BaseAttributeDto {
+  label: string;
+  value: string;
 }
 
 export interface BaseSiteDto {
@@ -111,6 +117,9 @@ export interface BaseSiteDto {
   siteKey: string;
   name: string;
   state: "free" | "reserved" | "built";
+  // built 站点携带设施说明与静态属性（来自内容包）；free/reserved 为 null。
+  description: string | null;
+  attributes: BaseAttributeDto[];
 }
 
 export interface BaseDeviceDto {
@@ -118,6 +127,7 @@ export interface BaseDeviceDto {
   operatorId: string;
   name: string;
   groupId: BaseRobotGroupId;
+  description: string;
   status: RobotStatus;
   batteryWh: number;
   batteryCapacityWh: number;

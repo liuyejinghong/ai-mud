@@ -28,6 +28,7 @@ function kwh(wattHours: number): string {
 
 export interface BaseShellProps {
   snapshot: BaseSnapshotDto;
+  selectedResourceId: string | null;
   csrfToken: string | null;
   selectedSiteId: string | null;
   selectedProjectId: string | null;
@@ -40,10 +41,12 @@ export interface BaseShellProps {
   onCancelProject: (projectId: string) => void;
   onClockCommand: (input: BaseClockCommandInputDto) => void;
   onSetSpeed: (speed: number) => void;
+  onSelectResource: (itemId: string) => void;
 }
 
 export function BaseShell({
   snapshot,
+  selectedResourceId,
   csrfToken,
   selectedSiteId,
   selectedProjectId,
@@ -55,7 +58,8 @@ export function BaseShell({
   onCreateProject,
   onCancelProject,
   onClockCommand,
-  onSetSpeed
+  onSetSpeed,
+  onSelectResource
 }: BaseShellProps) {
   const isPaused = snapshot.timeMode === "paused";
   const deviceSummary = snapshot.devices.map((device: BaseDeviceDto) => (
@@ -92,7 +96,14 @@ export function BaseShell({
             <ul className="base-resource-list">
               {snapshot.resources.map((resource) => (
                 <li key={resource.itemId}>
-                  {resource.name} ×{resource.quantity}
+                  <button
+                    type="button"
+                    className="base-resource-chip"
+                    aria-pressed={selectedResourceId === resource.itemId}
+                    onClick={() => onSelectResource(resource.itemId)}
+                  >
+                    {resource.name} ×{resource.quantity}
+                  </button>
                 </li>
               ))}
             </ul>
@@ -157,8 +168,10 @@ export function BaseShell({
       <ObjectPanel
         sites={snapshot.sites}
         projects={snapshot.projects}
-        devices={snapshot.devices}
+        devices={sortedDevices(snapshot.devices)}
         buildableProjects={snapshot.buildableProjects}
+        resources={snapshot.resources}
+        selectedResourceId={selectedResourceId ?? null}
         selectedSiteId={selectedSiteId}
         selectedProjectId={selectedProjectId}
         selectedDeviceId={selectedDeviceId}
@@ -185,4 +198,17 @@ function formatSimClock(simTime: string): string {
   const mm = String(date.getUTCMinutes()).padStart(2, "0");
   const phase = date.getUTCHours() >= 6 && date.getUTCHours() < 18 ? "昼间" : "夜间 · 储能供电";
   return `基地时间 ${hh}:${mm} · ${phase}`;
+}
+
+// 设备区排序：编组（运输→工程→勘测）内按作业状态优先（作业中 > 充电 > 待命 > 离线）。
+const GROUP_ORDER: Record<string, number> = { transport: 0, engineering: 1, survey: 2 };
+const STATUS_ORDER: Record<string, number> = { working: 0, charging: 1, idle: 2, offline: 3 };
+
+function sortedDevices(devices: BaseDeviceDto[]): BaseDeviceDto[] {
+  return [...devices].sort(
+    (a, b) =>
+      (GROUP_ORDER[a.groupId] ?? 9) - (GROUP_ORDER[b.groupId] ?? 9) ||
+      (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9) ||
+      a.name.localeCompare(b.name, "zh-Hans-CN")
+  );
 }

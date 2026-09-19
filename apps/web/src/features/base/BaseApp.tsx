@@ -15,6 +15,7 @@ import {
   provision,
   setClock
 } from "./baseApi.js";
+import { BaseIntroModal } from "./BaseIntroModal.js";
 import { BaseShell } from "./BaseShell.js";
 
 const SNAPSHOT_POLL_MS = 5_000;
@@ -149,6 +150,8 @@ export function BaseApp({
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
+  const [introDismissed, setIntroDismissed] = useState(() => globalThis.localStorage?.getItem("base-intro-dismissed") === "1");
 
   const refreshSnapshot = useCallback(async () => {
     try {
@@ -256,18 +259,28 @@ export function BaseApp({
     setSelectedSiteId(siteId);
     setSelectedProjectId(null);
     setSelectedDeviceId(null);
+    setSelectedResourceId(null);
   }, []);
 
   const handleSelectProject = useCallback((projectId: string) => {
     setSelectedProjectId(projectId);
     setSelectedSiteId(null);
     setSelectedDeviceId(null);
+    setSelectedResourceId(null);
   }, []);
 
   const handleSelectDevice = useCallback((deviceId: string) => {
     setSelectedDeviceId(deviceId);
     setSelectedSiteId(null);
     setSelectedProjectId(null);
+    setSelectedResourceId(null);
+  }, []);
+
+  const handleSelectResource = useCallback((itemId: string) => {
+    setSelectedResourceId((current) => (current === itemId ? null : itemId));
+    setSelectedSiteId(null);
+    setSelectedProjectId(null);
+    setSelectedDeviceId(null);
   }, []);
 
   if (phase !== "ready" || snapshot === null) {
@@ -293,8 +306,19 @@ export function BaseApp({
     );
   }
 
+  // 新手引导：首次进入（还没有任何项目）时显示剧情弹窗；开工后不再打扰。
+  const showIntro = snapshot !== null && snapshot.projects.length === 0 && !introDismissed;
   return (
     <>
+      {showIntro ? (
+        <BaseIntroModal
+          baseName={snapshot.name}
+          onDismiss={() => {
+            setIntroDismissed(true);
+            globalThis.localStorage?.setItem("base-intro-dismissed", "1");
+          }}
+        />
+      ) : null}
       {actionError ? (
         <p role="alert" className="base-error base-action-error">
           {actionError}
@@ -313,6 +337,8 @@ export function BaseApp({
         onCancelProject={handleCancelProject}
         onClockCommand={handleClockCommand}
         onSetSpeed={(speed) => handleClockCommand({ command: "set_speed", speed })}
+        onSelectResource={handleSelectResource}
+        selectedResourceId={selectedResourceId}
         isBusy={isActionBusy}
       />
     </>

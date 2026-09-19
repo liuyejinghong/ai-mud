@@ -3,7 +3,9 @@
 // fail-fast：构造时对 release 全量跑 content 纯层校验谓词，任何失败直接 throw（启动即崩），
 // 绝不带病提供目录。v0.12 目录只读内置 release，发布/激活能力属 M13-P。
 import {
+  BASE_FACILITY_INFO as FACILITY_INFO,
   DEFAULT_BASE_CONTENT_RELEASE,
+  type ContentItemInfo,
   validateItemNames,
   validateProjectTemplate,
   validateProvisionSeed,
@@ -39,7 +41,12 @@ interface ProvisionSeedDto {
 
 export interface ContentCatalogPort {
   releaseId(): string;
-  getItemNames(): Record<string, string>;
+  getItemInfo(): Record<string, ContentItemInfo>;
+  getFacilityInfo(stableId: string): {
+    name: string;
+    description: string;
+    attributes: Array<{ label: string; value: string }>;
+  } | null;
   getRobotTemplate(stableId: string): RobotTemplateDto | null;
   getProjectTemplate(stableId: string): ProjectTemplateDto | null;
   listTemplates(): { robots: RobotTemplateDto[]; projects: ProjectTemplateDto[] };
@@ -169,6 +176,11 @@ export function createContentCatalog(
       projects: release.projects.map(toProjectTemplateDto)
     }),
     getProvisionSeed: (): ProvisionSeedDto => toProvisionSeedDto(release.provisionSeed),
-    getItemNames: (): Record<string, string> => ({ ...release.itemNames })
+    getItemInfo: (): Record<string, ContentItemInfo> =>
+      Object.fromEntries(Object.entries(release.itemNames).map(([id, info]) => [id, { ...info }])),
+    getFacilityInfo: (stableId: string) => {
+      const info = FACILITY_INFO[stableId];
+      return info ? { ...info, attributes: info.attributes.map((a) => ({ ...a })) } : null;
+    }
   };
 }

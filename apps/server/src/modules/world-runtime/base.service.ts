@@ -71,6 +71,7 @@ export interface RobotTemplateSpec {
   ref: DefinitionRefDto;
   name: string;
   groupId: string;
+  description: string;
   batteryCapacityWh: number;
 }
 
@@ -95,7 +96,12 @@ export interface ProvisionSeedSpec {
 
 export interface ContentCatalogPort {
   getProvisionSeed(): ProvisionSeedSpec;
-  getItemNames(): Record<string, string>;
+  getItemInfo(): Record<string, { name: string; description: string }>;
+  getFacilityInfo(stableId: string): {
+    name: string;
+    description: string;
+    attributes: Array<{ label: string; value: string }>;
+  } | null;
   getRobotTemplate(stableId: string): RobotTemplateSpec | null;
   getProjectTemplate(stableId: string): ProjectTemplateSpec | null;
   listTemplates(): { robots: RobotTemplateSpec[]; projects: ProjectTemplateSpec[] };
@@ -321,18 +327,27 @@ export class BaseService {
 
       const seed = this.deps.catalog.getProvisionSeed();
       const siteNames = new Map(seed.sites.map((site) => [site.siteKey, site.name]));
-      const itemNames = this.deps.catalog.getItemNames();
+      const itemInfo = this.deps.catalog.getItemInfo();
 
-      const siteDtos: BaseSiteDto[] = sites.map((site: BaseSiteRecord) => ({
-        siteId: site.id,
-        siteKey: site.siteKey,
-        name: siteNames.get(site.siteKey) ?? site.siteKey,
-        state: site.state
-      }));
+      const siteDtos: BaseSiteDto[] = sites.map((site: BaseSiteRecord) => {
+        const facility =
+          site.state === "built" && site.builtFacilityRef
+            ? this.deps.catalog.getFacilityInfo(site.builtFacilityRef.split(":")[1]?.split("@")[0] ?? "")
+            : null;
+        return {
+          siteId: site.id,
+          siteKey: site.siteKey,
+          name: siteNames.get(site.siteKey) ?? site.siteKey,
+          state: site.state,
+          description: facility?.description ?? null,
+          attributes: facility?.attributes ?? []
+        };
+      });
 
       const resources: BaseResourceDto[] = inventory.map((row) => ({
         itemId: row.itemId,
-        name: itemNames[row.itemId] ?? row.itemId,
+        name: itemInfo[row.itemId]?.name ?? row.itemId,
+        description: itemInfo[row.itemId]?.description ?? "",
         quantity: row.quantity
       }));
 
@@ -343,6 +358,7 @@ export class BaseService {
           operatorId: operator.operatorId,
           name: template?.name ?? operator.deviceDefId,
           groupId: operator.groupId as BaseRobotGroupId,
+          description: template?.description ?? "",
           status: operator.status as RobotStatus,
           batteryWh: operator.batteryWh,
           batteryCapacityWh: operator.batteryCapacityWh,

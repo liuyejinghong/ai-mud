@@ -4,6 +4,8 @@
 // 数值全部为"游戏初值"，修改须回 P 握手。
 import type {
   ContentBaseRelease,
+  ContentFacilityInfo,
+  ContentItemInfo,
   ContentProjectTemplate,
   ContentProvisionSeed,
   ContentRobotTemplate
@@ -134,18 +136,86 @@ export const BASE_PROVISION_SEED: ContentProvisionSeed = {
   ]
 };
 
-export const BASE_ITEM_NAMES: Record<string, string> = {
-  solar_panel_set: "太阳电池阵组件",
-  support_frame: "支架结构件",
-  cable: "线缆",
-  power_box: "配电单元",
-  anchor: "锚固件",
-  spare_parts: "通用备件"
+export const BASE_ITEM_INFO: Record<string, ContentItemInfo> = {
+  solar_panel_set: {
+    name: "太阳电池阵组件",
+    description: "随首批货飞船运抵的折叠式太阳电池阵，安装并网后成为基地的发电设施。"
+  },
+  support_frame: {
+    name: "支架结构件",
+    description: "把电池阵举离地面并固定角度的支架，安装作业的主要工作量所在。"
+  },
+  cable: {
+    name: "线缆",
+    description: "阵列到配电单元的输电线路，敷设后并网。"
+  },
+  power_box: {
+    name: "配电单元",
+    description: "汇流并网设备：把阵列电力接入基地电网，监控输出。"
+  },
+  anchor: {
+    name: "锚固件",
+    description: "打地基用的锚固件，清场后固定支架。"
+  },
+  spare_parts: {
+    name: "通用备件",
+    description: "维修耗材：关节、电池、紧固件。设备检修时由维护工位消耗。"
+  }
+};
+
+// 建成设施的内容说明：对象详情里展示的静态属性（运行数据在电力区展示）。
+export const BASE_FACILITY_INFO: Record<string, ContentFacilityInfo> = {
+  "yudian-array": {
+    name: "太阳能阵列",
+    description: "首批货运部署的太阳电池阵，白天为基地供电。表面积尘会降低出力，需要定期安排巡检清理。",
+    attributes: [
+      { label: "峰值发电", value: "15.0 kW" },
+      { label: "供电时段", value: "昼间（基地时间 06:00–18:00）" },
+      { label: "当前状态", value: "运行中，存在积尘衰减" }
+    ]
+  },
+  "yudian-storage": {
+    name: "储能间",
+    description: "基地的电池储能库：白天存下多余的电，夜间和尘暴期维持基本运转。设备夜间低速充电也靠它。",
+    attributes: [
+      { label: "容量", value: "200 kWh" },
+      { label: "供电时段", value: "夜间 / 无光期" }
+    ]
+  },
+  "yudian-warehouse": {
+    name: "仓储棚",
+    description: "随船物资和产出物料的存放点。工程队从这里领取建材，完工设施归档运行数据。",
+    attributes: [{ label: "存放", value: "全部物资（见顶部物资区）" }]
+  },
+  "yudian-maintenance": {
+    name: "维护工位",
+    description: "基础维护是前哨的公共职责：检查、清尘、更换关节和电池都在这里进行，消耗通用备件。",
+    attributes: [
+      { label: "同时维修", value: "2 台设备" },
+      { label: "消耗", value: "通用备件" }
+    ]
+  },
+  "yudian-charging": {
+    name: "充电区",
+    description: "工程设备的充电桩区。充电功率受基地发电盈余限制，夜间只提供涓流，优先保障基本负荷。",
+    attributes: [
+      { label: "充电位", value: "4 个" },
+      { label: "策略", value: "盈余优先，夜间涓流 2 kW" }
+    ]
+  },
+  "solar-array-unit": {
+    name: "太阳能阵列单元",
+    description: "由工程队现场安装并网的太阳电池阵单元：支架锚固、板组展开、线缆接入配电单元。",
+    attributes: [
+      { label: "峰值发电", value: "5.0 kW" },
+      { label: "供电时段", value: "昼间（基地时间 06:00–18:00）" }
+    ]
+  }
 };
 
 export const DEFAULT_BASE_CONTENT_RELEASE: ContentBaseRelease = {
   releaseId: RELEASE_ID,
-  itemNames: BASE_ITEM_NAMES,
+  itemNames: BASE_ITEM_INFO,
   robots: BASE_ROBOT_TEMPLATES,
   projects: BASE_PROJECT_TEMPLATES,
   provisionSeed: BASE_PROVISION_SEED

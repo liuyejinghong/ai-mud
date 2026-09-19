@@ -11,8 +11,10 @@ describe("AuthPage", () => {
   it("opens on the playtest tab without registration-only fields", () => {
     render(<AuthPage />);
 
-    // v0.12：默认停留在试玩注册（开发期主路径），管理员/老玩家手动切登录。
-    expect(screen.getByRole("tab", { name: "试玩注册" }).getAttribute("aria-selected")).toBe("true");
+    // v0.12：默认试玩注册为主行动（无 tab），激活码注册收进登录入口。
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.getByRole("button", { name: "前往登录" })).toBeTruthy();
+    expect(screen.getByText(/首批无人货运飞船/)).toBeTruthy();
     expect(screen.getByLabelText("邮箱")).toBeTruthy();
     expect(screen.getByLabelText("密码")).toBeTruthy();
     expect(screen.queryByLabelText("激活码")).toBeNull();
@@ -23,7 +25,8 @@ describe("AuthPage", () => {
   it("shows activation code only in registration mode", () => {
     render(<AuthPage />);
 
-    fireEvent.click(screen.getByRole("tab", { name: "注册" }));
+    fireEvent.click(screen.getByRole("button", { name: "前往登录" }));
+    fireEvent.click(screen.getByRole("tab", { name: "激活码注册" }));
 
     expect(screen.getByLabelText("激活码")).toBeTruthy();
     expect(screen.getByLabelText("确认密码")).toBeTruthy();
@@ -34,7 +37,8 @@ describe("AuthPage", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     render(<AuthPage />);
 
-    fireEvent.click(screen.getByRole("tab", { name: "注册" }));
+    fireEvent.click(screen.getByRole("button", { name: "前往登录" }));
+    fireEvent.click(screen.getByRole("tab", { name: "激活码注册" }));
     fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "player@example.com" } });
     fireEvent.change(screen.getByLabelText("密码"), { target: { value: "123456789" } });
     fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "123456789" } });
@@ -59,7 +63,8 @@ describe("AuthPage", () => {
     );
     render(<AuthPage />);
 
-    fireEvent.click(screen.getByRole("tab", { name: "注册" }));
+    fireEvent.click(screen.getByRole("button", { name: "前往登录" }));
+    fireEvent.click(screen.getByRole("tab", { name: "激活码注册" }));
     fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: " player@example.com " } });
     fireEvent.change(screen.getByLabelText("密码"), { target: { value: "LongPassword123" } });
     fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "LongPassword123" } });

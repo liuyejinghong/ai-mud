@@ -87,7 +87,7 @@ export interface ContentProvisionSeed {
 // 一个内容 release 的整体形状：content-catalog 启动时对它全量跑校验谓词。
 export interface ContentBaseRelease {
   releaseId: string;
-  itemNames: Record<string, string>;
+  itemNames: Record<string, ContentItemInfo>;
   robots: ContentRobotTemplate[];
   projects: ContentProjectTemplate[];
   provisionSeed: ContentProvisionSeed;
@@ -425,7 +425,7 @@ export function validateProvisionSeed(
 }
 
 export function validateItemNames(
-  itemNames: Record<string, string>,
+  itemNames: Record<string, ContentItemInfo>,
   seed: ContentProvisionSeed,
   projects: readonly ContentProjectTemplate[]
 ): string[] {
@@ -434,22 +434,35 @@ export function validateItemNames(
   if (entries.length === 0) {
     errors.push("itemNames must not be empty");
   }
-  for (const [itemId, name] of entries) {
-    if (!isNonEmptyString(itemId) || !isNonEmptyString(name)) {
-      errors.push(`itemNames["${String(itemId)}"] must map a non-empty id to a non-empty name`);
+  for (const [itemId, info] of entries) {
+    if (!isNonEmptyString(itemId) || !info || !isNonEmptyString(info.name) || !isNonEmptyString(info.description)) {
+      errors.push(`itemNames["${String(itemId)}"] must map an id to a non-empty name and description`);
     }
   }
   for (const entry of seed.inventory) {
-    if (!isNonEmptyString(itemNames?.[entry.itemId])) {
+    const info = itemNames?.[entry.itemId];
+    if (!info || !isNonEmptyString(info.name)) {
       errors.push(`itemNames is missing a display name for inventory item "${entry.itemId}"`);
     }
   }
   for (const project of projects) {
     for (const input of project.inputs) {
-      if (!isNonEmptyString(itemNames?.[input.itemId])) {
+      const inputInfo = itemNames?.[input.itemId];
+      if (!inputInfo || !isNonEmptyString(inputInfo.name)) {
         errors.push(`itemNames is missing a display name for project input "${input.itemId}"`);
       }
     }
   }
   return errors;
+}
+
+export interface ContentItemInfo {
+  name: string;
+  description: string;
+}
+
+export interface ContentFacilityInfo {
+  name: string;
+  description: string;
+  attributes: Array<{ label: string; value: string }>;
 }

@@ -2220,6 +2220,20 @@
       "layer": "composition",
       "scope": "production",
       "note": "M12-I 真实端口绑定：路由依赖与基地 tick 参与者装配"
+    },
+    {
+      "path": "apps/web/src/features/base/BaseIntroModal.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M12-C 首次进入的剧情引导弹窗（纯展示，无网络调用）"
+    },
+    {
+      "path": "apps/web/src/features/base/BaseIntroModal.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-C"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",

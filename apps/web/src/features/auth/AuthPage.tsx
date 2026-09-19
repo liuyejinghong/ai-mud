@@ -152,7 +152,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: Auth
     <main className="auth-page">
       <section className="auth-shell" aria-label="内测认证入口">
         <header className="auth-header">
-          <h1 className="auth-title">AI MUD 内测登录</h1>
+          <h1 className="auth-title">《余电》· 火星先遣基地</h1>
           <span className="auth-version">v0.12.0</span>
         </header>
 
@@ -160,49 +160,56 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: Auth
           <aside className="auth-briefing">
             {mode === "playtest" ? (
               <>
-                <p>服务器状态：开发试玩。</p>
-                <p>注册后自动获得一座火星先遣基地，用鼠标指挥工程队开工。</p>
-                <p>试玩模式允许简单密码；正式开放策略另行验收。</p>
+                <p>服务器状态：开发内测。</p>
+                <p>
+                  2033 年，首批无人货运飞船降落在火星阿卡迪亚平原。注册后你将接管一支 12
+                  台设备的先遣工程队——用鼠标指挥它们，把随船物资变成火星上第一座能自己发电的基地。
+                </p>
+                <p>试玩无需激活码，允许简单密码；正式开放策略另行验收。</p>
               </>
             ) : (
               <>
-                <p>服务器状态：封闭内测。</p>
-                <p>黑松哨站的通行名册，只向持有码的冒险者开放。</p>
-                <p>你的名字会被写入城镇账本，随后才允许进入边境。</p>
+                <p>服务器状态：开发内测。</p>
+                <p>已有指挥账号？登录后回到你的基地，工程队一直在原地等你。</p>
+                <p>激活码注册用于封闭测试账号；普通体验请用「试玩注册」。</p>
               </>
             )}
           </aside>
 
           <form className="auth-form" onSubmit={onSubmit}>
-            <div className="auth-mode-switch" role="tablist" aria-label="账号入口">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === "login"}
-                className="auth-tab"
-                onClick={() => switchMode("login")}
-              >
-                登录
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === "register"}
-                className="auth-tab"
-                onClick={() => switchMode("register")}
-              >
-                注册
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={mode === "playtest"}
-                className="auth-tab"
-                onClick={() => switchMode("playtest")}
-              >
-                试玩注册
-              </button>
-            </div>
+            {mode === "playtest" ? (
+              <p className="auth-switch-links">
+                已有账号？
+                <button
+                  type="button"
+                  className="auth-link-button"
+                  onClick={() => switchMode("login")}
+                >
+                  前往登录
+                </button>
+              </p>
+            ) : (
+              <div className="auth-mode-switch" role="tablist" aria-label="账号入口">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "login"}
+                  className="auth-tab"
+                  onClick={() => switchMode("login")}
+                >
+                  登录
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === "register"}
+                  className="auth-tab"
+                  onClick={() => switchMode("register")}
+                >
+                  激活码注册
+                </button>
+              </div>
+            )}
 
             <label className="auth-field" htmlFor="auth-email">
               邮箱

@@ -8,8 +8,8 @@ import type {
 import { ObjectPanel } from "./ObjectPanel.js";
 
 const sites: BaseSiteDto[] = [
-  { siteId: "site-a", name: "测试站点", siteKey: "site_a", state: "free" },
-  { siteId: "site-b", name: "测试站点", siteKey: "site_b", state: "reserved" }
+  { siteId: "site-a", name: "测试站点", siteKey: "site_a", state: "free", description: null, attributes: [] },
+  { siteId: "site-b", name: "测试站点", siteKey: "site_b", state: "reserved", description: null, attributes: [] }
 ];
 
 const projects: BaseProjectDto[] = [
@@ -48,6 +48,7 @@ const devices: BaseDeviceDto[] = [
     operatorId: "operator-1",
     name: "筑垒者一号",
     groupId: "engineering",
+    description: "测试设备说明",
     status: "charging",
     batteryWh: 6000,
     batteryCapacityWh: 30000,
@@ -73,6 +74,8 @@ describe("ObjectPanel", () => {
         sites={sites}
         projects={projects}
         devices={devices}
+        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, description: "维修耗材" }]}
+        selectedResourceId={null}
         selectedSiteId={null}
         selectedProjectId={null}
         selectedDeviceId={null}
@@ -94,6 +97,8 @@ describe("ObjectPanel", () => {
         sites={sites}
         projects={projects}
         devices={devices}
+        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, description: "维修耗材" }]}
+        selectedResourceId={null}
         selectedSiteId="site-a"
         selectedProjectId={null}
         selectedDeviceId={null}
@@ -130,6 +135,8 @@ describe("ObjectPanel", () => {
         sites={sites}
         projects={projects}
         devices={devices}
+        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, description: "维修耗材" }]}
+        selectedResourceId={null}
         selectedSiteId={null}
         selectedProjectId="project-live"
         selectedDeviceId={null}
@@ -154,6 +161,8 @@ describe("ObjectPanel", () => {
         sites={sites}
         projects={projects}
         devices={devices}
+        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, description: "维修耗材" }]}
+        selectedResourceId={null}
         selectedSiteId={null}
         selectedProjectId="project-live"
         selectedDeviceId={null}
@@ -181,6 +190,8 @@ describe("ObjectPanel", () => {
         sites={sites}
         projects={projects}
         devices={devices}
+        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, description: "维修耗材" }]}
+        selectedResourceId={null}
         selectedSiteId={null}
         selectedProjectId={null}
         selectedDeviceId="device-1"

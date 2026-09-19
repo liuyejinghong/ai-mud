@@ -2,6 +2,7 @@
 import type {
   BaseDeviceDto,
   BaseProjectDto,
+  BaseResourceDto,
   BaseSiteDto,
   CreateProjectInputDto,
   DefinitionRefDto,
@@ -36,6 +37,8 @@ export interface ObjectPanelProps {
   projects: BaseProjectDto[];
   devices: BaseDeviceDto[];
   buildableProjects: BuildableTemplateDto[];
+  resources: BaseResourceDto[];
+  selectedResourceId: string | null;
   selectedSiteId: string | null;
   selectedProjectId: string | null;
   selectedDeviceId: string | null;
@@ -50,6 +53,8 @@ export function ObjectPanel({
   projects,
   devices,
   buildableProjects,
+  resources,
+  selectedResourceId,
   selectedSiteId,
   selectedProjectId,
   selectedDeviceId,
@@ -70,12 +75,18 @@ export function ObjectPanel({
     selectedSiteId !== null
       ? (sites.find((site) => site.siteId === selectedSiteId) ?? null)
       : null;
+  const selectedResource =
+    selectedResourceId !== null
+      ? (resources.find((resource) => resource.itemId === selectedResourceId) ?? null)
+      : null;
 
   return (
     <aside className="base-panel base-object-panel" aria-label="对象详情">
       <h2 className="base-panel-title">对象详情</h2>
 
-      {selectedProject ? (
+      {selectedResource ? (
+        <ResourceDetail resource={selectedResource} />
+      ) : selectedProject ? (
         <ProjectDetail
           project={selectedProject}
           isBusy={isBusy}
@@ -178,6 +189,7 @@ function DeviceDetail({
   return (
     <div className="base-detail">
       <h3>{device.name}</h3>
+      {device.description ? <p className="base-copy">{device.description}</p> : null}
       <p className="base-detail-line">编组：{BASE_ROBOT_GROUP_NAMES[device.groupId]}</p>
       <p className="base-detail-line">状态：{ROBOT_STATUS_LABELS[device.status]}</p>
       <p className="base-detail-line">
@@ -190,6 +202,17 @@ function DeviceDetail({
             }`
           : "当前任务：空闲，等待安排"}
       </p>
+      <p className="base-copy">任务由基地调度系统自动分配；手动指派将在后续版本开放。</p>
+    </div>
+  );
+}
+
+function ResourceDetail({ resource }: { resource: BaseResourceDto }) {
+  return (
+    <div className="base-detail">
+      <h3>{resource.name}</h3>
+      <p className="base-detail-line">库存：×{resource.quantity}</p>
+      <p className="base-copy">{resource.description}</p>
     </div>
   );
 }
@@ -213,7 +236,16 @@ function SiteDetail({
     return (
       <div className="base-detail">
         <h3>{site.name}</h3>
-        <p className="base-detail-line">这里已经建成设施，暂时没有可安排的工程。</p>
+        {site.description ? <p className="base-copy">{site.description}</p> : null}
+        {site.attributes.length > 0 ? (
+          <ul className="base-attr-list">
+            {site.attributes.map((attribute) => (
+              <li key={attribute.label} className="base-detail-line">
+                {attribute.label}：{attribute.value}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
     );
   }
