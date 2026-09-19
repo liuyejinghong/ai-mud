@@ -2206,6 +2206,20 @@
       "layer": "test",
       "scope": "test",
       "note": "M12-Q 真 PG 建设全链/争抢/失败回滚"
+    },
+    {
+      "path": "apps/server/src/modules/ledger/base-asset.service.ts",
+      "module": "assets",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M12-I base_inventory/base_devices 唯一写者（预留≠消耗），事务绑定端口实现"
+    },
+    {
+      "path": "apps/server/src/application/base/composition.ts",
+      "module": "application",
+      "layer": "composition",
+      "scope": "production",
+      "note": "M12-I 真实端口绑定：路由依赖与基地 tick 参与者装配"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",

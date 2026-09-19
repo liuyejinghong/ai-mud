@@ -1,6 +1,7 @@
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import Fastify from "fastify";
+import { createBaseOperations } from "./application/base/composition.js";
 import { loadEnv, type Env } from "./config/env.js";
 import { createDb, type Db, type DbConnection } from "./db/client.js";
 import { registerAdminRoutes } from "./modules/admin/admin.routes.js";
@@ -8,6 +9,8 @@ import { AdminBootstrapService } from "./modules/auth/admin-bootstrap.service.js
 import { AuthRepository } from "./modules/auth/auth.repository.js";
 import { registerAuthRoutes } from "./modules/auth/auth.routes.js";
 import { AuthService } from "./modules/auth/auth.service.js";
+import { registerBaseProjectsRoutes } from "./modules/industry/base-projects.routes.js";
+import { registerBaseSessionRoutes } from "./modules/world-runtime/base-session.routes.js";
 import { registerGameRoutes } from "./modules/game/game.routes.js";
 import {
   createNpcTaskService,
@@ -107,6 +110,7 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
     dbConnection = createDb(config.DATABASE_URL);
     db = dbConnection.db;
   }
+  const baseOps = createBaseOperations({ db, config });
   const runSettleDue = async (now = systemWorldClock.now()) => {
     const runtime = new WorldRuntimeService({
       repo: new WorldRuntimeRepository(db),
@@ -123,6 +127,9 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
         },
         async (tx, tickAt) => {
           await new GameRepository(tx).refreshDueInstanceResources({ now: tickAt });
+        },
+        async (tx, tickAt) => {
+          await baseOps.settlement.settleBases(tx, tickAt);
         }
       ]
     });
@@ -216,6 +223,8 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
   await app.register(registerAuthRoutes);
   await app.register(registerGameRoutes);
   await app.register(registerAdminRoutes);
+  await app.register((instance) => registerBaseSessionRoutes(instance, baseOps.session));
+  await app.register((instance) => registerBaseProjectsRoutes(instance, baseOps.projects));
 
   app.get("/health", async () => ({ ok: true, service: "ai-mud-server" }));
 

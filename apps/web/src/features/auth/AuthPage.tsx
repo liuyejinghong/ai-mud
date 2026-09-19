@@ -1,6 +1,7 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
 import type { ApiErrorBody, ErrorCode } from "@ai-mud/shared";
+import { playtestRegister } from "../base/baseApi";
 import { login, registerAccount, type AuthSessionDto } from "./authApi";
 import "./AuthPage.css";
 
@@ -36,7 +37,7 @@ function authErrorMessage(code: ErrorCode, fallback: string) {
 }
 
 export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: AuthSessionDto) => void }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register" | "playtest">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -44,7 +45,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: Auth
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function switchMode(nextMode: "login" | "register") {
+  function switchMode(nextMode: "login" | "register" | "playtest") {
     setMode(nextMode);
     setMessage("");
   }
@@ -111,10 +112,37 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: Auth
     }
   }
 
+  async function submitPlaytestRegister() {
+    if (password.length < 1) {
+      setMessage("请输入密码（试玩模式允许简单密码）。");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setMessage("");
+
+    try {
+      const result = await playtestRegister({ email: email.trim(), password });
+      onAuthenticated?.({
+        user: { id: result.user.accountId, email: result.user.email, role: "player", status: "active" },
+        csrfToken: result.csrfToken
+      });
+      setMessage("注册成功，正在进入基地。");
+    } catch {
+      setMessage("无法连接服务器，或试玩注册未开放。");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (mode === "login") {
       void submitLogin();
+      return;
+    }
+    if (mode === "playtest") {
+      void submitPlaytestRegister();
       return;
     }
     void submitRegister();
@@ -125,14 +153,24 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: Auth
       <section className="auth-shell" aria-label="内测认证入口">
         <header className="auth-header">
           <h1 className="auth-title">AI MUD 内测登录</h1>
-          <span className="auth-version">v0.1 Foundation</span>
+          <span className="auth-version">v0.12.0</span>
         </header>
 
         <div className="auth-body">
           <aside className="auth-briefing">
-            <p>服务器状态：封闭内测。</p>
-            <p>黑松哨站的通行名册，只向持有码的冒险者开放。</p>
-            <p>你的名字会被写入城镇账本，随后才允许进入边境。</p>
+            {mode === "playtest" ? (
+              <>
+                <p>服务器状态：开发试玩。</p>
+                <p>注册后自动获得一座火星先遣基地，用鼠标指挥工程队开工。</p>
+                <p>试玩模式允许简单密码；正式开放策略另行验收。</p>
+              </>
+            ) : (
+              <>
+                <p>服务器状态：封闭内测。</p>
+                <p>黑松哨站的通行名册，只向持有码的冒险者开放。</p>
+                <p>你的名字会被写入城镇账本，随后才允许进入边境。</p>
+              </>
+            )}
           </aside>
 
           <form className="auth-form" onSubmit={onSubmit}>
@@ -155,6 +193,15 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: Auth
               >
                 注册
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "playtest"}
+                className="auth-tab"
+                onClick={() => switchMode("playtest")}
+              >
+                试玩注册
+              </button>
             </div>
 
             <label className="auth-field" htmlFor="auth-email">
@@ -176,7 +223,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: Auth
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                minLength={mode === "register" ? PASSWORD_MIN_LENGTH : undefined}
+                minLength={mode === "register" ? PASSWORD_MIN_LENGTH : mode === "playtest" ? 1 : undefined}
               />
             </label>
 
@@ -212,7 +259,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: Auth
                 className="auth-primary-button"
                 disabled={isSubmitting}
               >
-                {mode === "login" ? "登录" : "创建账号"}
+                {mode === "login" ? "登录" : mode === "playtest" ? "注册并进入基地" : "创建账号"}
               </button>
             </div>
 
