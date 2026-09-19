@@ -212,7 +212,7 @@ function SiteDetail({
   if (site.state === "built") {
     return (
       <div className="base-detail">
-        <h3>{site.siteKey}</h3>
+        <h3>{site.name}</h3>
         <p className="base-detail-line">这里已经建成设施，暂时没有可安排的工程。</p>
       </div>
     );
@@ -229,7 +229,7 @@ function SiteDetail({
     );
     return (
       <div className="base-detail">
-        <h3>{site.siteKey}</h3>
+        <h3>{site.name}</h3>
         <p className="base-detail-line">
           {ongoing ? `有项目正在这里施工：${ongoing.name}` : "这里已预留，等待项目开工。"}
         </p>
@@ -245,7 +245,7 @@ function SiteDetail({
   const templates = buildableProjects;
   return (
     <div className="base-detail">
-      <h3>{site.siteKey}</h3>
+      <h3>{site.name}</h3>
       <p className="base-detail-line">这是一块空地，可以开工一个项目。</p>
       {templates.length === 0 ? (
         <p className="base-copy">现在还没有可建的项目。</p>

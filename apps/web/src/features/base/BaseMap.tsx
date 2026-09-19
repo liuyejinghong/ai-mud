@@ -5,7 +5,7 @@ const ACTIVE_PROJECT_STATUSES = new Set(["planned", "active", "paused", "blocked
 
 function describeSite(site: BaseSiteDto, projects: BaseProjectDto[]): { title: string; note: string } {
   if (site.state === "free") {
-    return { title: site.siteKey, note: "可建设位" };
+    return { title: site.name, note: "可建设位" };
   }
 
   const siteProjects = projects.filter((project) => project.siteId === site.siteId);
@@ -13,14 +13,14 @@ function describeSite(site: BaseSiteDto, projects: BaseProjectDto[]): { title: s
   if (site.state === "reserved") {
     const ongoing = siteProjects.find((project) => ACTIVE_PROJECT_STATUSES.has(project.status));
     return {
-      title: site.siteKey,
+      title: site.name,
       note: ongoing ? `施工中：${ongoing.name}` : "已预留，等待施工"
     };
   }
 
   const completed = siteProjects.find((project) => project.status === "completed");
   return {
-    title: completed ? completed.name : site.siteKey,
+    title: completed ? completed.name : site.name,
     note: "设施已建成"
   };
 }

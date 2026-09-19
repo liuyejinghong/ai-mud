@@ -32,6 +32,7 @@ vi.mock("./BaseShell.js", () => ({
 
 function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDto {
   return {
+    name: "先遣前哨",
     baseId: "base-1",
     epoch: 1,
     baseRevision: 1,
@@ -47,7 +48,7 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
       loadW: 1000
     },
     resources: [{ itemId: "spare_parts", name: "备件", quantity: 30 }],
-    sites: [{ siteId: "site-a", siteKey: "array", state: "built" }],
+    sites: [{ siteId: "site-a", name: "测试站点", siteKey: "array", state: "built" }],
     devices: [],
     projects: [],
     buildableProjects: [],

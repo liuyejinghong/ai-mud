@@ -109,6 +109,7 @@ export interface BaseResourceDto {
 export interface BaseSiteDto {
   siteId: string;
   siteKey: string;
+  name: string;
   state: "free" | "reserved" | "built";
 }
 
@@ -148,6 +149,7 @@ export interface BaseControlLeaseDto {
 }
 
 export interface BaseSnapshotDto {
+  name: string;
   baseId: string;
   epoch: number;
   baseRevision: number;

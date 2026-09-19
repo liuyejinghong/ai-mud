@@ -88,13 +88,14 @@ export interface ProvisionSeedSpec {
     storageCapacityWh: number;
     initialStorageWh: number;
   };
-  sites: Array<{ siteKey: string; state: "free" | "built"; facilityRef?: DefinitionRefDto | undefined }>;
+  sites: Array<{ siteKey: string; name: string; state: "free" | "built"; facilityRef?: DefinitionRefDto | undefined }>;
   inventory: Array<{ itemId: string; quantity: number }>;
   devices: Array<{ templateStableId: string; groupId: string; count: number; initialBatteryWh: number }>;
 }
 
 export interface ContentCatalogPort {
   getProvisionSeed(): ProvisionSeedSpec;
+  getItemNames(): Record<string, string>;
   getRobotTemplate(stableId: string): RobotTemplateSpec | null;
   getProjectTemplate(stableId: string): ProjectTemplateSpec | null;
   listTemplates(): { robots: RobotTemplateSpec[]; projects: ProjectTemplateSpec[] };
@@ -318,16 +319,20 @@ export class BaseService {
           : [];
       const operators = await this.deps.robotRead.listOperators(baseId);
 
+      const seed = this.deps.catalog.getProvisionSeed();
+      const siteNames = new Map(seed.sites.map((site) => [site.siteKey, site.name]));
+      const itemNames = this.deps.catalog.getItemNames();
+
       const siteDtos: BaseSiteDto[] = sites.map((site: BaseSiteRecord) => ({
         siteId: site.id,
         siteKey: site.siteKey,
+        name: siteNames.get(site.siteKey) ?? site.siteKey,
         state: site.state
       }));
 
       const resources: BaseResourceDto[] = inventory.map((row) => ({
         itemId: row.itemId,
-        // v0.12 目录端口未提供物品名（只有机器人/项目模板），按合同回退 itemId。
-        name: row.itemId,
+        name: itemNames[row.itemId] ?? row.itemId,
         quantity: row.quantity
       }));
 
@@ -373,6 +378,7 @@ export class BaseService {
       }));
 
       return {
+        name: base.name,
         baseId: base.id,
         epoch: base.epoch,
         baseRevision: base.baseRevision,

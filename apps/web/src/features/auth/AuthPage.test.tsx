@@ -8,15 +8,16 @@ afterEach(() => {
 });
 
 describe("AuthPage", () => {
-  it("renders login first without registration-only fields", () => {
+  it("opens on the playtest tab without registration-only fields", () => {
     render(<AuthPage />);
 
-    expect(screen.getByRole("heading", { name: "AI MUD 内测登录" })).toBeTruthy();
+    // v0.12：默认停留在试玩注册（开发期主路径），管理员/老玩家手动切登录。
+    expect(screen.getByRole("tab", { name: "试玩注册" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByLabelText("邮箱")).toBeTruthy();
     expect(screen.getByLabelText("密码")).toBeTruthy();
     expect(screen.queryByLabelText("激活码")).toBeNull();
     expect(screen.queryByLabelText("确认密码")).toBeNull();
-    expect(screen.getByRole("button", { name: "登录" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "登录" })).toBeNull();
   });
 
   it("shows activation code only in registration mode", () => {

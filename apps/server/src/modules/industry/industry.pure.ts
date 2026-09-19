@@ -28,6 +28,8 @@ export const ARRAY_DUST_FACTOR = 0.9;
 export const BASE_LOAD_W = 1000;
 export const CONSTRUCTION_LOAD_W = 2000;
 export const ROBOT_WORK_DRAIN_WH = 500;
+const TRICKLE_CHARGE_W = 2_000;
+// 充电节流：夜间/无光期储能只出涓流充电功率，不为满充买单（防开局储能被掏空）。
 export const POWER_BLOCK_REASON = "insufficient_power";
 export const CONTENT_BLOCK_REASON = "content_missing";
 
@@ -323,14 +325,19 @@ export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
   }
 
   // ---------- 5) 充电：idle/charging 机器人（working 不充） ----------
+  // 节流：充电预算 = 发电盈余 + 储能涓流；预算耗尽后其余机器人本 tick 不充。
   if (dh > 0) {
+    let chargingBudgetWh =
+      Math.max(0, energy.value) + Math.min(TRICKLE_CHARGE_W * dh, storage.value);
     for (const robot of robotStates) {
+      if (chargingBudgetWh <= ENERGY_EPS) break;
       if (robot.status !== "idle" && robot.status !== "charging") continue;
       if (robot.chargeRateW <= 0) continue;
       const room = robot.record.batteryCapacityWh - robot.battery;
       if (room <= ENERGY_EPS) continue;
       const demand = Math.min(robot.chargeRateW * dh, room);
-      const served = serveDemand(demand, energy, storage);
+      const served = serveDemand(Math.min(demand, chargingBudgetWh), energy, storage);
+      chargingBudgetWh -= served;
       servedEnergy += served;
       robot.battery = Math.min(robot.record.batteryCapacityWh, robot.battery + served);
     }

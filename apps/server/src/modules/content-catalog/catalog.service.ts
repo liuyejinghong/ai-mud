@@ -4,6 +4,7 @@
 // 绝不带病提供目录。v0.12 目录只读内置 release，发布/激活能力属 M13-P。
 import {
   DEFAULT_BASE_CONTENT_RELEASE,
+  validateItemNames,
   validateProjectTemplate,
   validateProvisionSeed,
   validateRobotTemplate,
@@ -17,6 +18,7 @@ import type { ProjectTemplateDto, RobotTemplateDto } from "@ai-mud/shared";
 // 依赖 application；composition 按结构绑定，漂移由 catalog.service.test.ts 锁定）。
 interface ProvisionSeedSiteDto {
   siteKey: string;
+  name: string;
   state: "free" | "built";
   facilityRef?: { kind: "project" | "robot_template" | "facility"; stableId: string; revision: number };
 }
@@ -37,6 +39,7 @@ interface ProvisionSeedDto {
 
 export interface ContentCatalogPort {
   releaseId(): string;
+  getItemNames(): Record<string, string>;
   getRobotTemplate(stableId: string): RobotTemplateDto | null;
   getProjectTemplate(stableId: string): ProjectTemplateDto | null;
   listTemplates(): { robots: RobotTemplateDto[]; projects: ProjectTemplateDto[] };
@@ -73,9 +76,14 @@ function toProjectTemplateDto(template: ContentProjectTemplate): ProjectTemplate
 function toProvisionSeedDto(seed: ContentProvisionSeed): ProvisionSeedDto {
   const sites: ProvisionSeedSiteDto[] = seed.sites.map((site) => {
     if (site.facilityRef === undefined) {
-      return { siteKey: site.siteKey, state: site.state };
+      return { siteKey: site.siteKey, name: site.name, state: site.state };
     }
-    return { siteKey: site.siteKey, state: site.state, facilityRef: { ...site.facilityRef } };
+    return {
+      siteKey: site.siteKey,
+      name: site.name,
+      state: site.state,
+      facilityRef: { ...site.facilityRef }
+    };
   });
   return {
     releaseId: seed.releaseId,
@@ -100,6 +108,10 @@ function assertReleaseValid(release: ContentBaseRelease): void {
     if (errors.length > 0) {
       failures.push(`project "${project.ref?.stableId ?? "?"}": ${errors.join("; ")}`);
     }
+  }
+  const nameErrors = validateItemNames(release.itemNames, release.provisionSeed, release.projects);
+  if (nameErrors.length > 0) {
+    failures.push(...nameErrors);
   }
   const seedErrors = validateProvisionSeed(
     release.provisionSeed,
@@ -156,6 +168,7 @@ export function createContentCatalog(
       robots: release.robots.map(toRobotTemplateDto),
       projects: release.projects.map(toProjectTemplateDto)
     }),
-    getProvisionSeed: (): ProvisionSeedDto => toProvisionSeedDto(release.provisionSeed)
+    getProvisionSeed: (): ProvisionSeedDto => toProvisionSeedDto(release.provisionSeed),
+    getItemNames: (): Record<string, string> => ({ ...release.itemNames })
   };
 }

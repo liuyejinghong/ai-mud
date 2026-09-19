@@ -89,30 +89,35 @@ export const BASE_PROVISION_SEED: ContentProvisionSeed = {
   sites: [
     {
       siteKey: "array",
+      name: "太阳能阵列",
       state: "built",
       facilityRef: { kind: "facility", stableId: "yudian-array", revision: 1 }
     },
     {
       siteKey: "storage",
+      name: "储能间",
       state: "built",
       facilityRef: { kind: "facility", stableId: "yudian-storage", revision: 1 }
     },
     {
       siteKey: "warehouse",
+      name: "仓储棚",
       state: "built",
       facilityRef: { kind: "facility", stableId: "yudian-warehouse", revision: 1 }
     },
     {
       siteKey: "maintenance",
+      name: "维护工位",
       state: "built",
       facilityRef: { kind: "facility", stableId: "yudian-maintenance", revision: 1 }
     },
     {
       siteKey: "charging",
+      name: "充电区",
       state: "built",
       facilityRef: { kind: "facility", stableId: "yudian-charging", revision: 1 }
     },
-    { siteKey: "site_a", state: "free" }
+    { siteKey: "site_a", name: "建设位 A", state: "free" }
   ],
   inventory: [
     { itemId: "solar_panel_set", quantity: 6 },
@@ -129,8 +134,18 @@ export const BASE_PROVISION_SEED: ContentProvisionSeed = {
   ]
 };
 
+export const BASE_ITEM_NAMES: Record<string, string> = {
+  solar_panel_set: "太阳电池阵组件",
+  support_frame: "支架结构件",
+  cable: "线缆",
+  power_box: "配电单元",
+  anchor: "锚固件",
+  spare_parts: "通用备件"
+};
+
 export const DEFAULT_BASE_CONTENT_RELEASE: ContentBaseRelease = {
   releaseId: RELEASE_ID,
+  itemNames: BASE_ITEM_NAMES,
   robots: BASE_ROBOT_TEMPLATES,
   projects: BASE_PROJECT_TEMPLATES,
   provisionSeed: BASE_PROVISION_SEED

@@ -247,6 +247,10 @@ class FakeCatalog implements Pick<ContentCatalogPort, "getProvisionSeed" | "getR
     return { robots: [...this.robots.values()], projects: [...this.projects.values()] };
   }
 
+  getItemNames(): Record<string, string> {
+    return { anchor: "锚固件", spare_parts: "通用备件", solar_panel_set: "太阳电池阵组件" };
+  }
+
   constructor(seed: ProvisionSeedSpec) {
     this.seed = seed;
   }
@@ -297,10 +301,12 @@ const PROVISION_SEED: ProvisionSeedSpec = {
   sites: [
     {
       siteKey: "array",
+      name: "太阳能阵列",
       state: "built",
       facilityRef: { kind: "facility", stableId: "solar_array_unit", revision: 1 }
     },
-    { siteKey: "site_a", state: "free" }
+    { siteKey: "storage", name: "储能间", state: "built" },
+    { siteKey: "site_a", name: "建设位 A", state: "free" }
   ],
   inventory: [
     { itemId: "anchor", quantity: 8 },
@@ -393,6 +399,13 @@ describe("BaseService.provision", () => {
         siteKey: "array",
         state: "built",
         builtFacilityRef: "facility:solar_array_unit@1"
+      },
+      {
+        id: expect.any(String),
+        baseId,
+        siteKey: "storage",
+        state: "built",
+        builtFacilityRef: null
       },
       { id: expect.any(String), baseId, siteKey: "site_a", state: "free", builtFacilityRef: null }
     ]);
@@ -662,6 +675,7 @@ describe("BaseService.snapshot", () => {
     const snapshot: BaseSnapshotDto = await fx.service.snapshot({ accountId: ACCOUNT_ID });
 
     expect(snapshot).toEqual({
+      name: "余电前哨",
       baseId: "base-1",
       epoch: 1,
       baseRevision: 7,
@@ -677,12 +691,12 @@ describe("BaseService.snapshot", () => {
         loadW: 1000
       },
       resources: [
-        { itemId: "anchor", name: "anchor", quantity: 8 },
-        { itemId: "spare_parts", name: "spare_parts", quantity: 30 }
+        { itemId: "anchor", name: "锚固件", quantity: 8 },
+        { itemId: "spare_parts", name: "通用备件", quantity: 30 }
       ],
       sites: [
-        { siteId: "site-b", siteKey: "storage", state: "built" },
-        { siteId: "site-a", siteKey: "site_a", state: "free" }
+        { siteId: "site-b", siteKey: "storage", name: "储能间", state: "built" },
+        { siteId: "site-a", siteKey: "site_a", name: "建设位 A", state: "free" }
       ],
       devices: [
         {

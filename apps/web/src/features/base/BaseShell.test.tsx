@@ -5,6 +5,7 @@ import { BaseShell } from "./BaseShell.js";
 
 function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDto {
   return {
+    name: "先遣前哨",
     baseId: "base-1",
     epoch: 1,
     baseRevision: 1,
@@ -24,8 +25,8 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
       { itemId: "anchor", name: "地锚", quantity: 8 }
     ],
     sites: [
-      { siteId: "site-array", siteKey: "array", state: "built" },
-      { siteId: "site-a", siteKey: "site_a", state: "free" }
+      { siteId: "site-array", name: "测试站点", siteKey: "array", state: "built" },
+      { siteId: "site-a", name: "测试站点", siteKey: "site_a", state: "free" }
     ],
     devices: [
       {
@@ -90,7 +91,8 @@ function renderShell(snapshot: BaseSnapshotDto) {
       onSelectDevice={noop}
       onCreateProject={noop}
       onCancelProject={noop}
-      onClockCommand={noop}
+      onSetSpeed={() => undefined}
+        onClockCommand={noop}
     />
   );
 }
@@ -138,6 +140,7 @@ describe("BaseShell", () => {
         onSelectDevice={noop}
         onCreateProject={noop}
         onCancelProject={noop}
+        onSetSpeed={() => undefined}
         onClockCommand={onClockCommand}
       />
     );
@@ -164,6 +167,7 @@ describe("BaseShell", () => {
         onSelectDevice={onSelectDevice}
         onCreateProject={noop}
         onCancelProject={noop}
+        onSetSpeed={() => undefined}
         onClockCommand={noop}
       />
     );

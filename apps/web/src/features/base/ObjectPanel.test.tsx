@@ -8,8 +8,8 @@ import type {
 import { ObjectPanel } from "./ObjectPanel.js";
 
 const sites: BaseSiteDto[] = [
-  { siteId: "site-a", siteKey: "site_a", state: "free" },
-  { siteId: "site-b", siteKey: "site_b", state: "reserved" }
+  { siteId: "site-a", name: "测试站点", siteKey: "site_a", state: "free" },
+  { siteId: "site-b", name: "测试站点", siteKey: "site_b", state: "reserved" }
 ];
 
 const projects: BaseProjectDto[] = [

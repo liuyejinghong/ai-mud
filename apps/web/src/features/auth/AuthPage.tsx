@@ -37,7 +37,7 @@ function authErrorMessage(code: ErrorCode, fallback: string) {
 }
 
 export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: AuthSessionDto) => void }) {
-  const [mode, setMode] = useState<"login" | "register" | "playtest">("login");
+  const [mode, setMode] = useState<"login" | "register" | "playtest">("playtest");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");

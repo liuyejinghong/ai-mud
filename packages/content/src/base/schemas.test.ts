@@ -52,10 +52,11 @@ const validSeed: ContentProvisionSeed = {
   sites: [
     {
       siteKey: "array",
+      name: "太阳能阵列",
       state: "built",
       facilityRef: { kind: "facility", stableId: "yudian-array", revision: 1 }
     },
-    { siteKey: "site_a", state: "free" }
+    { siteKey: "site_a", name: "建设位 A", state: "free" }
   ],
   inventory: [
     { itemId: "solar_panel_set", quantity: 6 },

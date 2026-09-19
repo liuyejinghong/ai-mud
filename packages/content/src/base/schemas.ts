@@ -66,6 +66,7 @@ export interface ContentProvisionSeedDevice {
 
 export interface ContentProvisionSeedSite {
   siteKey: string;
+  name: string;
   state: ContentSeedSiteState;
   facilityRef?: ContentDefinitionRef;
 }
@@ -86,6 +87,7 @@ export interface ContentProvisionSeed {
 // 一个内容 release 的整体形状：content-catalog 启动时对它全量跑校验谓词。
 export interface ContentBaseRelease {
   releaseId: string;
+  itemNames: Record<string, string>;
   robots: ContentRobotTemplate[];
   projects: ContentProjectTemplate[];
   provisionSeed: ContentProvisionSeed;
@@ -268,7 +270,7 @@ export function validateProjectTemplate(template: ContentProjectTemplate): strin
 
 const SEED_KEYS = ["releaseId", "baseName", "power", "sites", "inventory", "devices"] as const;
 const SEED_POWER_KEYS = ["generationWPeak", "storageCapacityWh", "initialStorageWh"] as const;
-const SEED_SITE_KEYS = ["siteKey", "state", "facilityRef"] as const;
+const SEED_SITE_KEYS = ["siteKey", "name", "state", "facilityRef"] as const;
 const SEED_DEVICE_KEYS = ["templateStableId", "groupId", "count", "initialBatteryWh"] as const;
 
 export function validateProvisionSeed(
@@ -315,6 +317,9 @@ export function validateProvisionSeed(
     sites.forEach((site, index) => {
       const siteLabel = `${label}.sites[${index}]`;
       collectUnknownKeys(site, SEED_SITE_KEYS, siteLabel, errors);
+      if (!isNonEmptyString(site.name)) {
+        errors.push(`${siteLabel}.name must be a non-empty string`);
+      }
       if (!isNonEmptyString(site.siteKey)) {
         errors.push(`${siteLabel}.siteKey must be a non-empty string`);
       } else {
@@ -415,6 +420,36 @@ export function validateProvisionSeed(
         }
       }
     });
+  }
+  return errors;
+}
+
+export function validateItemNames(
+  itemNames: Record<string, string>,
+  seed: ContentProvisionSeed,
+  projects: readonly ContentProjectTemplate[]
+): string[] {
+  const errors: string[] = [];
+  const entries = Object.entries(itemNames ?? {});
+  if (entries.length === 0) {
+    errors.push("itemNames must not be empty");
+  }
+  for (const [itemId, name] of entries) {
+    if (!isNonEmptyString(itemId) || !isNonEmptyString(name)) {
+      errors.push(`itemNames["${String(itemId)}"] must map a non-empty id to a non-empty name`);
+    }
+  }
+  for (const entry of seed.inventory) {
+    if (!isNonEmptyString(itemNames?.[entry.itemId])) {
+      errors.push(`itemNames is missing a display name for inventory item "${entry.itemId}"`);
+    }
+  }
+  for (const project of projects) {
+    for (const input of project.inputs) {
+      if (!isNonEmptyString(itemNames?.[input.itemId])) {
+        errors.push(`itemNames is missing a display name for project input "${input.itemId}"`);
+      }
+    }
   }
   return errors;
 }

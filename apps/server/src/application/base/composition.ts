@@ -120,9 +120,18 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     clock: new BaseClockUseCase(baseService)
   };
 
+  // 开工动员：创建项目提交后立即结算一个模拟步，机器人马上到位出工，
+  // 消除"下一分钟才有动静"的空窗（玩家视角：点下建设就看到设备进场）。
+  const createCase = new CreateProjectCase(db, construction);
   const projects: BaseProjectsRouteDeps = {
     auth: authFacade,
-    create: new CreateProjectCase(db, construction),
+    create: {
+      execute: async (principal, input) => {
+        const result = await createCase.execute(principal, input);
+        await db.transaction((tx) => settlement.settleBases(tx, systemWorldClock.now()));
+        return result;
+      }
+    },
     cancel: new CancelProjectCase(db, construction)
   };
 

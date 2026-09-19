@@ -172,8 +172,14 @@ export function BaseApp({
     };
     void refreshSnapshot();
     const timer = window.setInterval(poll, SNAPSHOT_POLL_MS);
+    // 切回页面立即刷新一次，避免看到后台期间暂停轮询留下的陈旧数据。
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void poll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [refreshSnapshot]);
 
@@ -306,6 +312,7 @@ export function BaseApp({
         onCreateProject={handleCreateProject}
         onCancelProject={handleCancelProject}
         onClockCommand={handleClockCommand}
+        onSetSpeed={(speed) => handleClockCommand({ command: "set_speed", speed })}
         isBusy={isActionBusy}
       />
     </>

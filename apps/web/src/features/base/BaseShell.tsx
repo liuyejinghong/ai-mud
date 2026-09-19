@@ -39,6 +39,7 @@ export interface BaseShellProps {
   onCreateProject: (input: CreateProjectInputDto) => void;
   onCancelProject: (projectId: string) => void;
   onClockCommand: (input: BaseClockCommandInputDto) => void;
+  onSetSpeed: (speed: number) => void;
 }
 
 export function BaseShell({
@@ -53,7 +54,8 @@ export function BaseShell({
   onSelectDevice,
   onCreateProject,
   onCancelProject,
-  onClockCommand
+  onClockCommand,
+  onSetSpeed
 }: BaseShellProps) {
   const isPaused = snapshot.timeMode === "paused";
   const deviceSummary = snapshot.devices.map((device: BaseDeviceDto) => (
@@ -71,6 +73,7 @@ export function BaseShell({
   return (
     <main className="base-shell">
       <header className="base-panel base-topbar" aria-label="基地状态总览">
+        <h1 className="base-panel-title">{snapshot.name || "火星先遣基地"}</h1>
         <section className="base-summary" aria-label="电力">
           <h2 className="base-panel-title">电力</h2>
           <p className="base-summary-line">发电能力 {kw(snapshot.power.generationWPeak)} kW</p>
@@ -108,15 +111,31 @@ export function BaseShell({
         <section className="base-summary base-clock" aria-label="基地时间">
           <h2 className="base-panel-title">时间</h2>
           {isPaused ? (
-            <strong className="base-paused-badge" role="status">
-              时间已暂停
-            </strong>
+            <>
+              <strong className="base-paused-badge" role="status">
+                时间已暂停
+              </strong>
+              <p className="base-summary-line">暂停期间不消耗物资，恢复后继续施工。</p>
+            </>
           ) : (
             <p className="base-summary-line">
               计时中 · 速度 ×{snapshot.speed}
             </p>
           )}
-          <p className="base-summary-line base-simtime">{snapshot.simTime}</p>
+          <p className="base-summary-line base-simtime">{formatSimClock(snapshot.simTime)}</p>
+          <div className="base-speed-row" role="group" aria-label="时间流速">
+            {[1, 2, 4].map((speed) => (
+              <button
+                key={speed}
+                type="button"
+                aria-pressed={!isPaused && snapshot.speed === speed}
+                disabled={isBusy || csrfToken === null}
+                onClick={() => onSetSpeed(speed)}
+              >
+                ×{speed}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             className="base-primary-button"
@@ -156,4 +175,14 @@ export function BaseShell({
       />
     </main>
   );
+}
+
+// 基地时间显示：simTime 的 UTC 小时即基地昼夜基准（与结算规则一致）。
+function formatSimClock(simTime: string): string {
+  const date = new Date(simTime);
+  if (Number.isNaN(date.getTime())) return simTime;
+  const hh = String(date.getUTCHours()).padStart(2, "0");
+  const mm = String(date.getUTCMinutes()).padStart(2, "0");
+  const phase = date.getUTCHours() >= 6 && date.getUTCHours() < 18 ? "昼间" : "夜间 · 储能供电";
+  return `基地时间 ${hh}:${mm} · ${phase}`;
 }

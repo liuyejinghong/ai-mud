@@ -37,6 +37,7 @@ export interface ProvisionSeedDeviceDto {
 
 export interface ProvisionSeedSiteDto {
   siteKey: string;
+  name: string;
   state: "free" | "built";
   facilityRef?: DefinitionRefDto;
 }
@@ -56,6 +57,7 @@ export interface ProvisionSeedDto {
 
 export interface ContentCatalogPort {
   releaseId(): string;
+  getItemNames(): Record<string, string>;
   getRobotTemplate(stableId: string): RobotTemplateDto | null;
   getProjectTemplate(stableId: string): ProjectTemplateDto | null;
   listTemplates(): { robots: RobotTemplateDto[]; projects: ProjectTemplateDto[] };
