@@ -7,6 +7,7 @@ function buildAuthRouteTestApp(overrides: Partial<AuthRouteDependencies>) {
   const app = Fastify();
   app.decorate("config", {
     NODE_ENV: "test",
+    PLAYTEST_REGISTRATION_ENABLED: false,
     SERVER_HOST: "127.0.0.1",
     SERVER_PORT: 3000,
     DATABASE_URL: "postgres://example",

@@ -849,3 +849,235 @@ export const syncEvents = pgTable(
     )
   })
 );
+
+// ---------------------------------------------------------------------------
+// 基地经营（v0.12，M12-P）：写归属见 docs/reviews/base-operations/contracts.md §6
+// world=基地作用域/时钟/建设位/控制租约；assets=物料与设备资产；npc=作业者运行状态；
+// industry=项目/步骤/站内供能。功率一律 W、电量一律 Wh 整数定点。
+// ---------------------------------------------------------------------------
+
+export const baseTimeMode = pgEnum("base_time_mode", ["paused", "running"]);
+
+export const bases = pgTable(
+  "bases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id)
+      .unique(),
+    name: text("name").notNull(),
+    timeMode: baseTimeMode("time_mode").notNull().default("paused"),
+    speed: integer("speed").notNull().default(1),
+    simTime: timestamp("sim_time", { withTimezone: true }).notNull().defaultNow(),
+    lastAdvancedAt: timestamp("last_advanced_at", { withTimezone: true }).notNull().defaultNow(),
+    epoch: integer("epoch").notNull().default(1),
+    baseRevision: integer("base_revision").notNull().default(1),
+    contentRelease: text("content_release").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    speedCheck: check("bases_speed_allowed_check", sql`${table.speed} IN (1, 2, 4)`),
+    revisionCheck: check("bases_revision_positive_check", sql`${table.baseRevision} >= 1`)
+  })
+);
+
+export const baseSites = pgTable(
+  "base_sites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    baseId: uuid("base_id")
+      .notNull()
+      .references(() => bases.id),
+    siteKey: text("site_key").notNull(),
+    state: text("state").notNull().default("free"),
+    builtFacilityRef: text("built_facility_ref"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    baseSiteKeyIdx: uniqueIndex("base_sites_base_site_key_idx").on(table.baseId, table.siteKey),
+    stateCheck: check(
+      "base_sites_state_check",
+      sql`${table.state} IN ('free', 'reserved', 'built')`
+    )
+  })
+);
+
+export const baseControlLeases = pgTable("base_control_leases", {
+  baseId: uuid("base_id")
+    .primaryKey()
+    .references(() => bases.id),
+  leaseToken: text("lease_token").notNull(),
+  leaseUntil: timestamp("lease_until", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const baseInventory = pgTable(
+  "base_inventory",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    baseId: uuid("base_id")
+      .notNull()
+      .references(() => bases.id),
+    itemId: text("item_id").notNull(),
+    quantity: integer("quantity").notNull(),
+    reservedQuantity: integer("reserved_quantity").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    baseItemIdx: uniqueIndex("base_inventory_base_item_idx").on(table.baseId, table.itemId),
+    quantityCheck: check("base_inventory_quantity_nonnegative_check", sql`${table.quantity} >= 0`),
+    reservedCheck: check(
+      "base_inventory_reserved_bounded_check",
+      sql`${table.reservedQuantity} >= 0 AND ${table.reservedQuantity} <= ${table.quantity}`
+    )
+  })
+);
+
+export const baseDevices = pgTable(
+  "base_devices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    baseId: uuid("base_id")
+      .notNull()
+      .references(() => bases.id),
+    deviceDefId: text("device_def_id").notNull(),
+    templateRevision: integer("template_revision").notNull(),
+    sourceOperation: text("source_operation").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    baseIdx: index("base_devices_base_idx").on(table.baseId),
+    sourceOperationIdx: uniqueIndex("base_devices_source_operation_idx").on(
+      table.sourceOperation,
+      table.deviceDefId
+    )
+  })
+);
+
+export const robotOperators = pgTable(
+  "robot_operators",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    deviceId: uuid("device_id")
+      .notNull()
+      .references(() => baseDevices.id)
+      .unique(),
+    baseId: uuid("base_id")
+      .notNull()
+      .references(() => bases.id),
+    groupId: text("group_id").notNull(),
+    batteryWh: integer("battery_wh").notNull(),
+    batteryCapacityWh: integer("battery_capacity_wh").notNull(),
+    status: text("status").notNull().default("idle"),
+    currentProjectId: uuid("current_project_id"),
+    currentStepIndex: integer("current_step_index"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    baseIdx: index("robot_operators_base_idx").on(table.baseId),
+    groupIdx: index("robot_operators_group_idx").on(table.baseId, table.groupId),
+    batteryCheck: check(
+      "robot_operators_battery_bounded_check",
+      sql`${table.batteryWh} >= 0 AND ${table.batteryWh} <= ${table.batteryCapacityWh}`
+    ),
+    groupCheck: check(
+      "robot_operators_group_check",
+      sql`${table.groupId} IN ('transport', 'engineering', 'survey')`
+    ),
+    statusCheck: check(
+      "robot_operators_status_check",
+      sql`${table.status} IN ('idle', 'charging', 'working', 'offline')`
+    )
+  })
+);
+
+export const basePowerState = pgTable(
+  "base_power_state",
+  {
+    baseId: uuid("base_id")
+      .primaryKey()
+      .references(() => bases.id),
+    generationWPeak: integer("generation_w_peak").notNull(),
+    storageWh: integer("storage_wh").notNull(),
+    storageCapacityWh: integer("storage_capacity_wh").notNull(),
+    lastLoadW: integer("last_load_w").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    storageCheck: check(
+      "base_power_storage_bounded_check",
+      sql`${table.storageWh} >= 0 AND ${table.storageWh} <= ${table.storageCapacityWh}`
+    )
+  })
+);
+
+export const baseProjects = pgTable(
+  "base_projects",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    baseId: uuid("base_id")
+      .notNull()
+      .references(() => bases.id),
+    siteId: uuid("site_id")
+      .notNull()
+      .references(() => baseSites.id),
+    projectDefId: text("project_def_id").notNull(),
+    templateRevision: integer("template_revision").notNull(),
+    status: text("status").notNull().default("active"),
+    currentStepIndex: integer("current_step_index").notNull().default(0),
+    reservedInputs: jsonb("reserved_inputs").notNull().default([]),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true })
+  },
+  (table) => ({
+    baseIdx: index("base_projects_base_idx").on(table.baseId, table.status),
+    siteActiveIdx: uniqueIndex("base_projects_one_active_per_site_idx")
+      .on(table.siteId)
+      .where(sql`${table.status} IN ('planned', 'active', 'paused', 'blocked', 'needs_decision')`),
+    statusCheck: check(
+      "base_projects_status_check",
+      sql`${table.status} IN ('planned', 'active', 'paused', 'blocked', 'needs_decision', 'completed', 'cancelled', 'failed')`
+    )
+  })
+);
+
+export const baseProjectSteps = pgTable(
+  "base_project_steps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => baseProjects.id),
+    stepIndex: integer("step_index").notNull(),
+    kind: text("kind").notNull(),
+    groupId: text("group_id").notNull(),
+    status: text("status").notNull().default("pending"),
+    workRequired: integer("work_required").notNull(),
+    workDone: integer("work_done").notNull().default(0),
+    blockedReason: text("blocked_reason"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    projectStepIdx: uniqueIndex("base_project_steps_project_index_idx").on(
+      table.projectId,
+      table.stepIndex
+    ),
+    kindCheck: check(
+      "base_project_steps_kind_check",
+      sql`${table.kind} IN ('site_clearing', 'transport', 'installation', 'commissioning')`
+    ),
+    groupCheck: check(
+      "base_project_steps_group_check",
+      sql`${table.groupId} IN ('transport', 'engineering', 'survey')`
+    ),
+    statusCheck: check(
+      "base_project_steps_status_check",
+      sql`${table.status} IN ('pending', 'ready', 'running', 'blocked', 'completed', 'failed')`
+    ),
+    workCheck: check(
+      "base_project_steps_work_bounded_check",
+      sql`${table.workDone} >= 0 AND ${table.workDone} <= ${table.workRequired}`
+    )
+  })
+);
