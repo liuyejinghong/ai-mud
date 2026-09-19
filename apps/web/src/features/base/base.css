@@ -8,7 +8,7 @@
   grid-template-areas:
     "topbar topbar"
     "map panel"
-    "board board";
+    "board panel";
   gap: 10px;
   padding: 10px;
   box-sizing: border-box;
@@ -522,4 +522,40 @@
 .base-logout-button:hover {
   border-color: #29d7b1;
   color: #29d7b1;
+}
+
+/* ── 完工横幅 ── */
+.base-completion-banner {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #ffe08a;
+  color: #ffe08a;
+  background: rgba(60, 44, 8, 0.55);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+.base-completion-banner button {
+  border: none;
+  background: none;
+  color: #ffe08a;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* ── 目标卡（项目清单空态） ── */
+.base-goal-card {
+  border: 1px solid #ffe08a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: grid;
+  gap: 6px;
+}
+.base-goal-title {
+  color: #ffe08a;
+  font-size: 13px;
 }

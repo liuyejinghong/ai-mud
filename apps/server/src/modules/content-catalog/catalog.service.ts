@@ -44,6 +44,7 @@ export interface ContentCatalogPort {
   getItemInfo(): Record<string, ContentItemInfo>;
   getFacilityInfo(stableId: string): {
     name: string;
+    note: string;
     description: string;
     attributes: Array<{ label: string; value: string }>;
   } | null;

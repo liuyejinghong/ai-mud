@@ -48,7 +48,7 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
       loadW: 1000
     },
     resources: [{ itemId: "spare_parts", name: "备件", quantity: 30, description: "测试物资说明" }],
-    sites: [{ siteId: "site-a", name: "测试站点", siteKey: "array", state: "built", description: null, attributes: [] }],
+    sites: [{ siteId: "site-a", name: "测试站点", siteKey: "array", state: "built", note: null, description: null, attributes: [] }],
     devices: [],
     projects: [],
     buildableProjects: [],
@@ -202,5 +202,50 @@ describe("BaseApp", () => {
     });
     expect(heartbeat).toHaveBeenCalledTimes(1);
     expect(heartbeat).toHaveBeenCalledWith("csrf-hb");
+  });
+});
+
+describe("BaseApp > 完工横幅", () => {
+  it("项目从进行中变为已完成时显示完工横幅，可关闭", async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const running = buildSnapshot({
+      projects: [
+        {
+          projectId: "p-1",
+          definitionRef: { kind: "project", stableId: "install_solar_array", revision: 1 },
+          name: "安装运抵的太阳能设施",
+          status: "active",
+          siteId: "site-a",
+          steps: []
+        }
+      ]
+    });
+    const done = buildSnapshot({
+      projects: [
+        {
+          projectId: "p-1",
+          definitionRef: { kind: "project", stableId: "install_solar_array", revision: 1 },
+          name: "安装运抵的太阳能设施",
+          status: "completed",
+          siteId: "site-a",
+          steps: []
+        }
+      ]
+    });
+    vi.mocked(getSnapshot).mockResolvedValueOnce(running).mockResolvedValue(done);
+
+    render(<BaseApp />);
+    await act(async () => {});
+    expect(screen.queryByText(/已完工/)).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(screen.getByText(/安装运抵的太阳能设施已完工/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭完工提示" }));
+    expect(screen.queryByText(/已完工/)).toBeNull();
+    visibility.mockRestore();
   });
 });

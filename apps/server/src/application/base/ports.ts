@@ -57,6 +57,7 @@ export interface ProvisionSeedDto {
 
 export interface BaseFacilityInfoDto {
   name: string;
+  note: string;
   description: string;
   attributes: Array<{ label: string; value: string }>;
 }

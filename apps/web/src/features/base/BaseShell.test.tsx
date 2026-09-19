@@ -25,8 +25,8 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
       { itemId: "anchor", name: "地锚", quantity: 8, description: "测试物资说明" }
     ],
     sites: [
-      { siteId: "site-array", name: "测试站点", siteKey: "array", state: "built", description: null, attributes: [] },
-      { siteId: "site-a", name: "测试站点", siteKey: "site_a", state: "free", description: null, attributes: [] }
+      { siteId: "site-array", name: "测试站点", siteKey: "array", state: "built", note: null, description: null, attributes: [] },
+      { siteId: "site-a", name: "测试站点", siteKey: "site_a", state: "free", note: null, description: null, attributes: [] }
     ],
     devices: [
       {

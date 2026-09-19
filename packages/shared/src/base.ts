@@ -118,6 +118,7 @@ export interface BaseSiteDto {
   name: string;
   state: "free" | "reserved" | "built";
   // built 站点携带设施说明与静态属性（来自内容包）；free/reserved 为 null。
+  note: string | null;
   description: string | null;
   attributes: BaseAttributeDto[];
 }

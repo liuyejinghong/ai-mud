@@ -167,6 +167,7 @@ export const BASE_ITEM_INFO: Record<string, ContentItemInfo> = {
 export const BASE_FACILITY_INFO: Record<string, ContentFacilityInfo> = {
   "yudian-array": {
     name: "太阳能阵列",
+    note: "昼间为基地供电",
     description: "首批货运部署的太阳电池阵，白天为基地供电。表面积尘会降低出力，需要定期安排巡检清理。",
     attributes: [
       { label: "峰值发电", value: "15.0 kW" },
@@ -176,6 +177,7 @@ export const BASE_FACILITY_INFO: Record<string, ContentFacilityInfo> = {
   },
   "yudian-storage": {
     name: "储能间",
+    note: "夜间与无光期供电",
     description: "基地的电池储能库：白天存下多余的电，夜间和尘暴期维持基本运转。设备夜间低速充电也靠它。",
     attributes: [
       { label: "容量", value: "200 kWh" },
@@ -184,11 +186,13 @@ export const BASE_FACILITY_INFO: Record<string, ContentFacilityInfo> = {
   },
   "yudian-warehouse": {
     name: "仓储棚",
+    note: "存放全部物资",
     description: "随船物资和产出物料的存放点。工程队从这里领取建材，完工设施归档运行数据。",
     attributes: [{ label: "存放", value: "全部物资（见顶部物资区）" }]
   },
   "yudian-maintenance": {
     name: "维护工位",
+    note: "检修与清尘设备",
     description: "基础维护是前哨的公共职责：检查、清尘、更换关节和电池都在这里进行，消耗通用备件。",
     attributes: [
       { label: "同时维修", value: "2 台设备" },
@@ -197,6 +201,7 @@ export const BASE_FACILITY_INFO: Record<string, ContentFacilityInfo> = {
   },
   "yudian-charging": {
     name: "充电区",
+    note: "给工程设备充电",
     description: "工程设备的充电桩区。充电功率受基地发电盈余限制，夜间只提供涓流，优先保障基本负荷。",
     attributes: [
       { label: "充电位", value: "4 个" },
@@ -205,6 +210,7 @@ export const BASE_FACILITY_INFO: Record<string, ContentFacilityInfo> = {
   },
   "solar-array-unit": {
     name: "太阳能阵列单元",
+    note: "昼间为基地供电",
     description: "由工程队现场安装并网的太阳电池阵单元：支架锚固、板组展开、线缆接入配电单元。",
     attributes: [
       { label: "峰值发电", value: "5.0 kW" },

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   BaseClockCommandInputDto,
   BaseSnapshotDto,
@@ -150,6 +150,9 @@ export function BaseApp({
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [completionBanner, setCompletionBanner] = useState<string | null>(null);
+  const completedSeenRef = useRef<Set<string>>(new Set());
+  const hasPrevSnapshotRef = useRef(false);
   const [isActionBusy, setIsActionBusy] = useState(false);
 
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
@@ -161,6 +164,21 @@ export function BaseApp({
   const refreshSnapshot = useCallback(async () => {
     try {
       const next = await getSnapshot();
+      // 完工提示：对比上一轮快照，新出现的已完成项目横幅告知（等待期的关键反馈）。
+      // 冷启动（首次拉到快照）只静默记住已完成集合，不横幅——历史完工不该在登录时轰炸。
+      if (hasPrevSnapshotRef.current) {
+        const fresh = next.projects.find(
+          (project) =>
+            project.status === "completed" && !completedSeenRef.current.has(project.projectId)
+        );
+        if (fresh !== undefined) {
+          setCompletionBanner(`${fresh.name}已完工，基地能力提升。`);
+        }
+      }
+      hasPrevSnapshotRef.current = true;
+      for (const project of next.projects) {
+        if (project.status === "completed") completedSeenRef.current.add(project.projectId);
+      }
       setSnapshot(next);
       setPhase("ready");
       return next;
@@ -335,6 +353,18 @@ export function BaseApp({
             globalThis.localStorage?.setItem("base-intro-dismissed", "1");
           }}
         />
+      ) : null}
+      {completionBanner ? (
+        <div className="base-completion-banner" role="status">
+          <span>{completionBanner}</span>
+          <button
+            type="button"
+            aria-label="关闭完工提示"
+            onClick={() => setCompletionBanner(null)}
+          >
+            ×
+          </button>
+        </div>
       ) : null}
       {actionError ? (
         <p role="alert" className="base-error base-action-error">

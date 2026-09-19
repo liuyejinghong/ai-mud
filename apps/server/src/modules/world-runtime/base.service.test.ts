@@ -258,6 +258,7 @@ class FakeCatalog implements Pick<ContentCatalogPort, "getProvisionSeed" | "getR
     return stableId === "solar_array_unit"
       ? {
           name: "太阳能阵列单元",
+          note: "昼间为基地供电",
           description: "现场安装并网的阵列单元。",
           attributes: [{ label: "峰值发电", value: "5.0 kW" }]
         }
@@ -715,10 +716,19 @@ describe("BaseService.snapshot", () => {
           siteKey: "storage",
           name: "储能间",
           state: "built",
+          note: "昼间为基地供电",
           description: "现场安装并网的阵列单元。",
           attributes: [{ label: "峰值发电", value: "5.0 kW" }]
         },
-        { siteId: "site-a", siteKey: "site_a", name: "建设位 A", state: "free", description: null, attributes: [] }
+        {
+          siteId: "site-a",
+          siteKey: "site_a",
+          name: "建设位 A",
+          state: "free",
+          note: null,
+          description: null,
+          attributes: []
+        }
       ],
       devices: [
         {

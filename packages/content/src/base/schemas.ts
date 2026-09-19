@@ -463,6 +463,8 @@ export interface ContentItemInfo {
 
 export interface ContentFacilityInfo {
   name: string;
+  // 地图卡片上的一句话功能短语（替代干巴巴的"设施已建成"）。
+  note: string;
   description: string;
   attributes: Array<{ label: string; value: string }>;
 }

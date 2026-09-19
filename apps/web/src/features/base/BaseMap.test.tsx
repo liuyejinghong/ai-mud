@@ -4,9 +4,9 @@ import type { BaseProjectDto, BaseSiteDto } from "@ai-mud/shared";
 import { BaseMap } from "./BaseMap.js";
 
 const sites: BaseSiteDto[] = [
-  { siteId: "site-array", name: "测试站点", siteKey: "array", state: "built", description: null, attributes: [] },
-  { siteId: "site-a", name: "测试站点", siteKey: "site_a", state: "free", description: null, attributes: [] },
-  { siteId: "site-b", name: "测试站点", siteKey: "site_b", state: "reserved", description: null, attributes: [] }
+  { siteId: "site-array", name: "测试站点", siteKey: "array", state: "built", note: null, description: null, attributes: [] },
+  { siteId: "site-a", name: "测试站点", siteKey: "site_a", state: "free", note: null, description: null, attributes: [] },
+  { siteId: "site-b", name: "测试站点", siteKey: "site_b", state: "reserved", note: null, description: null, attributes: [] }
 ];
 
 const projects: BaseProjectDto[] = [
@@ -35,11 +35,11 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("BaseMap", () => {
-  it("built 显示已建成项目名，free 显示可建设位，reserved 显示进行中的项目", () => {
+  it("built 显示已建成项目名，free 显示可开工工程，reserved 显示进行中的项目", () => {
     render(<BaseMap sites={sites} projects={projects} selectedSiteId={null} onSelectSite={() => undefined} />);
 
     expect(screen.getByText("扩建仓库")).toBeTruthy();
-    expect(screen.getByText("可建设位")).toBeTruthy();
+    expect(screen.getByText("可开工工程")).toBeTruthy();
     expect(screen.getByText("施工中：安装太阳能阵列")).toBeTruthy();
   });
 
@@ -47,7 +47,7 @@ describe("BaseMap", () => {
     const onSelectSite = vi.fn();
     render(<BaseMap sites={sites} projects={projects} selectedSiteId={null} onSelectSite={onSelectSite} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /可建设位/ }));
+    fireEvent.click(screen.getByRole("button", { name: /可开工工程/ }));
 
     expect(onSelectSite).toHaveBeenCalledOnce();
     expect(onSelectSite).toHaveBeenCalledWith("site-a");
@@ -62,7 +62,7 @@ describe("BaseMap", () => {
       screen.getByRole("button", { name: /施工中：安装太阳能阵列/ }).getAttribute("aria-pressed")
     ).toBe("true");
     expect(
-      screen.getByRole("button", { name: /可建设位/ }).getAttribute("aria-pressed")
+      screen.getByRole("button", { name: /可开工工程/ }).getAttribute("aria-pressed")
     ).toBe("false");
   });
 });

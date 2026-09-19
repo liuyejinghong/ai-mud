@@ -99,6 +99,7 @@ export interface ContentCatalogPort {
   getItemInfo(): Record<string, { name: string; description: string }>;
   getFacilityInfo(stableId: string): {
     name: string;
+    note: string;
     description: string;
     attributes: Array<{ label: string; value: string }>;
   } | null;
@@ -339,6 +340,7 @@ export class BaseService {
           siteKey: site.siteKey,
           name: siteNames.get(site.siteKey) ?? site.siteKey,
           state: site.state,
+          note: facility?.note ?? null,
           description: facility?.description ?? null,
           attributes: facility?.attributes ?? []
         };

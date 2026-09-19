@@ -135,6 +135,7 @@ export function BaseShell({
               计时中 · 速度 ×{snapshot.speed}
             </p>
           )}
+          <p className="base-summary-line">{fleetStatus(snapshot)}</p>
           <p className="base-summary-line base-simtime">{formatSimClock(snapshot.simTime)}</p>
           <div className="base-speed-row" role="group" aria-label="时间流速">
             {[1, 2, 4].map((speed) => (
@@ -190,6 +191,7 @@ export function BaseShell({
 
       <ProjectBoard
         projects={snapshot.projects}
+        buildableProjects={snapshot.buildableProjects}
         selectedProjectId={selectedProjectId}
         onSelectProject={onSelectProject}
       />
@@ -218,4 +220,16 @@ function sortedDevices(devices: BaseDeviceDto[]): BaseDeviceDto[] {
       (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9) ||
       a.name.localeCompare(b.name, "zh-Hans-CN")
   );
+}
+
+// 工程队状态一句话：作业中/充电中/待命台数——让页面在等待期也有"活着"的反馈。
+function fleetStatus(snapshot: BaseSnapshotDto): string {
+  const working = snapshot.devices.filter((device) => device.status === "working").length;
+  const charging = snapshot.devices.filter((device) => device.status === "charging").length;
+  const idle = snapshot.devices.filter((device) => device.status === "idle").length;
+  const parts: string[] = [];
+  if (working > 0) parts.push(`${working} 台作业中`);
+  if (charging > 0) parts.push(`${charging} 台充电`);
+  if (idle > 0) parts.push(`${idle} 台待命`);
+  return parts.length > 0 ? `工程队：${parts.join("、")}` : "工程队：12 台就位";
 }

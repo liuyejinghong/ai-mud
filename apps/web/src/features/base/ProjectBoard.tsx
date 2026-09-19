@@ -43,16 +43,36 @@ export function describeBlockedReason(reason: string | null): string | null {
 
 export interface ProjectBoardProps {
   projects: BaseProjectDto[];
+  buildableProjects: Array<{ name: string; description: string }>;
   selectedProjectId: string | null;
   onSelectProject: (projectId: string) => void;
 }
 
-export function ProjectBoard({ projects, selectedProjectId, onSelectProject }: ProjectBoardProps) {
+export function ProjectBoard({
+  projects,
+  buildableProjects,
+  selectedProjectId,
+  onSelectProject
+}: ProjectBoardProps) {
   return (
     <section className="base-panel base-board" aria-label="项目清单">
       <h2 className="base-panel-title">项目清单</h2>
       {projects.length === 0 ? (
-        <p className="base-copy">还没有项目。点击地图上的空地，挑一个工程开工吧。</p>
+        <div className="base-goal-card">
+          <strong className="base-goal-title">当前目标</strong>
+          {buildableProjects.length > 0 && buildableProjects[0] ? (
+            <>
+              <p className="base-copy">
+                {buildableProjects[0].name} —— {buildableProjects[0].description}
+              </p>
+              <p className="base-copy">点击地图上虚线框的「建设位 A」，点「在这里建设」开工。</p>
+            </>
+          ) : (
+            <p className="base-copy">
+              首批工程已完成。更多工程类型将随基地发展解锁（内容工坊在后续版本开放）。
+            </p>
+          )}
+        </div>
       ) : (
         <ul className="base-project-list">
           {projects.map((project) => {

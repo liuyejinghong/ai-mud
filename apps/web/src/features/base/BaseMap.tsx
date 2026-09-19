@@ -5,7 +5,7 @@ const ACTIVE_PROJECT_STATUSES = new Set(["planned", "active", "paused", "blocked
 
 function describeSite(site: BaseSiteDto, projects: BaseProjectDto[]): { title: string; note: string } {
   if (site.state === "free") {
-    return { title: site.name, note: "可建设位" };
+    return { title: site.name, note: "可开工工程" };
   }
 
   const siteProjects = projects.filter((project) => project.siteId === site.siteId);
@@ -21,7 +21,7 @@ function describeSite(site: BaseSiteDto, projects: BaseProjectDto[]): { title: s
   const completed = siteProjects.find((project) => project.status === "completed");
   return {
     title: completed ? completed.name : site.name,
-    note: "设施已建成"
+    note: site.note ?? "运行中"
   };
 }
 
