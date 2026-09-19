@@ -38,7 +38,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
   const { db, config } = input;
   const auth = new AuthService();
   const catalog = createContentCatalog();
-  const baseRepo = new BaseRepository(db);
+  const baseRepo = new BaseRepository(db, systemWorldClock);
   const baseAssets = new BaseAssetService(db);
   const robotRuntime = new RobotRuntimeService(db);
   const industryRepo = new IndustryRepository(db);

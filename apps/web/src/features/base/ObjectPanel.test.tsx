@@ -76,6 +76,7 @@ describe("ObjectPanel", () => {
         selectedSiteId={null}
         selectedProjectId={null}
         selectedDeviceId={null}
+        buildableProjects={[{ definitionRef: { kind: "project", stableId: "install_solar_array", revision: 1 }, name: "安装太阳电池阵", description: "把运抵的太阳电池阵安装到建设位并并网。" }]}
         isBusy={false}
         onSelectProject={noop}
         onCreateProject={noop}
@@ -96,6 +97,7 @@ describe("ObjectPanel", () => {
         selectedSiteId="site-a"
         selectedProjectId={null}
         selectedDeviceId={null}
+        buildableProjects={[{ definitionRef: { kind: "project", stableId: "install_solar_array", revision: 1 }, name: "安装太阳电池阵", description: "把运抵的太阳电池阵安装到建设位并并网。" }]}
         isBusy={false}
         onSelectProject={noop}
         onCreateProject={onCreateProject}
@@ -115,7 +117,7 @@ describe("ObjectPanel", () => {
     expect(input.definitionRef).toEqual({
       kind: "project",
       stableId: "install_solar_array",
-      revision: 3
+      revision: 1
     });
     expect(input.commandId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -131,6 +133,7 @@ describe("ObjectPanel", () => {
         selectedSiteId={null}
         selectedProjectId="project-live"
         selectedDeviceId={null}
+        buildableProjects={[{ definitionRef: { kind: "project", stableId: "install_solar_array", revision: 1 }, name: "安装太阳电池阵", description: "把运抵的太阳电池阵安装到建设位并并网。" }]}
         isBusy={false}
         onSelectProject={noop}
         onCreateProject={noop}
@@ -154,6 +157,7 @@ describe("ObjectPanel", () => {
         selectedSiteId={null}
         selectedProjectId="project-live"
         selectedDeviceId={null}
+        buildableProjects={[{ definitionRef: { kind: "project", stableId: "install_solar_array", revision: 1 }, name: "安装太阳电池阵", description: "把运抵的太阳电池阵安装到建设位并并网。" }]}
         isBusy={false}
         onSelectProject={noop}
         onCreateProject={noop}
@@ -180,6 +184,7 @@ describe("ObjectPanel", () => {
         selectedSiteId={null}
         selectedProjectId={null}
         selectedDeviceId="device-1"
+        buildableProjects={[{ definitionRef: { kind: "project", stableId: "install_solar_array", revision: 1 }, name: "安装太阳电池阵", description: "把运抵的太阳电池阵安装到建设位并并网。" }]}
         isBusy={false}
         onSelectProject={noop}
         onCreateProject={noop}

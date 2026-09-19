@@ -30,7 +30,15 @@ export interface SettlementClockPort {
   lockAdvanceableBases(
     tx: IndustryTx,
     now: Date
-  ): Promise<Array<{ baseId: string; simTime: Date; speed: number; deltaSimMs: number }>>;
+  ): Promise<
+    Array<{
+      baseId: string;
+      simTime: Date;
+      speed: number;
+      deltaSimMs: number;
+      nextLastAdvancedAt: Date;
+    }>
+  >;
   saveSimAdvance(tx: IndustryTx, baseId: string, simTime: Date, lastAdvancedAt: Date): Promise<void>;
 }
 
@@ -78,7 +86,7 @@ export class BaseSettlementService {
     for (const base of bases) {
       const nextSimTime = new Date(base.simTime.getTime() + base.deltaSimMs);
       await this.settleBase(tx, base.baseId, base.simTime, base.deltaSimMs, nextSimTime);
-      await this.deps.clock.saveSimAdvance(tx, base.baseId, nextSimTime, now);
+      await this.deps.clock.saveSimAdvance(tx, base.baseId, nextSimTime, base.nextLastAdvancedAt);
     }
     return bases.length;
   }

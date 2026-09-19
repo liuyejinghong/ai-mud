@@ -50,6 +50,7 @@ export interface AdvanceableBaseRecord {
   simTime: Date;
   speed: number;
   deltaSimMs: number;
+  nextLastAdvancedAt: Date;
 }
 
 export interface BaseCommandReceipt {
@@ -84,7 +85,11 @@ function mapBaseRow(row: {
 }
 
 export class BaseRepository {
-  constructor(private readonly db: BaseDb) {}
+  // wallClock：基地推进以真实墙钟为唯一时间基准，世界 tick 追补（历史补算）不得拖拽基地超速。
+  constructor(
+    private readonly db: BaseDb,
+    private readonly wallClock: { now(): Date } = { now: () => new Date() }
+  ) {}
 
   // 事务内构造 tx 绑定实例（透传模式）。
   forTransaction(tx: BaseRepoTx): BaseRepository {
@@ -321,6 +326,7 @@ export class BaseRepository {
   // leaseUntil > now；无租约/租约过期/暂停的基地不返回（天然无补算）。
   // deltaSimMs = clamp(now - lastAdvancedAt, 0, BASE_MAX_CATCHUP_MS) × speed。
   async lockAdvanceableBases(tx: BaseRepoTx, now: Date): Promise<AdvanceableBaseRecord[]> {
+    const wallNow = this.wallClock.now();
     const rows = await tx
       .select({
         id: bases.id,
@@ -335,17 +341,20 @@ export class BaseRepository {
     const advanceable: AdvanceableBaseRecord[] = [];
     for (const row of rows) {
       const lease = await this.getControlLease(tx, row.id);
-      if (!lease || lease.leaseUntil.getTime() <= now.getTime()) continue;
+      if (!lease || lease.leaseUntil.getTime() <= wallNow.getTime()) continue;
 
+      // delta 只看真实墙钟：世界 tick 追补多步时，只有第一步携带真实流逝时间，其余步 0 被跳过。
       const deltaWallMs = Math.min(
-        Math.max(now.getTime() - row.lastAdvancedAt.getTime(), 0),
+        Math.max(wallNow.getTime() - row.lastAdvancedAt.getTime(), 0),
         BASE_MAX_CATCHUP_MS
       );
+      if (deltaWallMs <= 0) continue;
       advanceable.push({
         baseId: row.id,
         simTime: row.simTime,
         speed: row.speed,
-        deltaSimMs: deltaWallMs * row.speed
+        deltaSimMs: deltaWallMs * row.speed,
+        nextLastAdvancedAt: wallNow
       });
     }
     return advanceable;

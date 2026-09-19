@@ -26,26 +26,16 @@ const CANCEL_CONFIRM_TEXT =
   "取消后项目立即停止：没用掉的材料会退还仓库，已经消耗的部分不退还。确定要取消吗？";
 
 interface BuildableTemplateDto {
-  ref: DefinitionRefDto;
+  definitionRef: DefinitionRefDto;
   name: string;
-}
-
-function collectBuildableTemplates(projects: BaseProjectDto[]): BuildableTemplateDto[] {
-  // 可建项目模板暂由快照中可见项目的定义提供（同一项目名只列一次）。
-  const templates = new Map<string, BuildableTemplateDto>();
-  for (const project of projects) {
-    const key = definitionRefKey(project.definitionRef);
-    if (!templates.has(key)) {
-      templates.set(key, { ref: project.definitionRef, name: project.name });
-    }
-  }
-  return [...templates.values()];
+  description: string;
 }
 
 export interface ObjectPanelProps {
   sites: BaseSiteDto[];
   projects: BaseProjectDto[];
   devices: BaseDeviceDto[];
+  buildableProjects: BuildableTemplateDto[];
   selectedSiteId: string | null;
   selectedProjectId: string | null;
   selectedDeviceId: string | null;
@@ -59,6 +49,7 @@ export function ObjectPanel({
   sites,
   projects,
   devices,
+  buildableProjects,
   selectedSiteId,
   selectedProjectId,
   selectedDeviceId,
@@ -95,6 +86,7 @@ export function ObjectPanel({
       ) : selectedSite ? (
         <SiteDetail
           site={selectedSite}
+          buildableProjects={buildableProjects}
           projects={projects}
           isBusy={isBusy}
           onSelectProject={onSelectProject}
@@ -204,12 +196,14 @@ function DeviceDetail({
 
 function SiteDetail({
   site,
+  buildableProjects,
   projects,
   isBusy,
   onSelectProject,
   onCreateProject
 }: {
   site: BaseSiteDto;
+  buildableProjects: BuildableTemplateDto[];
   projects: BaseProjectDto[];
   isBusy: boolean;
   onSelectProject: (projectId: string) => void;
@@ -248,7 +242,7 @@ function SiteDetail({
     );
   }
 
-  const templates = collectBuildableTemplates(projects);
+  const templates = buildableProjects;
   return (
     <div className="base-detail">
       <h3>{site.siteKey}</h3>
@@ -258,15 +252,16 @@ function SiteDetail({
       ) : (
         <ul className="base-buildable-list">
           {templates.map((template) => (
-            <li key={definitionRefKey(template.ref)}>
+            <li key={definitionRefKey(template.definitionRef)}>
               <span className="base-buildable-name">{template.name}</span>
+              <span className="base-copy">{template.description}</span>
               <button
                 type="button"
                 className="base-primary-button"
                 disabled={isBusy}
                 onClick={() =>
                   onCreateProject({
-                    definitionRef: template.ref,
+                    definitionRef: template.definitionRef,
                     siteId: site.siteId,
                     commandId: crypto.randomUUID()
                   })

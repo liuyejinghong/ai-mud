@@ -50,7 +50,8 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
     sites: [{ siteId: "site-a", siteKey: "array", state: "built" }],
     devices: [],
     projects: [],
-    controlLease: { heldByThisSession: true, leaseUntil: "2126-01-01T08:02:00.000Z" },
+    buildableProjects: [],
+  controlLease: { heldByThisSession: true, leaseUntil: "2126-01-01T08:02:00.000Z" },
     ...overrides
   };
 }

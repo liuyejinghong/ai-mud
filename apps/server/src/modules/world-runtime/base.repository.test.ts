@@ -206,10 +206,10 @@ class FakePgClient {
   }
 }
 
-function createRepository() {
+function createRepository(wallClockNow: Date = NOW) {
   const client = new FakePgClient();
   const db = drizzle(client as unknown as NodePgClient);
-  const repo = new BaseRepository(db as unknown as BaseDb);
+  const repo = new BaseRepository(db as unknown as BaseDb, { now: () => wallClockNow });
   const tx = db as unknown as BaseRepoTx;
   return { client, repo, tx };
 }
@@ -288,7 +288,8 @@ describe("BaseRepository.lockAdvanceableBases", () => {
       baseId: "b-normal",
       simTime: normal.sim_time,
       speed: 2,
-      deltaSimMs: MINUTE_MS * 2 // Δwall 60s × speed 2
+      deltaSimMs: MINUTE_MS * 2, // Δwall 60s × speed 2
+      nextLastAdvancedAt: NOW
     });
 
     // delta 封顶：Δwall 被钳到 BASE_MAX_CATCHUP_MS，再乘 speed。
@@ -313,8 +314,8 @@ describe("BaseRepository.lockAdvanceableBases", () => {
 
     const advanceable = await repo.lockAdvanceableBases(tx, NOW);
 
-    expect(advanceable).toHaveLength(1);
-    expect(advanceable[0]?.deltaSimMs).toBe(0);
+    // Δwall <= 0 的基地被跳过，不产生任何推进记录。
+    expect(advanceable).toHaveLength(0);
   });
 });
 

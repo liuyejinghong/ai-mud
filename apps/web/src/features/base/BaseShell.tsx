@@ -139,6 +139,7 @@ export function BaseShell({
         sites={snapshot.sites}
         projects={snapshot.projects}
         devices={snapshot.devices}
+        buildableProjects={snapshot.buildableProjects}
         selectedSiteId={selectedSiteId}
         selectedProjectId={selectedProjectId}
         selectedDeviceId={selectedDeviceId}

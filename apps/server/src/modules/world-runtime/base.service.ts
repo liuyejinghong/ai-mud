@@ -77,6 +77,7 @@ export interface RobotTemplateSpec {
 export interface ProjectTemplateSpec {
   ref: DefinitionRefDto;
   name: string;
+  description: string;
 }
 
 export interface ProvisionSeedSpec {
@@ -96,6 +97,7 @@ export interface ContentCatalogPort {
   getProvisionSeed(): ProvisionSeedSpec;
   getRobotTemplate(stableId: string): RobotTemplateSpec | null;
   getProjectTemplate(stableId: string): ProjectTemplateSpec | null;
+  listTemplates(): { robots: RobotTemplateSpec[]; projects: ProjectTemplateSpec[] };
 }
 
 export interface BaseIndustryReadPort {
@@ -390,6 +392,11 @@ export class BaseService {
         sites: siteDtos,
         devices,
         projects,
+        buildableProjects: this.deps.catalog.listTemplates().projects.map((project) => ({
+          definitionRef: project.ref,
+          name: project.name,
+          description: project.description
+        })),
         controlLease: {
           heldByThisSession: lease ? lease.leaseUntil.getTime() > now.getTime() : false,
           leaseUntil: lease ? lease.leaseUntil.toISOString() : null

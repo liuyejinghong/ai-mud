@@ -160,6 +160,12 @@ export interface BaseSnapshotDto {
   sites: BaseSiteDto[];
   devices: BaseDeviceDto[];
   projects: BaseProjectDto[];
+  // 可建项目模板（来自已发布内容目录，与运行实例无关；开局即可见）。
+  buildableProjects: Array<{
+    definitionRef: DefinitionRefDto;
+    name: string;
+    description: string;
+  }>;
   controlLease: BaseControlLeaseDto;
 }
 

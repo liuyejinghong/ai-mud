@@ -238,10 +238,14 @@ class FakeIndustryInit implements Pick<BaseServiceDeps["industryInit"], "ensureP
   }
 }
 
-class FakeCatalog implements Pick<ContentCatalogPort, "getProvisionSeed" | "getRobotTemplate" | "getProjectTemplate"> {
+class FakeCatalog implements Pick<ContentCatalogPort, "getProvisionSeed" | "getRobotTemplate" | "getProjectTemplate" | "listTemplates"> {
   seed: ProvisionSeedSpec;
   robots = new Map<string, RobotTemplateSpec>();
   projects = new Map<string, ProjectTemplateSpec>();
+
+  listTemplates() {
+    return { robots: [...this.robots.values()], projects: [...this.projects.values()] };
+  }
 
   constructor(seed: ProvisionSeedSpec) {
     this.seed = seed;
@@ -342,7 +346,8 @@ function createFixture(options: {
   });
   catalog.projects.set("install_solar_array", {
     ref: { kind: "project", stableId: "install_solar_array", revision: 1 },
-    name: "安装太阳电池阵"
+    name: "安装太阳电池阵",
+    description: "把运抵的太阳电池阵安装到建设位并并网。"
   });
   const industryRead = new FakeIndustryRead();
   const robotRead = new FakeRobotRead();
@@ -728,6 +733,13 @@ describe("BaseService.snapshot", () => {
               blockedReason: null
             }
           ]
+        }
+      ],
+      buildableProjects: [
+        {
+          definitionRef: { kind: "project", stableId: "install_solar_array", revision: 1 },
+          name: "安装太阳电池阵",
+          description: "把运抵的太阳电池阵安装到建设位并并网。"
         }
       ],
       controlLease: {

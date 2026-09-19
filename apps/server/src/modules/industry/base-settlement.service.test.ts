@@ -89,7 +89,7 @@ function makeProject(overrides: Partial<BaseProjectRecord> = {}): BaseProjectRec
 }
 
 class FakeClock implements SettlementClockPort {
-  bases: Array<{ baseId: string; simTime: Date; speed: number; deltaSimMs: number }> = [];
+  bases: Array<{ baseId: string; simTime: Date; speed: number; deltaSimMs: number; nextLastAdvancedAt: Date }> = [];
   saved: Array<{ baseId: string; simTime: Date; lastAdvancedAt: Date }> = [];
 
   async lockAdvanceableBases(_tx: IndustryTx, _now: Date) {
@@ -209,7 +209,7 @@ interface ScenarioOptions {
 }
 
 function seedStandardBase(harness: ReturnType<typeof makeHarness>, options: ScenarioOptions = {}) {
-  harness.clock.bases.push({ baseId: "base-1", simTime: T0, speed: 1, deltaSimMs: TICK_MS });
+  harness.clock.bases.push({ baseId: "base-1", simTime: T0, speed: 1, deltaSimMs: TICK_MS, nextLastAdvancedAt: new Date(T0.getTime() + TICK_MS) });
   harness.industry.power.set("base-1", makePower());
   harness.industry.projects.set("base-1", [
     makeProject({ templateRevision: options.templateRevision ?? 1 })
@@ -276,7 +276,7 @@ describe("BaseSettlementService.settleBases", () => {
       }
     ]);
     expect(harness.clock.saved).toEqual([
-      { baseId: "base-1", simTime: new Date(T0.getTime() + TICK_MS), lastAdvancedAt: now }
+      { baseId: "base-1", simTime: new Date(T0.getTime() + TICK_MS), lastAdvancedAt: new Date(T0.getTime() + TICK_MS) }
     ]);
   });
 
