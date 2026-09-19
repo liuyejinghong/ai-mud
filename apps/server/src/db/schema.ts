@@ -874,10 +874,12 @@ export const bases = pgTable(
     epoch: integer("epoch").notNull().default(1),
     baseRevision: integer("base_revision").notNull().default(1),
     contentRelease: text("content_release").notNull(),
+    credits: integer("credits").notNull().default(500),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
     speedCheck: check("bases_speed_allowed_check", sql`${table.speed} IN (1, 2, 4)`),
+    creditsCheck: check("bases_credits_nonnegative_check", sql`${table.credits} >= 0`),
     revisionCheck: check("bases_revision_positive_check", sql`${table.baseRevision} >= 1`)
   })
 );
@@ -1278,5 +1280,60 @@ export const weatherSchedule = pgTable(
       "base_weather_schedule_weather_check",
       sql`${table.weather} IN ('clear', 'warning', 'storm')`
     )
+  })
+);
+
+// 订单经济（v0.16，M16-P）：账款唯一余额在 bases.credits（economy 写者）；
+// 订单 open→accepted→delivered/failed；采购付款≠到货（in_transit→delivered）。
+export const baseOrders = pgTable(
+  "base_orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    baseId: uuid("base_id")
+      .notNull()
+      .references(() => bases.id),
+    orderDefId: text("order_def_id").notNull(),
+    orderRevision: integer("order_revision").notNull(),
+    status: text("status").notNull().default("open"),
+    requiredItemId: text("required_item_id").notNull(),
+    quantity: integer("quantity").notNull(),
+    rewardCredits: integer("reward_credits").notNull(),
+    deadlineSim: timestamp("deadline_sim", { withTimezone: true }),
+    acceptedAtSim: timestamp("accepted_at_sim", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true })
+  },
+  (table) => ({
+    baseStatusIdx: index("base_orders_base_status_idx").on(table.baseId, table.status),
+    statusCheck: check(
+      "base_orders_status_check",
+      sql`${table.status} IN ('open', 'accepted', 'delivered', 'failed')`
+    ),
+    quantityCheck: check("base_orders_quantity_positive_check", sql`${table.quantity} > 0`)
+  })
+);
+
+export const basePurchases = pgTable(
+  "base_purchases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    baseId: uuid("base_id")
+      .notNull()
+      .references(() => bases.id),
+    itemId: text("item_id").notNull(),
+    quantity: integer("quantity").notNull(),
+    costCredits: integer("cost_credits").notNull(),
+    status: text("status").notNull().default("in_transit"),
+    arrivesAtSim: timestamp("arrives_at_sim", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    baseStatusIdx: index("base_purchases_base_status_idx").on(table.baseId, table.status),
+    statusCheck: check(
+      "base_purchases_status_check",
+      sql`${table.status} IN ('in_transit', 'delivered')`
+    ),
+    quantityCheck: check("base_purchases_quantity_positive_check", sql`${table.quantity} > 0`),
+    costCheck: check("base_purchases_cost_nonnegative_check", sql`${table.costCredits} >= 0`)
   })
 );

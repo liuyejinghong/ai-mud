@@ -2486,6 +2486,90 @@
       "layer": "domain",
       "scope": "production",
       "note": "M15-A 确定性天气日程（晴/预警/尘暴循环）+ 光照系数"
+    },
+    {
+      "path": "packages/shared/src/economy.ts",
+      "module": "protocol",
+      "layer": "protocol",
+      "scope": "production",
+      "note": "M16-P 订单经济协议（credits 与电力分离）"
+    },
+    {
+      "path": "apps/server/src/modules/economy/order.service.ts",
+      "module": "economy",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M16-A 订单接受/交付/账款结算（credits 唯一写者）"
+    },
+    {
+      "path": "apps/server/src/modules/economy/order.repository.ts",
+      "module": "economy",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "M16-A base_orders/bases.credits 访问"
+    },
+    {
+      "path": "apps/server/src/modules/economy/purchase.service.ts",
+      "module": "economy",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M16-B 采购：付款→在途→到货入库"
+    },
+    {
+      "path": "apps/server/src/modules/economy/purchase.repository.ts",
+      "module": "economy",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "M16-B base_purchases 访问"
+    },
+    {
+      "path": "apps/server/src/modules/economy/base-economy.routes.ts",
+      "module": "transport",
+      "layer": "transport",
+      "scope": "production",
+      "note": "M16-A/B 订单与采购路由；仅 import application"
+    },
+    {
+      "path": "apps/server/src/application/economy/usecases.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "M16-A/B 订单/采购用例"
+    },
+    {
+      "path": "apps/server/src/modules/economy/order.service.test.ts",
+      "module": "economy",
+      "layer": "test",
+      "scope": "test",
+      "note": "M16-A"
+    },
+    {
+      "path": "apps/server/src/modules/economy/purchase.service.test.ts",
+      "module": "economy",
+      "layer": "test",
+      "scope": "test",
+      "note": "M16-B"
+    },
+    {
+      "path": "apps/web/src/features/base/EconomyBoard.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M16-D 订单与采购面板"
+    },
+    {
+      "path": "apps/web/src/features/base/EconomyBoard.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M16-D"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/m16/economy.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "M16-Q 订单/交付/采购幂等（真 PG）"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",
