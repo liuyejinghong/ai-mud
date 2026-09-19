@@ -13,6 +13,7 @@ import { AuthRepository } from "./modules/auth/auth.repository.js";
 import { registerAuthRoutes } from "./modules/auth/auth.routes.js";
 import { AuthService } from "./modules/auth/auth.service.js";
 import { registerBaseManufacturingRoutes } from "./modules/industry/base-manufacturing.routes.js";
+import { registerBaseEconomyRoutes } from "./modules/economy/base-economy.routes.js";
 import { registerBaseProjectsRoutes } from "./modules/industry/base-projects.routes.js";
 import { registerBaseSessionRoutes } from "./modules/world-runtime/base-session.routes.js";
 import { registerGameRoutes } from "./modules/game/game.routes.js";
@@ -234,6 +235,14 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
       auth: baseOps.session.auth,
       create: baseOps.manufacturingJobs.create,
       cancel: baseOps.manufacturingJobs.cancel
+    })
+  );
+  await app.register((instance) =>
+    registerBaseEconomyRoutes(instance, {
+      auth: baseOps.session.auth,
+      accept: baseOps.economy.accept,
+      deliver: baseOps.economy.deliver,
+      purchase: baseOps.economy.purchase
     })
   );
   await app.register((instance) =>
