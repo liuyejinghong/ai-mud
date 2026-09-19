@@ -141,7 +141,8 @@ interface ControlledOps {
 
 function buildControlledOperations(db: Db, clock: { now(): Date }): ControlledOps {
   const catalog = createContentCatalog();
-  const baseRepo = new BaseRepository(db);
+  // 墙钟随受控时钟走：租约判定与 delta 计算必须跟测试时间轴一致（M12-P.1 语义）。
+  const baseRepo = new BaseRepository(db, clock);
   const baseAssets = new BaseAssetService(db);
   const robotRuntime = new RobotRuntimeService(db);
   const industryRepo = new IndustryRepository(db);
