@@ -559,3 +559,46 @@
   color: #ffe08a;
   font-size: 13px;
 }
+
+/* ── 经济面板（M16） ── */
+.base-order-list,
+.base-purchase-list,
+.base-purchase-status {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.base-order-card {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid #24556b;
+  background: transparent;
+  color: inherit;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.base-order-card.is-selected {
+  border-color: #29d7b1;
+}
+.base-order-name {
+  font-weight: 600;
+}
+.base-order-actions {
+  margin: 8px 0;
+  display: flex;
+  gap: 8px;
+}
+.base-purchase-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px dashed rgba(36, 85, 107, 0.6);
+  padding: 4px 0;
+}

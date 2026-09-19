@@ -25,7 +25,8 @@ export function BaseIntroModal({
           <li>盯住下方项目清单——缺电或缺料时，工程队会停下来等你处理。</li>
         </ol>
         <p className="base-intro-hint">
-          火星的一天约等于现实一天；离开时基地自动暂停，不会浪费物资。
+          火星的一天约等于现实一天；离开时基地自动暂停，不会浪费物资。首项工程交付后，
+          就能接外部订单赚账款、采购材料、制造新机器人——把前哨一步步做大。
         </p>
         <button type="button" className="base-primary-button" onClick={onDismiss}>
           开始指挥
