@@ -1,6 +1,7 @@
 export * from "./admin.js";
 export * from "./auth.js";
 export * from "./base.js";
+export * from "./content-admin.js";
 export * from "./errors.js";
 export * from "./game.js";
 export * from "./version.js";

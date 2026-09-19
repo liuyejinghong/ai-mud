@@ -6,7 +6,9 @@ import {
   BASE_FACILITY_INFO as FACILITY_INFO,
   DEFAULT_BASE_CONTENT_RELEASE,
   type ContentItemInfo,
+  type ContentRecipeTemplate,
   validateItemNames,
+  validateRecipeTemplate,
   validateProjectTemplate,
   validateProvisionSeed,
   validateRobotTemplate,
@@ -15,14 +17,14 @@ import {
   type ContentProvisionSeed,
   type ContentRobotTemplate
 } from "@ai-mud/content";
-import type { ProjectTemplateDto, RobotTemplateDto } from "@ai-mud/shared";
+import type { ProjectTemplateDto, RecipeTemplateDto, RobotTemplateDto } from "@ai-mud/shared";
 // 结构等价镜像 application/base/ports.ts 的 ContentCatalogPort（content-catalog 不允许
 // 依赖 application；composition 按结构绑定，漂移由 catalog.service.test.ts 锁定）。
 interface ProvisionSeedSiteDto {
   siteKey: string;
   name: string;
   state: "free" | "built";
-  facilityRef?: { kind: "project" | "robot_template" | "facility"; stableId: string; revision: number };
+  facilityRef?: { kind: "project" | "robot_template" | "facility" | "recipe"; stableId: string; revision: number };
 }
 
 interface ProvisionSeedDto {
@@ -42,6 +44,8 @@ interface ProvisionSeedDto {
 export interface ContentCatalogPort {
   releaseId(): string;
   getItemInfo(): Record<string, ContentItemInfo>;
+  getRecipeTemplate(stableId: string): RecipeTemplateDto | null;
+  listRecipes(): RecipeTemplateDto[];
   getFacilityInfo(stableId: string): {
     name: string;
     note: string;
@@ -103,8 +107,25 @@ function toProvisionSeedDto(seed: ContentProvisionSeed): ProvisionSeedDto {
   };
 }
 
+function toRecipeTemplateDto(recipe: ContentRecipeTemplate): RecipeTemplateDto {
+  return {
+    ref: { ...recipe.ref },
+    name: recipe.name,
+    description: recipe.description,
+    inputs: recipe.inputs.map((input) => ({ ...input })),
+    workPerUnit: recipe.workPerUnit,
+    output: { ...recipe.output }
+  };
+}
+
 function assertReleaseValid(release: ContentBaseRelease): void {
   const failures: string[] = [];
+  for (const recipe of release.recipes ?? []) {
+    const errors = validateRecipeTemplate(recipe);
+    if (errors.length > 0) {
+      failures.push(`recipe "${recipe.ref?.stableId ?? "?"}": ${errors.join("; ")}`);
+    }
+  }
   for (const robot of release.robots) {
     const errors = validateRobotTemplate(robot);
     if (errors.length > 0) {
@@ -161,6 +182,9 @@ export function createContentCatalog(
   const projectsByStableId = new Map(
     release.projects.map((project) => [project.ref.stableId, project] as const)
   );
+  const recipesByStableId = new Map(
+    release.recipes.map((recipe) => [recipe.ref.stableId, recipe] as const)
+  );
 
   return {
     releaseId: () => release.releaseId,
@@ -172,6 +196,11 @@ export function createContentCatalog(
       const project = projectsByStableId.get(stableId);
       return project === undefined ? null : toProjectTemplateDto(project);
     },
+    getRecipeTemplate: (stableId: string): RecipeTemplateDto | null => {
+      const recipe = recipesByStableId.get(stableId);
+      return recipe === undefined ? null : toRecipeTemplateDto(recipe);
+    },
+    listRecipes: (): RecipeTemplateDto[] => release.recipes.map(toRecipeTemplateDto),
     listTemplates: () => ({
       robots: release.robots.map(toRobotTemplateDto),
       projects: release.projects.map(toProjectTemplateDto)

@@ -6,6 +6,7 @@ import type {
   ContentBaseRelease,
   ContentFacilityInfo,
   ContentItemInfo,
+  ContentRecipeTemplate,
   ContentProjectTemplate,
   ContentProvisionSeed,
   ContentRobotTemplate
@@ -219,10 +220,37 @@ export const BASE_FACILITY_INFO: Record<string, ContentFacilityInfo> = {
   }
 };
 
+export const BASE_RECIPE_TEMPLATES: ContentRecipeTemplate[] = [
+  {
+    ref: { kind: "recipe", stableId: "manufacture-yd-h1", revision: 1 },
+    name: "制造驮运机器人",
+    description: "用结构件、备件和配电单元组装一台驮运工程机器人。",
+    inputs: [
+      { itemId: "support_frame", quantity: 4 },
+      { itemId: "spare_parts", quantity: 6 },
+      { itemId: "power_box", quantity: 1 }
+    ],
+    workPerUnit: 30,
+    output: { templateStableId: "yd-h1", initialBatteryWh: 12000 }
+  },
+  {
+    ref: { kind: "recipe", stableId: "manufacture-yd-s1", revision: 1 },
+    name: "制造望山巡检机器人",
+    description: "用备件与锚固件组装一台轻量勘测巡检机器人。",
+    inputs: [
+      { itemId: "spare_parts", quantity: 4 },
+      { itemId: "anchor", quantity: 3 }
+    ],
+    workPerUnit: 20,
+    output: { templateStableId: "yd-s1", initialBatteryWh: 6000 }
+  }
+];
+
 export const DEFAULT_BASE_CONTENT_RELEASE: ContentBaseRelease = {
   releaseId: RELEASE_ID,
   itemNames: BASE_ITEM_INFO,
   robots: BASE_ROBOT_TEMPLATES,
   projects: BASE_PROJECT_TEMPLATES,
+  recipes: BASE_RECIPE_TEMPLATES,
   provisionSeed: BASE_PROVISION_SEED
 };

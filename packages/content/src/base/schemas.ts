@@ -18,7 +18,7 @@ export const CONTENT_SEED_SITE_STATES = ["free", "built"] as const;
 export type ContentSeedSiteState = (typeof CONTENT_SEED_SITE_STATES)[number];
 
 export interface ContentDefinitionRef {
-  kind: "robot_template" | "project" | "facility";
+  kind: "robot_template" | "project" | "facility" | "recipe";
   stableId: string;
   revision: number;
 }
@@ -90,6 +90,7 @@ export interface ContentBaseRelease {
   itemNames: Record<string, ContentItemInfo>;
   robots: ContentRobotTemplate[];
   projects: ContentProjectTemplate[];
+  recipes: ContentRecipeTemplate[];
   provisionSeed: ContentProvisionSeed;
 }
 
@@ -456,6 +457,15 @@ export function validateItemNames(
   return errors;
 }
 
+export interface ContentRecipeTemplate {
+  ref: ContentDefinitionRef;
+  name: string;
+  description: string;
+  inputs: Array<{ itemId: string; quantity: number }>;
+  workPerUnit: number;
+  output: { templateStableId: string; initialBatteryWh: number };
+}
+
 export interface ContentItemInfo {
   name: string;
   description: string;
@@ -467,4 +477,59 @@ export interface ContentFacilityInfo {
   note: string;
   description: string;
   attributes: Array<{ label: string; value: string }>;
+}
+
+const RECIPE_KEYS = [
+  "ref",
+  "name",
+  "description",
+  "inputs",
+  "workPerUnit",
+  "output"
+] as const;
+
+export function validateRecipeTemplate(recipe: ContentRecipeTemplate): string[] {
+  const errors: string[] = [];
+  const label = `recipe "${recipe.ref?.stableId ?? "?"}"`;
+  collectUnknownKeys(recipe, RECIPE_KEYS, label, errors);
+  validateDefinitionRef(recipe.ref, "recipe", label, errors);
+  if (!isNonEmptyString(recipe.name)) {
+    errors.push(`${label}.name must be a non-empty string`);
+  }
+  if (!isNonEmptyString(recipe.description)) {
+    errors.push(`${label}.description must be a non-empty string`);
+  }
+  if (!Array.isArray(recipe.inputs) || recipe.inputs.length === 0) {
+    errors.push(`${label}.inputs must be a non-empty array`);
+  } else {
+    const seen = new Set<string>();
+    for (const input of recipe.inputs) {
+      if (!isNonEmptyString(input.itemId)) {
+        errors.push(`${label}.inputs itemId must be a non-empty string`);
+      } else if (seen.has(input.itemId)) {
+        errors.push(`${label} duplicates input itemId "${input.itemId}"`);
+      } else {
+        seen.add(input.itemId);
+      }
+      if (!isPositiveInteger(input.quantity)) {
+        errors.push(`${label}.inputs quantity must be a positive integer`);
+      }
+    }
+  }
+  if (!isPositiveInteger(recipe.workPerUnit)) {
+    errors.push(`${label}.workPerUnit must be a positive integer`);
+  }
+  const output = recipe.output;
+  if (typeof output !== "object" || output === null) {
+    errors.push(`${label}.output must be an object`);
+  } else {
+    collectUnknownKeys(output, ["templateStableId", "initialBatteryWh"], `${label}.output`, errors);
+    if (!isNonEmptyString(output.templateStableId)) {
+      errors.push(`${label}.output.templateStableId must be a non-empty string`);
+    }
+    if (!isPositiveInteger(output.initialBatteryWh)) {
+      errors.push(`${label}.output.initialBatteryWh must be a positive integer`);
+    }
+  }
+  return errors;
 }

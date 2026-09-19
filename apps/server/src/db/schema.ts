@@ -1081,3 +1081,111 @@ export const baseProjectSteps = pgTable(
     )
   })
 );
+
+// ---------------------------------------------------------------------------
+// 内容工坊与制造（v0.13，M13-P）：draft 可变 / release 不可变；
+// 制造工单经 assets 预留、industry 结算，逐台 (jobId, ordinal) 原子产出。
+// ---------------------------------------------------------------------------
+
+export const contentDraftStatus = pgEnum("content_draft_status", ["draft", "published"]);
+
+export const contentDrafts = pgTable(
+  "content_drafts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: text("kind").notNull(),
+    stableId: text("stable_id").notNull(),
+    revision: integer("revision").notNull(),
+    payload: jsonb("payload").notNull(),
+    status: contentDraftStatus("status").notNull().default("draft"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    kindStableIdx: uniqueIndex("content_drafts_kind_stable_rev_idx").on(
+      table.kind,
+      table.stableId,
+      table.revision
+    ),
+    kindCheck: check(
+      "content_drafts_kind_check",
+      sql`${table.kind} IN ('robot_template', 'project', 'recipe')`
+    ),
+    revisionCheck: check("content_drafts_revision_positive_check", sql`${table.revision} >= 1`)
+  })
+);
+
+export const contentReleases = pgTable(
+  "content_releases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    releaseId: text("release_id").notNull().unique(),
+    payload: jsonb("payload").notNull(),
+    contentHash: text("content_hash").notNull(),
+    definitionCount: integer("definition_count").notNull(),
+    publishedBy: uuid("published_by").references(() => accounts.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    createdAtIdx: index("content_releases_created_at_idx").on(table.createdAt)
+  })
+);
+
+export const baseManufacturingJobs = pgTable(
+  "base_manufacturing_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    baseId: uuid("base_id")
+      .notNull()
+      .references(() => bases.id),
+    recipeDefId: text("recipe_def_id").notNull(),
+    recipeRevision: integer("recipe_revision").notNull(),
+    status: text("status").notNull().default("active"),
+    outputsPlanned: integer("outputs_planned").notNull(),
+    outputsDone: integer("outputs_done").notNull().default(0),
+    currentUnitWorkDone: integer("current_unit_work_done").notNull().default(0),
+    reservedInputs: jsonb("reserved_inputs").notNull().default([]),
+    blockedReason: text("blocked_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true })
+  },
+  (table) => ({
+    baseIdx: index("base_manufacturing_jobs_base_idx").on(table.baseId, table.status),
+    statusCheck: check(
+      "base_manufacturing_jobs_status_check",
+      sql`${table.status} IN ('active', 'paused', 'blocked', 'completed', 'cancelled')`
+    ),
+    plannedCheck: check(
+      "base_manufacturing_jobs_planned_bounded_check",
+      sql`${table.outputsPlanned} >= 1 AND ${table.outputsPlanned} <= 20`
+    ),
+    doneCheck: check(
+      "base_manufacturing_jobs_outputs_bounded_check",
+      sql`${table.outputsDone} >= 0 AND ${table.outputsDone} <= ${table.outputsPlanned}`
+    )
+  })
+);
+
+export const baseManufacturingOutputs = pgTable(
+  "base_manufacturing_outputs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => baseManufacturingJobs.id),
+    ordinal: integer("ordinal").notNull(),
+    deviceId: uuid("device_id")
+      .notNull()
+      .references(() => baseDevices.id),
+    operatorId: uuid("operator_id")
+      .notNull()
+      .references(() => robotOperators.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    jobOrdinalIdx: uniqueIndex("base_manufacturing_outputs_job_ordinal_idx").on(
+      table.jobId,
+      table.ordinal
+    )
+  })
+);

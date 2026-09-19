@@ -6,6 +6,7 @@ import type {
   CreateProjectResultDto,
   DefinitionRefDto,
   ProjectTemplateDto,
+  RecipeTemplateDto,
   RobotTemplateDto
 } from "@ai-mud/shared";
 import type { Db } from "../../db/client.js";
@@ -65,6 +66,8 @@ export interface BaseFacilityInfoDto {
 export interface ContentCatalogPort {
   releaseId(): string;
   getItemInfo(): Record<string, { name: string; description: string }>;
+  getRecipeTemplate(stableId: string): RecipeTemplateDto | null;
+  listRecipes(): RecipeTemplateDto[];
   getFacilityInfo(stableId: string): BaseFacilityInfoDto | null;
   getRobotTemplate(stableId: string): RobotTemplateDto | null;
   getProjectTemplate(stableId: string): ProjectTemplateDto | null;

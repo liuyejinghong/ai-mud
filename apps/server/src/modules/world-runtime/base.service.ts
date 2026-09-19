@@ -81,6 +81,15 @@ export interface ProjectTemplateSpec {
   description: string;
 }
 
+export interface RecipeTemplateSpec {
+  ref: DefinitionRefDto;
+  name: string;
+  description: string;
+  inputs: Array<{ itemId: string; quantity: number }>;
+  workPerUnit: number;
+  output: { templateStableId: string; initialBatteryWh: number };
+}
+
 export interface ProvisionSeedSpec {
   releaseId: string;
   baseName: string;
@@ -97,6 +106,8 @@ export interface ProvisionSeedSpec {
 export interface ContentCatalogPort {
   getProvisionSeed(): ProvisionSeedSpec;
   getItemInfo(): Record<string, { name: string; description: string }>;
+  getRecipeTemplate(stableId: string): RecipeTemplateSpec | null;
+  listRecipes(): RecipeTemplateSpec[];
   getFacilityInfo(stableId: string): {
     name: string;
     note: string;

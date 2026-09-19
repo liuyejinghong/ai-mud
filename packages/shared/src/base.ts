@@ -42,7 +42,7 @@ export const SIM_DAYLIGHT_END_HOUR = 18;
 
 // 内容目录引用：kind + 稳定 ID + 修订。运行实例固定开工时修订，不静默升级。
 export interface DefinitionRefDto {
-  kind: "robot_template" | "project" | "facility";
+  kind: "robot_template" | "project" | "facility" | "recipe";
   stableId: string;
   revision: number;
 }

@@ -2234,6 +2234,160 @@
       "layer": "test",
       "scope": "test",
       "note": "M12-C"
+    },
+    {
+      "path": "packages/shared/src/content-admin.ts",
+      "module": "protocol",
+      "layer": "protocol",
+      "scope": "production",
+      "note": "M13-P 内容工坊与制造公共协议"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/content-admin.service.ts",
+      "module": "content-catalog",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M13-A draft/publish/activate 业务"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/content-admin.repository.ts",
+      "module": "content-catalog",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "M13-A content_drafts/content_releases 访问"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/catalog-db.loader.ts",
+      "module": "content-catalog",
+      "layer": "capability",
+      "scope": "production",
+      "note": "M13-A 按基地解析 active release（DB 优先，内置兜底）"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/content-admin.service.test.ts",
+      "module": "content-catalog",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-A"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/content-admin.repository.test.ts",
+      "module": "content-catalog",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-A"
+    },
+    {
+      "path": "apps/server/src/application/content-admin/usecases.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "M13-A 内容管理用例（admin 门面）"
+    },
+    {
+      "path": "apps/server/src/application/manufacturing/create-job.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "M13-C 创建制造工单用例"
+    },
+    {
+      "path": "apps/server/src/application/manufacturing/cancel-job.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "M13-C 取消制造工单用例"
+    },
+    {
+      "path": "apps/server/src/modules/industry/manufacturing.service.ts",
+      "module": "industry",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M13-C 创建/取消工单+材料预留"
+    },
+    {
+      "path": "apps/server/src/modules/industry/manufacturing.repository.ts",
+      "module": "industry",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "M13-C base_manufacturing_jobs/outputs 访问"
+    },
+    {
+      "path": "apps/server/src/modules/industry/manufacturing.settlement.ts",
+      "module": "industry",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M13-C 制造结算参与者（电力分配合产出一台原子事务）"
+    },
+    {
+      "path": "apps/server/src/modules/industry/base-manufacturing.routes.ts",
+      "module": "transport",
+      "layer": "transport",
+      "scope": "production",
+      "note": "M13-C 玩家制造路由；仅 import application"
+    },
+    {
+      "path": "apps/server/src/modules/industry/manufacturing.service.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-C"
+    },
+    {
+      "path": "apps/server/src/modules/industry/manufacturing.settlement.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-C"
+    },
+    {
+      "path": "apps/server/src/modules/admin/content-admin.routes.ts",
+      "module": "transport",
+      "layer": "transport",
+      "scope": "production",
+      "note": "M13-B 内容管理路由（admin 会话）；仅 import application"
+    },
+    {
+      "path": "apps/web/src/features/admin/ContentAdminPanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M13-B 内容工坊面板"
+    },
+    {
+      "path": "apps/web/src/features/admin/ContentAdminPanel.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-B"
+    },
+    {
+      "path": "apps/web/src/features/base/ManufacturingBoard.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M13-D 玩家制造工单面板"
+    },
+    {
+      "path": "apps/web/src/features/base/ManufacturingBoard.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-D"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/m13/content-publish.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-Q 发布/激活/权限（真 PG）"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/m13/manufacturing.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-Q 制造全链/ordinal 幂等/故障注入（真 PG）"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",

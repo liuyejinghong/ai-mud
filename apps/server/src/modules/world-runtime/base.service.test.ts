@@ -238,13 +238,21 @@ class FakeIndustryInit implements Pick<BaseServiceDeps["industryInit"], "ensureP
   }
 }
 
-class FakeCatalog implements Pick<ContentCatalogPort, "getProvisionSeed" | "getRobotTemplate" | "getProjectTemplate" | "listTemplates"> {
+class FakeCatalog implements Pick<ContentCatalogPort, "getProvisionSeed" | "getRobotTemplate" | "getProjectTemplate" | "listTemplates" | "getRecipeTemplate" | "listRecipes"> {
   seed: ProvisionSeedSpec;
   robots = new Map<string, RobotTemplateSpec>();
   projects = new Map<string, ProjectTemplateSpec>();
 
   listTemplates() {
     return { robots: [...this.robots.values()], projects: [...this.projects.values()] };
+  }
+
+  getRecipeTemplate(stableId: string) {
+    return null;
+  }
+
+  listRecipes() {
+    return [];
   }
 
   getItemInfo(): Record<string, { name: string; description: string }> {
