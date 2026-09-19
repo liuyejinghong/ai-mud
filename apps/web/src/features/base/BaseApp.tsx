@@ -15,6 +15,7 @@ import {
   provision,
   setClock
 } from "./baseApi.js";
+import { logout } from "../auth/authApi.js";
 import { BaseIntroModal } from "./BaseIntroModal.js";
 import { BaseShell } from "./BaseShell.js";
 
@@ -134,8 +135,12 @@ function AuthPanel({
 }
 
 export function BaseApp({
-  initialCsrfToken = null
-}: { initialCsrfToken?: string | null } = {}) {
+  initialCsrfToken = null,
+  onLogout
+}: {
+  initialCsrfToken?: string | null;
+  onLogout?: () => void;
+} = {}) {
   const [phase, setPhase] = useState<BasePhase>("loading");
   const [snapshot, setSnapshot] = useState<BaseSnapshotDto | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(initialCsrfToken);
@@ -255,6 +260,18 @@ export function BaseApp({
     [csrfToken, runCommand]
   );
 
+  const handleLogout = useCallback(async () => {
+    try {
+      await logout();
+    } finally {
+      setSelectedResourceId(null);
+      setSelectedSiteId(null);
+      setSelectedProjectId(null);
+      setSelectedDeviceId(null);
+      onLogout?.();
+    }
+  }, [onLogout]);
+
   const handleSelectSite = useCallback((siteId: string) => {
     setSelectedSiteId(siteId);
     setSelectedProjectId(null);
@@ -339,6 +356,7 @@ export function BaseApp({
         onSetSpeed={(speed) => handleClockCommand({ command: "set_speed", speed })}
         onSelectResource={handleSelectResource}
         selectedResourceId={selectedResourceId}
+        onLogout={() => void handleLogout()}
         isBusy={isActionBusy}
       />
     </>

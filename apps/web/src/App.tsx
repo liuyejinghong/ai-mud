@@ -47,7 +47,7 @@ export function App() {
 
   const isAdmin = session.user.role === "admin" || session.user.role === "super_admin";
   // v0.12：玩家默认进入火星基地客户端；旧西幻 GameShell 归档保留（管理员工作区可切换）。
-  const baseApp = <BaseApp initialCsrfToken={session.csrfToken} />;
+  const baseApp = <BaseApp initialCsrfToken={session.csrfToken} onLogout={endSession} />;
 
   if (!isAdmin) {
     return baseApp;

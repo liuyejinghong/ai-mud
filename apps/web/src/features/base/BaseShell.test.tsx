@@ -90,7 +90,8 @@ function renderShell(snapshot: BaseSnapshotDto) {
       onSelectDevice={noop}
       onCreateProject={noop}
       onCancelProject={noop}
-      onSelectResource={() => undefined}
+      onLogout={() => undefined}
+        onSelectResource={() => undefined}
         selectedResourceId={null}
         onSetSpeed={() => undefined}
         onClockCommand={noop}
@@ -141,6 +142,7 @@ describe("BaseShell", () => {
         onSelectDevice={noop}
         onCreateProject={noop}
         onCancelProject={noop}
+        onLogout={() => undefined}
         onSelectResource={() => undefined}
         selectedResourceId={null}
         onSetSpeed={() => undefined}
@@ -170,6 +172,7 @@ describe("BaseShell", () => {
         onSelectDevice={onSelectDevice}
         onCreateProject={noop}
         onCancelProject={noop}
+        onLogout={() => undefined}
         onSelectResource={() => undefined}
         selectedResourceId={null}
         onSetSpeed={() => undefined}
@@ -179,5 +182,35 @@ describe("BaseShell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /驮运者一号 · 作业中/ }));
     expect(onSelectDevice).toHaveBeenCalledWith("device-1");
+  });
+});
+
+describe("BaseShell > logout", () => {
+  it("时间区提供退出登录按钮并上报", () => {
+    const onLogout = vi.fn();
+    render(
+      <BaseShell
+        snapshot={buildSnapshot()}
+        csrfToken="csrf"
+        selectedResourceId={null}
+        selectedSiteId={null}
+        selectedProjectId={null}
+        selectedDeviceId={null}
+        isBusy={false}
+        onSelectSite={() => undefined}
+        onSelectProject={() => undefined}
+        onSelectDevice={() => undefined}
+        onCreateProject={() => undefined}
+        onCancelProject={() => undefined}
+        onClockCommand={() => undefined}
+        onSetSpeed={() => undefined}
+        onSelectResource={() => undefined}
+        onLogout={onLogout}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+
+    expect(onLogout).toHaveBeenCalledOnce();
   });
 });

@@ -42,6 +42,7 @@ export interface BaseShellProps {
   onClockCommand: (input: BaseClockCommandInputDto) => void;
   onSetSpeed: (speed: number) => void;
   onSelectResource: (itemId: string) => void;
+  onLogout: () => void;
 }
 
 export function BaseShell({
@@ -59,7 +60,8 @@ export function BaseShell({
   onCancelProject,
   onClockCommand,
   onSetSpeed,
-  onSelectResource
+  onSelectResource,
+  onLogout
 }: BaseShellProps) {
   const isPaused = snapshot.timeMode === "paused";
   const deviceSummary = snapshot.devices.map((device: BaseDeviceDto) => (
@@ -147,14 +149,19 @@ export function BaseShell({
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            className="base-primary-button"
-            disabled={isBusy || csrfToken === null}
-            onClick={() => onClockCommand(isPaused ? { command: "resume" } : { command: "pause" })}
-          >
-            {isPaused ? "恢复计时" : "暂停计时"}
-          </button>
+          <div className="base-clock-actions">
+            <button
+              type="button"
+              className="base-primary-button"
+              disabled={isBusy || csrfToken === null}
+              onClick={() => onClockCommand(isPaused ? { command: "resume" } : { command: "pause" })}
+            >
+              {isPaused ? "恢复计时" : "暂停计时"}
+            </button>
+            <button type="button" className="base-logout-button" onClick={onLogout}>
+              退出登录
+            </button>
+          </div>
         </section>
       </header>
 

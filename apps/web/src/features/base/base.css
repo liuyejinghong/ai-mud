@@ -483,3 +483,43 @@
   display: grid;
   gap: 4px;
 }
+
+.base-clock-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.base-logout-button {
+  border: 1px solid #24556b;
+  background: transparent;
+  color: #9fc9d6;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.base-logout-button:hover {
+  border-color: #29d7b1;
+  color: #29d7b1;
+}
+
+.base-clock-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.base-logout-button {
+  border: 1px solid #24556b;
+  background: transparent;
+  color: #9fc9d6;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.base-logout-button:hover {
+  border-color: #29d7b1;
+  color: #29d7b1;
+}

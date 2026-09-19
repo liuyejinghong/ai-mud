@@ -12,10 +12,10 @@ vi.mock("./features/auth/AuthPage.js", () => ({
   AuthPage: () => <h1>AI MUD 内测登录</h1>
 }));
 
-const baseAppProps: Array<{ initialCsrfToken?: string | null }> = [];
+const baseAppProps: Array<{ initialCsrfToken?: string | null; onLogout?: () => void }> = [];
 
 vi.mock("./features/base/BaseApp.js", () => ({
-  BaseApp: (props: { initialCsrfToken?: string | null }) => {
+  BaseApp: (props: { initialCsrfToken?: string | null; onLogout?: () => void }) => {
     baseAppProps.push(props);
     return (
       <main aria-label="基地工作区">
@@ -80,7 +80,8 @@ describe("App", () => {
     render(<App />);
 
     await screen.findByRole("main", { name: "基地工作区" });
-    expect(baseAppProps.at(-1)).toEqual({ initialCsrfToken: "csrf" });
+    expect(baseAppProps.at(-1)?.initialCsrfToken).toBe("csrf");
+    expect(typeof baseAppProps.at(-1)?.onLogout).toBe("function");
   });
 
   it("starts admins in the base workspace without mounting management content", async () => {
