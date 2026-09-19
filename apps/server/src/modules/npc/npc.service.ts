@@ -34,7 +34,7 @@ import type { CopperLedgerWriter } from "../ledger/ledger.service.js";
 import type { AssetMutationPort } from "../ledger/asset-mutation.service.js";
 
 const BLACKPINE_MARKET_ID = "blackpine_outpost" as const;
-const INITIAL_TREASURY_COPPER = 10_000;
+const INITIAL_TREASURY_COPPER = 50_000;
 const DAY_MS = 24 * 60 * 60_000;
 const HOUR_MS = 60 * 60_000;
 const FOOD_RESERVE_QUANTITY = 1;
@@ -760,6 +760,9 @@ export class NpcService {
 
     const lockedSellableItem = this.findSellableInventoryItem(lockedActor, [lockedInventoryItem]);
     if (!lockedSellableItem) return false;
+
+    // ARCH-05 试玩反馈：市场库存达到目标即饱和，NPC 停止出售（防止金库被无限抽干）。
+    if (lockedMarketItem.quantity >= lockedMarketItem.targetQuantity) return false;
 
     const quote = calculateMarketQuote({
       direction: "sell",
