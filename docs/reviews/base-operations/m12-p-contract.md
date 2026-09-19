@@ -53,6 +53,17 @@
 
 A 在 B/D 交付前可用接口替身开发（PARTIAL_MOCK 标注于交接），最终集成以真实实现为准；Q 只认真实链。禁止为对齐 mock 改 shared 类型——类型变更必须回 P 握手。
 
+跨线接缝一律走 ports.ts（P.1 扩展）：B 结算消费 `BaseClockStorePort`/`BaseSiteStorePort`（world 提供，A 实现）；A 快照消费 `BaseIndustryReadPort`/`BaseRobotReadPort`（B 实现）与 `BaseAssetPort.listBaseInventory`；A provision 消费 `BaseIndustryInitPort`（B 实现，电力行种子）；结算的 simTime 推进政策（running+租约+追补上限）封装在 `BaseClockStorePort.lockAdvanceableBases` 实现内。
+
+REST 面（路由线实现，C 消费，全部 json）：
+- `POST /base/playtest-register` `{email,password}` → 201 `{user:{accountId,email}, baseId, csrfToken}` + 会话 cookie（仅 PLAYTEST_REGISTRATION_ENABLED 开放）
+- `POST /base/provision` → `{baseId, duplicate}`（幂等，登录后调用）
+- `GET /base/snapshot` → `BaseSnapshotDto`
+- `POST /base/heartbeat` → `{leaseUntil, timeMode}`（csrf）
+- `POST /base/clock` `{command:pause|resume|set_speed, speed?}` → `{timeMode, speed, simTime}`（csrf）
+- `POST /base/projects` `{definitionRef, siteId, commandId?}` → `{projectId, duplicate}`（csrf）
+- `POST /base/projects/:projectId/cancel` `{commandId?}` → `CancelProjectResultDto`（csrf）
+
 ## 7. 提交与验证
 
 每线：失败测试 → 最小实现 → 自线测试绿；不改他线文件；不跑 git。集成（I）在分支 HEAD 上统一跑 typecheck + arch:check + arch:test + pnpm test + test:postgres。

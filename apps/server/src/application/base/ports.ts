@@ -133,7 +133,7 @@ export interface ProvisionUseCase {
 }
 
 export interface SnapshotUseCase {
-  execute(principal: BasePrincipal, query: { sessionLeaseToken?: string }): Promise<BaseSnapshotDto>;
+  execute(principal: BasePrincipal): Promise<BaseSnapshotDto>;
 }
 
 export interface ClockHeartbeatResultDto {
@@ -148,8 +148,96 @@ export interface ClockCommandResultDto {
 }
 
 export interface ClockUseCase {
-  heartbeat(principal: BasePrincipal, input: { leaseToken: string }): Promise<ClockHeartbeatResultDto>;
+  heartbeat(principal: BasePrincipal): Promise<ClockHeartbeatResultDto>;
   applyCommand(principal: BasePrincipal, input: BaseClockCommandInputDto): Promise<ClockCommandResultDto>;
+}
+
+// ---------- 跨线只读/事务绑定端口（world/industry/npc 各自实现，I 负责绑定） ----------
+
+// world：结算推进的时钟政策（running + 租约有效 + 追补上限）封装在此端口实现内。
+export interface AdvanceableBaseDto {
+  baseId: string;
+  simTime: Date;
+  speed: number;
+  deltaSimMs: number;
+}
+
+export interface BaseClockStorePort {
+  lockAdvanceableBases(tx: BaseTx, now: Date): Promise<AdvanceableBaseDto[]>;
+  saveSimAdvance(tx: BaseTx, baseId: string, simTime: Date, lastAdvancedAt: Date): Promise<void>;
+}
+
+export interface BaseSiteRecordDto {
+  id: string;
+  siteKey: string;
+  state: "free" | "reserved" | "built";
+  builtFacilityRef: string | null;
+}
+
+export interface BaseSiteStorePort {
+  getSite(tx: BaseTx, baseId: string, siteId: string): Promise<BaseSiteRecordDto | null>;
+  markSiteReserved(tx: BaseTx, siteId: string): Promise<void>;
+  markSiteBuilt(tx: BaseTx, siteId: string, facilityRef: string): Promise<void>;
+  releaseSite(tx: BaseTx, siteId: string): Promise<void>;
+  listSites(tx: BaseTx, baseId: string): Promise<BaseSiteRecordDto[]>;
+}
+
+export interface BaseIndustryInitPort {
+  ensurePowerState(
+    tx: BaseTx,
+    baseId: string,
+    seed: { generationWPeak: number; storageCapacityWh: number; initialStorageWh: number }
+  ): Promise<void>;
+}
+
+export interface BasePowerRecordDto {
+  generationWPeak: number;
+  storageWh: number;
+  storageCapacityWh: number;
+  lastLoadW: number;
+}
+
+export interface BaseIndustryProjectRecordDto {
+  id: string;
+  projectDefId: string;
+  templateRevision: number;
+  status: string;
+  currentStepIndex: number;
+  siteId: string;
+  reservedInputs: Array<{ itemId: string; quantity: number }>;
+}
+
+export interface BaseIndustryStepRecordDto {
+  projectId: string;
+  stepIndex: number;
+  kind: string;
+  groupId: string;
+  status: string;
+  workRequired: number;
+  workDone: number;
+  blockedReason: string | null;
+}
+
+export interface BaseIndustryReadPort {
+  getPowerState(baseId: string): Promise<BasePowerRecordDto | null>;
+  listProjects(baseId: string): Promise<BaseIndustryProjectRecordDto[]>;
+  listSteps(projectIds: string[]): Promise<BaseIndustryStepRecordDto[]>;
+}
+
+export interface BaseRobotRecordDto {
+  operatorId: string;
+  deviceId: string;
+  deviceDefId: string;
+  groupId: string;
+  batteryWh: number;
+  batteryCapacityWh: number;
+  status: string;
+  currentProjectId: string | null;
+  currentStepIndex: number | null;
+}
+
+export interface BaseRobotReadPort {
+  listOperators(baseId: string): Promise<BaseRobotRecordDto[]>;
 }
 
 export interface CancelProjectResultDto {
