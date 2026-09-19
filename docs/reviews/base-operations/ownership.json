@@ -1,16 +1,16 @@
 {
   "schemaVersion": 1,
   "contractVersion": "a0-2026-09-19",
-  "status": "PROPOSED_FROZEN_PENDING_A004",
+  "status": "CONTRACT_READY_A004_APPROVED",
   "baselineHead": "7d8f242",
-  "note": "v0.12 文件所有权提议清单。M12-P 落地时可细化路径，但每文件至多一个 active owner、语义不得收缩；任何 NEW 生产文件必须先登记 module-boundaries 才可创建（arch:test 负例强制）。跨线改动走 P 握手（02-parallel §5）。",
+  "note": "v0.12 文件所有权提议清单。A0-04 已批准（见 a0-review.md）；其 §4 九项非阻塞修正随 M12-P 首个冻结动作落实（迁移路径已按审查修正）。M12-P 落地时可细化路径，但每文件至多一个 active owner、语义不得收缩；任何 NEW 生产文件必须先登记 module-boundaries 才可创建（arch:test 负例强制）。跨线改动走 P 握手（02-parallel §5）。",
   "sharedSingleWriter": {
     "owner": "M12-P",
     "files": [
       "packages/shared/src/base.ts (NEW)",
       "packages/shared/src/errors.ts (扩展)",
       "apps/server/src/db/schema.ts (扩展)",
-      "apps/server/src/db/migrations/<新迁移，编号由P定> (NEW)",
+      "apps/server/drizzle/ 新迁移与 meta/_journal.json (NEW，编号由P定)",
       "apps/server/src/app.ts (装配与路由注册)",
       "docs/architecture/module-catalog.json (登记 industry/content-catalog/边)",
       "docs/architecture/module-boundaries.json (登记本清单全部文件)",

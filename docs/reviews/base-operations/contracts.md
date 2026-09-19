@@ -1,6 +1,6 @@
 # A0-03：v0.12 合同与文件归属冻结
 
-状态：CONTRACT_READY（提案，待 A0-04 独立审查确认）。
+状态：CONTRACT_READY（A0-04 独立审查已批准，见 a0-review.md；其 §4 九项非阻塞修正随 M12-P 首个冻结动作落实）。
 输入：A0-01 基线盘点（5dd76a9）、A0-02 场景锁定（ef5d1b7）、01-domain-contracts.md、module-catalog.json / module-boundaries.json 实况。
 基线：HEAD `7d8f242`（产品代码 = main e2677ea）。
 
