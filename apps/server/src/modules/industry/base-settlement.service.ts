@@ -217,6 +217,8 @@ export class BaseSettlementService {
         project.siteId,
         definitionRefKey(template.outputFacility.ref)
       );
+      // 设施投产：供能上限并入基地（m12-p-contract §3.3，G03「投产后供能改变」）。
+      await industry.addGenerationWPeak(tx, baseId, template.outputFacility.generationWPeak);
     }
   }
 }

@@ -2,7 +2,7 @@
 // 结构性实现 application/base/ports.ts 冻结的 BaseIndustryInitPort / BaseIndustryReadPort
 // 以及基地 tick 的落盘写面；composition 按结构绑定，industry 不 import application。
 // 所有方法必须在调用方事务内执行，本类永不开启或提交事务。
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { BaseRobotGroupId, ProjectStatus, StepKind } from "@ai-mud/shared";
 import type { Db } from "../../db/client.js";
 import { basePowerState, baseProjectSteps, baseProjects } from "../../db/schema.js";
@@ -52,6 +52,7 @@ export interface IndustrySettlementWriter {
   ): Promise<void>;
   saveStepUpdates(tx: IndustryTx, updates: BaseTickStepUpdate[]): Promise<void>;
   saveProjectUpdates(tx: IndustryTx, updates: ProjectRecordPatch[]): Promise<void>;
+  addGenerationWPeak(tx: IndustryTx, baseId: string, deltaW: number): Promise<void>;
 }
 
 // ---------- 创建/取消项目的持久化面 ----------
@@ -223,6 +224,16 @@ export class IndustryRepository
     status: ProjectStatus
   ): Promise<void> {
     await tx.update(baseProjects).set({ status }).where(eq(baseProjects.id, projectId));
+  }
+
+  async addGenerationWPeak(tx: IndustryTx, baseId: string, deltaW: number): Promise<void> {
+    await tx
+      .update(basePowerState)
+      .set({
+        generationWPeak: sql`${basePowerState.generationWPeak} + ${deltaW}`,
+        updatedAt: new Date()
+      })
+      .where(eq(basePowerState.baseId, baseId));
   }
 
   async saveProjectUpdates(tx: IndustryTx, updates: ProjectRecordPatch[]): Promise<void> {

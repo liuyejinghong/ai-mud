@@ -136,6 +136,7 @@ class FakeCatalog implements SettlementCatalogPort {
 }
 
 class FakeIndustry implements IndustryReadPort, IndustrySettlementWriter {
+  readonly generationBumps: Array<{ baseId: string; deltaW: number }> = [];
   power = new Map<string, BasePowerRecord>();
   projects = new Map<string, BaseProjectRecord[]>();
   steps: BaseStepRecord[] = [];
@@ -162,6 +163,10 @@ class FakeIndustry implements IndustryReadPort, IndustrySettlementWriter {
   async saveStepUpdates(_tx: IndustryTx, updates: BaseTickStepUpdate[]) {
     this.savedSteps.push(...updates);
   }
+  async addGenerationWPeak(tx: unknown, baseId: string, deltaW: number): Promise<void> {
+    this.generationBumps.push({ baseId, deltaW });
+  }
+
   async saveProjectUpdates(_tx: IndustryTx, updates: ProjectRecordPatch[]) {
     this.savedProjects.push(...updates);
   }

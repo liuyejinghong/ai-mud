@@ -95,9 +95,10 @@ CREATE TABLE "base_projects" (
 	"reserved_inputs" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"completed_at" timestamp with time zone,
-	CONSTRAINT "base_projects_one_active_per_site_idx" UNIQUE("site_id") WHERE "base_projects"."status" IN ('planned', 'active', 'paused', 'blocked', 'needs_decision'),
 	CONSTRAINT "base_projects_status_check" CHECK ("base_projects"."status" IN ('planned', 'active', 'paused', 'blocked', 'needs_decision', 'completed', 'cancelled', 'failed'))
 );
+--> statement-breakpoint
+CREATE UNIQUE INDEX "base_projects_one_active_per_site_idx" ON "base_projects" ("site_id") WHERE "base_projects"."status" IN ('planned', 'active', 'paused', 'blocked', 'needs_decision');
 --> statement-breakpoint
 CREATE TABLE "base_project_steps" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
