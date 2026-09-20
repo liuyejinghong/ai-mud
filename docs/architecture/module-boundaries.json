@@ -2577,6 +2577,13 @@
       "layer": "domain",
       "scope": "production",
       "note": "M14-LIVE seam：TypeSafe Jev SHADOW 对照 provider（执行语义仍 RULE）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/typesafe-decision-provider.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14 shadow provider（假 fetch，离线）"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",
