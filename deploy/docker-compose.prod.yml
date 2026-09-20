@@ -40,7 +40,10 @@ services:
       ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-admin@yudian.local}
       ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:?set in .env}
       AI_NPC_DIALOGUE_ENABLED: "false"
-      TYPE_SAFE_DECISION_MODE: "off"
+      TYPE_SAFE_DECISION_MODE: "${TYPE_SAFE_DECISION_MODE:-off}"
+      TYPE_SAFE_API_KEY: "${TYPE_SAFE_API_KEY:-}"
+      TYPE_SAFE_MODEL: "${TYPE_SAFE_MODEL:-glm-5.3-flash}"
+      TYPE_SAFE_BASE_URL: "${TYPE_SAFE_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}"
 
   web:
     build:
