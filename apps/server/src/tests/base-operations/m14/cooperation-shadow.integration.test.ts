@@ -38,7 +38,7 @@ beforeAll(
   const migClient = await migPool.connect();
   // 全部迁移拼接为单次多语句查询：CI 上逐条往返会超出默认 10s 钩子超时。
   const journal = JSON.parse(readFileSync(journalPath(), "utf8"));
-  const allSql = journal.entries
+  const allSql = (journal.entries as Array<{ tag: string }>)
     .map((entry) =>
       readFileSync(join(here, `../../../../drizzle/${entry.tag}.sql`), "utf8")
     )
