@@ -6,7 +6,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { DecisionGateway } from "../../../modules/ai/decision-gateway.js";
+import {
+  DecisionGateway,
+  type DecisionAuditRow
+} from "../../../modules/ai/decision-gateway.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const d = DATABASE_URL ? describe : describe.skip;
@@ -61,7 +64,7 @@ d("M14 cooperation shadow chain (real PostgreSQL)", () => {
   it("gateway audit row lands in decision_records via injected writer", async () => {
     if (!client) return;
     // 网关审计注入写入口 → 真库落行（覆盖 M14-A 单测的假捕获路径）。
-    const rows: Array<Record<string, unknown>> = [];
+    const rows: DecisionAuditRow[] = [];
     const gateway = new DecisionGateway({
       recordAudit: async (row) => {
         rows.push(row);
