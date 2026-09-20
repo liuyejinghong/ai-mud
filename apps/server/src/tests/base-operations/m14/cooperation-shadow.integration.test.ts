@@ -54,7 +54,8 @@ beforeAll(
 
 afterAll(async () => {
   if (!DATABASE_URL || !client) return;
-  // 先关掉目标库上的全部连接，再 FORCE 删除——避免连接被强杀抛 FATAL 未处理错误。
+  // 归还长连接 → 关池 → 再 FORCE 删除（顺序错了 pool.end 会等未归还连接）。
+  await client.release();
   await migPool.end();
   const adminPool = new pg.Pool({ connectionString: DATABASE_URL });
   const adminClient = await adminPool.connect();
