@@ -34,7 +34,8 @@ function setSessionCookie(app: FastifyInstance, reply: FastifyReply, token: stri
   reply.setCookie(app.config.SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: app.config.NODE_ENV === "production",
+    secure:
+      app.config.SESSION_COOKIE_SECURE ?? app.config.NODE_ENV === "production",
     path: "/"
   });
 }
