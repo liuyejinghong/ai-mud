@@ -189,26 +189,15 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: Auth
                 </button>
               </p>
             ) : (
-              <div className="auth-mode-switch" role="tablist" aria-label="账号入口">
+              <p className="auth-switch-links">
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={mode === "login"}
-                  className="auth-tab"
-                  onClick={() => switchMode("login")}
+                  className="auth-link-button"
+                  onClick={() => switchMode("playtest")}
                 >
-                  登录
+                  返回试玩注册
                 </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={mode === "register"}
-                  className="auth-tab"
-                  onClick={() => switchMode("register")}
-                >
-                  激活码注册
-                </button>
-              </div>
+              </p>
             )}
 
             <label className="auth-field" htmlFor="auth-email">

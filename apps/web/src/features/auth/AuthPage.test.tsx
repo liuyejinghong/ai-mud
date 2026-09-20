@@ -22,64 +22,36 @@ describe("AuthPage", () => {
     expect(screen.queryByRole("button", { name: "登录" })).toBeNull();
   });
 
-  it("shows activation code only in registration mode", () => {
+  it("login view has no activation-code fields and offers return to playtest", () => {
     render(<AuthPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "前往登录" }));
-    fireEvent.click(screen.getByRole("tab", { name: "激活码注册" }));
 
-    expect(screen.getByLabelText("激活码")).toBeTruthy();
-    expect(screen.getByLabelText("确认密码")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "创建账号" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "登录" })).toBeTruthy();
+    expect(screen.queryByLabelText("激活码")).toBeNull();
+    expect(screen.queryByLabelText("确认密码")).toBeNull();
+    expect(screen.getByRole("button", { name: "返回试玩注册" })).toBeTruthy();
   });
 
-  it("rejects short registration passwords before calling the server", () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch");
-    render(<AuthPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "前往登录" }));
-    fireEvent.click(screen.getByRole("tab", { name: "激活码注册" }));
-    fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "player@example.com" } });
-    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "123456789" } });
-    fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "123456789" } });
-    fireEvent.change(screen.getByLabelText("激活码"), {
-      target: { value: "MUD–7K3M–9Q2P–6R8T" }
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
-
-    expect(screen.getByRole("status").textContent).toBe("密码至少需要 12 个字符。");
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it("normalizes pasted activation-code dashes before registration", async () => {
+  it("login rejects wrong credentials with the server message", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
-        JSON.stringify({
-          error: { code: "ACTIVATION_CODE_INVALID", message: "Activation code cannot be used" }
-        }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({ error: { code: "UNAUTHENTICATED", message: "Invalid" } }),
+        { status: 401, headers: { "Content-Type": "application/json" } }
       )
     );
     render(<AuthPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "前往登录" }));
-    fireEvent.click(screen.getByRole("tab", { name: "激活码注册" }));
-    fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: " player@example.com " } });
-    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "LongPassword123" } });
-    fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "LongPassword123" } });
-    fireEvent.change(screen.getByLabelText("激活码"), {
-      target: { value: " MUD–7K3M–9Q2P–6R8T " }
-    });
+    fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "p@e.test" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "whatever1" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "创建账号" }));
-
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
-    const [, init] = fetchSpy.mock.calls[0]!;
-    expect(JSON.parse(String(init?.body))).toMatchObject({
-      email: "player@example.com",
-      activationCode: "MUD-7K3M-9Q2P-6R8T"
+    await waitFor(() => {
+      expect(screen.getByRole("status").textContent).toContain("登录失败");
     });
-    expect(screen.getByRole("status").textContent).toBe("激活码无效，请检查字符和横线。");
+    expect(fetchSpy).toHaveBeenCalled();
+    fetchSpy.mockRestore();
   });
+
 });
