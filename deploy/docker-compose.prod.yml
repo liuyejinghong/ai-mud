@@ -33,6 +33,8 @@ services:
       DATABASE_URL: postgres://ai_mud:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/ai_mud
       SESSION_SECRET: ${SESSION_SECRET:?set in .env}
       SESSION_COOKIE_NAME: ai_mud_session
+      # 内测走纯 HTTP：cookie 不能带 Secure（浏览器会丢弃）；上 TLS 后改回 true。
+      SESSION_COOKIE_SECURE: "false"
       WEB_ORIGINS: ""
       WORLD_TICK_ENABLED: "true"
       WORLD_TICK_INTERVAL_MS: "60000"
