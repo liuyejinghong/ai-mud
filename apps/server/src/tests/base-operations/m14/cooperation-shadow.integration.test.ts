@@ -24,7 +24,8 @@ function journalPath(): string {
   return join(here, "../../../../drizzle/meta/_journal.json");
 }
 
-beforeAll(async () => {
+beforeAll(
+  async () => {
   if (!DATABASE_URL) return;
   adminPool = new pg.Pool({ connectionString: DATABASE_URL });
   const adminClient = await adminPool.connect();
@@ -48,8 +49,10 @@ beforeAll(async () => {
   migClient.release();
 
   // 建立长连接（挂到目标库），供本文件全部查询使用；migPool 在 afterAll 统一收口。
-  client = await migPool.connect();
-});
+    client = await migPool.connect();
+  },
+  120_000 // CI 上顺序执行全部 33 个迁移，远超默认 10s 钩子超时
+);
 
 afterAll(async () => {
   if (!DATABASE_URL || !client) return;
