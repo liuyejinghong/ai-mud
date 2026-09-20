@@ -2584,6 +2584,13 @@
       "layer": "test",
       "scope": "test",
       "note": "M14 shadow provider（假 fetch，离线）"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/m14/cooperation-shadow.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14-Q 协作/审计真 PG 闭环"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",
