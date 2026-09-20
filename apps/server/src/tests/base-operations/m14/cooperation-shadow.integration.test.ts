@@ -15,6 +15,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const d = DATABASE_URL ? describe : describe.skip;
 
 let adminPool: pg.Pool;
+let migPool: pg.Pool;
 let client: pg.PoolClient;
 const dbName = `ai_mud_vitest_m14_${process.pid}_${randomUUID().slice(0, 8)}`;
 
@@ -30,7 +31,7 @@ beforeAll(async () => {
   await adminClient.query(`CREATE DATABASE "${dbName}"`);
   adminClient.release();
 
-  const migPool = new pg.Pool({
+  migPool = new pg.Pool({
     connectionString: `${DATABASE_URL.substring(0, DATABASE_URL.lastIndexOf("/") + 1)}${dbName}`
   });
   const migClient = await migPool.connect();
@@ -46,18 +47,19 @@ beforeAll(async () => {
   }
   migClient.release();
 
-  // 建立长连接（挂到目标库），供本文件全部查询使用；migPool 不 end（client 还连着它）。
+  // 建立长连接（挂到目标库），供本文件全部查询使用；migPool 在 afterAll 统一收口。
   client = await migPool.connect();
 });
 
 afterAll(async () => {
   if (!DATABASE_URL || !client) return;
-  await client.release();
-  const adminPool2 = new pg.Pool({ connectionString: DATABASE_URL });
-  const adminClient = await adminPool2.connect();
+  // 先关掉目标库上的全部连接，再 FORCE 删除——避免连接被强杀抛 FATAL 未处理错误。
+  await migPool.end();
+  const adminPool = new pg.Pool({ connectionString: DATABASE_URL });
+  const adminClient = await adminPool.connect();
   await adminClient.query(`DROP DATABASE "${dbName}" WITH (FORCE)`);
   adminClient.release();
-  await adminPool2.end();
+  await adminPool.end();
 });
 
 d("M14 cooperation shadow chain (real PostgreSQL)", () => {
