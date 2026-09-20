@@ -171,7 +171,7 @@ export function AuthPage({ onAuthenticated }: { onAuthenticated?: (session: Auth
               <>
                 <p>服务器状态：开发内测。</p>
                 <p>已有指挥账号？登录后回到你的基地，工程队一直在原地等你。</p>
-                <p>激活码注册用于封闭测试账号；普通体验请用「试玩注册」。</p>
+                <p>输入邮箱与密码即可回到你的基地。</p>
               </>
             )}
           </aside>
