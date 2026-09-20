@@ -40,6 +40,10 @@ const envSchema = z
     DEEPSEEK_MODEL: z.string().default("deepseek-v4-flash"),
     AI_DIALOGUE_TIMEOUT_MS: z.coerce.number().int().positive().default(8_000),
     AI_DIALOGUE_MAX_OUTPUT_TOKENS: z.coerce.number().int().positive().max(1_000).default(400),
+    TYPE_SAFE_DECISION_MODE: z.enum(["off", "shadow"]).default("off"),
+    TYPE_SAFE_API_KEY: z.string().optional(),
+    TYPE_SAFE_MODEL: z.string().default("jev-latest"),
+    TYPE_SAFE_BASE_URL: z.string().url().default("https://openrouter.ai/api/v1"),
     AI_DAILY_TOKEN_BUDGET: z
       .string()
       .optional()

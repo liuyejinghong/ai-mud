@@ -21,6 +21,9 @@ const testEnv = {
   DEEPSEEK_MODEL: "deepseek-v4-flash",
   AI_DIALOGUE_TIMEOUT_MS: 8_000,
   AI_DIALOGUE_MAX_OUTPUT_TOKENS: 400,
+  TYPE_SAFE_DECISION_MODE: "off" as const,
+  TYPE_SAFE_MODEL: "jev-latest",
+  TYPE_SAFE_BASE_URL: "https://openrouter.ai/api/v1",
   AI_DAILY_TOKEN_BUDGET: null
 };
 
@@ -29,7 +32,7 @@ describe("buildApp", () => {
     const source = readFileSync(new URL("./app.ts", import.meta.url), "utf8");
 
     expect(source).toContain('from "./modules/game/game.composition.js"');
-    expect(source).not.toContain("createNpcTaskService } from \"./modules/game/game.routes.js\"");
+    expect(source).not.toContain('createNpcTaskService } from "./modules/game/game.routes.js"');
   });
 
   it("allows credentialed cors only for configured web origins", async () => {

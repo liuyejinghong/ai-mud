@@ -23,6 +23,9 @@ function buildAuthRouteTestApp(overrides: Partial<AuthRouteDependencies>) {
     DEEPSEEK_MODEL: "deepseek-v4-flash",
     AI_DIALOGUE_TIMEOUT_MS: 8_000,
     AI_DIALOGUE_MAX_OUTPUT_TOKENS: 400,
+    TYPE_SAFE_DECISION_MODE: "off",
+    TYPE_SAFE_MODEL: "jev-latest",
+    TYPE_SAFE_BASE_URL: "https://openrouter.ai/api/v1",
     AI_DAILY_TOKEN_BUDGET: null
   });
   void app.register(cookie, { secret: "test-secret-that-is-at-least-32-bytes" });

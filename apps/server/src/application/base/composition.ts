@@ -19,6 +19,7 @@ import {
 } from "../../modules/industry/cooperation.service.js";
 import { CooperationRepository } from "../../modules/industry/cooperation.repository.js";
 import { DecisionGateway } from "../../modules/ai/decision-gateway.js";
+import { TypeSafeShadowDecisionProvider } from "../../modules/ai/typesafe-decision-provider.js";
 import { createEconomyUseCases } from "../economy/usecases.js";
 import { OrderRepository } from "../../modules/economy/order.repository.js";
 import { PurchaseRepository } from "../../modules/economy/purchase.repository.js";
@@ -204,11 +205,25 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     cancel: new CancelProjectCase(db, construction)
   };
 
-  const decisionGateway = new DecisionGateway({
-    recordAudit: async (row) => {
-      await db.insert(decisionRecords).values(row);
-    }
-  });
+  // M14-LIVE seam：TYPE_SAFE_DECISION_MODE=shadow 且配置 key 时启用 Jev 对照
+  //（SHADOW：Jev 意见只进审计 reason，不改变 RULE 执行语义）。
+  const decisionGateway =
+    config.TYPE_SAFE_DECISION_MODE === "shadow" && config.TYPE_SAFE_API_KEY
+      ? new DecisionGateway({
+          provider: new TypeSafeShadowDecisionProvider({
+            apiKey: config.TYPE_SAFE_API_KEY,
+            model: config.TYPE_SAFE_MODEL,
+            baseUrl: config.TYPE_SAFE_BASE_URL
+          }),
+          recordAudit: async (row) => {
+            await db.insert(decisionRecords).values(row);
+          }
+        })
+      : new DecisionGateway({
+          recordAudit: async (row) => {
+            await db.insert(decisionRecords).values(row);
+          }
+        });
   const cooperation = {
     detectAndResolve: (
       tx: Parameters<typeof detectAndResolveCooperation>[0],
