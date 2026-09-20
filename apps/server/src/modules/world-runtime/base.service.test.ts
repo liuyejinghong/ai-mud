@@ -528,6 +528,23 @@ describe("BaseService.provision", () => {
     expect(fx.industryInit.seeds).toHaveLength(0);
   });
 
+  it("converges to the owned base under a fresh commandId instead of inserting a second base", async () => {
+    const fx = createFixture();
+    fx.repo.bases.push(makeBase({ accountId: ACCOUNT_ID, id: "base-7" }));
+
+    const result = await fx.service.provision({ accountId: ACCOUNT_ID }, { commandId: "cmd-2" });
+
+    expect(result).toEqual({ baseId: "base-7", duplicate: true });
+    expect(fx.repo.bases).toHaveLength(1);
+    expect(fx.repo.sites).toHaveLength(0);
+    expect(fx.assets.devices).toHaveLength(0);
+    expect(fx.robots.operators).toHaveLength(0);
+    expect(fx.assets.credits).toHaveLength(0);
+    expect(fx.industryInit.seeds).toHaveLength(0);
+    // 新 commandId 的收据照常落库，之后同 ID 重放收敛到同一结果。
+    expect(fx.repo.savedResults).toEqual([{ baseId: "base-7", duplicate: true }]);
+  });
+
   it("raises IDEMPOTENCY_CONFLICT when the same commandId carries a different request hash", async () => {
     const fx = createFixture();
     const key = `account:${ACCOUNT_ID}|${BASE_PROVISION_COMMAND_KIND}|cmd-1`;

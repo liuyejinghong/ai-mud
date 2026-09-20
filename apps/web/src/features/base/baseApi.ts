@@ -121,9 +121,10 @@ export function getSnapshot(): Promise<BaseSnapshotDto> {
   return request<BaseSnapshotDto>("/base/snapshot");
 }
 
-export function provision(commandId?: string): Promise<ProvisionResultDto> {
+export function provision(csrfToken: string, commandId?: string): Promise<ProvisionResultDto> {
   return request<ProvisionResultDto>("/base/provision", {
     method: "POST",
+    csrfToken,
     ...(commandId !== undefined ? { body: { commandId } } : { body: {} })
   });
 }

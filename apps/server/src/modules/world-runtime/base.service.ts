@@ -320,6 +320,21 @@ export class BaseService {
         throw new BaseOperationError("IDEMPOTENCY_CONFLICT", "命令正在处理中，请稍后重试。");
       }
 
+      // 账号级幂等：收据按 commandId 区分，但基地按账号唯一。已有基地的账号换了
+      // 新 commandId（如再次注册/登录触发的 provision）必须收敛回原基地，
+      // 不能再插一行撞 bases_account_id_unique。与收据重放一样不补种设备/物资。
+      const ownedBaseId = await repo.findBaseIdByAccount(tx, principal.accountId);
+      if (ownedBaseId !== null) {
+        const result = { baseId: ownedBaseId, duplicate: true };
+        await repo.saveReceiptResult(tx, {
+          actorScope,
+          commandKind: BASE_PROVISION_COMMAND_KIND,
+          commandId: input.commandId,
+          result
+        });
+        return result;
+      }
+
       const now = this.deps.clock.now();
       const seed = this.deps.catalog.getProvisionSeed();
 

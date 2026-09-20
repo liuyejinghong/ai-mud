@@ -245,7 +245,8 @@ export function BaseApp({
           : await login(credentials);
       setCsrfToken(session.csrfToken);
       // provision 幂等：注册响应里已有基地，也照样调用一次确保就绪。
-      await provision();
+      // 必须带刚拿到的 CSRF 头，否则写路由 403，只能等轮询兜底进基地。
+      await provision(session.csrfToken);
       await refreshSnapshot();
       // 通知 App 层（管理员由此进入管理台；玩家保持原地）。
       onAuthenticated?.({

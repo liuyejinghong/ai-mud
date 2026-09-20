@@ -132,8 +132,11 @@ describe("baseApi", () => {
 
   it("provision、heartbeat、setClock、cancelProject 命中冻结 REST 面", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { baseId: "base-1", duplicate: false }));
-    await provision();
+    await provision("csrf-1");
     expect(fetchMock.mock.calls[0]?.[0]).toBe("http://127.0.0.1:3000/base/provision");
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).toMatchObject({
+      "x-csrf-token": "csrf-1"
+    });
 
     fetchMock.mockResolvedValue(
       jsonResponse(200, { leaseUntil: "2026-01-01T00:02:00.000Z", timeMode: "running" })
