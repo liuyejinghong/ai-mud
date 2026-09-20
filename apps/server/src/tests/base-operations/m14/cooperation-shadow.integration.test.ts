@@ -36,16 +36,14 @@ beforeAll(
     connectionString: `${DATABASE_URL.substring(0, DATABASE_URL.lastIndexOf("/") + 1)}${dbName}`
   });
   const migClient = await migPool.connect();
+  // 全部迁移拼接为单次多语句查询：CI 上逐条往返会超出默认 10s 钩子超时。
   const journal = JSON.parse(readFileSync(journalPath(), "utf8"));
-  for (const entry of journal.entries) {
-    const sqlFile = readFileSync(
-      join(here, `../../../../drizzle/${entry.tag}.sql`),
-      "utf8"
-    );
-    for (const statement of sqlFile.split("--> statement-breakpoint")) {
-      await migClient.query(statement);
-    }
-  }
+  const allSql = journal.entries
+    .map((entry) =>
+      readFileSync(join(here, `../../../../drizzle/${entry.tag}.sql`), "utf8")
+    )
+    .join("\n--> statement-breakpoint\n");
+  await migClient.query(allSql);
   migClient.release();
 
   // 建立长连接（挂到目标库），供本文件全部查询使用；migPool 在 afterAll 统一收口。
