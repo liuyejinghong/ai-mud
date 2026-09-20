@@ -1,14 +1,9 @@
 /* 基地客户端样式（M12-C）。只在 features/base 组件内引用。 */
 
 .base-shell {
-  height: 100vh;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) minmax(150px, 230px);
-  grid-template-columns: minmax(0, 1fr) minmax(270px, 340px);
-  grid-template-areas:
-    "topbar topbar"
-    "map panel"
-    "board panel";
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   padding: 10px;
   box-sizing: border-box;
@@ -17,7 +12,6 @@
     linear-gradient(180deg, rgba(3, 8, 14, 0.97), rgba(5, 12, 18, 0.98)),
     radial-gradient(circle at 50% 0%, rgba(46, 105, 156, 0.3), transparent 45%);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  overflow: hidden;
 }
 
 .base-shell.base-auth,
