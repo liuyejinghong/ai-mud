@@ -199,12 +199,12 @@ export async function registerAuthRoutes(app: FastifyInstance, maybeDependencies
 
     const account = await deps.findAccountByEmail(parsed.data.email);
     if (!account || account.status !== "active") {
-      return sendError(reply, 401, "UNAUTHENTICATED", "Invalid email or password");
+      return sendError(reply, 401, "UNAUTHENTICATED", "邮箱或密码不正确。");
     }
 
     const passwordOk = await deps.verifyPassword(parsed.data.password, account.passwordHash);
     if (!passwordOk) {
-      return sendError(reply, 401, "UNAUTHENTICATED", "Invalid email or password");
+      return sendError(reply, 401, "UNAUTHENTICATED", "邮箱或密码不正确。");
     }
 
     const token = await deps.createSession(account.id);

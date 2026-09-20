@@ -140,12 +140,20 @@ function AuthPanel({
   );
 }
 
+export interface BaseAuthenticatedSession {
+  csrfToken: string;
+  role: string;
+  email: string;
+}
+
 export function BaseApp({
   initialCsrfToken = null,
-  onLogout
+  onLogout,
+  onAuthenticated
 }: {
   initialCsrfToken?: string | null;
   onLogout?: () => void;
+  onAuthenticated?: (session: BaseAuthenticatedSession) => void;
 } = {}) {
   const [phase, setPhase] = useState<BasePhase>("loading");
   const [snapshot, setSnapshot] = useState<BaseSnapshotDto | null>(null);
@@ -239,6 +247,17 @@ export function BaseApp({
       // provision 幂等：注册响应里已有基地，也照样调用一次确保就绪。
       await provision();
       await refreshSnapshot();
+      // 通知 App 层（管理员由此进入管理台；玩家保持原地）。
+      onAuthenticated?.({
+        csrfToken: session.csrfToken,
+        role: authMode === "register" ? "player" : ((session as { role?: string }).role ?? "player"),
+        email:
+          authMode === "register"
+            ? session.user.email
+            : ((session as { user?: { email?: string }; accountId?: string }).user?.email ??
+              (session as { accountId?: string }).accountId ??
+              "")
+      });
     } catch (error) {
       setAuthError(describeError(error));
     } finally {

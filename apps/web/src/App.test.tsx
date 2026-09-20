@@ -8,10 +8,6 @@ vi.mock("./features/auth/authApi.js", () => ({
   logout: vi.fn()
 }));
 
-vi.mock("./features/auth/AuthPage.js", () => ({
-  AuthPage: () => <h1>AI MUD 内测登录</h1>
-}));
-
 const baseAppProps: Array<{ initialCsrfToken?: string | null; onLogout?: () => void }> = [];
 
 vi.mock("./features/base/BaseApp.js", () => ({

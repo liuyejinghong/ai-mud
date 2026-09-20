@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { AuthPage } from "./features/auth/AuthPage";
 import { getCurrentSession, logout, type AuthSessionDto } from "./features/auth/authApi";
 import { BaseApp } from "./features/base/BaseApp";
 import { AdminShell } from "./features/game/ui/AdminShell";
@@ -10,9 +9,21 @@ export function App() {
   const [session, setSession] = useState<AuthSessionDto | null>(null);
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace>("game");
 
-  function authenticate(nextSession: AuthSessionDto) {
+  function authenticate(input: {
+    csrfToken: string;
+    role: string;
+    email: string;
+  }) {
     setActiveWorkspace("game");
-    setSession(nextSession);
+    setSession({
+      user: {
+        id: input.email,
+        email: input.email,
+        role: input.role as AuthSessionDto["user"]["role"],
+        status: "active"
+      },
+      csrfToken: input.csrfToken
+    });
   }
 
   function expireSession() {
@@ -41,13 +52,26 @@ export function App() {
     };
   }, []);
 
+  // v1.0：未登录也直接进基地客户端——注册/登录都在 BaseApp 内完成，
+  // 不再有第二张登录页（AuthPage 已下架）。
   if (!session) {
-    return <AuthPage onAuthenticated={authenticate} />;
+    // 未登录：注册/登录都在 BaseApp 内完成；管理员登录成功后由 onAuthenticated 抬升到管理台。
+    return (
+      <BaseApp
+        onAuthenticated={authenticate}
+        onLogout={endSession}
+      />
+    );
   }
 
   const isAdmin = session.user.role === "admin" || session.user.role === "super_admin";
   // v0.12：玩家默认进入火星基地客户端；旧西幻 GameShell 归档保留（管理员工作区可切换）。
-  const baseApp = <BaseApp initialCsrfToken={session.csrfToken} onLogout={endSession} />;
+  const baseApp = (
+    <BaseApp
+      initialCsrfToken={session.csrfToken}
+      onLogout={endSession}
+    />
+  );
 
   if (!isAdmin) {
     return baseApp;

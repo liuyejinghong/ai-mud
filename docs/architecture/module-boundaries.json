@@ -1197,20 +1197,6 @@
       "note": "非权威状态容器/轮询/命令与同步传输客户端"
     },
     {
-      "path": "apps/web/src/features/auth/AuthPage.test.tsx",
-      "module": "client_text",
-      "layer": "test",
-      "scope": "test",
-      "note": "React 视图与用户意图采集"
-    },
-    {
-      "path": "apps/web/src/features/auth/AuthPage.tsx",
-      "module": "client_text",
-      "layer": "client_view",
-      "scope": "production",
-      "note": "React 视图与用户意图采集"
-    },
-    {
       "path": "apps/web/src/features/auth/authApi.ts",
       "module": "client_session",
       "layer": "client_state",

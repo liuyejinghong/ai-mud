@@ -9,6 +9,7 @@ import { BaseAssetService } from "../../modules/ledger/base-asset.service.js";
 import { createContentCatalog } from "../../modules/content-catalog/catalog.service.js";
 import { ContentAdminRepository } from "../../modules/content-catalog/content-admin.repository.js";
 import { ContentAdminService } from "../../modules/content-catalog/content-admin.service.js";
+import { BaseOperationError } from "../../modules/world-runtime/base.service.js";
 import { BaseSettlementService } from "../../modules/industry/base-settlement.service.js";
 import { ManufacturingService } from "../../modules/industry/manufacturing.service.js";
 import { ManufacturingRepository } from "../../modules/industry/manufacturing.repository.js";
@@ -152,6 +153,29 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
       const passwordHash = await auth.hashPassword(password);
       return db.transaction(async (tx) => {
         const scopedRepo = new AuthRepository(tx);
+        // 幂等注册：邮箱已存在且密码正确 → 直接当登录（先注册后丢失会话的场景不再报错）。
+        const existing = await scopedRepo.findAccountByEmail(email);
+        if (existing) {
+          const passwordOk = await auth.verifyPassword(password, existing.passwordHash);
+          if (!passwordOk) {
+            throw new BaseOperationError(
+              "UNAUTHENTICATED",
+              "该邮箱已注册，密码不正确；请用原密码登录，或换个邮箱。"
+            );
+          }
+          const existingSession = auth.createSessionToken();
+          await scopedRepo.createSession({
+            accountId: existing.id,
+            tokenHash: existingSession.tokenHash,
+            expiresAt: new Date(Date.now() + SESSION_TTL_MS)
+          });
+          return {
+            accountId: existing.id,
+            email: existing.email,
+            sessionToken: existingSession.token,
+            csrfToken: auth.createCsrfToken(existingSession.token, config.SESSION_SECRET)
+          };
+        }
         const account = await scopedRepo.createAccount({ email, passwordHash });
         await new DrizzleAuditWriter(tx).write({
           actorAccountId: account.id,
