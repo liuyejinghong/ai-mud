@@ -83,6 +83,8 @@ export interface ProjectTemplateSpec {
   ref: DefinitionRefDto;
   name: string;
   description: string;
+  // 开工材料需求（内容模板必有；快照原样透出，面板据此显示清单与缺口）。
+  inputs: Array<{ itemId: string; quantity: number }>;
 }
 
 export interface RecipeTemplateSpec {
