@@ -48,7 +48,7 @@ jobs:
       PLAYTEST_BASE_URL: http://127.0.0.1:4173
       PLAYTEST_EVIDENCE_DIR: ${{ github.workspace }}/tests/playtest/evidence
       # 后端 env（与 deploy/docker-compose.prod.yml 对齐；无任何付费模型）
-      NODE_ENV: production
+      # 注意：NODE_ENV=production 只在启动后端的步骤设置——job 级设置会让 pnpm install 跳过 devDependencies。
       SERVER_HOST: 127.0.0.1
       SERVER_PORT: "3000"
       SESSION_SECRET: playtest-ci-only-session-secret-0123456789abcdef
@@ -102,6 +102,8 @@ jobs:
 
       - name: "Start backend (same chain as prod image: tsx src/main.ts)"
         working-directory: apps/server
+        env:
+          NODE_ENV: production
         run: |
           mkdir -p "$PLAYTEST_EVIDENCE_DIR"
           node --import tsx src/main.ts > "$PLAYTEST_EVIDENCE_DIR/server.log" 2>&1 &
