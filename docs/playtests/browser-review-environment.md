@@ -9,14 +9,15 @@
 - **基于的游戏提交：`fad7d4232937d6c3fb216d743edb227589846803`**（实现 PR #20 的 head，当时未合并；因此本 PR 以实现分支为目标，diff 仅含基础设施 14 个文件，不含任何游戏实现）。
 - 文件清单：`.github/workflows/browser-review.yml`、`tests/playtest/`（config/fixtures/scenarios/包定义）、`scripts/playtest/`（serve-web / wait-for / collect-evidence）、`pnpm-workspace.yaml` + `pnpm-lock.yaml`（新增 workspace 包 `@ai-mud/playtest`，锁文件 +12 行）。
 
-## 2. 证明触发通道的两次运行
+## 2. 证明触发通道的运行记录
 
 | 轮次 | run | 触发 | 提交 | 结果 | 证据 |
 |---|---|---|---|---|---|
 | 首次绿跑 | [35559430526](https://github.com/liuyejinghong/ai-mud/actions/runs/35559430526) | PR #22 场景/工作流变更（pull_request 事件） | PR head `e8ad391`，实际运行 merge commit `8694818` | success，1m24s，7 步 | artifact `10622015680` |
 | 场景更新再触发 | [35559612804](https://github.com/liuyejinghong/ai-mud/actions/runs/35559612804) | 提交新场景 `reviewer/example-touch.spec.ts` | PR head `af9ff61`，merge commit `bda3b9d` | success，1m18s，**两个场景都运行**（smoke 7 步 + example-touch 3 步） | artifact `10621362527` |
+| 文档提交后再触发 | [35559793253](https://github.com/liuyejinghong/ai-mud/actions/runs/35559793253) | PR #22 后续提交（含文档提交 `b14ee16`） | PR head `b14ee16` | success | 独立评审核验 |
 
-两轮各自使用独立一次性账号（邮箱内嵌 run id：`playtest-35559430526-…` / `playtest-35559612804-…`）与每作业新建的 PG 容器。
+> **更正（2026-09-21 评审 ENV-R04）**：本文档早先称"最后文档提交不触发第三轮"是**错误的**。`pull_request` 的路径过滤评估的是**整个 PR 相对 merge-base 的变更文件集合**，不是逐 commit 检查——PR 一旦包含 `tests/playtest/**` 等路径，其后续任何 push（即使只改 docs）都会重新评估并触发运行。上表第三轮即文档提交 `b14ee16` 触发的 run 35559793253（success）。由此产生的额外运行是预期行为：有 concurrency 组串行化、无定时任务、无重试；不为此修改触发规则。
 
 ## 3. 评审 agent 在哪里提交下一份操作脚本
 
@@ -26,8 +27,8 @@
 
 ## 4. 触发方式与定向运行
 
-- **PR 触发（已验证）**：修改 `tests/playtest/**`、`scripts/playtest/**` 或 workflow 文件并提交 PR → 自动运行。PR 触发时**运行 scenarios/ 下全部场景**。新 workflow 文件在未合并的 PR 里即可触发（pull_request 事件使用 PR merge ref 上的 workflow），已由上表两次运行证明。
-- **workflow_dispatch（受限）**：仅当 workflow 文件出现在**默认分支 main** 后才可手动触发（GitHub 前置条件）。当前 PR 目标是实现分支，未合入 main 前没有手动入口——这是预期行为，不是缺陷。合并到 main 后：Actions → browser-review → Run workflow，`scenario_grep` 填场景标题标识词（如 `example-touch`）即可只跑一个场景；参数经 env 传给 `--grep`，不进 shell 拼接。
+- **PR 触发（已验证）**：修改 `tests/playtest/**`、`scripts/playtest/**` 或 workflow 文件并提交 PR → 自动运行（注意第 2 节更正：过滤按 PR 全量变更集评估，PR 后续 push 会再次触发）。PR 触发时**运行 scenarios/ 下全部场景**。新 workflow 文件在未合并的 PR 里即可触发（pull_request 事件使用 PR merge ref 上的 workflow），已由上表运行证明。
+- **workflow_dispatch（受限）**：仅当 workflow 文件出现在**默认分支 main** 后才可手动触发（GitHub 前置条件）。当前 PR 目标是实现分支，未合入 main 前没有手动入口——这是预期行为，不是缺陷。合并到 main 后：Actions → browser-review → Run workflow，`scenario_grep` 填场景标题标识词（如 `example-touch`）即可只跑一个场景；`product_baseline_sha` 可选提供冻结的产品基线（不提供则 manifest 记 UNKNOWN）。参数经 env 传给 `--grep`，不进 shell 拼接。
 - 不需要评审 agent 拥有 dispatch API 权限：普通 PR 提交即可触发。
 - 不修改默认分支、不降低分支保护、不用 `pull_request_target`。
 
@@ -52,13 +53,19 @@ CI 内定向运行（workflow_dispatch 合入 main 后）：`scenario_grep=examp
 | 文件 | 内容 |
 |---|---|
 | `summary.md` | 一页摘要：状态/版本/自检/场景表/业务检查/证据索引（同步显示在作业 Summary 页） |
-| `manifest.json` | 机器可读全量清单（含下方全部字段 + 48+ 文件索引） |
+| `manifest.json` | 机器可读全量清单（schema v2：状态词典、版本四元组、逐场景 runtime、结构化业务检查 + 文件索引） |
 | `steps.jsonl` | 每步：step_id、时间、意图、实际操作、前后 URL/标题/可见文本、截图路径、结果/异常 |
 | `screenshots/` | 每步前后 + 失败时整页截图 |
 | `console.jsonl` / `network.jsonl` | 控制台与 pageerror；请求/响应（≥400 仅标记不判失败）+ 失败请求 |
 | `test-results/`、`playwright-report/` | trace（成功也录，`trace: on`）与 HTML 报告 |
 | `server.log` / `web.log` | 后端/前端进程日志 |
 | `selfcheck.json` / `tool-versions.txt` | 三项就绪探测结果；node/pnpm/git SHA |
+
+**运行状态词典（manifest.status）**：`SMOKE_PASSED`（场景全过 + 业务检查全部生效 + 就绪齐全）/ `GAME_BLOCKED`（场景执行完但业务动作未生效——游戏问题候选，摘要显式列出）/ `SMOKE_FAILED`（场景断言失败）/ `SMOKE_INCONCLUSIVE`（场景过但必要就绪记录缺失，不判成功）/ `BLOCKED_BEFORE_TESTS`（环境未就绪）/ `NO_SCENARIO_RAN`。
+
+**业务检查合同（v2，生产者 fixture ↔ 消费者 collector 一致）**：场景通过 `evidence.businessCheck(check, result, detail?)` 记录结构化结果，`result ∈ {effective, no_change, error, not_executed}`；任何非 `effective` 都使整体状态为 `GAME_BLOCKED` 并进入 `game_blocked_candidates`。信息性观察仍走 `evidence.note()`（不入业务判定）。区分三层：①基础设施就绪（selfcheck）②场景执行（status）③业务生效（business_status）——三者独立判定，业务失败不会误分类为启动失败。
+
+**清单与 ZIP 一致性**：`evidence_files` 索引跳过隐藏文件（与 upload-artifact 默认行为一致，不为单文件开启隐藏文件上传）与清单自身（manifest/summary 不入索引，避免自引用）。交付方每次实跑后按以下协议核验：下载 ZIP → `shasum -a 256` → 解压 → 逐项核对索引存在与字节数一致 → 抽查截图/trace 可读 → 记录差异（有差异即修复）。
 
 下载：
 
@@ -74,8 +81,9 @@ gh run download 35559612804 -n playtest-evidence-35559612804-attempt1 -R liuyeji
 |---|---|---|---|
 | 首跑 | 35559430526 | 10622015680 | 2026-09-28T04:01:53Z（retention 7 天） |
 | 第二轮 | 35559612804 | 10621362527 | 2026-09-28T04:04:55Z（retention 7 天） |
+| 第三轮（文档提交触发，评审核验） | 35559793253 | 10621857546 | 2026-09-28T04:15:04Z（retention 7 天） |
 
-版本区分口径（见 manifest.versions）：`checkout_sha` = 实际被运行代码（pull_request 事件下 = GitHub 自动生成的 merge commit）；`pr_head_sha` = 场景/基础设施提交；`game_implementation_base_sha` = 游戏实现基线（base 分支 head）。报告版本时三者不可混用。
+版本区分口径（见 manifest.versions）：`actual_checkout.sha` = 实际被运行代码（pull_request 事件下 = GitHub 自动生成的 merge commit）；`pull_request.head_sha` = 场景/基础设施提交；`pull_request.base_sha` = 堆叠目标分支快照（**不是**产品基线）；`product_baseline.sha` = 冻结的产品基线，仅在 workflow 输入提供时记录，否则 UNKNOWN 并说明来源不足。报告版本时不可混用。
 
 ## 8. 数据重置与和线上的差异
 

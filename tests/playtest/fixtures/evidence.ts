@@ -40,6 +40,25 @@ export interface EvidenceNote {
   [key: string]: unknown;
 }
 
+// 业务检查结果合同（生产者 fixture 与消费者 collect-evidence.mjs 共用）：
+// effective=动作在页面上真实生效；no_change=点击/提交后页面与网络无变化；
+// error=操作抛错；not_executed=场景声明了但未执行。collector 把非 effective 视为业务阻塞。
+export type BusinessCheckResult = "effective" | "no_change" | "error" | "not_executed";
+
+export interface BusinessCheckRecord {
+  check: string;
+  result: BusinessCheckResult;
+  detail: string | null;
+  ts: string;
+}
+
+interface ObservedResponse {
+  ts: string;
+  method: string;
+  url: string;
+  status: number;
+}
+
 class EvidenceCollector {
   readonly scenarioSlug: string;
   private readonly page: Page;
@@ -49,12 +68,16 @@ class EvidenceCollector {
   private stepsTotal = 0;
   private lastCompletedStep: string | null = null;
   private readonly notes: EvidenceNote = {};
+  private readonly businessChecks: BusinessCheckRecord[] = [];
+  private readonly networkLog: ObservedResponse[] = [];
+  private readonly initialViewport: { width: number; height: number } | null;
 
   constructor(page: Page, testInfo: TestInfo) {
     this.page = page;
     this.testInfo = testInfo;
     this.scenarioSlug = testInfo.titlePath.join("-").replace(/[^\p{L}\p{N}]+/gu, "-").slice(0, 80);
     this.screenshotsDir = join(EVIDENCE_DIR, "screenshots", this.scenarioSlug);
+    this.initialViewport = page.viewportSize();
     mkdirSync(this.screenshotsDir, { recursive: true });
   }
 
@@ -80,6 +103,13 @@ class EvidenceCollector {
     });
     this.page.on("response", async (response) => {
       const request = response.request();
+      const observed: ObservedResponse = {
+        ts: new Date().toISOString(),
+        method: request.method(),
+        url: response.url(),
+        status: response.status()
+      };
+      this.networkLog.push(observed);
       let postData: unknown = null;
       if (request.method() !== "GET") {
         const raw = request.postData();
@@ -115,9 +145,34 @@ class EvidenceCollector {
     });
   }
 
-  // 记录业务检查等补充事实（写入 run-meta，供 manifest/summary 汇总）。
+  // 记录补充事实（信息性，写入 run-meta.notes，供 manifest/summary 汇总）。
   note(key: string, value: unknown): void {
     this.notes[key] = value;
+  }
+
+  // 业务检查：动作是否真实生效。非 effective 的记录会让 collector 把本次运行判为 GAME_BLOCKED，
+  // 摘要必须显式展示，不允许被一句 PASSED 掩盖。
+  businessCheck(check: string, result: BusinessCheckResult, detail?: string): void {
+    this.businessChecks.push({ check, result, detail: detail ?? null, ts: new Date().toISOString() });
+  }
+
+  // 观察真实网络流量（如心跳续租）：轮询本场景已捕获的响应，命中返回 true。
+  async observeNetwork(
+    match: { urlIncludes: string; method?: string },
+    timeoutMs = 45_000
+  ): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const hit = this.networkLog.find(
+        (entry) =>
+          entry.url.includes(match.urlIncludes) &&
+          (match.method === undefined || entry.method === match.method) &&
+          entry.status < 400
+      );
+      if (hit !== undefined) return true;
+      if (Date.now() > deadline) return false;
+      await this.page.waitForTimeout(500);
+    }
   }
 
   // 一个带证据的操作步骤：前后各留页面状态与截图；断言失败也先落证据再抛出。
@@ -184,6 +239,9 @@ class EvidenceCollector {
   }
 
   async finish(): Promise<void> {
+    const browser = this.page.context().browser();
+    const projectUse = this.testInfo.project.use as { timezoneId?: string };
+    const finalViewport = this.page.viewportSize();
     const meta = {
       scenario: this.testInfo.title,
       file: basename(this.testInfo.file),
@@ -193,7 +251,18 @@ class EvidenceCollector {
       finished_at: new Date().toISOString(),
       steps_total: this.stepsTotal,
       last_completed_step: this.lastCompletedStep,
-      business_checks: this.notes,
+      // 结构化业务结果：collector 依赖本合同（BusinessCheckRecord[]）判定业务是否生效。
+      business_checks: this.businessChecks,
+      notes: this.notes,
+      runtime: {
+        project: this.testInfo.project.name,
+        browser_name: browser?.browserType().name() ?? null,
+        browser_version: browser?.version() ?? null,
+        viewport_initial: this.initialViewport,
+        viewport_final: finalViewport,
+        viewport_changed: JSON.stringify(this.initialViewport) !== JSON.stringify(finalViewport),
+        timezone_id: projectUse.timezoneId ?? null
+      },
       playwright_test_id: this.testInfo.testId
     };
     mkdirSync(EVIDENCE_DIR, { recursive: true });

@@ -79,28 +79,32 @@ test("environment-smoke 全新环境自检：页面注册进基地 + 可恢复�
   );
 
   // 以下两步是真实业务操作：暂停↔恢复一个完整往返（结束回到初始状态）。
-  // 结果只记录、不预设成功；失败会体现在 run-meta 的 business_checks，
-  // 运行本身不因此变红（是否构成游戏缺陷由评审判断）。
-  const toggleClock = async (label: string, noteKey: string) => {
+  // 结果以结构化 businessCheck 记录（effective/no_change），不预设成功；
+  // 未生效时 collector 会把本次运行判为 GAME_BLOCKED，由评审结合证据判断。
+  const toggleClock = async (noteKey: string) => {
     const wasPaused = await pausedBadgeVisible(page);
     await page
       .getByRole("button", { name: wasPaused ? "恢复计时" : "暂停计时" })
       .click();
     const changed = await pollUntil(page, async () => (await pausedBadgeVisible(page)) !== wasPaused);
-    evidence.note(noteKey, `${wasPaused ? "resume" : "pause"}_${changed ? "ok" : "no_change_after_click"}`);
+    evidence.businessCheck(
+      `clock_toggle_${noteKey}`,
+      changed ? "effective" : "no_change",
+      `${wasPaused ? "resume" : "pause"} 切换${changed ? "生效" : "未生效"}`
+    );
   };
 
   await evidence.step(
     "clock-toggle-on",
     "业务操作：切换基地计时一次（暂停↔恢复，记录页面反馈，不预设成功）",
-    () => toggleClock("切换计时", "toggle_1_result"),
+    () => toggleClock("1"),
     "点击时间区的「暂停计时」或「恢复计时」"
   );
 
   await evidence.step(
     "clock-toggle-back",
     "业务操作：切回操作前的计时状态",
-    () => toggleClock("切回计时", "toggle_2_result"),
+    () => toggleClock("2"),
     "再次点击时间区计时按钮"
   );
 

@@ -17,6 +17,10 @@ on:
         description: "Playwright --grep 表达式（匹配场景标题，如 environment-smoke）；留空跑全部"
         required: false
         default: ""
+      product_baseline_sha:
+        description: "（可选）冻结的产品基线 SHA，仅用于 manifest 记录比较起点；留空则记 UNKNOWN"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -61,6 +65,11 @@ jobs:
       AI_NPC_DIALOGUE_ENABLED: "false"
       AI_PROVIDER: template
       TYPE_SAFE_DECISION_MODE: "off"
+      # 隔离测试管理员（作业内一次性 DB 引导，非线上账号）；供管理员共用会话路径回归使用。
+      ADMIN_BOOTSTRAP_EMAIL: admin@playtest.invalid
+      ADMIN_BOOTSTRAP_PASSWORD: playtest-admin-pass-0123
+      # 产品基线仅在手动触发时可选提供；PR 触发不猜测，manifest 记 UNKNOWN。
+      PRODUCT_BASELINE_SHA: ${{ inputs.product_baseline_sha }}
 
     steps:
       - uses: actions/checkout@v4
@@ -117,6 +126,10 @@ jobs:
           echo $! > /tmp/playtest-web.pid
       - name: Wait for frontend (index reachable, not a blank shell)
         run: node scripts/playtest/wait-for.mjs ready --url "$PLAYTEST_BASE_URL/" --name frontend --body-must-contain 'id="root"' --timeout-ms 60000
+
+      # 采集器聚合逻辑的合成输入回归（基础设施单元测试，不代表真实游戏结果）。
+      - name: Run evidence collector unit tests
+        run: node --test scripts/playtest/
 
       # SCENARIO_GREP 经 env 传递，不做 shell 模板拼接。
       - name: Run browser scenarios
