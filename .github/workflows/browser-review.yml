@@ -100,7 +100,7 @@ jobs:
       - name: Wait for PostgreSQL readiness (real query)
         run: node scripts/playtest/wait-for.mjs pg --database-url "$DATABASE_URL" --timeout-ms 30000
 
-      - name: Start backend (same chain as prod image: tsx src/main.ts)
+      - name: "Start backend (same chain as prod image: tsx src/main.ts)"
         working-directory: apps/server
         run: |
           mkdir -p "$PLAYTEST_EVIDENCE_DIR"
@@ -158,7 +158,7 @@ jobs:
       - name: Record artifact id and expiry
         if: always()
         run: |
-          ARTIFACT_ID="${{ steps.artifact.outputs.artifact_id }}"
+          ARTIFACT_ID="${{ steps.artifact.outputs.artifact-id }}"
           EXPIRES_AT="$(gh api "repos/${{ github.repository }}/actions/artifacts/${ARTIFACT_ID}" --jq .expires_at 2>/dev/null || echo 'upload_time_plus_7_days')"
           {
             echo ""
