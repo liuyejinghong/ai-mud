@@ -1,0 +1,185 @@
+# 浏览器验收环境（playtest）：单作业内起真实 PG + 迁移 + 真实后端 + 构建后的前端 + Playwright Chromium，
+# 跑 tests/playtest/scenarios 下的操作场景并导出证据包。
+# 评审 agent 只需在 tests/playtest/scenarios/reviewer/ 增改场景文件并提交 PR，本作业自动触发。
+#
+# 与线上部署（deploy/docker-compose.prod.yml + nginx）的差异见 docs/playtests/browser-review-environment.md。
+name: browser-review
+
+on:
+  pull_request:
+    paths:
+      - "tests/playtest/**"
+      - "scripts/playtest/**"
+      - ".github/workflows/browser-review.yml"
+  workflow_dispatch:
+    inputs:
+      scenario_grep:
+        description: "Playwright --grep 表达式（匹配场景标题，如 environment-smoke）；留空跑全部"
+        required: false
+        default: ""
+      product_baseline_sha:
+        description: "（可选）冻结的产品基线 SHA，仅用于 manifest 记录比较起点；留空则记 UNKNOWN"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  browser-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_mud_playtest
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ai_mud_playtest"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:55432/ai_mud_playtest
+      PLAYTEST_BASE_URL: http://127.0.0.1:4173
+      PLAYTEST_EVIDENCE_DIR: ${{ github.workspace }}/tests/playtest/evidence
+      # 后端 env（与 deploy/docker-compose.prod.yml 对齐；无任何付费模型）
+      # 注意：NODE_ENV=production 只在启动后端的步骤设置——job 级设置会让 pnpm install 跳过 devDependencies。
+      SERVER_HOST: 127.0.0.1
+      SERVER_PORT: "3000"
+      SESSION_SECRET: playtest-ci-only-session-secret-0123456789abcdef
+      SESSION_COOKIE_NAME: ai_mud_session
+      SESSION_COOKIE_SECURE: "false"
+      WEB_ORIGINS: http://127.0.0.1:4173
+      WORLD_TICK_ENABLED: "true"
+      WORLD_TICK_INTERVAL_MS: "60000"
+      PLAYTEST_REGISTRATION_ENABLED: "true"
+      AI_NPC_DIALOGUE_ENABLED: "false"
+      AI_PROVIDER: template
+      TYPE_SAFE_DECISION_MODE: "off"
+      # 隔离测试管理员（作业内一次性 DB 引导，非线上账号）；供管理员共用会话路径回归使用。
+      ADMIN_BOOTSTRAP_EMAIL: admin@playtest.invalid
+      ADMIN_BOOTSTRAP_PASSWORD: playtest-admin-pass-0123
+      # 产品基线仅在手动触发时可选提供；PR 触发不猜测，manifest 记 UNKNOWN。
+      PRODUCT_BASELINE_SHA: ${{ inputs.product_baseline_sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.0.0
+      - run: pnpm install --frozen-lockfile
+      - name: Record tool versions
+        run: |
+          mkdir -p "$PLAYTEST_EVIDENCE_DIR"
+          {
+            echo "node=$(node --version)"
+            echo "pnpm=$(pnpm --version)"
+            echo "git_checkout=$(git rev-parse HEAD)"
+            echo "github_context_sha=$GITHUB_SHA"
+            echo "pr_head_sha=${{ github.event.pull_request.head.sha }}"
+            echo "base_branch_sha=${{ github.event.pull_request.base.sha }}"
+          } | tee "$PLAYTEST_EVIDENCE_DIR/tool-versions.txt"
+      - name: Install Playwright Chromium (with system deps)
+        working-directory: tests/playtest
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Record Playwright/browser version
+        working-directory: tests/playtest
+        run: pnpm exec playwright --version | tee "$PLAYTEST_EVIDENCE_DIR/playwright-version.txt"
+
+      - name: Build workspace (web with VITE_API_BASE='' for same-origin)
+        run: VITE_API_BASE="" pnpm -r build
+
+      - name: Run database migrations (fresh service DB)
+        run: pnpm --filter @ai-mud/server db:migrate
+      - name: Wait for PostgreSQL readiness (real query)
+        run: node scripts/playtest/wait-for.mjs pg --database-url "$DATABASE_URL" --timeout-ms 30000
+
+      - name: "Start backend (same chain as prod image: tsx src/main.ts)"
+        working-directory: apps/server
+        env:
+          NODE_ENV: production
+        run: |
+          mkdir -p "$PLAYTEST_EVIDENCE_DIR"
+          node --import tsx src/main.ts > "$PLAYTEST_EVIDENCE_DIR/server.log" 2>&1 &
+          echo $! > /tmp/playtest-backend.pid
+      - name: Wait for backend /health
+        run: node scripts/playtest/wait-for.mjs ready --url http://127.0.0.1:3000/health --name backend --body-must-contain '"ok":true' --timeout-ms 60000
+
+      - name: Start built frontend (node static + API reverse proxy, same-origin like prod nginx)
+        run: |
+          node scripts/playtest/serve-web.mjs > "$PLAYTEST_EVIDENCE_DIR/web.log" 2>&1 &
+          echo $! > /tmp/playtest-web.pid
+      - name: Wait for frontend (index reachable, not a blank shell)
+        run: node scripts/playtest/wait-for.mjs ready --url "$PLAYTEST_BASE_URL/" --name frontend --body-must-contain 'id="root"' --timeout-ms 60000
+
+      # 采集器聚合逻辑的合成输入回归（基础设施单元测试，不代表真实游戏结果）。
+      - name: Run evidence collector unit tests
+        run: node --test scripts/playtest/
+
+      # SCENARIO_GREP 经 env 传递，不做 shell 模板拼接。
+      - name: Run browser scenarios
+        working-directory: tests/playtest
+        env:
+          SCENARIO_GREP: ${{ inputs.scenario_grep }}
+        run: |
+          if [ -n "$SCENARIO_GREP" ]; then
+            pnpm exec playwright test --grep "$SCENARIO_GREP"
+          else
+            pnpm exec playwright test
+          fi
+
+      - name: Stop services
+        if: always()
+        run: |
+          [ -f /tmp/playtest-web.pid ] && kill "$(cat /tmp/playtest-web.pid)" 2>/dev/null || true
+          [ -f /tmp/playtest-backend.pid ] && kill "$(cat /tmp/playtest-backend.pid)" 2>/dev/null || true
+
+      - name: Collect evidence (manifest + summary)
+        if: always()
+        run: node scripts/playtest/collect-evidence.mjs
+
+      - name: Append summary to job summary
+        if: always()
+        run: |
+          if [ -f "$PLAYTEST_EVIDENCE_DIR/summary.md" ]; then
+            cat "$PLAYTEST_EVIDENCE_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload evidence package
+        if: always()
+        id: artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: playtest-evidence-${{ github.run_id }}-attempt${{ github.run_attempt }}
+          path: tests/playtest/evidence/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Record artifact id and expiry
+        if: always()
+        run: |
+          ARTIFACT_ID="${{ steps.artifact.outputs.artifact-id }}"
+          EXPIRES_AT="$(gh api "repos/${{ github.repository }}/actions/artifacts/${ARTIFACT_ID}" --jq .expires_at 2>/dev/null || echo 'upload_time_plus_7_days')"
+          {
+            echo ""
+            echo "## 证据包"
+            echo "- artifact 名称：\`playtest-evidence-${{ github.run_id }}-attempt${{ github.run_attempt }}\`"
+            echo "- artifact_id：\`${ARTIFACT_ID}\`"
+            echo "- 过期时间：\`${EXPIRES_AT}\`（retention-days=7）"
+            echo "- 下载：\`gh run download ${{ github.run_id }} -n playtest-evidence-${{ github.run_id }}-attempt${{ github.run_attempt }} -R ${{ github.repository }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
