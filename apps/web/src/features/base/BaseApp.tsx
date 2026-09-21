@@ -165,6 +165,7 @@ export function BaseApp({
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [completionBanner, setCompletionBanner] = useState<string | null>(null);
   const completedSeenRef = useRef<Set<string>>(new Set());
   const hasPrevSnapshotRef = useRef(false);
@@ -197,11 +198,16 @@ export function BaseApp({
         if (project.status === "completed") completedSeenRef.current.add(project.projectId);
       }
       setSnapshot(next);
+      setSnapshotError(null);
       setPhase("ready");
       return next;
     } catch (error) {
       if (error instanceof BaseApiError && error.status === 401) {
         setPhase("unauthenticated");
+      } else {
+        // 非会话失效的快照失败必须给可见反馈：首载卡在"连接中"、轮询静默失败会留下
+        // 无从恢复的陈旧画面（SYNC-01）。
+        setSnapshotError(describeError(error));
       }
       return null;
     }
@@ -424,7 +430,27 @@ export function BaseApp({
     }
     return (
       <main className="base-shell base-loading" aria-label="基地加载中">
-        <p className="base-copy">正在连接基地…</p>
+        {snapshotError ? (
+          <div className="base-panel base-auth-panel">
+            <h1 id="base-load-error">基地连接失败</h1>
+            <p role="alert" className="base-error">
+              {snapshotError}
+            </p>
+            <p className="base-copy">服务可能暂时不可用；你的会话仍然保留。</p>
+            <button
+              type="button"
+              className="base-primary-button"
+              onClick={() => {
+                setSnapshotError(null);
+                void refreshSnapshot();
+              }}
+            >
+              重试连接
+            </button>
+          </div>
+        ) : (
+          <p className="base-copy">正在连接基地…</p>
+        )}
       </main>
     );
   }
@@ -457,6 +483,11 @@ export function BaseApp({
       {actionError ? (
         <p role="alert" className="base-error base-action-error">
           {actionError}
+        </p>
+      ) : null}
+      {snapshotError ? (
+        <p role="alert" className="base-error base-action-error">
+          基地状态刷新失败：{snapshotError}（将自动重试）
         </p>
       ) : null}
       <BaseShell

@@ -103,6 +103,40 @@ describe("BaseApp", () => {
     expect(screen.getByRole("tab", { name: "账号登录" })).toBeTruthy();
   });
 
+  it("快照加载失败（非 401）时显示错误与重试入口，不静默卡在连接中（SYNC-01）", async () => {
+    vi.mocked(getSnapshot)
+      .mockRejectedValueOnce(new BaseApiError(503, "UNAVAILABLE", "服务暂不可用"))
+      .mockResolvedValue(buildSnapshot());
+
+    render(<BaseApp />);
+
+    expect(await screen.findByRole("heading", { name: "基地连接失败" })).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("服务暂不可用");
+    fireEvent.click(screen.getByRole("button", { name: "重试连接" }));
+    expect(await screen.findByTestId("base-shell")).toBeTruthy();
+  });
+
+  it("快照轮询失败但已有画面时显示陈旧提示条，不中断使用（SYNC-01）", async () => {
+    vi.useFakeTimers();
+    const visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("visible");
+    vi.mocked(getSnapshot)
+      .mockResolvedValueOnce(buildSnapshot())
+      .mockRejectedValueOnce(new BaseApiError(503, "UNAVAILABLE", "服务暂不可用"))
+      .mockResolvedValue(buildSnapshot());
+
+    render(<BaseApp />);
+    await act(async () => {});
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(screen.getByRole("alert").textContent).toContain("基地状态刷新失败");
+    expect(screen.getByTestId("base-shell")).toBeTruthy();
+  });
+
   it("试玩注册成功后自动 provision 并进入主界面", async () => {
     vi.mocked(getSnapshot)
       .mockRejectedValueOnce(unauthorized())
