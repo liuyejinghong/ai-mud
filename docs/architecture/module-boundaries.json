@@ -2580,10 +2580,10 @@
     },
     {
       "path": "apps/web/src/lib/uuid.ts",
-      "module": "client_text",
+      "module": "client_session",
       "layer": "client_shared",
       "scope": "production",
-      "note": "命令幂等 ID 生成（安全上下文回退，TECH-01）"
+      "note": "命令幂等 ID 生成（安全上下文回退，TECH-01）；baseApi 同模块，client_text 可经允许边引用"
     },
     {
       "path": "apps/web/src/lib/uuid.test.ts",
