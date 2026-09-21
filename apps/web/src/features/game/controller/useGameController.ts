@@ -1,4 +1,4 @@
-import { newCommandId } from "../../lib/uuid.js";
+import { newCommandId } from "../../../lib/uuid.js";
 import {
   useCallback,
   useEffect,
