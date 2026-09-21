@@ -109,13 +109,20 @@ export interface ProvisionSeedSpec {
   devices: Array<{ templateStableId: string; groupId: string; count: number; initialBatteryWh: number }>;
 }
 
+// 订单模板端口契约：base.service 只消费 name（快照订单标题）；其余字段由目录层自持。
+export interface OrderTemplateSpec {
+  ref: DefinitionRefDto;
+  name: string;
+  description: string;
+}
+
 export interface ContentCatalogPort {
   getProvisionSeed(): ProvisionSeedSpec;
   getItemInfo(): Record<string, { name: string; description: string }>;
   getRecipeTemplate(stableId: string): RecipeTemplateSpec | null;
   listRecipes(): RecipeTemplateSpec[];
-  getOrderTemplate(stableId: string): ProjectTemplateSpec | null;
-  listOrderTemplates(): ProjectTemplateSpec[];
+  getOrderTemplate(stableId: string): OrderTemplateSpec | null;
+  listOrderTemplates(): OrderTemplateSpec[];
   getRobotTemplate(stableId: string): RobotTemplateSpec | null;
   getFacilityInfo(stableId: string): {
     name: string;
