@@ -82,6 +82,18 @@ gh run download 35559612804 -n playtest-evidence-35559612804-attempt1 -R liuyeji
 | 首跑 | 35559430526 | 10622015680 | 2026-09-28T04:01:53Z（retention 7 天） |
 | 第二轮 | 35559612804 | 10621362527 | 2026-09-28T04:04:55Z（retention 7 天） |
 | 第三轮（文档提交触发，评审核验） | 35559793253 | 10621857546 | 2026-09-28T04:15:04Z（retention 7 天） |
+| 整改轮 A（ENV-R01~04 修复后，PR #22） | 35569569241 | 10624659810 | 2026-09-28T06:42:58Z（retention 7 天） |
+| 整改轮 B 首跑（集成验证，2 场景失败，证据保留） | 35570525938 | （见 manifest） | 2026-09-28（retention 7 天） |
+| 整改轮 B2（集成验证全绿，PR #25） | 35571080360 | 10626316959 | 2026-09-28T07:06:45Z（retention 7 天） |
+
+## 整改轮记录（2026-09-21 评审反馈 ENV-R01~R04，追加不改写历史）
+
+- **ENV-R01（业务漏报）**：业务检查改结构化合同 `evidence.businessCheck(effective/no_change/error/not_executed)`；collector 纯函数化并引入状态词典（`SMOKE_PASSED`/`GAME_BLOCKED`/`SMOKE_FAILED`/`SMOKE_INCONCLUSIVE`/`BLOCKED_BEFORE_TESTS`/`NO_SCENARIO_RAN`），业务未生效显式判 `GAME_BLOCKED`，就绪缺失不判成功。合成输入单元回归 11 例（`node --test scripts/playtest/`，CI 内执行），负例均能在摘要与 manifest 中显式出现。
+- **ENV-R02（元数据写死/版本来源）**：manifest schema v2 逐场景记录实际 runtime（viewport 初/终、browser name/version、project、timezone；配置默认值放 `configured_default`）；版本来源四元组（actual checkout / PR head / PR base / product baseline），PR base 不再冒充产品基线，未提供时记 UNKNOWN 并说明；可选 workflow 输入 `PRODUCT_BASELINE_SHA`。整改轮 B2 实测混合视口：6 场景 1440×900 + 1 场景 390×844 逐场景各记其值。
+- **ENV-R03（索引与 ZIP 不一致）**：索引跳过隐藏文件与清单自身，与上传规则一致；交付方核验协议：下载 ZIP → SHA-256 → 解压逐项核对存在性与字节数 → 抽查截图/trace 可读。整改轮 A 实测 58/58 文件零差异，B2 实测 143/143 零差异。
+- **ENV-R04（触发说明不实）**：已在第 2 节更正——`pull_request` 路径过滤按 PR 全量变更集评估，文档提交 b14ee16 确实触发了 run 35559793253。
+
+整改轮运行（PR #25 临时集成验证，勿合并）：B 首跑 2 场景失败（刷新回归场景未先恢复暂停态就刷新、管理员登录后 role 被产品缺陷降级 player），失败证据完整保留于 artifact；前者属场景脚本逻辑、后者转入产品 PR #24 修复（`session.user.role` 读取 + 组件回归）；B2 全绿 7 场景，含原 GAME_BLOCKED 的 R0 刷新场景。
 
 版本区分口径（见 manifest.versions）：`actual_checkout.sha` = 实际被运行代码（pull_request 事件下 = GitHub 自动生成的 merge commit）；`pull_request.head_sha` = 场景/基础设施提交；`pull_request.base_sha` = 堆叠目标分支快照（**不是**产品基线）；`product_baseline.sha` = 冻结的产品基线，仅在 workflow 输入提供时记录，否则 UNKNOWN 并说明来源不足。报告版本时不可混用。
 
