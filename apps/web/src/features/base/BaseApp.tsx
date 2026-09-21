@@ -317,6 +317,8 @@ export function BaseApp({
     try {
       await logout();
     } finally {
+      // 引导态属账号本地态：退出即重置，换号/新基地仍能看到引导（UX-02）。
+      setIntroDismissed(false);
       setSelectedResourceId(null);
       setSelectedSiteId(null);
       setSelectedProjectId(null);
