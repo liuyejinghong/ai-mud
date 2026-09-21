@@ -25,6 +25,25 @@ describe("BaseIntroModal", () => {
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 
+  it("打开时焦点落在「开始指挥」，Esc 关闭，Tab 在弹窗内循环（UX-01）", () => {
+    const onDismiss = vi.fn();
+    render(
+      <div>
+        <button type="button">背景按钮</button>
+        <BaseIntroModal baseName="先遣前哨" onDismiss={onDismiss} />
+      </div>
+    );
+
+    const confirm = screen.getByRole("button", { name: "开始指挥" });
+    expect(document.activeElement).toBe(confirm);
+
+    fireEvent.keyDown(confirm, { key: "Tab" });
+    expect(document.activeElement).toBe(confirm); // 唯一可聚焦元素：循环回自己，不逃出弹窗
+
+    fireEvent.keyDown(confirm, { key: "Escape" });
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+
   it("标题带基地名称", () => {
     render(<BaseIntroModal baseName="余电前哨" onDismiss={() => undefined} />);
 

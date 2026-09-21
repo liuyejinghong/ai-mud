@@ -1,3 +1,5 @@
+import { newCommandId } from "../../lib/uuid.js";
+import { BASE_ITEM_NAMES } from "./EconomyBoard.js";
 // 右侧对象面板：根据当前选中对象（项目 / 设备 / 站点）展示快照里的事实与可用操作。
 import type {
   BaseDeviceDto,
@@ -30,6 +32,7 @@ interface BuildableTemplateDto {
   definitionRef: DefinitionRefDto;
   name: string;
   description: string;
+  inputs?: Array<{ itemId: string; quantity: number }>;
 }
 
 export interface ObjectPanelProps {
@@ -99,6 +102,7 @@ export function ObjectPanel({
           site={selectedSite}
           buildableProjects={buildableProjects}
           projects={projects}
+          resources={resources}
           isBusy={isBusy}
           onSelectProject={onSelectProject}
           onCreateProject={onCreateProject}
@@ -221,6 +225,7 @@ function SiteDetail({
   site,
   buildableProjects,
   projects,
+  resources,
   isBusy,
   onSelectProject,
   onCreateProject
@@ -228,6 +233,7 @@ function SiteDetail({
   site: BaseSiteDto;
   buildableProjects: BuildableTemplateDto[];
   projects: BaseProjectDto[];
+  resources: BaseResourceDto[];
   isBusy: boolean;
   onSelectProject: (projectId: string) => void;
   onCreateProject: (input: CreateProjectInputDto) => void;
@@ -287,6 +293,22 @@ function SiteDetail({
             <li key={definitionRefKey(template.definitionRef)}>
               <span className="base-buildable-name">{template.name}</span>
               <span className="base-copy">{template.description}</span>
+              {template.inputs ? (
+                <ul className="base-buildable-inputs">
+                  {template.inputs.map((input) => {
+                    const owned =
+                      resources.find((resource) => resource.itemId === input.itemId)?.quantity ?? 0;
+                    const short = owned < input.quantity;
+                    return (
+                      <li key={input.itemId}>
+                        {BASE_ITEM_NAMES[input.itemId] ?? input.itemId} ×{input.quantity}（现有{" "}
+                        {owned}
+                        {short ? `，缺 ${input.quantity - owned}` : ""}）
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
               <button
                 type="button"
                 className="base-primary-button"
@@ -295,7 +317,7 @@ function SiteDetail({
                   onCreateProject({
                     definitionRef: template.definitionRef,
                     siteId: site.siteId,
-                    commandId: crypto.randomUUID()
+                    commandId: newCommandId()
                   })
                 }
               >

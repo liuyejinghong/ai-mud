@@ -1,5 +1,6 @@
 // M16-D 经济面板：账款、外部订单（接单/交付）、采购（付款→在途→到货）。
 // 展示即事实：所有数字来自快照，本地不做任何计算。
+import { useState } from "react";
 import { PURCHASE_CATALOG } from "@ai-mud/shared";
 import type {
   BaseOrderDto,
@@ -72,6 +73,7 @@ export function EconomyBoard({
                   <span className="base-copy">
                     需要 {order.requiredItemName} ×{order.quantity} · 报酬{" "}
                     {order.rewardCredits} credits · {ORDER_STATUS_LABELS[order.status] ?? order.status}
+                    {order.deadlineSim ? ` · 期限 ${formatSimDateTime(order.deadlineSim)}` : ""}
                   </span>
                 </button>
               </li>
@@ -125,6 +127,7 @@ export function EconomyBoard({
             <li key={purchase.purchaseId}>
               {purchase.itemName} ×{purchase.quantity}（{purchase.costCredits} credits）·{" "}
               {PURCHASE_STATUS_LABELS[purchase.status] ?? purchase.status}
+              {purchase.status === "in_transit" ? ` · 预计到货 ${formatSimDateTime(purchase.arrivesAtSim)}` : ""}
             </li>
           ))}
         </ul>
@@ -144,24 +147,42 @@ function PurchaseRow({
   isBusy: boolean;
   onPurchase: (itemId: string, quantity: number) => void;
 }) {
-  const itemName = ITEM_NAMES[itemId] ?? itemId;
+  const itemName = BASE_ITEM_NAMES[itemId] ?? itemId;
+  const [quantity, setQuantity] = useState(1);
   return (
     <div className="base-purchase-row">
       <span>{itemName}</span>
       <span className="base-copy">{unitCost} credits/件</span>
+      <input
+        type="number"
+        min={1}
+        aria-label={`购买数量·${itemName}`}
+        value={quantity}
+        onChange={(event) =>
+          setQuantity(Math.max(1, Math.floor(Number(event.target.value) || 1)))
+        }
+      />
       <button
         type="button"
         className="base-primary-button"
         disabled={isBusy}
-        onClick={() => onPurchase(itemId, 1)}
+        onClick={() => onPurchase(itemId, quantity)}
       >
-        购入 ×1
+        购入
       </button>
     </div>
   );
 }
 
-const ITEM_NAMES: Record<string, string> = {
+// 基地历时间（simTime 的 UTC 字段即基地昼夜基准）。
+function formatSimDateTime(sim: string): string {
+  const date = new Date(sim);
+  if (Number.isNaN(date.getTime())) return sim;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+}
+
+export const BASE_ITEM_NAMES: Record<string, string> = {
   solar_panel_set: "太阳电池阵组件",
   support_frame: "支架结构件",
   cable: "线缆",

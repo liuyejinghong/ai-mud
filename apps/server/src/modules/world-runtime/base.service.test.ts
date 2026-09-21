@@ -385,7 +385,8 @@ function createFixture(options: {
   catalog.projects.set("install_solar_array", {
     ref: { kind: "project", stableId: "install_solar_array", revision: 1 },
     name: "安装太阳电池阵",
-    description: "把运抵的太阳电池阵安装到建设位并并网。"
+    description: "把运抵的太阳电池阵安装到建设位并并网。",
+    inputs: [{ itemId: "solar_panel_set", quantity: 6 }]
   });
   const industryRead = new FakeIndustryRead();
   const robotRead = new FakeRobotRead();
@@ -828,7 +829,8 @@ describe("BaseService.snapshot", () => {
         {
           definitionRef: { kind: "project", stableId: "install_solar_array", revision: 1 },
           name: "安装太阳电池阵",
-          description: "把运抵的太阳电池阵安装到建设位并并网。"
+          description: "把运抵的太阳电池阵安装到建设位并并网。",
+          inputs: [{ itemId: "solar_panel_set", quantity: 6 }]
         }
       ],
       availableRecipes: [],
