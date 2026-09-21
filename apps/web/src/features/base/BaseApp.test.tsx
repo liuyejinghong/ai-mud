@@ -148,6 +148,32 @@ describe("BaseApp", () => {
     expect(provision).toHaveBeenCalledOnce();
   });
 
+  it("管理员登录把登录响应里的 user.role 传给 onAuthenticated，不得降级为 player", async () => {
+    vi.mocked(getSnapshot)
+      .mockRejectedValueOnce(unauthorized())
+      .mockResolvedValue(buildSnapshot());
+    vi.mocked(login).mockResolvedValue({
+      user: { id: "account-admin", email: "admin@e.test", role: "admin", status: "active" },
+      csrfToken: "csrf-admin"
+    });
+    vi.mocked(provision).mockResolvedValue({ baseId: "base-1", duplicate: true });
+    const onAuthenticated = vi.fn();
+
+    render(<BaseApp onAuthenticated={onAuthenticated} />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "账号登录" }));
+    fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "admin@e.test" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录并进入基地" }));
+
+    expect(await screen.findByTestId("base-shell")).toBeTruthy();
+    expect(onAuthenticated).toHaveBeenCalledWith({
+      csrfToken: "csrf-admin",
+      role: "admin",
+      email: "admin@e.test"
+    });
+  });
+
   it("每 5 秒轮询快照，且仅在页面可见时拉取", async () => {
     vi.useFakeTimers();
     const visibility = vi
