@@ -251,7 +251,12 @@ export function BaseApp({
       // 通知 App 层（管理员由此进入管理台；玩家保持原地）。
       onAuthenticated?.({
         csrfToken: session.csrfToken,
-        role: authMode === "register" ? "player" : ((session as { role?: string }).role ?? "player"),
+        // 登录响应的 role 在 user 对象里；读顶层会把管理员降级成 player，
+        // 页面登录后要再手动刷新一次才能进管理台。
+        role:
+          authMode === "register"
+            ? "player"
+            : ((session as { user?: { role?: string } }).user?.role ?? "player"),
         email:
           authMode === "register"
             ? session.user.email
@@ -310,6 +315,11 @@ export function BaseApp({
     try {
       await logout();
     } finally {
+      // 退出即回到登录面并丢弃本地会话态（CSRF/快照），不等下一次快照 401 兜底；
+      // 避免退出/换号窗口里沿用旧 CSRF 或旧基地画面。
+      setCsrfToken(null);
+      setSnapshot(null);
+      setPhase("unauthenticated");
       setSelectedResourceId(null);
       setSelectedSiteId(null);
       setSelectedProjectId(null);
