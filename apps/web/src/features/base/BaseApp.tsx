@@ -251,7 +251,12 @@ export function BaseApp({
       // 通知 App 层（管理员由此进入管理台；玩家保持原地）。
       onAuthenticated?.({
         csrfToken: session.csrfToken,
-        role: authMode === "register" ? "player" : ((session as { role?: string }).role ?? "player"),
+        // 登录响应的 role 在 user 对象里；读顶层会把管理员降级成 player，
+        // 页面登录后要再手动刷新一次才能进管理台。
+        role:
+          authMode === "register"
+            ? "player"
+            : ((session as { user?: { role?: string } }).user?.role ?? "player"),
         email:
           authMode === "register"
             ? session.user.email
