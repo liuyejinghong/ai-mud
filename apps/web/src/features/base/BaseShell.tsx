@@ -268,6 +268,7 @@ function sortedDevices(devices: BaseDeviceDto[]): BaseDeviceDto[] {
 
 // 工程队状态一句话：作业中/充电中/待命台数——让页面在等待期也有"活着"的反馈。
 function fleetStatus(snapshot: BaseSnapshotDto): string {
+  if (snapshot.devices.length === 0) return "工程队：暂无设备";
   const working = snapshot.devices.filter((device) => device.status === "working").length;
   const charging = snapshot.devices.filter((device) => device.status === "charging").length;
   const idle = snapshot.devices.filter((device) => device.status === "idle").length;
@@ -275,5 +276,5 @@ function fleetStatus(snapshot: BaseSnapshotDto): string {
   if (working > 0) parts.push(`${working} 台作业中`);
   if (charging > 0) parts.push(`${charging} 台充电`);
   if (idle > 0) parts.push(`${idle} 台待命`);
-  return parts.length > 0 ? `工程队：${parts.join("、")}` : "工程队：12 台就位";
+  return parts.length > 0 ? `工程队：${parts.join("、")}` : `工程队：${snapshot.devices.length} 台离线`;
 }

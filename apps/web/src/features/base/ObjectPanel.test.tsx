@@ -90,6 +90,40 @@ describe("ObjectPanel", () => {
     expect(screen.getByText(/点击地图上的地点/)).toBeTruthy();
   });
 
+  it("选中空地时显示开工材料清单与库存缺口（BUILD-01）", () => {
+    render(
+      <ObjectPanel
+        sites={sites}
+        projects={projects}
+        devices={devices}
+        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, description: "维修耗材" }]}
+        selectedResourceId={null}
+        selectedSiteId="site-a"
+        selectedProjectId={null}
+        selectedDeviceId={null}
+        buildableProjects={[
+          {
+            definitionRef: { kind: "project", stableId: "install_solar_array", revision: 1 },
+            name: "安装太阳电池阵",
+            description: "把运抵的太阳电池阵安装到建设位并并网。",
+            inputs: [
+              { itemId: "solar_panel_set", quantity: 6 },
+              { itemId: "spare_parts", quantity: 4 }
+            ]
+          }
+        ]}
+        isBusy={false}
+        onSelectProject={noop}
+        onCreateProject={noop}
+        onCancelProject={noop}
+      />
+    );
+
+    expect(screen.getByText(/太阳电池阵组件 ×6（现有 0，缺 6）/)).toBeTruthy();
+    expect(screen.getByText(/通用备件 ×4（现有 30）/)).toBeTruthy();
+    expect(screen.queryByText(/，缺/)).toBeTruthy();
+  });
+
   it("选中空地时列出可建项目，点击建设按钮上报含 uuid 的命令参数", () => {
     const onCreateProject = vi.fn();
     render(

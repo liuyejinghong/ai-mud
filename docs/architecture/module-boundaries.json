@@ -2577,6 +2577,20 @@
       "layer": "test",
       "scope": "test",
       "note": "M14-Q 协作/审计真 PG 闭环"
+    },
+    {
+      "path": "apps/web/src/lib/uuid.ts",
+      "module": "client_session",
+      "layer": "client_shared",
+      "scope": "production",
+      "note": "命令幂等 ID 生成（安全上下文回退，TECH-01）；baseApi 同模块，client_text 可经允许边引用"
+    },
+    {
+      "path": "apps/web/src/lib/uuid.test.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "uuid 回退路径单测"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",

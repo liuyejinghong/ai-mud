@@ -1,3 +1,4 @@
+import { newCommandId } from "../../lib/uuid.js";
 // 制造面板（M13-D，玩家制造界面）：左侧可用配方（材料清单 + 数量 + 开工），右侧制造工单
 // （状态 / 产出进度 / 当前台进度 / 阻塞原因 / 取消）。横向面板，接入 BaseShell 归 M13-I。
 // 数据一律来自快照 props（manufacturingJobs / 当前配方模板列表），不在客户端推算工作量。
@@ -112,7 +113,7 @@ export function ManufacturingBoard({
                           onCreateJob({
                             recipeRef: recipe.ref,
                             outputsPlanned: planned,
-                            commandId: crypto.randomUUID()
+                            commandId: newCommandId()
                           })
                         }
                       >

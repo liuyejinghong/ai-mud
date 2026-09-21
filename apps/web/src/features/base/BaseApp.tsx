@@ -1,3 +1,4 @@
+import { newCommandId } from "../../lib/uuid.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   BaseClockCommandInputDto,
@@ -164,6 +165,7 @@ export function BaseApp({
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [completionBanner, setCompletionBanner] = useState<string | null>(null);
   const completedSeenRef = useRef<Set<string>>(new Set());
   const hasPrevSnapshotRef = useRef(false);
@@ -175,7 +177,7 @@ export function BaseApp({
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [introDismissed, setIntroDismissed] = useState(() => globalThis.localStorage?.getItem("base-intro-dismissed") === "1");
+  const [introDismissed, setIntroDismissed] = useState(false);
 
   const refreshSnapshot = useCallback(async () => {
     try {
@@ -196,11 +198,16 @@ export function BaseApp({
         if (project.status === "completed") completedSeenRef.current.add(project.projectId);
       }
       setSnapshot(next);
+      setSnapshotError(null);
       setPhase("ready");
       return next;
     } catch (error) {
       if (error instanceof BaseApiError && error.status === 401) {
         setPhase("unauthenticated");
+      } else {
+        // 非会话失效的快照失败必须给可见反馈：首载卡在"连接中"、轮询静默失败会留下
+        // 无从恢复的陈旧画面（SYNC-01）。
+        setSnapshotError(describeError(error));
       }
       return null;
     }
@@ -298,7 +305,7 @@ export function BaseApp({
   const handleCancelProject = useCallback(
     (projectId: string) => {
       if (csrfToken === null) return;
-      void runCommand(() => cancelProject(projectId, crypto.randomUUID(), csrfToken));
+      void runCommand(() => cancelProject(projectId, newCommandId(), csrfToken));
     },
     [csrfToken, runCommand]
   );
@@ -315,11 +322,12 @@ export function BaseApp({
     try {
       await logout();
     } finally {
-      // 退出即回到登录面并丢弃本地会话态（CSRF/快照），不等下一次快照 401 兜底；
-      // 避免退出/换号窗口里沿用旧 CSRF 或旧基地画面。
+      // 退出即回到登录面并丢弃本地会话态（CSRF/快照/引导态），不等下一次快照 401 兜底；
+      // 避免退出/换号窗口里沿用旧 CSRF、旧基地画面或跳过引导。
       setCsrfToken(null);
       setSnapshot(null);
       setPhase("unauthenticated");
+      setIntroDismissed(false);
       setSelectedResourceId(null);
       setSelectedSiteId(null);
       setSelectedProjectId(null);
@@ -367,7 +375,7 @@ export function BaseApp({
   const handleCancelJob = useCallback(
     (jobId: string) => {
       if (csrfToken === null) return;
-      void runCommand(() => cancelManufacturingJob(jobId, crypto.randomUUID(), csrfToken));
+      void runCommand(() => cancelManufacturingJob(jobId, newCommandId(), csrfToken));
     },
     [csrfToken, runCommand]
   );
@@ -392,7 +400,7 @@ export function BaseApp({
   const handleAcceptOrder = useCallback(
     (orderId: string) => {
       if (csrfToken === null) return;
-      void runCommand(() => acceptOrder(orderId, crypto.randomUUID(), csrfToken));
+      void runCommand(() => acceptOrder(orderId, newCommandId(), csrfToken));
     },
     [csrfToken, runCommand]
   );
@@ -400,7 +408,7 @@ export function BaseApp({
   const handleDeliverOrder = useCallback(
     (orderId: string) => {
       if (csrfToken === null) return;
-      void runCommand(() => deliverOrder({ orderId, commandId: crypto.randomUUID() }, csrfToken));
+      void runCommand(() => deliverOrder({ orderId, commandId: newCommandId() }, csrfToken));
     },
     [csrfToken, runCommand]
   );
@@ -409,7 +417,7 @@ export function BaseApp({
     (itemId: string, quantity: number) => {
       if (csrfToken === null) return;
       void runCommand(() =>
-        createPurchase({ itemId, quantity, commandId: crypto.randomUUID() }, csrfToken)
+        createPurchase({ itemId, quantity, commandId: newCommandId() }, csrfToken)
       );
     },
     [csrfToken, runCommand]
@@ -433,13 +441,38 @@ export function BaseApp({
     }
     return (
       <main className="base-shell base-loading" aria-label="基地加载中">
-        <p className="base-copy">正在连接基地…</p>
+        {snapshotError ? (
+          <div className="base-panel base-auth-panel">
+            <h1 id="base-load-error">基地连接失败</h1>
+            <p role="alert" className="base-error">
+              {snapshotError}
+            </p>
+            <p className="base-copy">服务可能暂时不可用；你的会话仍然保留。</p>
+            <button
+              type="button"
+              className="base-primary-button"
+              onClick={() => {
+                setSnapshotError(null);
+                void refreshSnapshot();
+              }}
+            >
+              重试连接
+            </button>
+          </div>
+        ) : (
+          <p className="base-copy">正在连接基地…</p>
+        )}
       </main>
     );
   }
 
   // 新手引导：首次进入（还没有任何项目）时显示剧情弹窗；开工后不再打扰。
-  const showIntro = snapshot !== null && snapshot.projects.length === 0 && !introDismissed;
+  // 关闭标记按基地（baseId）隔离——同一个浏览器换账号/换基地仍会看到引导（UX-02）。
+  const introDismissedForBase =
+    snapshot !== null &&
+    globalThis.localStorage?.getItem(`base-intro-dismissed:${snapshot.baseId}`) === "1";
+  const showIntro =
+    snapshot !== null && snapshot.projects.length === 0 && !introDismissed && !introDismissedForBase;
   return (
     <>
       {showIntro ? (
@@ -447,7 +480,9 @@ export function BaseApp({
           baseName={snapshot.name}
           onDismiss={() => {
             setIntroDismissed(true);
-            globalThis.localStorage?.setItem("base-intro-dismissed", "1");
+            if (snapshot !== null) {
+              globalThis.localStorage?.setItem(`base-intro-dismissed:${snapshot.baseId}`, "1");
+            }
           }}
         />
       ) : null}
@@ -466,6 +501,11 @@ export function BaseApp({
       {actionError ? (
         <p role="alert" className="base-error base-action-error">
           {actionError}
+        </p>
+      ) : null}
+      {snapshotError ? (
+        <p role="alert" className="base-error base-action-error">
+          基地状态刷新失败：{snapshotError}（将自动重试）
         </p>
       ) : null}
       <BaseShell
