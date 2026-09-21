@@ -1,0 +1,61 @@
+# 《余电》先遣基地 v1.0 内测部署（美国 VPS cp01:8088）
+# 用法：docker compose -f deploy/docker-compose.prod.yml up -d --build
+name: ai-mud
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ai_mud
+      POSTGRES_USER: ai_mud
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_mud -d ai_mud"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: "3000"
+      DATABASE_URL: postgres://ai_mud:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/ai_mud
+      SESSION_SECRET: ${SESSION_SECRET:?set in .env}
+      SESSION_COOKIE_NAME: ai_mud_session
+      # 内测走纯 HTTP：cookie 不能带 Secure（浏览器会丢弃）；上 TLS 后改回 true。
+      SESSION_COOKIE_SECURE: "false"
+      WEB_ORIGINS: ""
+      WORLD_TICK_ENABLED: "true"
+      WORLD_TICK_INTERVAL_MS: "60000"
+      PLAYTEST_REGISTRATION_ENABLED: "true"
+      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-admin@yudian.local}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:?set in .env}
+      AI_NPC_DIALOGUE_ENABLED: "false"
+      TYPE_SAFE_DECISION_MODE: "${TYPE_SAFE_DECISION_MODE:-off}"
+      TYPE_SAFE_API_KEY: "${TYPE_SAFE_API_KEY:-}"
+      TYPE_SAFE_MODEL: "${TYPE_SAFE_MODEL:-glm-5.3-flash}"
+      TYPE_SAFE_BASE_URL: "${TYPE_SAFE_BASE_URL:-https://open.bigmodel.cn/api/paas/v4}"
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "8088:80"
+
+volumes:
+  postgres_data:

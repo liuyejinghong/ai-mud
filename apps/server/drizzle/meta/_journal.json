@@ -197,6 +197,41 @@
       "when": 1789752212509,
       "tag": "0028_sync_revision_epoch",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1789752213509,
+      "tag": "0029_base_operations",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1789752214509,
+      "tag": "0030_content_manufacturing",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1789752215509,
+      "tag": "0031_decision_cooperation",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1789752216509,
+      "tag": "0032_weather_dust",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1789752217509,
+      "tag": "0033_economy_orders",
+      "breakpoints": true
     }
   ]
 }

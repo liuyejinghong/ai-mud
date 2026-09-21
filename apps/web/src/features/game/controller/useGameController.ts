@@ -1,3 +1,4 @@
+import { newCommandId } from "../../../lib/uuid.js";
 import {
   useCallback,
   useEffect,
@@ -816,10 +817,10 @@ export function useGameController({
     equipBackpackEquipment: equipBackpackEquipmentCommand,
     openMarket: openMarketCommand,
     async buyMarketItem(itemId: string, quantity = 1) {
-      await runMarketTrade(() => buyMarketItem({ itemId, quantity, commandId: crypto.randomUUID() }, csrfToken));
+      await runMarketTrade(() => buyMarketItem({ itemId, quantity, commandId: newCommandId() }, csrfToken));
     },
     async sellMarketItem(itemId: string, quantity = 1) {
-      await runMarketTrade(() => sellMarketItem({ itemId, quantity, commandId: crypto.randomUUID() }, csrfToken));
+      await runMarketTrade(() => sellMarketItem({ itemId, quantity, commandId: newCommandId() }, csrfToken));
     },
     openDialogue: openDialogueCommand,
     openNpcDialogue: openNpcDialogueCommand,

@@ -1,0 +1,13 @@
+{
+  "name": "@ai-mud/playtest",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}

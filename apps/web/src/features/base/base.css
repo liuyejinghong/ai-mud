@@ -1,0 +1,598 @@
+/* 基地客户端样式（M12-C）。只在 features/base 组件内引用。 */
+
+.base-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  box-sizing: border-box;
+  color: #e2f3ff;
+  background:
+    linear-gradient(180deg, rgba(3, 8, 14, 0.97), rgba(5, 12, 18, 0.98)),
+    radial-gradient(circle at 50% 0%, rgba(46, 105, 156, 0.3), transparent 45%);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.base-shell.base-auth,
+.base-shell.base-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+}
+
+.base-panel {
+  border: 1px solid #35b6ff;
+  background: rgba(2, 10, 18, 0.9);
+  box-shadow: 0 0 0 1px rgba(53, 182, 255, 0.16), inset 0 0 22px rgba(53, 182, 255, 0.05);
+  padding: 12px;
+  min-width: 0;
+  overflow: auto;
+}
+
+.base-panel-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: #8fd4ff;
+}
+
+.base-kicker {
+  margin: 0 0 6px;
+  color: #6fa3c2;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.base-copy {
+  color: #b7cbda;
+  line-height: 1.7;
+}
+
+.base-topbar {
+  grid-area: topbar;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.base-summary-line {
+  margin: 2px 0;
+  font-size: 13px;
+}
+
+.base-resource-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.base-resource-list li {
+  border: 1px solid rgba(53, 182, 255, 0.4);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.base-device-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.base-device-chip {
+  border: 1px solid rgba(53, 182, 255, 0.4);
+  background: transparent;
+  color: #d8ecfa;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.base-device-chip.is-selected {
+  border-color: #ffd166;
+  color: #ffd166;
+}
+
+.base-clock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.base-clock .base-primary-button {
+  align-self: flex-start;
+}
+
+.base-paused-badge {
+  display: inline-block;
+  border: 1px solid #ffb347;
+  color: #ffb347;
+  background: rgba(255, 179, 71, 0.12);
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 14px;
+  letter-spacing: 2px;
+}
+
+.base-simtime {
+  color: #8fa8ba;
+  font-size: 12px;
+}
+
+.base-map {
+  grid-area: map;
+}
+
+.base-site-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.base-site-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid rgba(53, 182, 255, 0.45);
+  background: rgba(6, 18, 28, 0.85);
+  color: inherit;
+  font: inherit;
+  padding: 14px;
+  min-height: 92px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.base-site-card .base-site-title {
+  font-size: 15px;
+}
+
+.base-site-card .base-site-note {
+  color: #9db9cb;
+  font-size: 12px;
+}
+
+.base-site-card.base-site-free {
+  border-style: dashed;
+}
+
+.base-site-card.base-site-reserved {
+  border-color: #ffd166;
+}
+
+.base-site-card.base-site-built {
+  border-color: #6fe3a5;
+}
+
+.base-site-card.is-selected,
+.base-site-card.is-selected .base-site-note {
+  outline: 2px solid #ffd166;
+  color: #ffe4a8;
+}
+
+.base-object-panel {
+  grid-area: panel;
+}
+
+.base-detail h3 {
+  margin: 4px 0 8px;
+  font-size: 16px;
+}
+
+.base-detail-line {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #c4d9e8;
+}
+
+.base-step-list {
+  margin: 10px 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+}
+
+.base-step {
+  font-size: 13px;
+  display: grid;
+  gap: 2px;
+}
+
+.base-step .base-step-title {
+  color: #d8ecfa;
+}
+
+.base-step .base-step-progress,
+.base-step .base-blocked-reason {
+  color: #9db9cb;
+  font-size: 12px;
+}
+
+.base-step-blocked .base-blocked-reason {
+  color: #ffb347;
+}
+
+.base-blocked-reason {
+  color: #ffb347;
+  font-size: 12px;
+}
+
+.base-buildable-list {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.base-buildable-name {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.base-project-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.base-project-card {
+  width: 100%;
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(53, 182, 255, 0.45);
+  background: rgba(6, 18, 28, 0.85);
+  color: inherit;
+  font: inherit;
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.base-project-card.is-selected {
+  outline: 2px solid #ffd166;
+}
+
+.base-project-name {
+  font-size: 14px;
+}
+
+.base-project-status {
+  color: #8fd4ff;
+  font-size: 12px;
+}
+
+.base-project-step {
+  color: #9db9cb;
+  font-size: 12px;
+}
+
+.base-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.base-progress-bar {
+  flex: 1;
+  height: 8px;
+  border: 1px solid rgba(53, 182, 255, 0.45);
+  background: rgba(2, 10, 18, 0.9);
+}
+
+.base-progress-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #2f9e6e, #6fe3a5);
+}
+
+.base-progress-text {
+  font-size: 12px;
+  color: #9db9cb;
+  white-space: nowrap;
+}
+
+.base-primary-button,
+.base-danger-button,
+.base-link-button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.base-primary-button {
+  border: 1px solid #35b6ff;
+  background: rgba(53, 182, 255, 0.16);
+  color: #d8f1ff;
+  padding: 6px 14px;
+}
+
+.base-primary-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.base-danger-button {
+  border: 1px solid #ff7a6b;
+  background: rgba(255, 122, 107, 0.12);
+  color: #ffc4bc;
+  padding: 6px 14px;
+  margin-top: 8px;
+}
+
+.base-link-button {
+  border: none;
+  background: none;
+  color: #8fd4ff;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.base-auth-panel {
+  width: min(460px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+}
+
+.base-auth-switch {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.base-auth-switch button {
+  font: inherit;
+  border: 1px solid rgba(53, 182, 255, 0.45);
+  background: transparent;
+  color: #b7cbda;
+  padding: 4px 12px;
+  cursor: pointer;
+  border-radius: 12px;
+}
+
+.base-auth-switch button[aria-selected="true"] {
+  border-color: #ffd166;
+  color: #ffd166;
+}
+
+.base-auth-form {
+  display: grid;
+  gap: 10px;
+}
+
+.base-field {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: #9db9cb;
+}
+
+.base-field input {
+  font: inherit;
+  color: #e2f3ff;
+  background: rgba(2, 10, 18, 0.9);
+  border: 1px solid rgba(53, 182, 255, 0.45);
+  padding: 6px 8px;
+}
+
+.base-error {
+  border: 1px solid #ff7a6b;
+  color: #ffc4bc;
+  background: rgba(255, 122, 107, 0.1);
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.base-action-error {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  margin: 0;
+}
+
+/* ── 新手引导弹窗 ── */
+.base-intro-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 8, 12, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+}
+.base-intro {
+  max-width: 560px;
+  margin: 16px;
+  padding: 24px 28px;
+  border: 1px solid #29d7b1;
+  background: #04121a;
+  border-radius: 10px;
+  display: grid;
+  gap: 12px;
+}
+.base-intro-title {
+  margin: 0;
+  font-size: 20px;
+  color: #29d7b1;
+}
+.base-intro-copy,
+.base-intro-hint {
+  margin: 0;
+  color: #9fc9d6;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.base-intro-goal {
+  margin: 0;
+  color: #ffe08a;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.base-intro-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: #d6f3ef;
+  font-size: 13px;
+  line-height: 1.9;
+}
+.base-intro .base-primary-button {
+  justify-self: start;
+}
+
+/* ── 物资可点 chip ── */
+.base-resource-chip {
+  border: 1px solid #24556b;
+  background: transparent;
+  color: #d6f3ef;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.base-resource-chip[aria-pressed="true"] {
+  border-color: #29d7b1;
+  color: #29d7b1;
+}
+
+/* ── 对象属性列表 ── */
+.base-attr-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.base-clock-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.base-logout-button {
+  border: 1px solid #24556b;
+  background: transparent;
+  color: #9fc9d6;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.base-logout-button:hover {
+  border-color: #29d7b1;
+  color: #29d7b1;
+}
+
+.base-clock-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.base-logout-button {
+  border: 1px solid #24556b;
+  background: transparent;
+  color: #9fc9d6;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.base-logout-button:hover {
+  border-color: #29d7b1;
+  color: #29d7b1;
+}
+
+/* ── 完工横幅 ── */
+.base-completion-banner {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #ffe08a;
+  color: #ffe08a;
+  background: rgba(60, 44, 8, 0.55);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+.base-completion-banner button {
+  border: none;
+  background: none;
+  color: #ffe08a;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* ── 目标卡（项目清单空态） ── */
+.base-goal-card {
+  border: 1px solid #ffe08a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: grid;
+  gap: 6px;
+}
+.base-goal-title {
+  color: #ffe08a;
+  font-size: 13px;
+}
+
+/* ── 经济面板（M16） ── */
+.base-order-list,
+.base-purchase-list,
+.base-purchase-status {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.base-order-card {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid #24556b;
+  background: transparent;
+  color: inherit;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.base-order-card.is-selected {
+  border-color: #29d7b1;
+}
+.base-order-name {
+  font-weight: 600;
+}
+.base-order-actions {
+  margin: 8px 0;
+  display: flex;
+  gap: 8px;
+}
+.base-purchase-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px dashed rgba(36, 85, 107, 0.6);
+  padding: 4px 0;
+}

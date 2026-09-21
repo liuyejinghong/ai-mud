@@ -157,6 +157,18 @@
       "currentPublicEntry": null,
       "currentBootstrapEntry": null,
       "note": "提取完成前无公开入口（全仓不存在 public.ts/bootstrap.ts）"
+    },
+    "content-catalog": {
+      "catalogKind": "business",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "M12-P ACP-B01：只读目录，发布能力属 M13"
+    },
+    "industry": {
+      "catalogKind": "business",
+      "currentPublicEntry": null,
+      "currentBootstrapEntry": null,
+      "note": "M12-P ACP-B01：项目/工单/站内供能"
     }
   },
   "stats": {
@@ -1185,20 +1197,6 @@
       "note": "非权威状态容器/轮询/命令与同步传输客户端"
     },
     {
-      "path": "apps/web/src/features/auth/AuthPage.test.tsx",
-      "module": "client_text",
-      "layer": "test",
-      "scope": "test",
-      "note": "React 视图与用户意图采集"
-    },
-    {
-      "path": "apps/web/src/features/auth/AuthPage.tsx",
-      "module": "client_text",
-      "layer": "client_view",
-      "scope": "production",
-      "note": "React 视图与用户意图采集"
-    },
-    {
       "path": "apps/web/src/features/auth/authApi.ts",
       "module": "client_session",
       "layer": "client_state",
@@ -1865,6 +1863,734 @@
       "layer": "test",
       "scope": "test",
       "note": "同步守卫用例；ARCH-07 新增"
+    },
+    {
+      "path": "packages/shared/src/base.ts",
+      "module": "protocol",
+      "layer": "protocol",
+      "scope": "production",
+      "note": "M12-P 基地公共协议 DTO 与常量（W/Wh 整数定点）"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/base.service.ts",
+      "module": "world",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M12-A 基地作用域/simTime 时钟/控制租约；提供建设位读写"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/base.repository.ts",
+      "module": "world",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "M12-A bases/base_sites/base_control_leases 访问"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/base-session.routes.ts",
+      "module": "transport",
+      "layer": "transport",
+      "scope": "production",
+      "note": "M12-A 试玩注册/心跳/快照/时钟路由；仅 import application"
+    },
+    {
+      "path": "apps/server/src/application/base/ports.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "M12-P 冻结的基地用例端口（Provision/Snapshot/Clock/Construction/Catalog/RobotFactory/Decision）"
+    },
+    {
+      "path": "apps/server/src/application/base/provision-base.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "M12-A provisioning 幂等续建用例（账号作用域收据）"
+    },
+    {
+      "path": "apps/server/src/application/base/base-snapshot.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "M12-A 快照装配用例"
+    },
+    {
+      "path": "apps/server/src/application/base/base-clock.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "M12-A 暂停/恢复/倍速用例"
+    },
+    {
+      "path": "apps/server/src/application/base/create-project.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "M12-B 创建项目用例（同事务预留+回执）"
+    },
+    {
+      "path": "apps/server/src/application/base/cancel-project.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "M12-B 取消项目用例（释放未消耗预留）"
+    },
+    {
+      "path": "apps/server/src/modules/industry/construction.service.ts",
+      "module": "industry",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M12-B 创建/取消项目；经 assets/npc 参与接口同事务写"
+    },
+    {
+      "path": "apps/server/src/modules/industry/industry.repository.ts",
+      "module": "industry",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "M12-B base_projects/steps/power_state 访问"
+    },
+    {
+      "path": "apps/server/src/modules/industry/base-settlement.service.ts",
+      "module": "industry",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M12-B 基地 tick 参与者：simTime 推进/供能结算/步骤工作量"
+    },
+    {
+      "path": "apps/server/src/modules/industry/industry.pure.ts",
+      "module": "industry",
+      "layer": "rules",
+      "scope": "production",
+      "note": "M12-B 纯规则：发电/负载/充电/工作量（无 IO）"
+    },
+    {
+      "path": "apps/server/src/modules/industry/base-projects.routes.ts",
+      "module": "transport",
+      "layer": "transport",
+      "scope": "production",
+      "note": "M12-B 项目创建/取消路由；仅 import application"
+    },
+    {
+      "path": "apps/server/src/modules/npc/robot-factory.ts",
+      "module": "npc",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M12-B 设备资产→作业者实例 1:1 登记（唯一 setup receipt）"
+    },
+    {
+      "path": "apps/server/src/modules/npc/robot-runtime.ts",
+      "module": "npc",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M12-B 作业者电量/状态/分配公开参与接口（仅 npc 写）"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/catalog.service.ts",
+      "module": "content-catalog",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M12-D 只读目录：release 加载/DefinitionRef 校验"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/bootstrap-release.ts",
+      "module": "content-catalog",
+      "layer": "capability",
+      "scope": "production",
+      "note": "M12-D 内置不可变 release 装载（v0.12 无发布写路径）"
+    },
+    {
+      "path": "packages/content/src/base/index.ts",
+      "module": "content",
+      "layer": "content",
+      "scope": "production",
+      "note": "M12-D 基地内容定义 barrel"
+    },
+    {
+      "path": "packages/content/src/base/schemas.ts",
+      "module": "content",
+      "layer": "content",
+      "scope": "production",
+      "note": "M12-D 模板/项目 schema 与校验"
+    },
+    {
+      "path": "packages/content/src/base/default-release.ts",
+      "module": "content",
+      "layer": "content",
+      "scope": "production",
+      "note": "M12-D 默认 release 数据（fixture 数值，纯储能过夜开局）"
+    },
+    {
+      "path": "apps/web/src/features/base/BaseApp.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M12-C 基地客户端入口"
+    },
+    {
+      "path": "apps/web/src/features/base/BaseShell.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M12-C 主界面四区容器"
+    },
+    {
+      "path": "apps/web/src/features/base/BaseMap.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M12-C 基地平面示意与建设位点击"
+    },
+    {
+      "path": "apps/web/src/features/base/ObjectPanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M12-C 选中对象操作面板"
+    },
+    {
+      "path": "apps/web/src/features/base/ProjectBoard.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M12-C 项目板（真实计划投影）"
+    },
+    {
+      "path": "apps/web/src/features/base/baseApi.ts",
+      "module": "client_session",
+      "layer": "client_state",
+      "scope": "production",
+      "note": "M12-C 基地 API client（credentials+CSRF，模式同 gameApi）"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/base.service.test.ts",
+      "module": "world",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-A"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/base.repository.test.ts",
+      "module": "world",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-A"
+    },
+    {
+      "path": "apps/server/src/modules/industry/construction.service.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-B"
+    },
+    {
+      "path": "apps/server/src/modules/industry/base-settlement.service.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-B"
+    },
+    {
+      "path": "apps/server/src/modules/industry/industry.pure.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-B"
+    },
+    {
+      "path": "apps/server/src/modules/npc/robot-factory.test.ts",
+      "module": "npc",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-B"
+    },
+    {
+      "path": "apps/server/src/modules/npc/robot-runtime.test.ts",
+      "module": "npc",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-B"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/catalog.service.test.ts",
+      "module": "content-catalog",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-D"
+    },
+    {
+      "path": "packages/content/src/base/schemas.test.ts",
+      "module": "content",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-D"
+    },
+    {
+      "path": "packages/content/src/base/default-release.test.ts",
+      "module": "content",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-D"
+    },
+    {
+      "path": "apps/web/src/features/base/BaseShell.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-C"
+    },
+    {
+      "path": "apps/web/src/features/base/BaseMap.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-C"
+    },
+    {
+      "path": "apps/web/src/features/base/ObjectPanel.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-C"
+    },
+    {
+      "path": "apps/web/src/features/base/ProjectBoard.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-C"
+    },
+    {
+      "path": "apps/web/src/features/base/baseApi.test.ts",
+      "module": "client_session",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-C"
+    },
+    {
+      "path": "apps/web/src/features/base/BaseApp.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-C"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/m12/base-contract.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-Q 合同负例（scope/幂等/旧 revision）"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/m12/base-provision.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-Q 真 PG provisioning 幂等/并发"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/m12/base-construction.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-Q 真 PG 建设全链/争抢/失败回滚"
+    },
+    {
+      "path": "apps/server/src/modules/ledger/base-asset.service.ts",
+      "module": "assets",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M12-I base_inventory/base_devices 唯一写者（预留≠消耗），事务绑定端口实现"
+    },
+    {
+      "path": "apps/server/src/application/base/composition.ts",
+      "module": "application",
+      "layer": "composition",
+      "scope": "production",
+      "note": "M12-I 真实端口绑定：路由依赖与基地 tick 参与者装配"
+    },
+    {
+      "path": "apps/web/src/features/base/BaseIntroModal.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M12-C 首次进入的剧情引导弹窗（纯展示，无网络调用）"
+    },
+    {
+      "path": "apps/web/src/features/base/BaseIntroModal.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M12-C"
+    },
+    {
+      "path": "packages/shared/src/content-admin.ts",
+      "module": "protocol",
+      "layer": "protocol",
+      "scope": "production",
+      "note": "M13-P 内容工坊与制造公共协议"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/content-admin.service.ts",
+      "module": "content-catalog",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M13-A draft/publish/activate 业务"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/content-admin.repository.ts",
+      "module": "content-catalog",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "M13-A content_drafts/content_releases 访问"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/catalog-db.loader.ts",
+      "module": "content-catalog",
+      "layer": "capability",
+      "scope": "production",
+      "note": "M13-A 按基地解析 active release（DB 优先，内置兜底）"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/content-admin.service.test.ts",
+      "module": "content-catalog",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-A"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/content-admin.repository.test.ts",
+      "module": "content-catalog",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-A"
+    },
+    {
+      "path": "apps/server/src/application/content-admin/usecases.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "M13-A 内容管理用例（admin 门面）"
+    },
+    {
+      "path": "apps/server/src/application/manufacturing/create-job.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "M13-C 创建制造工单用例"
+    },
+    {
+      "path": "apps/server/src/application/manufacturing/cancel-job.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "M13-C 取消制造工单用例"
+    },
+    {
+      "path": "apps/server/src/modules/industry/manufacturing.service.ts",
+      "module": "industry",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M13-C 创建/取消工单+材料预留"
+    },
+    {
+      "path": "apps/server/src/modules/industry/manufacturing.repository.ts",
+      "module": "industry",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "M13-C base_manufacturing_jobs/outputs 访问"
+    },
+    {
+      "path": "apps/server/src/modules/industry/manufacturing.settlement.ts",
+      "module": "industry",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M13-C 制造结算参与者（电力分配合产出一台原子事务）"
+    },
+    {
+      "path": "apps/server/src/modules/industry/base-manufacturing.routes.ts",
+      "module": "transport",
+      "layer": "transport",
+      "scope": "production",
+      "note": "M13-C 玩家制造路由；仅 import application"
+    },
+    {
+      "path": "apps/server/src/modules/industry/manufacturing.service.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-C"
+    },
+    {
+      "path": "apps/server/src/modules/industry/manufacturing.settlement.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-C"
+    },
+    {
+      "path": "apps/server/src/modules/admin/content-admin.routes.ts",
+      "module": "transport",
+      "layer": "transport",
+      "scope": "production",
+      "note": "M13-B 内容管理路由（admin 会话）；仅 import application"
+    },
+    {
+      "path": "apps/web/src/features/admin/ContentAdminPanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M13-B 内容工坊面板"
+    },
+    {
+      "path": "apps/web/src/features/admin/ContentAdminPanel.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-B"
+    },
+    {
+      "path": "apps/web/src/features/base/ManufacturingBoard.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M13-D 玩家制造工单面板"
+    },
+    {
+      "path": "apps/web/src/features/base/ManufacturingBoard.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-D"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/m13/content-publish.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-Q 发布/激活/权限（真 PG）"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/m13/manufacturing.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "M13-Q 制造全链/ordinal 幂等/故障注入（真 PG）"
+    },
+    {
+      "path": "packages/shared/src/decision.ts",
+      "module": "protocol",
+      "layer": "protocol",
+      "scope": "production",
+      "note": "M14-P 决策与协作协议"
+    },
+    {
+      "path": "apps/server/src/modules/ai/decision-provider.ts",
+      "module": "ai",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M14-A 规则决策提供者 + 三模式 seam"
+    },
+    {
+      "path": "apps/server/src/modules/ai/decision-gateway.ts",
+      "module": "ai",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M14-A 决策网关（超时/审计/decision_records 写者）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/decision-provider.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14-A"
+    },
+    {
+      "path": "apps/server/src/modules/ai/decision-gateway.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14-A"
+    },
+    {
+      "path": "apps/server/src/modules/industry/cooperation.service.ts",
+      "module": "industry",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M14-B 协作请求/决策/跨组支援调度"
+    },
+    {
+      "path": "apps/server/src/modules/industry/cooperation.repository.ts",
+      "module": "industry",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "M14-B cooperation_requests 访问"
+    },
+    {
+      "path": "apps/server/src/modules/industry/cooperation.service.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14-B"
+    },
+    {
+      "path": "apps/web/src/features/base/CooperationPanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M14-C 协作状态展示"
+    },
+    {
+      "path": "apps/web/src/features/base/CooperationPanel.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14-C"
+    },
+    {
+      "path": "packages/ai-prompts/src/decision.ts",
+      "module": "ai",
+      "layer": "content",
+      "scope": "production",
+      "note": "M14-D 决策中文表达模板"
+    },
+    {
+      "path": "packages/ai-prompts/src/decision.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14-D"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/m14/cooperation.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14-Q 真 PG 协作闭环"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/weather.service.ts",
+      "module": "world",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M15-A 确定性天气日程（晴/预警/尘暴循环）+ 光照系数"
+    },
+    {
+      "path": "packages/shared/src/economy.ts",
+      "module": "protocol",
+      "layer": "protocol",
+      "scope": "production",
+      "note": "M16-P 订单经济协议（credits 与电力分离）"
+    },
+    {
+      "path": "apps/server/src/modules/economy/order.service.ts",
+      "module": "economy",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M16-A 订单接受/交付/账款结算（credits 唯一写者）"
+    },
+    {
+      "path": "apps/server/src/modules/economy/order.repository.ts",
+      "module": "economy",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "M16-A base_orders/bases.credits 访问"
+    },
+    {
+      "path": "apps/server/src/modules/economy/purchase.service.ts",
+      "module": "economy",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M16-B 采购：付款→在途→到货入库"
+    },
+    {
+      "path": "apps/server/src/modules/economy/purchase.repository.ts",
+      "module": "economy",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "M16-B base_purchases 访问"
+    },
+    {
+      "path": "apps/server/src/modules/economy/base-economy.routes.ts",
+      "module": "transport",
+      "layer": "transport",
+      "scope": "production",
+      "note": "M16-A/B 订单与采购路由；仅 import application"
+    },
+    {
+      "path": "apps/server/src/application/economy/usecases.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "M16-A/B 订单/采购用例"
+    },
+    {
+      "path": "apps/server/src/modules/economy/order.service.test.ts",
+      "module": "economy",
+      "layer": "test",
+      "scope": "test",
+      "note": "M16-A"
+    },
+    {
+      "path": "apps/server/src/modules/economy/purchase.service.test.ts",
+      "module": "economy",
+      "layer": "test",
+      "scope": "test",
+      "note": "M16-B"
+    },
+    {
+      "path": "apps/web/src/features/base/EconomyBoard.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "M16-D 订单与采购面板"
+    },
+    {
+      "path": "apps/web/src/features/base/EconomyBoard.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "M16-D"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/m16/economy.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "M16-Q 订单/交付/采购幂等（真 PG）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/typesafe-decision-provider.ts",
+      "module": "ai",
+      "layer": "domain",
+      "scope": "production",
+      "note": "M14-LIVE seam：TypeSafe Jev SHADOW 对照 provider（执行语义仍 RULE）"
+    },
+    {
+      "path": "apps/server/src/modules/ai/typesafe-decision-provider.test.ts",
+      "module": "ai",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14 shadow provider（假 fetch，离线）"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/m14/cooperation-shadow.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "M14-Q 协作/审计真 PG 闭环"
+    },
+    {
+      "path": "apps/web/src/lib/uuid.ts",
+      "module": "client_session",
+      "layer": "client_shared",
+      "scope": "production",
+      "note": "命令幂等 ID 生成（安全上下文回退，TECH-01）；baseApi 同模块，client_text 可经允许边引用"
+    },
+    {
+      "path": "apps/web/src/lib/uuid.test.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "uuid 回退路径单测"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",

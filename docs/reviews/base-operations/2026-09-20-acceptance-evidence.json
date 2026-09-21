@@ -1,0 +1,423 @@
+{
+  "schema_version": 1,
+  "report_date": "2026-09-20",
+  "repository": "liuyejinghong/ai-mud",
+  "review_ref": "fad7d4232937d6c3fb216d743edb227589846803",
+  "review_branch": "v0.12.0-base-operations",
+  "related_pr": 20,
+  "declared_release": "v1.0.0",
+  "deployed_commit": "UNVERIFIED",
+  "verdict": "BLOCKED",
+  "in_game_findings_confirmed": 0,
+  "candidate_priority_counts": {
+    "P0": 1,
+    "P1": 6,
+    "P2": 3
+  },
+  "coverage_counts": {
+    "planned_groups": 32,
+    "gameplay_groups_executed": 0,
+    "blocked_access": 30,
+    "requires_isolated_environment": 2
+  },
+  "findings": [
+    {
+      "id": "TECH-01",
+      "priority": "P0",
+      "title": "HTTP 试玩入口与 crypto.randomUUID 安全上下文要求冲突",
+      "confidence": "高；独立浏览器 API 已复现，目标部署待确认",
+      "category": "技术阻断",
+      "transition": "保留",
+      "target_site_status": "NOT_REPRODUCED_TARGET_INACCESSIBLE"
+    },
+    {
+      "id": "AUTH-01",
+      "priority": "P1",
+      "title": "普通玩家刷新恢复会话后，CSRF 状态可能一直停在 null",
+      "confidence": "高；代码调用链",
+      "category": "会话恢复",
+      "transition": "保留",
+      "target_site_status": "NOT_REPRODUCED_TARGET_INACCESSIBLE"
+    },
+    {
+      "id": "AUTH-02",
+      "priority": "P1",
+      "title": "管理员登录时读取错误的角色字段，被前端当成 player",
+      "confidence": "高；服务端合同＋独立表达式复现",
+      "category": "权限入口",
+      "transition": "保留",
+      "target_site_status": "NOT_REPRODUCED_TARGET_INACCESSIBLE"
+    },
+    {
+      "id": "SYNC-01",
+      "priority": "P1",
+      "title": "快照失败被静默吞掉，加载与陈旧状态缺少可恢复反馈",
+      "confidence": "高；代码分支",
+      "category": "状态反馈",
+      "transition": "保留",
+      "target_site_status": "NOT_REPRODUCED_TARGET_INACCESSIBLE"
+    },
+    {
+      "id": "ECON-01",
+      "priority": "P1",
+      "title": "订单交付期限与采购到货时间没有呈现给玩家",
+      "confidence": "高；DTO 与渲染对照",
+      "category": "经营决策信息",
+      "transition": "保留",
+      "target_site_status": "NOT_REPRODUCED_TARGET_INACCESSIBLE"
+    },
+    {
+      "id": "BUILD-01",
+      "priority": "P1",
+      "title": "开工前没有材料清单、库存缺口与量化产出预览",
+      "confidence": "高；内容定义与渲染对照",
+      "category": "有效选择／信息架构",
+      "transition": "保留",
+      "target_site_status": "NOT_REPRODUCED_TARGET_INACCESSIBLE"
+    },
+    {
+      "id": "UX-01",
+      "priority": "P1",
+      "title": "新手模态框没有焦点管理与背景输入隔离",
+      "confidence": "高；代码＋独立 ARIA 平台实验",
+      "category": "键盘交互",
+      "transition": "保留",
+      "target_site_status": "NOT_REPRODUCED_TARGET_INACCESSIBLE"
+    },
+    {
+      "id": "UX-02",
+      "priority": "P2",
+      "title": "引导关闭标记按浏览器共用，新账号也会跳过",
+      "confidence": "高；状态键与显示条件",
+      "category": "新手引导",
+      "transition": "保留",
+      "target_site_status": "NOT_REPRODUCED_TARGET_INACCESSIBLE"
+    },
+    {
+      "id": "UX-03",
+      "priority": "P2",
+      "title": "设备汇总在零设备或全部离线时硬编码“12 台就位”",
+      "confidence": "高；独立纯函数复现",
+      "category": "状态文案",
+      "transition": "保留",
+      "target_site_status": "NOT_REPRODUCED_TARGET_INACCESSIBLE"
+    },
+    {
+      "id": "ECON-02",
+      "priority": "P2",
+      "title": "采购只能逐件下单，无法使用已有数量合同批量采购",
+      "confidence": "高；UI 与 API 合同对照",
+      "category": "重复操作打磨",
+      "transition": "保留",
+      "target_site_status": "NOT_REPRODUCED_TARGET_INACCESSIBLE"
+    }
+  ],
+  "coverage": [
+    {
+      "id": "G01",
+      "area": "首次试玩注册→基地→新手引导",
+      "acceptance": "不查外部文档能说清身份、近期目标、如何开工；新账号状态独立。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G02",
+      "area": "注册输入与失败恢复",
+      "acceptance": "空值、邮箱格式、重复邮箱、密码边界；错误可读且不重复创建基地。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G03",
+      "area": "已有普通账号登录",
+      "acceptance": "正确／错误密码、受限账号、会话过期；失败不残留可操作状态。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G04",
+      "area": "普通玩家硬刷新恢复会话",
+      "acceptance": "已有 cookie 后刷新，CSRF 恢复、时钟按钮可用、心跳可续租。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G05",
+      "area": "所有者／管理员登录",
+      "acceptance": "登录立即得到正确工作区；不靠刷新才显示管理入口。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G06",
+      "area": "退出、返回与账号切换",
+      "acceptance": "退出后不能继续操作旧账号；新账号不承接旧选择或引导标记。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G07",
+      "area": "地图与对象选择",
+      "acceptance": "逐开建成设施、建设位、设备、资源、项目；返回后上下文一致。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G08",
+      "area": "开工前决策",
+      "acceptance": "展示成本／拥有／缺口、作业要求、产出；条件不足有可理解原因。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G09",
+      "area": "首项工程完整四步",
+      "acceptance": "清场→运输→安装→验收；真实扣料、推进、受阻与并网一致。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G10",
+      "area": "工程取消与退款",
+      "acceptance": "开工前、进行中、临近完成取消；区分已消耗／未消耗，重复操作不双退。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G11",
+      "area": "完工与下一目标",
+      "acceptance": "默认内容 15→20 kW 的峰值变化可读；不把峰值误当实时出力；能找到下一目标。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G12",
+      "area": "设备与充电",
+      "acceptance": "三组设备的分工、任务、电量、充电、待命／离线与汇总一致。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G13",
+      "area": "制造与成长",
+      "acceptance": "两个默认配方、单台与批量；成本和逐台产出正确，新设备有可验证用途。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G14",
+      "area": "制造取消",
+      "acceptance": "部分已产出时取消，保留产出、退未耗料；刷新后不重复产出。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G15",
+      "area": "协作与规则决策",
+      "acceptance": "触发跨组支援，申请／批准／执行能追溯；不把 RULE 声称为真实模型。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G16",
+      "area": "暂停、恢复与倍率",
+      "acceptance": "×1／×2／×4，暂停不推进模拟时间；恢复不补算已声明暂停段。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G17",
+      "area": "关页与重进",
+      "acceptance": "关闭页面、等待租约到期、重进；离线政策与可见说明一致。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G18",
+      "area": "后台标签与多标签",
+      "acceptance": "切后台、双标签、重新前台；计时与续租政策明确，状态不互相覆盖。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G19",
+      "area": "昼夜能源",
+      "acceptance": "跨 06:00／18:00，发电、负载、储能与停工可解释；无负资产。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G20",
+      "area": "尘暴与维护恢复",
+      "acceptance": "预警→遮光→积尘→清理／维护恢复；逐段验证发布说明所承诺的入口。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G21",
+      "area": "订单正常闭环",
+      "acceptance": "接单→备料→交付→扣库存／到账；余额与订单状态持久一致。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G22",
+      "area": "订单期限与失败恢复",
+      "acceptance": "接单前知道期限，超时结果可读；失败状态、材料和账款不矛盾。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G23",
+      "area": "采购与物流",
+      "acceptance": "余额不足、重复提交、4 模拟小时在途、暂停／恢复、到货只入库一次。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G24",
+      "area": "三圈经营与策略比较",
+      "acceptance": "对比建设／制造／采购交付的代价、等待、风险与收益；记录真实 5／15／30 分钟状态。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G25",
+      "area": "耗尽后的可恢复性",
+      "acceptance": "仅可丢弃账号测试缺电、缺料、零账款；验证不靠管理员补档也能恢复的规则。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G26",
+      "area": "模态框与输入连续性",
+      "acceptance": "Tab／Shift+Tab／Escape、焦点回归、滚动、对象选择、开关面板不丢上下文。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G27",
+      "area": "移动端与窄屏",
+      "acceptance": "390×844 及横屏；按钮可点、详情可读、无关键内容被遮挡或横向溢出。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G28",
+      "area": "请求失败与网络恢复",
+      "acceptance": "401／500／断网／恢复；显示陈旧状态，重试不重复扣款，恢复后显示权威数据。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G29",
+      "area": "进度与资产持久化",
+      "acceptance": "取得材料／设备／账款后刷新、退出重进，账实一致且属于同一账号基地。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G30",
+      "area": "管理后台只读巡检",
+      "acceptance": "全部导航、内容草稿／发布列表、审计、版本；不激活或改变共享世界。",
+      "status": "BLOCKED_ACCESS"
+    },
+    {
+      "id": "G31",
+      "area": "账号隔离与权限负例",
+      "acceptance": "仅隔离环境、自建两个测试账号；交叉访问被拒绝，普通账号不能管理。",
+      "status": "NOT_RUN_REQUIRES_ISOLATED_ENVIRONMENT"
+    },
+    {
+      "id": "G32",
+      "area": "内容完整生命周期",
+      "acceptance": "隔离环境中草稿→校验→发布→激活→回退；不得拿共享试玩环境做破坏性发布。",
+      "status": "NOT_RUN_REQUIRES_ISOLATED_ENVIRONMENT"
+    }
+  ],
+  "evidence": {
+    "E01": {
+      "time_utc": "2026-09-20T14:25:33.508347+00:00",
+      "target_alias": "owner-provided-http-playtest",
+      "target_origin_redacted": true,
+      "protocol": "http",
+      "port": 8088,
+      "browser_version": "144.0.7559.96",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "result": "BLOCKED_BY_EXECUTION_ENVIRONMENT",
+      "error": "Page.goto: net::ERR_BLOCKED_BY_ADMINISTRATOR at [redacted playtest origin]",
+      "credentials_submitted": false,
+      "in_game_seconds": 0,
+      "http_status_received": null,
+      "interpretation": "This is not evidence that the game server is down. No target-site gameplay occurred."
+    },
+    "E02": {
+      "url": "about:blank",
+      "isSecureContext": false,
+      "randomUUIDType": "undefined",
+      "getRandomValuesType": "function",
+      "commandReached": false,
+      "error": "TypeError: crypto.randomUUID is not a function",
+      "time_utc": "2026-09-20T14:28:28.429324+00:00",
+      "browser_version": "144.0.7559.96",
+      "evidence_type": "ISOLATED_BROWSER_API_REPRO_NOT_GAME_E2E",
+      "network_requests": 0
+    },
+    "E03": {
+      "time_utc": "2026-09-20T14:32:54.201Z",
+      "evidence_type": "ISOLATED_SOURCE_EXPRESSIONS_NOT_GAME_E2E",
+      "source_ref": "fad7d4232937d6c3fb216d743edb227589846803",
+      "roleChecks": [
+        {
+          "contractUserRole": "admin",
+          "actualParentRole": "player",
+          "matchesContract": false
+        },
+        {
+          "contractUserRole": "super_admin",
+          "actualParentRole": "player",
+          "matchesContract": false
+        },
+        {
+          "contractUserRole": "player",
+          "actualParentRole": "player",
+          "matchesContract": true
+        }
+      ],
+      "fleetChecks": [
+        {
+          "actualDeviceCount": 0,
+          "offlineCount": 0,
+          "renderedSummary": "工程队：12 台就位"
+        },
+        {
+          "actualDeviceCount": 1,
+          "offlineCount": 1,
+          "renderedSummary": "工程队：12 台就位"
+        },
+        {
+          "actualDeviceCount": 20,
+          "offlineCount": 20,
+          "renderedSummary": "工程队：12 台就位"
+        }
+      ]
+    },
+    "E04": {
+      "time_utc": "2026-09-20T14:32:55.309283+00:00",
+      "browser_version": "144.0.7559.96",
+      "evidence_type": "ISOLATED_ARIA_MARKUP_NOT_GAME_COMPONENT",
+      "activeElementAfterTab": "underlying",
+      "game_component_rendered": false,
+      "dialogStillPresentAfterEscape": true
+    }
+  },
+  "source_links": {
+    "S01": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/deploy/docker-compose.prod.yml",
+    "S02": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/apps/web/src/features/base/ObjectPanel.tsx",
+    "S03": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/apps/web/src/features/base/BaseApp.tsx",
+    "S04": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/apps/web/src/App.tsx",
+    "S05": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/apps/web/src/features/base/baseApi.ts",
+    "S06": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/apps/server/src/modules/auth/auth.routes.ts",
+    "S07": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/apps/web/src/features/base/BaseShell.tsx",
+    "S08": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/apps/web/src/features/base/EconomyBoard.tsx",
+    "S09": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/packages/shared/src/economy.ts",
+    "S10": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/apps/web/src/features/base/BaseIntroModal.tsx",
+    "S11": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/packages/content/src/base/default-release.ts",
+    "S12": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/docs/releases/v1.0.0.md",
+    "S13": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/apps/web/src/main.tsx",
+    "S14": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/apps/server/src/modules/economy/order.service.ts",
+    "S15": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/apps/server/src/application/economy/usecases.ts",
+    "S16": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/apps/server/src/modules/economy/order.repository.ts",
+    "S17": "https://github.com/liuyejinghong/ai-mud/blob/fad7d4232937d6c3fb216d743edb227589846803/apps/server/src/modules/world-runtime/base-session.routes.ts"
+  },
+  "not_run": [
+    "live_gameplay",
+    "game_E2E",
+    "repository_test_suite",
+    "typecheck",
+    "lint",
+    "build",
+    "PostgreSQL_integration",
+    "real_model_calls",
+    "human_playtest"
+  ],
+  "public_data_policy": "No credentials, session tokens, account identifiers, or target IP are included. Original screenshots are conversation attachments, not public repository uploads.",
+  "original_screenshot_sha256": {
+    "access-probe.png": "369e1b87d3f35df5fd291d6a88ea24c3cf761929f50f5533d848f4c96c3b4699",
+    "uuid-isolated-repro.png": "5068c05bbbdaa3ea83e9bce5783b1158b0f315212819fedec74878cd7867f7d2"
+  }
+}
