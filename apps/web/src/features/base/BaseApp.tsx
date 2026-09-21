@@ -177,7 +177,7 @@ export function BaseApp({
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [introDismissed, setIntroDismissed] = useState(() => globalThis.localStorage?.getItem("base-intro-dismissed") === "1");
+  const [introDismissed, setIntroDismissed] = useState(false);
 
   const refreshSnapshot = useCallback(async () => {
     try {
@@ -456,7 +456,12 @@ export function BaseApp({
   }
 
   // 新手引导：首次进入（还没有任何项目）时显示剧情弹窗；开工后不再打扰。
-  const showIntro = snapshot !== null && snapshot.projects.length === 0 && !introDismissed;
+  // 关闭标记按基地（baseId）隔离——同一个浏览器换账号/换基地仍会看到引导（UX-02）。
+  const introDismissedForBase =
+    snapshot !== null &&
+    globalThis.localStorage?.getItem(`base-intro-dismissed:${snapshot.baseId}`) === "1";
+  const showIntro =
+    snapshot !== null && snapshot.projects.length === 0 && !introDismissed && !introDismissedForBase;
   return (
     <>
       {showIntro ? (
@@ -464,7 +469,9 @@ export function BaseApp({
           baseName={snapshot.name}
           onDismiss={() => {
             setIntroDismissed(true);
-            globalThis.localStorage?.setItem("base-intro-dismissed", "1");
+            if (snapshot !== null) {
+              globalThis.localStorage?.setItem(`base-intro-dismissed:${snapshot.baseId}`, "1");
+            }
           }}
         />
       ) : null}

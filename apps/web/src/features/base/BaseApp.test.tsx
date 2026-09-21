@@ -103,6 +103,31 @@ describe("BaseApp", () => {
     expect(screen.getByRole("tab", { name: "账号登录" })).toBeTruthy();
   });
 
+  it("引导关闭标记按基地隔离：同基地不再弹，换基地仍弹（UX-02）", async () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, value)
+    });
+    vi.mocked(getSnapshot).mockResolvedValue(buildSnapshot());
+
+    const first = render(<BaseApp />);
+    fireEvent.click(await screen.findByRole("button", { name: "开始指挥" }));
+    expect(screen.queryByRole("dialog", { name: "新手引导" })).toBeNull();
+    first.unmount();
+
+    const second = render(<BaseApp />);
+    await screen.findByTestId("base-shell");
+    expect(screen.queryByRole("dialog", { name: "新手引导" })).toBeNull();
+    second.unmount();
+
+    vi.mocked(getSnapshot).mockResolvedValue({ ...buildSnapshot(), baseId: "base-other" });
+    render(<BaseApp />);
+    await screen.findByTestId("base-shell");
+    expect(screen.getByRole("dialog", { name: "新手引导" })).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
   it("快照加载失败（非 401）时显示错误与重试入口，不静默卡在连接中（SYNC-01）", async () => {
     vi.mocked(getSnapshot)
       .mockRejectedValueOnce(new BaseApiError(503, "UNAVAILABLE", "服务暂不可用"))
