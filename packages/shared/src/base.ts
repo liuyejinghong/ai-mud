@@ -200,6 +200,8 @@ export interface BaseSnapshotDto {
     definitionRef: DefinitionRefDto;
     name: string;
     description: string;
+    // 开工材料需求（来自内容目录模板）；面板据此显示材料清单与库存缺口（BUILD-01）。
+    inputs?: Array<{ itemId: string; quantity: number }>;
   }>;
   manufacturingJobs: ManufacturingJobDto[];
   availableRecipes: RecipeTemplateDto[];

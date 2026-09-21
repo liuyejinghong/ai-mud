@@ -516,7 +516,8 @@ export class BaseService {
         buildableProjects: this.deps.catalog.listTemplates().projects.map((project) => ({
           definitionRef: project.ref,
           name: project.name,
-          description: project.description
+          description: project.description,
+          inputs: project.inputs.map((input) => ({ itemId: input.itemId, quantity: input.quantity }))
         })),
         availableRecipes: this.deps.catalog.listRecipes().map((recipe) => ({
           ref: recipe.ref,

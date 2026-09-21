@@ -147,7 +147,7 @@ function PurchaseRow({
   isBusy: boolean;
   onPurchase: (itemId: string, quantity: number) => void;
 }) {
-  const itemName = ITEM_NAMES[itemId] ?? itemId;
+  const itemName = BASE_ITEM_NAMES[itemId] ?? itemId;
   const [quantity, setQuantity] = useState(1);
   return (
     <div className="base-purchase-row">
@@ -182,7 +182,7 @@ function formatSimDateTime(sim: string): string {
   return `${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
 }
 
-const ITEM_NAMES: Record<string, string> = {
+export const BASE_ITEM_NAMES: Record<string, string> = {
   solar_panel_set: "太阳电池阵组件",
   support_frame: "支架结构件",
   cable: "线缆",
