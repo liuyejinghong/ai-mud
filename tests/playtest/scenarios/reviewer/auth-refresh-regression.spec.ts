@@ -35,11 +35,14 @@ test("auth-refresh-regression 刷新后控制恢复：计时/倍率/心跳/账�
     "页面注册（邮箱/密码/领取试玩基地）+ 关闭引导"
   );
 
-  await evidence.step("resume-after-register", "新注册后计时操作正常（恢复计时）", async () => {
+  await evidence.step("resume-after-register", "新注册后计时操作正常：恢复→暂停完整往返（回到初始暂停态）", async () => {
     await page.getByRole("button", { name: "恢复计时", exact: true }).click();
     await expect(page.getByRole("button", { name: "暂停计时", exact: true })).toBeVisible({ timeout: 12_000 });
     evidence.businessCheck("resume_after_register", "effective", "恢复计时后出现暂停计时");
-  }, "点击「恢复计时」");
+    await page.getByRole("button", { name: "暂停计时", exact: true }).click();
+    await expect(page.getByText("时间已暂停", { exact: true })).toBeVisible({ timeout: 12_000 });
+    evidence.businessCheck("pause_back_after_register", "effective", "回到初始暂停态（刷新路径与 R0 一致）");
+  }, "点击「恢复计时」→ 再点击「暂停计时」");
 
   await evidence.step("reload", "普通玩家刷新页面：基地保留且控制恢复（R0 的 12 秒窗口）", async () => {
     await page.reload();
@@ -101,11 +104,16 @@ test("auth-refresh-regression 隔离管理员共用会话路径", async ({ page,
   }, "账号登录页签 → 管理员邮箱/密码 → 登录并进入基地");
 
   await evidence.step("admin-workspace", "管理员可进入管理台并返回基地工作区", async () => {
+    // 管理员首次登录也会被 provision 一个基地：先按玩家路径关掉引导，再切工作区。
+    const intro = page.getByRole("dialog", { name: "新手引导" });
+    if (await intro.isVisible().catch(() => false)) {
+      await intro.getByRole("button", { name: "开始指挥" }).click();
+    }
     await page.getByRole("button", { name: "管理", exact: true }).click();
     await expect(page.getByRole("tablist")).toBeVisible({ timeout: 15_000 });
     await page.getByRole("button", { name: "基地", exact: true }).click();
     evidence.businessCheck("admin_shared_session", "effective", "管理台挂载并可切回基地工作区");
-  }, "点击「管理」→ 断言管理台 → 点击「基地」");
+  }, "关闭引导（如出现）→ 点击「管理」→ 断言管理台 → 点击「基地」");
 
   await evidence.step("admin-logout", "管理员退出回到登录面", async () => {
     await page.getByRole("button", { name: "退出登录" }).click();
