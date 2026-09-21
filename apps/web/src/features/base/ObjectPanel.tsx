@@ -1,3 +1,4 @@
+import { newCommandId } from "../../lib/uuid.js";
 // 右侧对象面板：根据当前选中对象（项目 / 设备 / 站点）展示快照里的事实与可用操作。
 import type {
   BaseDeviceDto,
@@ -295,7 +296,7 @@ function SiteDetail({
                   onCreateProject({
                     definitionRef: template.definitionRef,
                     siteId: site.siteId,
-                    commandId: crypto.randomUUID()
+                    commandId: newCommandId()
                   })
                 }
               >

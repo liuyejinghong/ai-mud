@@ -1,3 +1,4 @@
+import { newCommandId } from "../../lib/uuid.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   BaseClockCommandInputDto,
@@ -293,7 +294,7 @@ export function BaseApp({
   const handleCancelProject = useCallback(
     (projectId: string) => {
       if (csrfToken === null) return;
-      void runCommand(() => cancelProject(projectId, crypto.randomUUID(), csrfToken));
+      void runCommand(() => cancelProject(projectId, newCommandId(), csrfToken));
     },
     [csrfToken, runCommand]
   );
@@ -357,7 +358,7 @@ export function BaseApp({
   const handleCancelJob = useCallback(
     (jobId: string) => {
       if (csrfToken === null) return;
-      void runCommand(() => cancelManufacturingJob(jobId, crypto.randomUUID(), csrfToken));
+      void runCommand(() => cancelManufacturingJob(jobId, newCommandId(), csrfToken));
     },
     [csrfToken, runCommand]
   );
@@ -382,7 +383,7 @@ export function BaseApp({
   const handleAcceptOrder = useCallback(
     (orderId: string) => {
       if (csrfToken === null) return;
-      void runCommand(() => acceptOrder(orderId, crypto.randomUUID(), csrfToken));
+      void runCommand(() => acceptOrder(orderId, newCommandId(), csrfToken));
     },
     [csrfToken, runCommand]
   );
@@ -390,7 +391,7 @@ export function BaseApp({
   const handleDeliverOrder = useCallback(
     (orderId: string) => {
       if (csrfToken === null) return;
-      void runCommand(() => deliverOrder({ orderId, commandId: crypto.randomUUID() }, csrfToken));
+      void runCommand(() => deliverOrder({ orderId, commandId: newCommandId() }, csrfToken));
     },
     [csrfToken, runCommand]
   );
@@ -399,7 +400,7 @@ export function BaseApp({
     (itemId: string, quantity: number) => {
       if (csrfToken === null) return;
       void runCommand(() =>
-        createPurchase({ itemId, quantity, commandId: crypto.randomUUID() }, csrfToken)
+        createPurchase({ itemId, quantity, commandId: newCommandId() }, csrfToken)
       );
     },
     [csrfToken, runCommand]
