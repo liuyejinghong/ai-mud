@@ -310,6 +310,11 @@ export function BaseApp({
     try {
       await logout();
     } finally {
+      // 退出即回到登录面并丢弃本地会话态（CSRF/快照），不等下一次快照 401 兜底；
+      // 避免退出/换号窗口里沿用旧 CSRF 或旧基地画面。
+      setCsrfToken(null);
+      setSnapshot(null);
+      setPhase("unauthenticated");
       setSelectedResourceId(null);
       setSelectedSiteId(null);
       setSelectedProjectId(null);

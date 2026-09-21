@@ -7,6 +7,10 @@ type Workspace = "game" | "admin";
 
 export function App() {
   const [session, setSession] = useState<AuthSessionDto | null>(null);
+  // 会话恢复未完成前不挂载 BaseApp：BaseApp 的 csrf 只在首次挂载时从 props 取值，
+  // 若先以"未登录"形态挂载、session 稍后到达，刷新后的基地会永远拿不到 CSRF（恢复计时等按钮禁用）。
+  // 先等 /auth/me 落定，再以最终会话一次性挂载，是唯一的会话事实来源。
+  const [restoringSession, setRestoringSession] = useState(true);
   const [activeWorkspace, setActiveWorkspace] = useState<Workspace>("game");
 
   function authenticate(input: {
@@ -45,12 +49,23 @@ export function App() {
       })
       .catch(() => {
         if (!cancelled) setSession(null);
+      })
+      .finally(() => {
+        if (!cancelled) setRestoringSession(false);
       });
 
     return () => {
       cancelled = true;
     };
   }, []);
+
+  if (restoringSession) {
+    return (
+      <main className="base-shell base-loading" aria-label="会话恢复中">
+        <p className="base-copy">正在恢复会话…</p>
+      </main>
+    );
+  }
 
   // v1.0：未登录也直接进基地客户端——注册/登录都在 BaseApp 内完成，
   // 不再有第二张登录页（AuthPage 已下架）。

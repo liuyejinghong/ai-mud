@@ -119,4 +119,36 @@ describe("App", () => {
     expect(screen.queryByRole("heading", { name: "世界健康总览" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "系统公告" })).toBeNull();
   });
+
+  // AUTH-01 回归（刷新 race）：session 晚到时，BaseApp 不得先以"未登录"形态挂载——
+  // 它的 csrf 只在首次挂载时取 props，先挂载再恢复会让刷新后的基地永远拿不到 CSRF。
+  it("mounts the base client only after session restore settles, carrying the restored csrf", async () => {
+    let resolveSession: (value: typeof session) => void = () => undefined;
+    vi.mocked(getCurrentSession).mockReturnValue(
+      new Promise((resolve) => {
+        resolveSession = resolve;
+      })
+    );
+
+    render(<App />);
+
+    expect(screen.queryByRole("main", { name: "基地工作区" })).toBeNull();
+    expect(screen.getByRole("main", { name: "会话恢复中" })).toBeTruthy();
+
+    resolveSession(session);
+
+    expect(await screen.findByRole("main", { name: "基地工作区" })).toBeTruthy();
+    expect(baseAppProps).toHaveLength(1);
+    expect(baseAppProps[0]?.initialCsrfToken).toBe("csrf");
+  });
+
+  it("falls back to the guest base client without a csrf token when session restore fails", async () => {
+    vi.mocked(getCurrentSession).mockRejectedValue(new Error("Not signed in"));
+
+    render(<App />);
+
+    await screen.findByRole("main", { name: "基地工作区" });
+    expect(baseAppProps).toHaveLength(1);
+    expect(baseAppProps[0]?.initialCsrfToken).toBeUndefined();
+  });
 });
