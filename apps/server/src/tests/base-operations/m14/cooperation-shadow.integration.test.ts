@@ -70,7 +70,7 @@ d("M14 cooperation shadow chain (real PostgreSQL)", () => {
     // 网关审计注入写入口 → 真库落行（覆盖 M14-A 单测的假捕获路径）。
     const rows: DecisionAuditRow[] = [];
     const gateway = new DecisionGateway({
-      recordAudit: async (row) => {
+      recordAudit: async (_tx, row) => {
         rows.push(row);
         await client.query(
           `INSERT INTO decision_records (decision_id, purpose, mode, provider, plan_revision, question, candidates, selected_candidate_id, latency_ms)

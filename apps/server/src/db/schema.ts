@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -1147,7 +1148,8 @@ export const baseManufacturingJobs = pgTable(
     status: text("status").notNull().default("active"),
     outputsPlanned: integer("outputs_planned").notNull(),
     outputsDone: integer("outputs_done").notNull().default(0),
-    currentUnitWorkDone: integer("current_unit_work_done").notNull().default(0),
+    // 结算按 tick 累加小数工作量（≈0.08/tick），整数列会令整个基地结算崩溃（评审 B002）
+    currentUnitWorkDone: doublePrecision("current_unit_work_done").notNull().default(0),
     reservedInputs: jsonb("reserved_inputs").notNull().default([]),
     blockedReason: text("blocked_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

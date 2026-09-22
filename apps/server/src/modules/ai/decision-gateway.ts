@@ -16,9 +16,9 @@ import {
   type DecisionProviderResult
 } from "./decision-provider.js";
 
-// 只写审计行：插入面即可（不 update/delete）。
-// 事务占位类型：调用方（industry 结算）在事务内调用；审计写已由注入端口承担，
-// 本网关自身不再触碰数据库（能力分层）。gateway 不读写该参数，仅透传给 provider 上下文。
+// 调用方事务句柄（透传给 recordAudit）。审计写必须落在该事务内：用独立连接写
+// decision_records 会与调用方事务自死锁（外键等行锁 × 事务等审计返回），即 2026-09-22
+// 全站瘫痪事故（评审 B001）的根因。禁止把审计写改回池连接。
 export type DecisionTx = unknown; // 事务占位：网关不读写，宽松以适配任意调用方 tx。
 
 // RULE 模式常量（shadow/live seam：mode 字段已在协议中，本版实现只走 rule）。
@@ -43,8 +43,9 @@ export interface DecisionAuditRow {
 }
 
 export interface DecisionGatewayDeps {
-  // 审计写入（注入）：实现在 composition（写 decision_records 表）。
-  recordAudit(row: DecisionAuditRow): Promise<void>;
+  // 审计写入（注入）：实现在 composition（写 decision_records 表）。必须使用传入的 tx
+  //（与调用方决策同一事务）；用池连接会复现跨连接自死锁。
+  recordAudit(tx: DecisionTx, row: DecisionAuditRow): Promise<void>;
   // 未注入时默认 RuleDecisionProvider（provider 未配置→安全回退 RULE，合同 §1）。
   provider?: DecisionProvider;
   clock?: { now(): Date };
@@ -90,8 +91,8 @@ export class DecisionGateway {
 
     const latencyMs = Math.max(0, this.clock.now().getTime() - startedAt.getTime());
 
-    // 审计必须落库：写失败不吞，抛出让调用方事务回滚。
-    await this.deps.recordAudit({
+    // 审计必须落库（随调用方事务）：写失败不吞，抛出让调用方事务回滚。
+    await this.deps.recordAudit(tx, {
       decisionId: request.decisionId,
       purpose: request.purpose,
       mode: DECISION_RULE_MODE,
