@@ -49,8 +49,10 @@ export const BASE_ROBOT_TEMPLATES: ContentRobotTemplate[] = [
   }
 ];
 
-// ---------- 项目模板（首项目 install-solar-array@1） ----------
-// 步骤：清场 engineering 40 → 运输 transport 60 → 安装 engineering 80 → 验收 survey 20。
+// ---------- 项目模板 ----------
+// 首项目 install-solar-array@1：清场 engineering 40 → 运输 transport 60 → 安装 engineering 80 → 验收 survey 20。
+// 第二项目 install-second-array@1（评审 D008：给制造出的驮运/望山机组一个劳动兑现）：
+// 运输 100 + 验收 30——驮运/望山数量直接决定工期；材料全部可外购，形成"接单→账款→材料→工程"闭环。
 export const BASE_PROJECT_TEMPLATES: ContentProjectTemplate[] = [
   {
     ref: { kind: "project", stableId: "install-solar-array", revision: 1 },
@@ -68,6 +70,29 @@ export const BASE_PROJECT_TEMPLATES: ContentProjectTemplate[] = [
       { itemId: "cable", quantity: 2 },
       { itemId: "power_box", quantity: 1 },
       { itemId: "anchor", quantity: 8 }
+    ],
+    outputFacility: {
+      ref: { kind: "facility", stableId: "solar-array-unit", revision: 1 },
+      name: "太阳能阵列单元",
+      generationWPeak: 5000
+    }
+  },
+  {
+    ref: { kind: "project", stableId: "install-second-array", revision: 1 },
+    name: "架设第二太阳电池阵",
+    description: "用补给站外购的组件架设第二阵列：运输工序更重，驮运机组的规模直接决定工期。",
+    steps: [
+      { kind: "site_clearing", groupId: "engineering", workRequired: 40 },
+      { kind: "transport", groupId: "transport", workRequired: 100 },
+      { kind: "installation", groupId: "engineering", workRequired: 80 },
+      { kind: "commissioning", groupId: "survey", workRequired: 30 }
+    ],
+    inputs: [
+      { itemId: "solar_panel_set", quantity: 6 },
+      { itemId: "support_frame", quantity: 8 },
+      { itemId: "cable", quantity: 4 },
+      { itemId: "power_box", quantity: 2 },
+      { itemId: "anchor", quantity: 10 }
     ],
     outputFacility: {
       ref: { kind: "facility", stableId: "solar-array-unit", revision: 1 },
@@ -121,7 +146,8 @@ export const BASE_PROVISION_SEED: ContentProvisionSeed = {
       state: "built",
       facilityRef: { kind: "facility", stableId: "yudian-charging", revision: 1 }
     },
-    { siteKey: "site_a", name: "建设位 A", state: "free" }
+    { siteKey: "site_a", name: "建设位 A", state: "free" },
+    { siteKey: "site_b", name: "建设位 B", state: "free" }
   ],
   inventory: [
     { itemId: "solar_panel_set", quantity: 6 },

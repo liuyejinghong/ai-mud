@@ -9,7 +9,7 @@ describe("version constants", () => {
       apiVersion: 47,
       engineVersion: 2,
       rulesetVersion: 17,
-      contentVersion: 14,
+      contentVersion: 15,
       promptVersion: 8,
       economyVersion: 5,
       worldSeedVersion: 2

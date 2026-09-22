@@ -4,7 +4,8 @@ import {
   BASE_PROVISION_SEED,
   BASE_ROBOT_TEMPLATES,
   RELEASE_ID,
-  DEFAULT_BASE_CONTENT_RELEASE
+  DEFAULT_BASE_CONTENT_RELEASE,
+  BASE_ITEM_INFO
 } from "./default-release.js";
 import {
   validateProjectTemplate,
@@ -64,7 +65,7 @@ describe("yudian-base-0 default release", () => {
   });
 
   it("locks the first project steps, inputs, and output facility", () => {
-    expect(BASE_PROJECT_TEMPLATES).toHaveLength(1);
+    expect(BASE_PROJECT_TEMPLATES).toHaveLength(2);
     const project = BASE_PROJECT_TEMPLATES[0]!;
     expect(project.ref).toEqual({
       kind: "project",
@@ -95,6 +96,28 @@ describe("yudian-base-0 default release", () => {
     expect(project.outputFacility).toEqual({
       ref: { kind: "facility", stableId: "solar-array-unit", revision: 1 },
       name: "太阳能阵列单元",
+      generationWPeak: 5000
+    });
+  });
+
+  it("locks the second project: transport-heavy so manufactured crew matters (评审 D008)", () => {
+    const project = BASE_PROJECT_TEMPLATES[1]!;
+    expect(project.ref).toEqual({
+      kind: "project",
+      stableId: "install-second-array",
+      revision: 1
+    });
+    expect(project.steps.map((step) => step.groupId)).toEqual([
+      "engineering",
+      "transport",
+      "engineering",
+      "survey"
+    ]);
+    expect(project.steps.map((step) => step.workRequired)).toEqual([40, 100, 80, 30]);
+    // 材料全部可经补给站外购：接单→账款→材料→工程的闭环（账款沉淀口）
+    expect(project.inputs.every((input) => input.itemId in BASE_ITEM_INFO)).toBe(true);
+    expect(project.outputFacility).toMatchObject({
+      ref: { stableId: "solar-array-unit", revision: 1 },
       generationWPeak: 5000
     });
   });
@@ -143,10 +166,11 @@ describe("yudian-base-0 default release", () => {
       "warehouse",
       "maintenance",
       "charging",
-      "site_a"
+      "site_a",
+      "site_b"
     ]);
     const freeSites = sites.filter((site) => site.state === "free");
-    expect(freeSites.map((site) => site.siteKey)).toEqual(["site_a"]);
+    expect(freeSites.map((site) => site.siteKey)).toEqual(["site_a", "site_b"]);
     for (const site of sites) {
       if (site.state === "built") {
         expect(site.facilityRef).toMatchObject({ kind: "facility", revision: 1 });
