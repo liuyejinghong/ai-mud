@@ -46,13 +46,15 @@ export interface ProjectBoardProps {
   buildableProjects: Array<{ name: string; description: string }>;
   selectedProjectId: string | null;
   onSelectProject: (projectId: string) => void;
+  crewByStep?: Record<string, number>;
 }
 
 export function ProjectBoard({
   projects,
   buildableProjects,
   selectedProjectId,
-  onSelectProject
+  onSelectProject,
+  crewByStep
 }: ProjectBoardProps) {
   return (
     <section className="base-panel base-board" aria-label="项目清单">
@@ -109,7 +111,14 @@ export function ProjectBoard({
                       当前步骤 {currentIndex >= 0 ? currentIndex + 1 : project.steps.length}/
                       {project.steps.length}：{STEP_KIND_LABELS[currentStep.kind]}（
                       {STEP_STATUS_LABELS[currentStep.status]}）
-                    </span>
+                    
+                  {currentStep.status === "running" &&
+                  (crewByStep?.[`${project.projectId}:${currentStep.index}`] ?? 0) > 0
+                    ? ` · 机组 ${
+                        crewByStep?.[`${project.projectId}:${currentStep.index}`]
+                      } 台作业中`
+                    : ""}
+                </span>
                   ) : (
                     <span className="base-project-step">该项目没有施工步骤</span>
                   )}

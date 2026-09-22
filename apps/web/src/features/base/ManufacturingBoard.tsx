@@ -11,6 +11,7 @@ import type {
   RecipeTemplateDto
 } from "@ai-mud/shared";
 import { MANUFACTURING_MAX_OUTPUTS } from "@ai-mud/shared";
+import { BASE_ITEM_NAMES } from "./EconomyBoard.js";
 import { describeBlockedReason } from "./ProjectBoard.js";
 
 export const MANUFACTURING_JOB_STATUS_LABELS: Record<ManufacturingJobStatus, string> = {
@@ -80,7 +81,10 @@ export function ManufacturingBoard({
                     <span className="base-project-step">
                       材料：
                       {recipe.inputs
-                        .map((input) => `${input.itemId}×${input.quantity}`)
+                        .map(
+                          (input) =>
+                            `${BASE_ITEM_NAMES[input.itemId] ?? input.itemId}×${input.quantity}`
+                        )
                         .join("、")}
                     </span>
                     <span className="base-project-step">每台工作量 {recipe.workPerUnit}</span>
@@ -161,13 +165,18 @@ export function ManufacturingBoard({
                       <span className="base-project-step">
                         产出 {job.outputsDone}/{job.outputsPlanned} 台
                       </span>
-                      {recipe !== null && unitPercent !== null ? (
+                      {job.status === "active" ? (
+                        <span className="base-project-step">
+                          由基地电力驱动：供电盈余越大，进度越快
+                        </span>
+                      ) : null}
+                      {recipe !== null && unitPercent !== null && job.status !== "completed" ? (
                         <span className="base-progress">
                           <span
                             className="base-progress-bar"
                             role="progressbar"
                             aria-label={`${job.recipeName}当前台进度`}
-                            aria-valuenow={job.currentUnitWorkDone}
+                            aria-valuenow={Math.round(job.currentUnitWorkDone)}
                             aria-valuemin={0}
                             aria-valuemax={recipe.workPerUnit}
                             aria-valuetext={`${unitPercent}%`}
@@ -178,7 +187,7 @@ export function ManufacturingBoard({
                             />
                           </span>
                           <span className="base-progress-text">
-                            {job.currentUnitWorkDone}/{recipe.workPerUnit}
+                            {Math.round(job.currentUnitWorkDone)}/{recipe.workPerUnit}
                           </span>
                         </span>
                       ) : null}

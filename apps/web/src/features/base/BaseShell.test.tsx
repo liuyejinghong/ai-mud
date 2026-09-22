@@ -109,8 +109,6 @@ function renderShell(snapshot: BaseSnapshotDto) {
         onAcceptOrder={() => undefined}
         onDeliverOrder={() => undefined}
         onPurchase={() => undefined}
-        onSelectOrder={() => undefined}
-        selectedOrderId={null}
         onSelectJob={() => undefined}
         selectedJobId={null}
         onSelectResource={() => undefined}
@@ -170,8 +168,6 @@ describe("BaseShell", () => {
         onAcceptOrder={() => undefined}
         onDeliverOrder={() => undefined}
         onPurchase={() => undefined}
-        onSelectOrder={() => undefined}
-        selectedOrderId={null}
         onSelectJob={() => undefined}
         selectedJobId={null}
         onSelectResource={() => undefined}
@@ -209,8 +205,6 @@ describe("BaseShell", () => {
         onAcceptOrder={() => undefined}
         onDeliverOrder={() => undefined}
         onPurchase={() => undefined}
-        onSelectOrder={() => undefined}
-        selectedOrderId={null}
         onSelectJob={() => undefined}
         selectedJobId={null}
         onSelectResource={() => undefined}
@@ -249,8 +243,6 @@ describe("BaseShell > logout", () => {
         onAcceptOrder={() => undefined}
         onDeliverOrder={() => undefined}
         onPurchase={() => undefined}
-        onSelectOrder={() => undefined}
-        selectedOrderId={null}
         onSelectJob={() => undefined}
         selectedJobId={null}
         onSelectResource={() => undefined}
