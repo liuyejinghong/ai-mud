@@ -19,7 +19,7 @@ import {
   applyAcceptedHelpers
 } from "../../modules/industry/cooperation.service.js";
 import { CooperationRepository } from "../../modules/industry/cooperation.repository.js";
-import { DecisionGateway } from "../../modules/ai/decision-gateway.js";
+import { DecisionGateway, type DecisionAuditRow } from "../../modules/ai/decision-gateway.js";
 import { TypeSafeShadowDecisionProvider } from "../../modules/ai/typesafe-decision-provider.js";
 import { createEconomyUseCases } from "../economy/usecases.js";
 import { OrderRepository } from "../../modules/economy/order.repository.js";
@@ -231,6 +231,22 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
 
   // M14-LIVE seam：TYPE_SAFE_DECISION_MODE=shadow 且配置 key 时启用 Jev 对照
   //（SHADOW：Jev 意见只进审计 reason，不改变 RULE 执行语义）。
+  // 审计写必须用调用方事务 tx：用池连接写 decision_records 会与结算事务自死锁
+  //（外键等 bases 行锁 × 事务等审计返回）→ 2026-09-22 全站瘫痪（评审 B001）。
+  const recordAuditInCallerTx = async (tx: unknown, row: DecisionAuditRow) => {
+    await (tx as Parameters<Parameters<Db["transaction"]>[0]>[0]).insert(decisionRecords).values({
+      decisionId: row.decisionId,
+      purpose: row.purpose,
+      mode: row.mode,
+      provider: row.provider,
+      baseId: row.baseId,
+      planRevision: row.planRevision,
+      question: row.question,
+      candidates: row.candidates as never,
+      selectedCandidateId: row.selectedCandidateId,
+      latencyMs: row.latencyMs
+    });
+  };
   const decisionGateway =
     config.TYPE_SAFE_DECISION_MODE === "shadow" && config.TYPE_SAFE_API_KEY
       ? new DecisionGateway({
@@ -239,14 +255,10 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
             model: config.TYPE_SAFE_MODEL,
             baseUrl: config.TYPE_SAFE_BASE_URL
           }),
-          recordAudit: async (row) => {
-            await db.insert(decisionRecords).values(row);
-          }
+          recordAudit: recordAuditInCallerTx
         })
       : new DecisionGateway({
-          recordAudit: async (row) => {
-            await db.insert(decisionRecords).values(row);
-          }
+          recordAudit: recordAuditInCallerTx
         });
   const cooperation = {
     detectAndResolve: (

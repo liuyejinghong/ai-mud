@@ -27,21 +27,26 @@ interface CapturedAudit extends DecisionAuditRow {}
 
 function makeAuditCapture(overrides: { failWrite?: boolean } = {}) {
   const rows: CapturedAudit[] = [];
-  const recordAudit = async (row: CapturedAudit) => {
+  const txs: unknown[] = [];
+  const recordAudit = async (tx: unknown, row: CapturedAudit) => {
+    txs.push(tx);
     rows.push(row);
     if (overrides.failWrite) {
       throw new Error("audit write failed");
     }
   };
-  return { rows, recordAudit };
+  return { rows, txs, recordAudit };
 }
 
 describe("DecisionGateway.decide", () => {
   it("审计落库：行含 decisionId/purpose/mode/provider/候选/selected/latency", async () => {
-    const { rows, recordAudit } = makeAuditCapture();
+    const { rows, txs, recordAudit } = makeAuditCapture();
     const gateway = new DecisionGateway({ recordAudit, clock: { now: () => new Date(0) } });
+    const callerTx = { marker: "caller-tx" };
 
-    const outcome = await gateway.decide({} as never, makeRequest());
+    const outcome = await gateway.decide(callerTx, makeRequest());
+    // 审计写必须收到调用方事务句柄（跨连接审计=死锁，评审 B001）
+    expect(txs[0]).toBe(callerTx);
 
     expect(outcome.selectedCandidateId).toBe("op-b");
     expect(outcome.mode).toBe(DECISION_RULE_MODE);
