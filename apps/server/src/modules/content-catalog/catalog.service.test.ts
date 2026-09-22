@@ -64,7 +64,8 @@ describe("createContentCatalog", () => {
     const templates = catalog.listTemplates();
     expect(templates.robots.map((robot) => robot.ref.stableId)).toEqual(["yd-h1", "yd-e1", "yd-s1"]);
     expect(templates.projects.map((project) => project.ref.stableId)).toEqual([
-      "install-solar-array"
+      "install-solar-array",
+      "install-second-array"
     ]);
   });
 
@@ -82,9 +83,10 @@ describe("createContentCatalog", () => {
       initialStorageWh: 100000
     });
 
-    expect(seed.sites).toHaveLength(6);
+    expect(seed.sites).toHaveLength(7);
     expect(seed.sites.filter((site) => site.state === "free").map((site) => site.siteKey)).toEqual([
-      "site_a"
+      "site_a",
+      "site_b"
     ]);
     for (const site of seed.sites) {
       if (site.state === "built") {

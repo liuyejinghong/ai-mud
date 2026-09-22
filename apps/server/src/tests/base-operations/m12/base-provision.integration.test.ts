@@ -256,7 +256,7 @@ describe("base provisioning against the integrated composition (real PostgreSQL)
       last_load_w: 0
     });
 
-    // 6 个建设位：5 个 built + site_a free。
+    // 7 个建设位：5 个 built + site_a/site_b free（0035 为存量基地回填 site_b）。
     const { rows: sites } = await harness.client.query(
       `SELECT site_key, state FROM base_sites WHERE base_id = $1 ORDER BY site_key`,
       [baseIdA]
@@ -266,6 +266,7 @@ describe("base provisioning against the integrated composition (real PostgreSQL)
       { site_key: "charging", state: "built" },
       { site_key: "maintenance", state: "built" },
       { site_key: "site_a", state: "free" },
+      { site_key: "site_b", state: "free" },
       { site_key: "storage", state: "built" },
       { site_key: "warehouse", state: "built" }
     ]);
@@ -303,7 +304,7 @@ describe("base provisioning against the integrated composition (real PostgreSQL)
     expect(await countRows(harness.client, "base_devices", baseIdA)).toBe(12);
     expect(await countRows(harness.client, "robot_operators", baseIdA)).toBe(12);
     expect(await readInventory(harness.client, baseIdA)).toEqual(before);
-    expect(await countRows(harness.client, "base_sites", baseIdA)).toBe(6);
+    expect(await countRows(harness.client, "base_sites", baseIdA)).toBe(7);
     expect(await countBasesWithId(harness.client, baseIdA)).toBe(1);
   }, 60_000);
 
