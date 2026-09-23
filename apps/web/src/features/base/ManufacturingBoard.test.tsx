@@ -79,13 +79,13 @@ afterEach(() => {
 });
 
 describe("ManufacturingBoard", () => {
-  it("渲染可用配方名称、描述与材料清单（暂以 itemId 显示）", () => {
+  it("渲染可用配方名称、描述与材料清单（材料名走中文映射，评审 D004）", () => {
     renderBoard({ recipes: [recipeH1, recipeS1] });
 
     expect(screen.getByText("制造 YD-H1 机器人")).toBeTruthy();
     expect(screen.getByText("用支撑架与备用零件组装一台 YD-H1 巡逻机器人。")).toBeTruthy();
-    expect(screen.getByText("材料：support_frame×4、spare_parts×6、power_box×1")).toBeTruthy();
-    expect(screen.getByText("材料：spare_parts×4、anchor×3")).toBeTruthy();
+    expect(screen.getByText("材料：支架结构件×4、通用备件×6、配电单元×1")).toBeTruthy();
+    expect(screen.getByText("材料：通用备件×4、锚固件×3")).toBeTruthy();
     expect(screen.getByText("每台工作量 30")).toBeTruthy();
     expect(screen.getByRole("spinbutton", { name: "制造 YD-H1 机器人数量" })).toBeTruthy();
   });

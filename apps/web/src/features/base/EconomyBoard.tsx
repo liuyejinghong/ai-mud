@@ -27,8 +27,6 @@ export interface EconomyBoardProps {
   purchases: PurchaseOrderDto[];
   resources: BaseResourceDto[];
   isBusy: boolean;
-  selectedOrderId: string | null;
-  onSelectOrder: (orderId: string) => void;
   onAcceptOrder: (orderId: string) => void;
   onDeliverOrder: (orderId: string) => void;
   onPurchase: (itemId: string, quantity: number) => void;
@@ -40,13 +38,10 @@ export function EconomyBoard({
   purchases,
   resources,
   isBusy,
-  selectedOrderId,
-  onSelectOrder,
   onAcceptOrder,
   onDeliverOrder,
   onPurchase
 }: EconomyBoardProps) {
-  const selectedOrder = orders.find((order) => order.orderId === selectedOrderId) ?? null;
   return (
     <section className="base-panel base-economy" aria-label="经营">
       <h2 className="base-panel-title">经营</h2>
@@ -59,15 +54,16 @@ export function EconomyBoard({
         <p className="base-copy">暂时没有外部订单，稍后会刷新。</p>
       ) : (
         <ul className="base-order-list">
-          {orders.map((order) => {
-            const selected = selectedOrderId === order.orderId;
+          {[...orders]
+            .sort(
+              (a, b) =>
+                a.name.localeCompare(b.name) || a.orderId.localeCompare(b.orderId)
+            )
+            .map((order) => {
             return (
               <li key={order.orderId}>
-                <button
-                  type="button"
-                  className={`base-order-card${selected ? " is-selected" : ""}`}
-                  aria-pressed={selected}
-                  onClick={() => onSelectOrder(order.orderId)}
+                <div
+                  className="base-order-card"
                 >
                   <span className="base-order-name">{order.name}</span>
                   <span className="base-copy">
@@ -75,37 +71,32 @@ export function EconomyBoard({
                     {order.rewardCredits} credits · {ORDER_STATUS_LABELS[order.status] ?? order.status}
                     {order.deadlineSim ? ` · 期限 ${formatSimDateTime(order.deadlineSim)}` : ""}
                   </span>
-                </button>
+                </div>
+                {order.status === "open" ? (
+                  <button
+                    type="button"
+                    className="base-primary-button"
+                    disabled={isBusy}
+                    onClick={() => onAcceptOrder(order.orderId)}
+                  >
+                    接下这单
+                  </button>
+                ) : null}
+                {order.status === "accepted" ? (
+                  <button
+                    type="button"
+                    className="base-primary-button"
+                    disabled={isBusy}
+                    onClick={() => onDeliverOrder(order.orderId)}
+                  >
+                    交付物资
+                  </button>
+                ) : null}
               </li>
             );
           })}
         </ul>
       )}
-
-      {selectedOrder ? (
-        <div className="base-order-actions">
-          {selectedOrder.status === "open" ? (
-            <button
-              type="button"
-              className="base-primary-button"
-              disabled={isBusy}
-              onClick={() => onAcceptOrder(selectedOrder.orderId)}
-            >
-              接下这单
-            </button>
-          ) : null}
-          {selectedOrder.status === "accepted" ? (
-            <button
-              type="button"
-              className="base-primary-button"
-              disabled={isBusy}
-              onClick={() => onDeliverOrder(selectedOrder.orderId)}
-            >
-              交付物资
-            </button>
-          ) : null}
-        </div>
-      ) : null}
 
       <h3 className="base-panel-title">补给采购</h3>
       <ul className="base-purchase-list">

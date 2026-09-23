@@ -56,7 +56,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (!response.ok) {
     let code = response.status === 401 ? "UNAUTHENTICATED" : "REQUEST_FAILED";
     let message =
-      response.status === 401 ? "登录已失效，请重新登录。" : `请求失败：${response.status}`;
+      response.status === 401
+        ? "登录已失效，请重新登录。"
+        : response.status >= 500
+          ? `服务器暂时没有响应（可能正在维护），请稍后再试。（${response.status}）`
+          : `操作没有成功，请稍后再试。（${response.status}）`;
     try {
       const body = (await response.json()) as unknown;
       if (isErrorResponse(body)) {

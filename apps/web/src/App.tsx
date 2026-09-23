@@ -63,6 +63,7 @@ export function App() {
     return (
       <main className="base-shell base-loading" aria-label="会话恢复中">
         <p className="base-copy">正在恢复会话…</p>
+        <p className="base-copy">首次加载可能需要几十秒，请稍候。</p>
       </main>
     );
   }
@@ -84,6 +85,7 @@ export function App() {
   const baseApp = (
     <BaseApp
       initialCsrfToken={session.csrfToken}
+      initialAccountEmail={session.user.email}
       onLogout={endSession}
     />
   );

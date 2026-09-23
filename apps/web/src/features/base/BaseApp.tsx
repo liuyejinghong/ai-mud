@@ -148,10 +148,12 @@ export interface BaseAuthenticatedSession {
 }
 
 export function BaseApp({
+  initialAccountEmail = null,
   initialCsrfToken = null,
   onLogout,
   onAuthenticated
 }: {
+  initialAccountEmail?: string | null;
   initialCsrfToken?: string | null;
   onLogout?: () => void;
   onAuthenticated?: (session: BaseAuthenticatedSession) => void;
@@ -159,6 +161,7 @@ export function BaseApp({
   const [phase, setPhase] = useState<BasePhase>("loading");
   const [snapshot, setSnapshot] = useState<BaseSnapshotDto | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(initialCsrfToken);
+  const [accountEmail, setAccountEmail] = useState<string | null>(initialAccountEmail ?? null);
   const [authMode, setAuthMode] = useState<AuthPanelMode>("register");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -176,7 +179,6 @@ export function BaseApp({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [introDismissed, setIntroDismissed] = useState(false);
 
   const refreshSnapshot = useCallback(async () => {
@@ -251,6 +253,7 @@ export function BaseApp({
           ? await playtestRegister(credentials)
           : await login(credentials);
       setCsrfToken(session.csrfToken);
+      setAccountEmail(session.user.email);
       // provision 幂等：注册响应里已有基地，也照样调用一次确保就绪。
       // 必须带刚拿到的 CSRF 头，否则写路由 403，只能等轮询兜底进基地。
       await provision(session.csrfToken);
@@ -325,6 +328,7 @@ export function BaseApp({
       // 退出即回到登录面并丢弃本地会话态（CSRF/快照/引导态），不等下一次快照 401 兜底；
       // 避免退出/换号窗口里沿用旧 CSRF、旧基地画面或跳过引导。
       setCsrfToken(null);
+      setAccountEmail(null);
       setSnapshot(null);
       setPhase("unauthenticated");
       setIntroDismissed(false);
@@ -386,15 +390,6 @@ export function BaseApp({
     setSelectedProjectId(null);
     setSelectedDeviceId(null);
     setSelectedResourceId(null);
-  }, []);
-
-  const handleSelectOrder = useCallback((orderId: string) => {
-    setSelectedOrderId((current) => (current === orderId ? null : orderId));
-    setSelectedSiteId(null);
-    setSelectedProjectId(null);
-    setSelectedDeviceId(null);
-    setSelectedResourceId(null);
-    setSelectedJobId(null);
   }, []);
 
   const handleAcceptOrder = useCallback(
@@ -473,6 +468,15 @@ export function BaseApp({
     globalThis.localStorage?.getItem(`base-intro-dismissed:${snapshot.baseId}`) === "1";
   const showIntro =
     snapshot !== null && snapshot.projects.length === 0 && !introDismissed && !introDismissedForBase;
+
+  // 每个工程步骤的作业机组数（来自设备当前任务投影）——施工可读性（评审 D001）
+  const crewByStep: Record<string, number> = {};
+  for (const device of snapshot?.devices ?? []) {
+    if (device.currentAssignment) {
+      const key = `${device.currentAssignment.projectId}:${device.currentAssignment.stepIndex}`;
+      crewByStep[key] = (crewByStep[key] ?? 0) + 1;
+    }
+  }
   return (
     <>
       {showIntro ? (
@@ -530,8 +534,8 @@ export function BaseApp({
         onAcceptOrder={handleAcceptOrder}
         onDeliverOrder={handleDeliverOrder}
         onPurchase={handlePurchase}
-        onSelectOrder={handleSelectOrder}
-        selectedOrderId={selectedOrderId}
+        accountEmail={accountEmail}
+        crewByStep={crewByStep}
         onLogout={() => void handleLogout()}
         isBusy={isActionBusy}
       />

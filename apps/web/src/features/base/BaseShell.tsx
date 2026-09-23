@@ -54,8 +54,8 @@ export interface BaseShellProps {
   onAcceptOrder: (orderId: string) => void;
   onDeliverOrder: (orderId: string) => void;
   onPurchase: (itemId: string, quantity: number) => void;
-  onSelectOrder: (orderId: string) => void;
-  selectedOrderId: string | null;
+  accountEmail?: string | null;
+  crewByStep?: Record<string, number>;
 }
 
 export function BaseShell({
@@ -82,8 +82,8 @@ export function BaseShell({
   onAcceptOrder,
   onDeliverOrder,
   onPurchase,
-  onSelectOrder,
-  selectedOrderId
+  accountEmail = null,
+  crewByStep = {},
 }: BaseShellProps) {
   const isPaused = snapshot.timeMode === "paused";
   const deviceSummary = snapshot.devices.map((device: BaseDeviceDto) => (
@@ -181,6 +181,11 @@ export function BaseShell({
             >
               {isPaused ? "恢复计时" : "暂停计时"}
             </button>
+            {accountEmail ? (
+              <span className="base-copy" style={{ alignSelf: "center" }}>
+                {accountEmail}
+              </span>
+            ) : null}
             <button type="button" className="base-logout-button" onClick={onLogout}>
               退出登录
             </button>
@@ -217,8 +222,6 @@ export function BaseShell({
         purchases={snapshot.purchases}
         resources={snapshot.resources}
         isBusy={isBusy}
-        selectedOrderId={selectedOrderId}
-        onSelectOrder={onSelectOrder}
         onAcceptOrder={onAcceptOrder}
         onDeliverOrder={onDeliverOrder}
         onPurchase={onPurchase}
@@ -238,6 +241,7 @@ export function BaseShell({
         buildableProjects={snapshot.buildableProjects}
         selectedProjectId={selectedProjectId}
         onSelectProject={onSelectProject}
+        crewByStep={crewByStep}
       />
     </main>
   );
