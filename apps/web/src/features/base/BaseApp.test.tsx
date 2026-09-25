@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BaseSnapshotDto } from "@ai-mud/shared";
 import { BaseApp } from "./BaseApp.js";
 import { BaseApiError, createPurchase, getSnapshot, heartbeat, login, playtestRegister, provision } from "./baseApi.js";
+import { logout } from "../auth/authApi.js";
 
 vi.mock("./baseApi.js", () => ({
   BaseApiError: class BaseApiError extends Error {
@@ -25,15 +26,21 @@ vi.mock("./baseApi.js", () => ({
   login: vi.fn()
 }));
 
+vi.mock("../auth/authApi.js", () => ({
+  logout: vi.fn()
+}));
+
 vi.mock("./BaseShell.js", () => ({
-  BaseShell: ({ snapshot, actionFeedback, onPurchase }: {
+  BaseShell: ({ snapshot, actionFeedback, onPurchase, onLogout }: {
     snapshot: { baseId: string };
     actionFeedback: { message: string } | null;
     onPurchase: (itemId: string, quantity: number) => void;
+    onLogout?: () => void;
   }) => (
     <div data-testid="base-shell">
       基地 {snapshot.baseId}
       <button type="button" onClick={() => onPurchase("anchor", 1)}>测试采购</button>
+      <button type="button" onClick={() => onLogout?.()}>退出登录</button>
       <span data-testid="command-feedback">{actionFeedback?.message}</span>
     </div>
   )
@@ -322,6 +329,173 @@ describe("BaseApp", () => {
     });
     expect(heartbeat).toHaveBeenCalledTimes(1);
     expect(heartbeat).toHaveBeenCalledWith("csrf-hb");
+  });
+});
+
+describe("BaseApp > 退出后不残留凭据（B006）", () => {
+  function authFields() {
+    return {
+      email: screen.getByLabelText("邮箱") as HTMLInputElement,
+      password: screen.getByLabelText("密码") as HTMLInputElement
+    };
+  }
+
+  function expectEmptyAuthForm(submitName: "领取试玩基地" | "登录并进入基地") {
+    const { email, password } = authFields();
+    expect(email.value).toBe("");
+    expect(password.value).toBe("");
+    expect((screen.getByRole("button", { name: submitName }) as HTMLButtonElement).disabled).toBe(true);
+  }
+
+  it.each([
+    { mode: "account" as const, tab: "账号登录", submit: "登录并进入基地" as const },
+    { mode: "register" as const, tab: "试玩注册", submit: "领取试玩基地" as const }
+  ])(
+    "$tab → 进入基地 → 退出登录后，邮箱与密码为空、提交禁用，切换页签也不带回旧值",
+    async ({ mode, tab, submit }) => {
+      vi.mocked(getSnapshot)
+        .mockRejectedValueOnce(unauthorized())
+        .mockResolvedValue(buildSnapshot());
+      vi.mocked(login).mockResolvedValue({
+        user: { id: "account-1", email: "p@e.test", role: "player", status: "active" },
+        csrfToken: "csrf-2"
+      });
+      vi.mocked(playtestRegister).mockResolvedValue({
+        user: { accountId: "account-1", email: "p@e.test" },
+        baseId: "base-1",
+        csrfToken: "csrf-2"
+      });
+      vi.mocked(provision).mockResolvedValue({ baseId: "base-1", duplicate: mode === "account" });
+      vi.mocked(logout).mockResolvedValue(undefined);
+      const onLogout = vi.fn();
+
+      render(<BaseApp onLogout={onLogout} />);
+
+      fireEvent.click(await screen.findByRole("tab", { name: tab }));
+      fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "p@e.test" } });
+      fireEvent.change(screen.getByLabelText("密码"), { target: { value: "secret-password" } });
+      fireEvent.click(screen.getByRole("button", { name: submit }));
+      expect(await screen.findByTestId("base-shell")).toBeTruthy();
+
+      // 退出后后续快照都应视为未登录（真实服务端会话已销毁）。
+      vi.mocked(getSnapshot).mockRejectedValue(unauthorized());
+      fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+
+      expect(await screen.findByRole("button", { name: submit })).toBeTruthy();
+      expect(logout).toHaveBeenCalledOnce();
+      expect(onLogout).toHaveBeenCalledOnce();
+      expectEmptyAuthForm(submit);
+
+      // 两个页签来回切换都不带回旧值，提交按钮始终禁用。
+      fireEvent.click(screen.getByRole("tab", { name: "账号登录" }));
+      expectEmptyAuthForm("登录并进入基地");
+      fireEvent.click(screen.getByRole("tab", { name: "试玩注册" }));
+      expectEmptyAuthForm("领取试玩基地");
+      fireEvent.click(screen.getByRole("tab", { name: "账号登录" }));
+      expectEmptyAuthForm("登录并进入基地");
+
+      // 不输入任何内容直接提交，不会发出登录/注册请求（B006 复现步骤最后一步）。
+      fireEvent.submit(screen.getByRole("button", { name: "登录并进入基地" }).closest("form")!);
+      expect(login).toHaveBeenCalledTimes(mode === "account" ? 1 : 0);
+      expect(playtestRegister).toHaveBeenCalledTimes(mode === "register" ? 1 : 0);
+    }
+  );
+
+  it("会话在游戏中失效（401）回到登录面时，同样不残留上次输入的凭据", async () => {
+    vi.mocked(getSnapshot)
+      .mockRejectedValueOnce(unauthorized())
+      .mockResolvedValue(buildSnapshot());
+    vi.mocked(login).mockResolvedValue({
+      user: { id: "account-1", email: "p@e.test", role: "player", status: "active" },
+      csrfToken: "csrf-2"
+    });
+    vi.mocked(provision).mockResolvedValue({ baseId: "base-1", duplicate: true });
+
+    render(<BaseApp />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "账号登录" }));
+    fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "p@e.test" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "secret-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录并进入基地" }));
+    expect(await screen.findByTestId("base-shell")).toBeTruthy();
+
+    // 会话过期：下一次快照 401，被动回到登录面（没有经过“退出登录”按钮）。
+    vi.mocked(getSnapshot).mockRejectedValue(unauthorized());
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(await screen.findByRole("button", { name: "登录并进入基地" })).toBeTruthy();
+    expectEmptyAuthForm("登录并进入基地");
+  });
+
+  it("登录后 provision 失败、随后由轮询进入基地的路径，退出时同样清空凭据与旧错误", async () => {
+    vi.mocked(getSnapshot)
+      .mockRejectedValueOnce(unauthorized())
+      .mockResolvedValue(buildSnapshot());
+    vi.mocked(login).mockResolvedValue({
+      user: { id: "account-1", email: "p@e.test", role: "player", status: "active" },
+      csrfToken: "csrf-2"
+    });
+    vi.mocked(provision).mockRejectedValue(new BaseApiError(503, "UNAVAILABLE", "基地分配失败，请重试。"));
+    vi.mocked(logout).mockResolvedValue(undefined);
+
+    render(<BaseApp />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "账号登录" }));
+    fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "p@e.test" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "secret-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录并进入基地" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("基地分配失败");
+
+    // 会话其实已建立：下一次轮询拿到快照，直接进入基地（没有走登录成功的清空路径）。
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(await screen.findByTestId("base-shell")).toBeTruthy();
+
+    vi.mocked(getSnapshot).mockRejectedValue(unauthorized());
+    fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+
+    expect(await screen.findByRole("button", { name: "登录并进入基地" })).toBeTruthy();
+    expectEmptyAuthForm("登录并进入基地");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("停留在登录面时，后台轮询得到 401 不会清掉正在输入的内容", async () => {
+    vi.mocked(getSnapshot).mockRejectedValue(unauthorized());
+
+    render(<BaseApp />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "账号登录" }));
+    fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "p@e.test" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "typing" } });
+
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await waitFor(() => expect(getSnapshot).toHaveBeenCalledTimes(2));
+
+    const { email, password } = authFields();
+    expect(email.value).toBe("p@e.test");
+    expect(password.value).toBe("typing");
+  });
+
+  it("登录失败时保留已输入的邮箱与密码，便于直接改正重试", async () => {
+    vi.mocked(getSnapshot).mockRejectedValue(unauthorized());
+    vi.mocked(login).mockRejectedValue(new BaseApiError(401, "INVALID_CREDENTIALS", "邮箱或密码错误。"));
+
+    render(<BaseApp />);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "账号登录" }));
+    fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "p@e.test" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "wrong-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录并进入基地" }));
+
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    const { email, password } = authFields();
+    expect(email.value).toBe("p@e.test");
+    expect(password.value).toBe("wrong-password");
   });
 });
 
