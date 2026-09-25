@@ -4,9 +4,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { OrderTemplateDto } from "@ai-mud/shared";
 import { createBaseOperations } from "../../../application/base/composition.js";
+import { createEconomyUseCases } from "../../../application/economy/usecases.js";
 import type { Env } from "../../../config/env.js";
 import { createDb, type Db } from "../../../db/client.js";
+import { OrderRepository } from "../../../modules/economy/order.repository.js";
 import { BaseRepository } from "../../../modules/world-runtime/base.repository.js";
 
 // M12-Q 独立验收（G02 主证据，真 PostgreSQL）：provision 走集成组合根
@@ -354,5 +357,97 @@ describe("base provisioning against the integrated composition (real PostgreSQL)
     expect(await countRows(harness.client, "base_devices", baseIdA)).toBe(12);
     expect(await countRows(harness.client, "robot_operators", baseIdA)).toBe(12);
     expect(await countBasesWithId(harness.client, baseIdA)).toBe(1);
+  }, 60_000);
+
+  // M 后端回归（review-remediation M 合同 §订单交付）：订单条件写按可支配量
+  // （quantity - reserved_quantity）判断，不再只看总量——否则总8/占8 时交付 3
+  // 会越过业务拒绝直接打穿 reserved<=quantity 约束（原生 500）。
+  it("rejects order delivery when demand exceeds disposable stock and succeeds after release", async () => {
+    if (!process.env.DATABASE_URL) return;
+
+    const accountD = await insertAccount(harness.client, "baseprov-d-m@q.test");
+    const provisioned = await ops.session.provision.execute(
+      { accountId: accountD },
+      { commandId: randomUUID() }
+    );
+    const baseId = provisioned.baseId;
+
+    const template: OrderTemplateDto = {
+      ref: { kind: "order", stableId: "order-m-regression", revision: 1 },
+      name: "M 回归收购单",
+      description: "订单交付条件写回归（review-remediation M）",
+      requiredItemId: "solar_panel_set",
+      quantity: 3,
+      rewardCredits: 100,
+      deadlineSimHours: 48
+    };
+    const orderRepo = new OrderRepository(harness.db);
+    const { orderId } = await harness.db.transaction((tx) =>
+      orderRepo.insertOpenOrder(tx, baseId, template)
+    );
+    const economy = createEconomyUseCases(harness.db, {
+      getOrderTemplate: () => template,
+      listOrderTemplates: () => [template]
+    });
+    await economy.accept.execute({ accountId: accountD }, { orderId, commandId: randomUUID() });
+
+    const findSolarRow = async () =>
+      (await readInventory(harness.client, baseId)).find((row) => row.itemId === "solar_panel_set")!;
+    const readCredits = async () => {
+      const { rows } = await harness.client.query(`SELECT credits FROM bases WHERE id = $1`, [baseId]);
+      return rows[0]!.credits as number;
+    };
+
+    // 状态一：总 8 / 占 8 → 交付 3 走业务拒绝 RESOURCE_INSUFFICIENT，库存/订单/账款不动。
+    await harness.client.query(
+      `UPDATE base_inventory SET quantity = 8, reserved_quantity = 8
+       WHERE base_id = $1 AND item_id = 'solar_panel_set'`,
+      [baseId]
+    );
+    const creditsBefore = await readCredits();
+    await expect(
+      economy.deliver.execute({ accountId: accountD }, { orderId, commandId: randomUUID() })
+    ).rejects.toMatchObject({ code: "RESOURCE_INSUFFICIENT" });
+    expect(await findSolarRow()).toEqual({
+      itemId: "solar_panel_set",
+      quantity: 8,
+      reservedQuantity: 8
+    });
+    expect(await readCredits()).toBe(creditsBefore);
+    const { rows: stillAccepted } = await harness.client.query(
+      `SELECT status FROM base_orders WHERE id = $1`,
+      [orderId]
+    );
+    expect(stillAccepted[0]!.status).toBe("accepted");
+
+    // 状态二：释放预留到 总 8 / 占 2 → 交付 3 成功，剩 总 5 / 占 2，只扣非预留量。
+    await harness.client.query(
+      `UPDATE base_inventory SET reserved_quantity = 2
+       WHERE base_id = $1 AND item_id = 'solar_panel_set'`,
+      [baseId]
+    );
+    const deliverCommandId = randomUUID();
+    const result = await economy.deliver.execute(
+      { accountId: accountD },
+      { orderId, commandId: deliverCommandId }
+    );
+    expect(result).toMatchObject({ orderId, rewardCredits: 100, duplicate: false });
+    expect(await findSolarRow()).toEqual({
+      itemId: "solar_panel_set",
+      quantity: 5,
+      reservedQuantity: 2
+    });
+    expect(await readCredits()).toBe(creditsBefore + 100);
+    const { rows: delivered } = await harness.client.query(
+      `SELECT status FROM base_orders WHERE id = $1`,
+      [orderId]
+    );
+    expect(delivered[0]!.status).toBe("delivered");
+    const { rows: receipts } = await harness.client.query(
+      `SELECT command_id FROM command_receipts
+       WHERE actor_scope = $1 AND command_kind = 'base.deliverOrder' AND command_id = $2`,
+      [`base:${baseId}`, deliverCommandId]
+    );
+    expect(receipts).toHaveLength(1);
   }, 60_000);
 });
