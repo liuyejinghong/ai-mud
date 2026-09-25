@@ -10,6 +10,7 @@ import {
   type ConstructionCooperationPort,
   type ConstructionLookupPort,
   type ConstructionReceiptsPort,
+  type ConstructionRobotPort,
   type ConstructionServiceDeps,
   type ConstructionSitePort,
   type ConstructionTx
@@ -103,6 +104,13 @@ class FakeSites implements ConstructionSitePort {
   }
   async releaseSite(_tx: ConstructionTx, siteId: string): Promise<void> {
     this.releasedCalls.push(siteId);
+  }
+}
+
+class FakeRobots implements ConstructionRobotPort {
+  released: Array<{ tx: ConstructionTx; baseId: string; projectId: string }> = [];
+  async releaseProjectAssignments(tx: ConstructionTx, baseId: string, projectId: string): Promise<void> {
+    this.released.push({ tx, baseId, projectId });
   }
 }
 
@@ -253,6 +261,7 @@ function makeService(overrides: {
   const assets = new FakeAssets();
   if (overrides.failItems) assets.failItems = overrides.failItems;
   const sites = new FakeSites();
+  const robots = new FakeRobots();
   const catalog = new FakeCatalog();
   const store = new FakeStore();
   const receipts = new FakeReceipts();
@@ -261,6 +270,7 @@ function makeService(overrides: {
     lookup,
     assets,
     sites,
+    robots,
     catalog,
     store,
     receipts: () => receipts,
@@ -269,7 +279,7 @@ function makeService(overrides: {
       return cooperation;
     }
   };
-  return { service: new ConstructionService(deps), lookup, assets, sites, catalog, store, receipts, cooperation };
+  return { service: new ConstructionService(deps), lookup, assets, sites, robots, catalog, store, receipts, cooperation };
 }
 
 const tx = {} as ConstructionTx;
@@ -379,7 +389,7 @@ describe("ConstructionService.create", () => {
 
 describe("ConstructionService.cancel", () => {
   it("取消：释放全部未消耗预留 → cancelled → 释放站点 → 回执落结果", async () => {
-    const { service, lookup, assets, sites, store } = makeService();
+    const { service, lookup, assets, sites, robots, store } = makeService();
     await createFirstProject(service);
 
     const result = await service.cancel(tx, principal, {
@@ -403,6 +413,7 @@ describe("ConstructionService.cancel", () => {
     expect(store.statusCalls).toEqual([{ projectId: "project-1", status: "cancelled" }]);
     expect(lookup.locked).toEqual(["base-1"]);
     expect(sites.releasedCalls).toEqual(["site-1"]);
+    expect(robots.released).toEqual([{ tx, baseId: "base-1", projectId: "project-1" }]);
   });
 
   it("取消重放：重复 commandId → 原结果 duplicate=true，不二次释放", async () => {

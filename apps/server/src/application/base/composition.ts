@@ -129,6 +129,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     lookup: baseRepo,
     assets: baseAssets,
     sites: baseRepo,
+    robots: robotRuntime,
     catalog,
     store: industryRepo,
     receipts: (tx) => new AssetMutationService(tx)

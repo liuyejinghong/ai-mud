@@ -174,6 +174,7 @@ function buildControlledOperations(db: Db, clock: { now(): Date }): ControlledOp
     lookup: baseRepo,
     assets: baseAssets,
     sites: baseRepo,
+    robots: new RobotRuntimeService(db),
     catalog,
     store: industryRepo,
     receipts: (tx) => new AssetMutationService(tx)

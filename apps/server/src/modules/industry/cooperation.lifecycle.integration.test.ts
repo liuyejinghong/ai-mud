@@ -5,8 +5,7 @@
 // 结算用车道 A 的 BaseSettlementService 真身：缺工靠“本组没有机器人”制造，不依赖耗电/充电数值；
 // helper 电量须 ≥ ROBOT_WORK_DRAIN_WH（前提断言），deps 形状由构造函数类型检查，
 // 结算侧改签名或阈值会显式失败而不是静默失效。
-// 只用 industry 模块真身（仓库/结算/协作/建设服务）+ platform schema；机器人、站点、查找、
-// 回执、决策以最小内联适配器按 composition 同结构绑定，避免测试跨业务模块依赖。
+// 机器人释放走 npc 唯一写者真身；其余站点、查找、回执、决策用最小内联适配器。
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -44,6 +43,7 @@ import {
   type BaseTickRobotUpdate
 } from "./industry.pure.js";
 import { IndustryRepository, type IndustryTx } from "./industry.repository.js";
+import { RobotRuntimeService } from "../npc/robot-runtime.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const d = DATABASE_URL ? describe : describe.skip;
@@ -78,7 +78,8 @@ afterAll(async () => {
   if (!DATABASE_URL || !migPool) return;
   await migPool.end();
   const adminClient = await adminPool.connect();
-  await adminClient.query(`DROP DATABASE "${dbName}" WITH (FORCE)`);
+  // migPool.end() 已关闭本用例的全部连接；普通 DROP 可把连接泄漏作为测试失败暴露。
+  await adminClient.query(`DROP DATABASE "${dbName}"`);
   adminClient.release();
   await adminPool.end();
 });
@@ -269,7 +270,7 @@ function makeConstruction(db: Db, receipts: MemoryReceipts) {
           .from(schema.bases)
           .where(eq(schema.bases.id, baseId))
           .limit(1)
-          .for("update");
+          .for("no key update");
         return row ?? null;
       }
     },
@@ -293,6 +294,7 @@ function makeConstruction(db: Db, receipts: MemoryReceipts) {
         await tx.update(schema.baseSites).set({ state: "free" }).where(eq(schema.baseSites.id, siteId));
       }
     },
+    robots: new RobotRuntimeService(db),
     catalog,
     store: new IndustryRepository(db),
     receipts: () => receipts
@@ -503,7 +505,47 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
     expect(savedStep?.workDone).toBe(11);
   }, 60_000);
 
-  it("取消后下一 tick：working helper 被释放，并被新项目的缺工步骤再次选中", async () => {
+  it("取消失败时项目、协作请求和机器人分配同事务回滚", async () => {
+    const db: Db = drizzle(migPool, { schema });
+    const { accountId, baseId } = await seedBase(db);
+    const project = await seedProject(db, baseId, [
+      { kind: "transport", groupId: "transport", status: "running", workRequired: 60 }
+    ]);
+    const helper = await seedRobot(db, baseId, {
+      deviceDefId: "yd-s1", groupId: "survey", batteryWh: 9_000,
+      batteryCapacityWh: 10_000, status: "working",
+      currentProjectId: project.projectId, currentStepIndex: 0
+    });
+    const requestId = await seedRequest(db, {
+      baseId, projectId: project.projectId, stepIndex: 0,
+      status: "accepted", helperOperatorId: helper
+    });
+    const receipts = new MemoryReceipts();
+    receipts.failOnSave = true;
+
+    await expect(db.transaction((tx) => makeConstruction(db, receipts).cancel(tx, { accountId }, {
+      projectId: project.projectId, commandId: randomUUID()
+    }))).rejects.toThrow("receipt write failed");
+    const [stillActive] = await db.select().from(schema.baseProjects)
+      .where(eq(schema.baseProjects.id, project.projectId));
+    expect(stillActive?.status).toBe("active");
+    expect((await requestsOf(db, baseId)).find((request) => request.id === requestId)?.status).toBe("accepted");
+    expect(await robotOf(db, helper)).toMatchObject({
+      status: "working", currentProjectId: project.projectId, currentStepIndex: 0
+    });
+
+    await db.transaction((tx) => makeConstruction(db, new MemoryReceipts()).cancel(tx, { accountId }, {
+      projectId: project.projectId, commandId: randomUUID()
+    }));
+    expect((await requestsOf(db, baseId)).find((request) => request.id === requestId)).toMatchObject({
+      status: "expired", resolutionReason: "project_cancelled"
+    });
+    expect(await robotOf(db, helper)).toMatchObject({
+      status: "idle", currentProjectId: null, currentStepIndex: null
+    });
+  });
+
+  it("取消事务立即释放 working helper，下一 tick 可被新项目再次选中", async () => {
     const db: Db = drizzle(migPool, { schema });
     const { accountId, baseId } = await seedBase(db);
     // 基地没有运输组机器人：运输步骤本组无人可出工 → 请求跨组支援（不依赖耗电/充电数值）。
@@ -524,9 +566,9 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
       })
     );
     expect((await requestsOf(db, baseId))[0]).toMatchObject({ id: requestA!.id, status: "expired" });
-    // 前提：取消命令不直接改机器人（npc 唯一写者），释放发生在下一 tick；helper 电量仍够出工。
+    // 取消与结案、作业者回收同事务；即使玩家马上暂停基地也不留旧分配。
     const surveyAfterCancel = await robotOf(db, survey);
-    expect(surveyAfterCancel).toMatchObject({ status: "working", currentProjectId: a.projectId });
+    expect(surveyAfterCancel).toMatchObject({ status: "idle", currentProjectId: null, currentStepIndex: null });
     expect(surveyAfterCancel.batteryWh).toBeGreaterThanOrEqual(ROBOT_WORK_DRAIN_WH);
 
     const b = await seedProject(db, baseId, [
@@ -541,7 +583,7 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
     expect(await robotOf(db, survey)).toMatchObject({ status: "working", currentProjectId: b.projectId, currentStepIndex: 0 });
   });
 
-  it("取消后下一 tick：缺电原地 charging、仍挂旧分配的 helper 由协作回收释放，并被新项目再次选中", async () => {
+  it("取消事务立即释放原地 charging helper，下一 tick 可被新项目再次选中", async () => {
     const db: Db = drizzle(migPool, { schema });
     const { accountId, baseId } = await seedBase(db);
     const a = await seedProject(db, baseId, [
@@ -560,9 +602,9 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
       })
     );
     expect((await requestsOf(db, baseId))[0]).toMatchObject({ id: requestA, status: "expired" });
-    // 前提：取消后 helper 仍挂旧分配（charging），电量够出工——只有协作回收能把它放回候选。
+    // 取消时 npc 唯一写者清除旧分配；下一 tick 才决定新项目是否接入。
     const surveyAfterCancel = await robotOf(db, survey);
-    expect(surveyAfterCancel).toMatchObject({ status: "charging", currentProjectId: a.projectId, currentStepIndex: 0 });
+    expect(surveyAfterCancel).toMatchObject({ status: "idle", currentProjectId: null, currentStepIndex: null });
     expect(surveyAfterCancel.batteryWh).toBeGreaterThanOrEqual(ROBOT_WORK_DRAIN_WH);
 
     const b = await seedProject(db, baseId, [

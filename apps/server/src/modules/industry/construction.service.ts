@@ -71,6 +71,10 @@ export interface ConstructionSitePort {
   releaseSite(tx: ConstructionTx, siteId: string): Promise<void>;
 }
 
+export interface ConstructionRobotPort {
+  releaseProjectAssignments(tx: ConstructionTx, baseId: string, projectId: string): Promise<void>;
+}
+
 export interface ConstructionCatalogPort {
   getProjectTemplate(stableId: string): ProjectTemplateDto | null;
 }
@@ -87,6 +91,7 @@ export interface ConstructionServiceDeps {
   lookup: ConstructionLookupPort;
   assets: ConstructionAssetPort;
   sites: ConstructionSitePort;
+  robots: ConstructionRobotPort;
   catalog: ConstructionCatalogPort;
   store: IndustryProjectStore;
   // 生产绑定：(tx) => new AssetMutationService(tx)。测试注入内存替身。
@@ -297,10 +302,9 @@ export class ConstructionService {
     }
     await this.deps.store.updateProjectStatus(tx, project.id, "cancelled" as ProjectStatus);
     await this.deps.sites.releaseSite(tx, project.siteId);
-    // B005：同一事务结案本项目 pending/accepted 协作请求。否则 accepted 永不结案，helper 被
-    // reservedHelpers 永久排除、主屏“查看 N 项协作”一直指向已取消项目。helper 机器人本身在下一
-    // tick 由纯规则（working）或协作回收（charging 挂旧分配）释放为 idle。
+    // 请求与作业者分配一起结案，暂停基地后也不留下指向已取消工程的机器人。
     await this.openCooperation(tx).closeOpenByProject(tx, baseId, project.id, "project_cancelled");
+    await this.deps.robots.releaseProjectAssignments(tx, baseId, project.id);
 
     const result: CancelResultPayload = {
       cancelled: true,

@@ -737,7 +737,7 @@ describe("detectAndResolveCooperation > B005 生命周期回收", () => {
     expect(result.closed).toEqual({}); // 完成不是非完成结案
   });
 
-  it("取消事务已结案、但 helper 仍在该步骤原地充电：下一 tick 释放为 idle，可再被选为候选", async () => {
+  it("遗留已结案请求仍挂着充电 helper：tick 自愈后可再被选为候选", async () => {
     const { repo, robots, gateway, deps, tx } = makeHarness();
     repo.records.push(openRequest({ status: "expired", resolvedAt: T0 }));
     repo.stepStates = [stepState({ projectStatus: "cancelled" })];

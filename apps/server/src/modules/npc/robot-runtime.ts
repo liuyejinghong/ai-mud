@@ -4,7 +4,7 @@
 // deviceDefId 经 robot_operators.device_id ↔ base_devices.id 1:1 只读连接取得
 // （base_devices 写者仍是 assets；本服务不写任何非 npc 表）。
 // 必须在调用方事务内执行，永不自开或提交事务。
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { RobotStatus } from "@ai-mud/shared";
 import type { Db } from "../../db/client.js";
 import { baseDevices, robotOperators } from "../../db/schema.js";
@@ -78,5 +78,17 @@ export class RobotRuntimeService {
         })
         .where(eq(robotOperators.id, update.operatorId));
     }
+  }
+
+  // 项目取消与基地 tick 共用事务/基地锁；立即清除该项目的出工和原地充电分配。
+  async releaseProjectAssignments(tx: RobotRuntimeTx, baseId: string, projectId: string): Promise<void> {
+    await tx
+      .update(robotOperators)
+      .set({ status: "idle", currentProjectId: null, currentStepIndex: null, updatedAt: new Date() })
+      .where(and(
+        eq(robotOperators.baseId, baseId),
+        eq(robotOperators.currentProjectId, projectId),
+        inArray(robotOperators.status, ["working", "charging"])
+      ));
   }
 }
