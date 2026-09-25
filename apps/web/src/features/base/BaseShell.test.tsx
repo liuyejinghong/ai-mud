@@ -23,8 +23,8 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
       loadW: 1000
     },
     resources: [
-      { itemId: "solar_panel_set", name: "太阳能板组", quantity: 6, description: "测试物资说明" },
-      { itemId: "anchor", name: "地锚", quantity: 8, description: "测试物资说明" }
+      { itemId: "solar_panel_set", name: "太阳能板组", quantity: 6, reservedQuantity: 0, reservationSources: [], description: "测试物资说明" },
+      { itemId: "anchor", name: "地锚", quantity: 8, reservedQuantity: 0, reservationSources: [], description: "测试物资说明" }
     ],
     sites: [
       { siteId: "site-array", name: "测试站点", siteKey: "array", state: "built", note: null, description: null, attributes: [] },

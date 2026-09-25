@@ -1,8 +1,8 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BaseSnapshotDto } from "@ai-mud/shared";
 import { BaseApp } from "./BaseApp.js";
-import { BaseApiError, getSnapshot, heartbeat, login, playtestRegister, provision } from "./baseApi.js";
+import { BaseApiError, createPurchase, getSnapshot, heartbeat, login, playtestRegister, provision } from "./baseApi.js";
 
 vi.mock("./baseApi.js", () => ({
   BaseApiError: class BaseApiError extends Error {
@@ -20,13 +20,22 @@ vi.mock("./baseApi.js", () => ({
   heartbeat: vi.fn(),
   setClock: vi.fn(),
   createProject: vi.fn(),
+  createPurchase: vi.fn(),
   cancelProject: vi.fn(),
   login: vi.fn()
 }));
 
 vi.mock("./BaseShell.js", () => ({
-  BaseShell: ({ snapshot }: { snapshot: { baseId: string } }) => (
-    <div data-testid="base-shell">基地 {snapshot.baseId}</div>
+  BaseShell: ({ snapshot, actionFeedback, onPurchase }: {
+    snapshot: { baseId: string };
+    actionFeedback: { message: string } | null;
+    onPurchase: (itemId: string, quantity: number) => void;
+  }) => (
+    <div data-testid="base-shell">
+      基地 {snapshot.baseId}
+      <button type="button" onClick={() => onPurchase("anchor", 1)}>测试采购</button>
+      <span data-testid="command-feedback">{actionFeedback?.message}</span>
+    </div>
   )
 }));
 
@@ -47,7 +56,7 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
       storageCapacityWh: 200000,
       loadW: 1000
     },
-    resources: [{ itemId: "spare_parts", name: "备件", quantity: 30, description: "测试物资说明" }],
+    resources: [{ itemId: "spare_parts", name: "备件", quantity: 30, reservedQuantity: 0, reservationSources: [], description: "测试物资说明" }],
     sites: [{ siteId: "site-a", name: "测试站点", siteKey: "array", state: "built", note: null, description: null, attributes: [] }],
     devices: [],
     projects: [],
@@ -92,6 +101,19 @@ describe("BaseApp", () => {
     expect(await screen.findByTestId("base-shell")).toBeTruthy();
     expect(getSnapshot).toHaveBeenCalledOnce();
     expect(screen.queryByText("领取试玩基地")).toBeNull();
+  });
+
+  it("资源不足时刷新快照，并把服务端失败留给发起操作的工作区", async () => {
+    vi.mocked(getSnapshot).mockResolvedValue(buildSnapshot());
+    vi.mocked(createPurchase).mockRejectedValue(
+      new BaseApiError(409, "RESOURCE_INSUFFICIENT", "物资不足，无法采购。")
+    );
+    render(<BaseApp initialCsrfToken="csrf-1" />);
+    await screen.findByTestId("base-shell");
+    fireEvent.click(screen.getByRole("button", { name: "测试采购" }));
+    await waitFor(() => expect(getSnapshot).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId("command-feedback").textContent).toContain("物资不足，无法采购");
+    expect(createPurchase).toHaveBeenCalledOnce();
   });
 
   it("未登录（401）时显示登录与试玩注册表单", async () => {

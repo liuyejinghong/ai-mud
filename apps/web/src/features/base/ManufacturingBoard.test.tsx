@@ -55,6 +55,8 @@ function renderBoard(overrides: Partial<ManufacturingBoardProps> = {}) {
   const props = {
     jobs: [] as ManufacturingJobDto[],
     recipes: [] as RecipeTemplateDto[],
+    resources: [],
+    purchases: [],
     isBusy: false,
     onCreateJob: vi.fn(),
     onCancelJob: vi.fn(),
@@ -84,8 +86,8 @@ describe("ManufacturingBoard", () => {
 
     expect(screen.getByText("制造 YD-H1 机器人")).toBeTruthy();
     expect(screen.getByText("用支撑架与备用零件组装一台 YD-H1 巡逻机器人。")).toBeTruthy();
-    expect(screen.getByText("材料：支架结构件×4、通用备件×6、配电单元×1")).toBeTruthy();
-    expect(screen.getByText("材料：通用备件×4、锚固件×3")).toBeTruthy();
+    expect(screen.getByText(/支架结构件：每台 ×4.*本单需 ×4/)).toBeTruthy();
+    expect(screen.getByText(/通用备件：每台 ×4.*本单需 ×4/)).toBeTruthy();
     expect(screen.getByText("每台工作量 30")).toBeTruthy();
     expect(screen.getByRole("spinbutton", { name: "制造 YD-H1 机器人数量" })).toBeTruthy();
   });
@@ -105,6 +107,25 @@ describe("ManufacturingBoard", () => {
       outputsPlanned: 3,
       commandId: "command-uuid-1"
     });
+  });
+
+  it("批量制造按计划数量显示可支配缺口，不把在途当现货", () => {
+    renderBoard({
+      recipes: [recipeS1],
+      resources: [
+        { itemId: "spare_parts", name: "通用备件", quantity: 30, reservedQuantity: 0, reservationSources: [], description: "" },
+        { itemId: "anchor", name: "锚固件", quantity: 8, reservedQuantity: 8, reservationSources: [], description: "" }
+      ],
+      purchases: [{
+        purchaseId: "purchase-1", itemId: "anchor", itemName: "锚固件", quantity: 3,
+        costCredits: 30, status: "in_transit", arrivesAtSim: "2126-01-01T12:00:00.000Z"
+      }]
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "制造 YD-S1 机器人数量" }), {
+      target: { value: "2" }
+    });
+    expect(screen.getByText(/锚固件：每台 ×3.*本单需 ×6.*可支配 0.*缺 6.*在途 3/)).toBeTruthy();
+    expect(screen.getByText(/通用备件：每台 ×4.*本单需 ×8.*可支配 30/)).toBeTruthy();
   });
 
   it("渲染工单状态、产出进度与当前台工作量进度", () => {

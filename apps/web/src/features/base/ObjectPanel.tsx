@@ -9,6 +9,7 @@ import type {
   BaseTimeMode,
   CreateProjectInputDto,
   DefinitionRefDto,
+  PurchaseOrderDto,
   RobotStatus
 } from "@ai-mud/shared";
 import { BASE_ROBOT_GROUP_NAMES, definitionRefKey } from "@ai-mud/shared";
@@ -42,6 +43,7 @@ export interface ObjectPanelProps {
   devices: BaseDeviceDto[];
   buildableProjects: BuildableTemplateDto[];
   resources: BaseResourceDto[];
+  purchases: PurchaseOrderDto[];
   selectedResourceId: string | null;
   selectedSiteId: string | null;
   selectedProjectId: string | null;
@@ -60,6 +62,7 @@ export function ObjectPanel({
   devices,
   buildableProjects,
   resources,
+  purchases,
   selectedResourceId,
   selectedSiteId,
   selectedProjectId,
@@ -93,7 +96,7 @@ export function ObjectPanel({
       <h2 className="base-panel-title">对象详情</h2>
 
       {selectedResource ? (
-        <ResourceDetail resource={selectedResource} />
+        <ResourceDetail resource={selectedResource} purchases={purchases} />
       ) : selectedProject ? (
         <ProjectDetail
           project={selectedProject}
@@ -110,6 +113,7 @@ export function ObjectPanel({
           buildableProjects={buildableProjects}
           projects={projects}
           resources={resources}
+          purchases={purchases}
           isBusy={isBusy}
           onSelectProject={onSelectProject}
           onCreateProject={onCreateProject}
@@ -232,11 +236,29 @@ function DeviceDetail({
   );
 }
 
-function ResourceDetail({ resource }: { resource: BaseResourceDto }) {
+function ResourceDetail({ resource, purchases }: {
+  resource: BaseResourceDto;
+  purchases: PurchaseOrderDto[];
+}) {
+  const inTransit = purchases.filter((purchase) =>
+    purchase.itemId === resource.itemId && purchase.status === "in_transit"
+  ).reduce((sum, purchase) => sum + purchase.quantity, 0);
   return (
     <div className="base-detail">
       <h3>{resource.name}</h3>
-      <p className="base-detail-line">库存：×{resource.quantity}</p>
+      <p className="base-detail-line">库存总量：×{resource.quantity}</p>
+      <p className="base-detail-line">已占用：×{resource.reservedQuantity}</p>
+      <p className="base-detail-line">可支配：×{resource.quantity - resource.reservedQuantity}</p>
+      {resource.reservationSources.length > 0 ? (
+        <ul className="base-attr-list" aria-label="占用去向">
+          {resource.reservationSources.map((source) => (
+            <li key={`${source.kind}:${source.id}`}>
+              {source.kind === "project" ? "工程" : "制造工单"}「{source.name}」占用 ×{source.quantity}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {inTransit > 0 ? <p className="base-detail-line">在途：×{inTransit}（到货前不可支配）</p> : null}
       <p className="base-copy">{resource.description}</p>
     </div>
   );
@@ -247,6 +269,7 @@ function SiteDetail({
   buildableProjects,
   projects,
   resources,
+  purchases,
   isBusy,
   onSelectProject,
   onCreateProject
@@ -255,6 +278,7 @@ function SiteDetail({
   buildableProjects: BuildableTemplateDto[];
   projects: BaseProjectDto[];
   resources: BaseResourceDto[];
+  purchases: PurchaseOrderDto[];
   isBusy: boolean;
   onSelectProject: (projectId: string) => void;
   onCreateProject: (input: CreateProjectInputDto) => void;
@@ -317,14 +341,18 @@ function SiteDetail({
               {template.inputs ? (
                 <ul className="base-buildable-inputs">
                   {template.inputs.map((input) => {
-                    const owned =
-                      resources.find((resource) => resource.itemId === input.itemId)?.quantity ?? 0;
-                    const short = owned < input.quantity;
+                    const resource = resources.find((row) => row.itemId === input.itemId);
+                    const available = resource ? resource.quantity - resource.reservedQuantity : 0;
+                    const inTransit = purchases.filter((purchase) =>
+                      purchase.itemId === input.itemId && purchase.status === "in_transit"
+                    ).reduce((sum, purchase) => sum + purchase.quantity, 0);
+                    const short = available < input.quantity;
                     return (
                       <li key={input.itemId}>
-                        {BASE_ITEM_NAMES[input.itemId] ?? input.itemId} ×{input.quantity}（现有{" "}
-                        {owned}
-                        {short ? `，缺 ${input.quantity - owned}` : ""}）
+                        {BASE_ITEM_NAMES[input.itemId] ?? input.itemId} ×{input.quantity}
+                        （可支配 {available}，总量 {resource?.quantity ?? 0}，已占用 {resource?.reservedQuantity ?? 0}
+                        {short ? `，缺 ${input.quantity - available}` : ""}
+                        {inTransit > 0 ? `，在途 ${inTransit}（到货前不可用）` : ""}）
                       </li>
                     );
                   })}

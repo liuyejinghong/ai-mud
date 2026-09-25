@@ -182,7 +182,7 @@ export function BaseShell({
                       }
                     }}
                   >
-                    {resource.name} ×{resource.quantity}
+                    {resource.name} · 可支配 ×{resource.quantity - resource.reservedQuantity}
                   </button>
                 </li>
               ))}
@@ -317,6 +317,7 @@ export function BaseShell({
               devices={sortedDevices(snapshot.devices)}
               buildableProjects={snapshot.buildableProjects}
               resources={snapshot.resources}
+              purchases={snapshot.purchases}
               selectedResourceId={selectedResourceId}
               selectedSiteId={selectedSiteId}
               selectedProjectId={selectedProjectId}
@@ -352,7 +353,8 @@ export function BaseShell({
       <section className="base-workspace" hidden={workspace !== "manufacturing"} aria-label="制造工作区">
         <ActionFeedback area="manufacturing" feedback={actionFeedback} />
         <ManufacturingBoard jobs={snapshot.manufacturingJobs}
-          recipes={snapshot.availableRecipes} isBusy={isBusy}
+          recipes={snapshot.availableRecipes} resources={snapshot.resources}
+          purchases={snapshot.purchases} isBusy={isBusy}
           selectedJobId={selectedJobId} onSelectJob={onSelectJob}
           onCreateJob={onCreateJob} onCancelJob={onCancelJob}
         />

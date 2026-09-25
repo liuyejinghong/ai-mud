@@ -60,6 +60,8 @@ export function EconomyBoard({
                 a.name.localeCompare(b.name) || a.orderId.localeCompare(b.orderId)
             )
             .map((order) => {
+            const resource = resources.find((row) => row.itemId === order.requiredItemId);
+            const available = resource ? resource.quantity - resource.reservedQuantity : 0;
             return (
               <li key={order.orderId}>
                 <div
@@ -71,6 +73,12 @@ export function EconomyBoard({
                     {order.rewardCredits} credits · {ORDER_STATUS_LABELS[order.status] ?? order.status}
                     {order.deadlineSim ? ` · 期限 ${formatSimDateTime(order.deadlineSim)}` : ""}
                   </span>
+                  {order.status === "accepted" ? (
+                    <span className="base-project-step">
+                      可支配 {available} · 已占用 {resource?.reservedQuantity ?? 0}
+                      {available < order.quantity ? ` · 尚缺 ${order.quantity - available}` : ""}
+                    </span>
+                  ) : null}
                 </div>
                 {order.status === "open" ? (
                   <button

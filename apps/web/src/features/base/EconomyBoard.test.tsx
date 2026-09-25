@@ -73,4 +73,19 @@ describe("EconomyBoard", () => {
 
     expect(onPurchase).toHaveBeenCalledWith("support_frame", 1);
   });
+
+  it("已接订单按可支配量提示缺口，交付仍由服务端复核", () => {
+    const onDeliverOrder = vi.fn();
+    renderBoard({
+      orders: [{ ...order, status: "accepted" }],
+      resources: [{
+        itemId: "solar_panel_set", name: "太阳电池阵组件", quantity: 8,
+        reservedQuantity: 8, reservationSources: [], description: ""
+      }],
+      onDeliverOrder
+    });
+    expect(screen.getByText(/可支配 0 · 已占用 8 · 尚缺 6/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "交付物资" }));
+    expect(onDeliverOrder).toHaveBeenCalledWith("order-1");
+  });
 });
