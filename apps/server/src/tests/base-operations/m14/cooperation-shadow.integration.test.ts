@@ -6,6 +6,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { eq } from "drizzle-orm";
+import { createBaseOperations } from "../../../application/base/composition.js";
+import { loadEnv } from "../../../config/env.js";
+import * as schema from "../../../db/schema.js";
 import {
   DecisionGateway,
   type DecisionAuditRow
@@ -65,6 +70,72 @@ afterAll(async () => {
 });
 
 d("M14 cooperation shadow chain (real PostgreSQL)", () => {
+  it("C07: 结算事务内的机器人更新对协作检测可见", async () => {
+    if (!migPool) return;
+    const db = drizzle(migPool, { schema });
+    const now = new Date();
+    const accountId = randomUUID();
+    const baseId = randomUUID();
+    const siteA = randomUUID();
+    const siteB = randomUUID();
+    const projectA = randomUUID();
+    const projectB = randomUUID();
+    const deviceId = randomUUID();
+    const operatorId = randomUUID();
+
+    await db.transaction(async (tx) => {
+      await tx.insert(schema.accounts).values({ id: accountId, email: `c07-${accountId}@example.invalid`, passwordHash: "x" });
+      await tx.insert(schema.bases).values({
+        id: baseId, accountId, name: "C07 事务基地", contentRelease: "test",
+        timeMode: "running", simTime: new Date("2026-09-01T10:00:00Z"),
+        lastAdvancedAt: new Date(now.getTime() - 60_000)
+      });
+      await tx.insert(schema.baseControlLeases).values({
+        baseId, leaseToken: "c07", leaseUntil: new Date(now.getTime() + 300_000)
+      });
+      await tx.insert(schema.basePowerState).values({
+        baseId, generationWPeak: 15_000, storageWh: 100_000,
+        storageCapacityWh: 200_000, lastLoadW: 0
+      });
+      await tx.insert(schema.baseSites).values([
+        { id: siteA, baseId, siteKey: "site_a", state: "reserved" },
+        { id: siteB, baseId, siteKey: "site_b", state: "reserved" }
+      ]);
+      await tx.insert(schema.baseProjects).values([
+        { id: projectA, baseId, siteId: siteA, projectDefId: "install-solar-array", templateRevision: 1, status: "active", reservedInputs: [] },
+        { id: projectB, baseId, siteId: siteB, projectDefId: "install-solar-array", templateRevision: 1, status: "active", reservedInputs: [] }
+      ]);
+      await tx.insert(schema.baseProjectSteps).values([
+        { projectId: projectA, stepIndex: 0, kind: "site_clearing", groupId: "engineering", status: "ready", workRequired: 40 },
+        { projectId: projectB, stepIndex: 0, kind: "commissioning", groupId: "survey", status: "ready", workRequired: 20 }
+      ]);
+      await tx.insert(schema.baseDevices).values({
+        id: deviceId, baseId, deviceDefId: "yd-e1", templateRevision: 1,
+        sourceOperation: `c07-${deviceId}`
+      });
+      await tx.insert(schema.robotOperators).values({
+        id: operatorId, deviceId, baseId, groupId: "engineering",
+        batteryWh: 30_000, batteryCapacityWh: 30_000, status: "idle"
+      });
+    });
+
+    const ops = createBaseOperations({
+      db,
+      config: loadEnv({ DATABASE_URL: "postgres://localhost/test", SESSION_SECRET: "x".repeat(32), NODE_ENV: "test" })
+    });
+    await db.transaction(async (tx) => {
+      expect(await ops.settlement.settleBases(tx, now)).toBe(1);
+      const insideRobot = await tx.select().from(schema.robotOperators).where(eq(schema.robotOperators.id, operatorId));
+      expect(insideRobot[0]?.status).toBe("working");
+      const outsideRobot = await db.select().from(schema.robotOperators).where(eq(schema.robotOperators.id, operatorId));
+      expect(outsideRobot[0]?.status).toBe("idle");
+    });
+
+    const requests = await db.select().from(schema.cooperationRequests).where(eq(schema.cooperationRequests.baseId, baseId));
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ projectId: projectB, stepIndex: 0, status: "pending" });
+  });
+
   it("gateway audit row lands in decision_records via injected writer", async () => {
     if (!client) return;
     // 网关审计注入写入口 → 真库落行（覆盖 M14-A 单测的假捕获路径）。

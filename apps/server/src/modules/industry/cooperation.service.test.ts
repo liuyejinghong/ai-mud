@@ -50,19 +50,19 @@ class InMemoryCooperationRepo implements CooperationRequestStore {
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
-  async findPendingByStep(
+  async findOpenByStep(
     _tx: CooperationTx,
     baseId: string,
     projectId: string,
     stepIndex: number
   ) {
     return (
-      this.records.find(
+      [...this.records].sort((a, b) => a.status.localeCompare(b.status)).find(
         (record) =>
           record.baseId === baseId &&
           record.projectId === projectId &&
           record.stepIndex === stepIndex &&
-          record.status === "pending"
+          (record.status === "pending" || record.status === "accepted")
       ) ?? null
     );
   }
@@ -246,6 +246,34 @@ describe("detectAndResolveCooperation", () => {
     expect(repo.records[0]?.status).toBe("accepted");
   });
 
+  it("同步骤已有 accepted：不重复创建或再次决策", async () => {
+    const { repo, robots, gateway, deps, tx } = makeHarness();
+    robots.operators = [makeRobot()];
+    repo.records.push({
+      requestId: "req-accepted", baseId: BASE_ID, projectId: "p1", stepIndex: 0,
+      fromGroupId: "engineering", helperGroupId: "transport", status: "accepted",
+      helperOperatorId: "op-t1", decisionId: "decision-1", question: "已有支援",
+      createdAt: T0, resolvedAt: null
+    });
+
+    const result = await detectAndResolveCooperation(tx, BASE_ID, [STEP], deps);
+
+    expect(result).toEqual({ requestsCreated: 0, decisionsRequested: 0, helpersAccepted: 0, expired: 0 });
+    expect(repo.records).toHaveLength(1);
+    expect(gateway.requests).toHaveLength(0);
+  });
+
+  it("同 tick 多个缺工步骤不会同时占用同一 helper", async () => {
+    const { repo, robots, gateway, deps, tx } = makeHarness();
+    robots.operators = [makeRobot()];
+    gateway.selectedCandidateId = "op-t1";
+
+    await detectAndResolveCooperation(tx, BASE_ID, [STEP, { ...STEP, stepIndex: 1, groupId: "survey" }], deps);
+
+    expect(repo.records.map((request) => request.status)).toEqual(["accepted", "pending"]);
+    expect(gateway.requests).toHaveLength(1);
+  });
+
   it("决策弃权：请求保持 pending，不绑定 helper", async () => {
     const { repo, robots, gateway, deps, tx } = makeHarness();
     robots.operators = [makeRobot()];
@@ -362,7 +390,7 @@ describe("applyAcceptedHelpers", () => {
       resolvedAt: null
     });
 
-    const applied = await applyAcceptedHelpers(tx, BASE_ID, deps);
+    const applied = await applyAcceptedHelpers(tx, BASE_ID, [STEP], deps);
 
     expect(applied).toBe(1);
     expect(robots.operators[0]).toMatchObject({
@@ -393,11 +421,33 @@ describe("applyAcceptedHelpers", () => {
       resolvedAt: null
     });
 
-    const applied = await applyAcceptedHelpers(tx, BASE_ID, deps);
+    const applied = await applyAcceptedHelpers(tx, BASE_ID, [STEP], deps);
 
     expect(applied).toBe(0);
     expect(robots.applied).toHaveLength(0);
     expect(robots.operators[0]).toMatchObject({ currentProjectId: "p9", currentStepIndex: 1 });
+  });
+
+  it("充电中的 helper 仅在原步骤可推进时复工", async () => {
+    const { repo, robots, deps, tx } = makeHarness();
+    robots.operators = [makeRobot({
+      status: "charging", currentProjectId: "p1", currentStepIndex: 0
+    })];
+    repo.records.push({
+      requestId: "req-1", baseId: BASE_ID, projectId: "p1", stepIndex: 0,
+      fromGroupId: "engineering", helperGroupId: "transport", status: "accepted",
+      helperOperatorId: "op-t1", decisionId: "decision-1", question: "支援请求",
+      createdAt: T0, resolvedAt: null
+    });
+
+    expect(await applyAcceptedHelpers(tx, BASE_ID, [], deps)).toBe(0);
+    robots.operators[0]!.currentProjectId = "p9";
+    expect(await applyAcceptedHelpers(tx, BASE_ID, [STEP], deps)).toBe(0);
+    robots.operators[0]!.currentProjectId = "p1";
+    expect(await applyAcceptedHelpers(tx, BASE_ID, [STEP], deps)).toBe(1);
+    expect(robots.operators[0]).toMatchObject({
+      status: "working", currentProjectId: "p1", currentStepIndex: 0
+    });
   });
 });
 

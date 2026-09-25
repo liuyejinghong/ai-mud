@@ -261,14 +261,20 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
           recordAudit: recordAuditInCallerTx
         });
   const cooperation = {
+    listOpenRequests: async (tx: IndustryTx, baseId: string) =>
+      (await new CooperationRepository(tx).listByBase(tx, baseId)).flatMap((request) =>
+        request.status === "pending" || request.status === "accepted"
+          ? [{ status: request.status, operatorId: request.helperOperatorId, projectId: request.projectId, stepIndex: request.stepIndex }]
+          : []
+      ),
     detectAndResolve: (
       tx: Parameters<typeof detectAndResolveCooperation>[0],
       baseId: string,
-      runningSteps: Parameters<typeof detectAndResolveCooperation>[2],
+      needySteps: Parameters<typeof detectAndResolveCooperation>[2],
       meta: { baseRevision: number; epoch: number; clock: { now(): Date } }
     ) =>
-      detectAndResolveCooperation(tx, baseId, runningSteps, {
-        robots: new RobotRuntimeService(db),
+      detectAndResolveCooperation(tx, baseId, needySteps, {
+        robots: new RobotRuntimeService(tx),
         gateway: decisionGateway,
         clock: meta.clock,
         baseRevision: meta.baseRevision,
@@ -278,23 +284,19 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     applyAcceptedHelpers: (
       tx: Parameters<typeof applyAcceptedHelpers>[0],
       baseId: string,
-      clock: { now(): Date }
+      runnableSteps: Parameters<typeof applyAcceptedHelpers>[2]
     ) =>
-      applyAcceptedHelpers(tx, baseId, {
-        robots: new RobotRuntimeService(db),
+      applyAcceptedHelpers(tx, baseId, runnableSteps, {
+        robots: new RobotRuntimeService(tx),
         openCooperation: (coopTx) => new CooperationRepository(coopTx)
       }),
-    markFulfilledByProject: async (
+    markFulfilledByStep: async (
       tx: Parameters<typeof applyAcceptedHelpers>[0],
       baseId: string,
-      projectId: string
+      projectId: string,
+      stepIndex: number
     ) => {
-      const repo = new CooperationRepository(tx);
-      const steps = await repo.listByBase(tx, baseId);
-      for (const request of steps) {
-        if (request.projectId !== projectId) continue;
-        await repo.markFulfilledByStep(tx, baseId, projectId, request.stepIndex);
-      }
+      await new CooperationRepository(tx).markFulfilledByStep(tx, baseId, projectId, stepIndex);
     }
   };
 

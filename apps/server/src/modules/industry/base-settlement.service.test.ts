@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ProjectTemplateDto, RobotTemplateDto } from "@ai-mud/shared";
 import {
   BaseSettlementService,
+  type BaseSettlementDeps,
   type SettlementAssetPort,
   type SettlementCatalogPort,
   type SettlementClockPort,
@@ -209,7 +210,7 @@ class FakeRobots implements SettlementRobotPort {
   }
 }
 
-function makeHarness() {
+function makeHarness(cooperation?: BaseSettlementDeps["cooperation"]) {
   const clock = new FakeClock();
   const sites = new FakeSites();
   const assets = new FakeAssets();
@@ -221,11 +222,131 @@ function makeHarness() {
     sites,
     assets,
     catalog,
+    ...(cooperation ? { cooperation } : {}),
     openIndustry: () => industry,
     openRobots: () => robots
   });
   return { service, clock, sites, assets, catalog, industry, robots };
 }
+
+describe("BaseSettlementService.settleBases > C07 cooperation", () => {
+  it.each(["ready", "running"] as const)("%s 且本组无人出工时仍发起协作检测", async (status) => {
+    const detected: Array<Array<{ projectId: string; stepIndex: number }>> = [];
+    const harness = makeHarness({
+      listOpenRequests: async () => [],
+      detectAndResolve: async (_tx, _baseId, steps) => { detected.push(steps); },
+      applyAcceptedHelpers: async () => 0,
+      markFulfilledByStep: async () => {}
+    });
+    seedStandardBase(harness, {
+      stepOverrides: { status, workDone: status === "ready" ? 0 : 10 },
+      robotOverrides: {
+        deviceDefId: "yd-s1", groupId: "survey", status: "idle",
+        currentProjectId: null, currentStepIndex: null
+      }
+    });
+
+    await harness.service.settleBases({} as IndustryTx, T0);
+
+    expect(detected[0]).toEqual([{
+      projectId: "p1", projectName: "架设光伏阵列", stepIndex: 0, groupId: "engineering"
+    }]);
+  });
+
+  it("running 且本组正在出工时不发请求", async () => {
+    const detected: unknown[][] = [];
+    const harness = makeHarness({
+      listOpenRequests: async () => [],
+      detectAndResolve: async (_tx, _baseId, steps) => { detected.push(steps); },
+      applyAcceptedHelpers: async () => 0,
+      markFulfilledByStep: async () => {}
+    });
+    seedStandardBase(harness);
+
+    await harness.service.settleBases({} as IndustryTx, T0);
+
+    expect(detected).toEqual([[]]);
+  });
+
+  it("accepted 跨组 helper 下一 tick 出工，中途步骤完成即 fulfilled", async () => {
+    const fulfilled: Array<[string, number]> = [];
+    const harness = makeHarness({
+      listOpenRequests: async () => [{ status: "accepted", operatorId: "op-1", projectId: "p1", stepIndex: 0 }],
+      detectAndResolve: async () => {},
+      applyAcceptedHelpers: async () => 0,
+      markFulfilledByStep: async (_tx, _baseId, projectId, stepIndex) => {
+        fulfilled.push([projectId, stepIndex]);
+      }
+    });
+    seedStandardBase(harness, {
+      stepOverrides: { workRequired: 1, workDone: 0 },
+      robotOverrides: {
+        deviceDefId: "yd-s1", groupId: "survey",
+        batteryWh: 10_000, batteryCapacityWh: 10_000
+      }
+    });
+    harness.industry.steps.push({
+      projectId: "p1", stepIndex: 1, kind: "commissioning", groupId: "engineering",
+      status: "pending", workRequired: 10, workDone: 0, blockedReason: null
+    });
+
+    await harness.service.settleBases({} as IndustryTx, T0);
+
+    expect(harness.industry.steps[0]).toMatchObject({ status: "completed", workDone: 1 });
+    expect(harness.industry.steps[1]).toMatchObject({ status: "ready" });
+    expect(harness.robots.operators.get("base-1")?.[0]).toMatchObject({ status: "idle", batteryWh: 9500 });
+    expect(fulfilled).toEqual([["p1", 0]]);
+    expect(harness.industry.savedProjects.at(-1)?.status).toBe("active");
+  });
+
+  it("复电后原步骤可重新接入 charging helper", async () => {
+    const runnable: Array<{ projectId: string; stepIndex: number }> = [];
+    const harness = makeHarness({
+      listOpenRequests: async () => [{ status: "accepted", operatorId: "op-1", projectId: "p1", stepIndex: 0 }],
+      detectAndResolve: async () => {},
+      applyAcceptedHelpers: async (_tx, _baseId, steps) => { runnable.push(...steps); },
+      markFulfilledByStep: async () => {}
+    });
+    seedStandardBase(harness, {
+      stepOverrides: { status: "blocked", blockedReason: "insufficient_power" },
+      robotOverrides: {
+        deviceDefId: "yd-s1", groupId: "survey", status: "charging",
+        batteryWh: 10_000, batteryCapacityWh: 10_000
+      }
+    });
+
+    await harness.service.settleBases({} as IndustryTx, T0);
+
+    expect(harness.industry.steps[0]?.status).toBe("ready");
+    expect(runnable).toEqual([{ projectId: "p1", stepIndex: 0 }]);
+  });
+
+  it("旧存档已完成的中途步骤补结案且不再接入 helper", async () => {
+    const fulfilled: Array<[string, number]> = [];
+    const runnable: Array<{ projectId: string; stepIndex: number }> = [];
+    const harness = makeHarness({
+      listOpenRequests: async () => [{ status: "accepted", operatorId: "op-1", projectId: "p1", stepIndex: 0 }],
+      detectAndResolve: async () => {},
+      applyAcceptedHelpers: async (_tx, _baseId, steps) => { runnable.push(...steps); },
+      markFulfilledByStep: async (_tx, _baseId, projectId, stepIndex) => {
+        fulfilled.push([projectId, stepIndex]);
+      }
+    });
+    seedStandardBase(harness, {
+      stepOverrides: { status: "completed", workDone: 80 },
+      robotOverrides: { status: "idle", currentProjectId: null, currentStepIndex: null }
+    });
+    harness.industry.steps.push({
+      projectId: "p1", stepIndex: 1, kind: "commissioning", groupId: "engineering",
+      status: "pending", workRequired: 10, workDone: 0, blockedReason: null
+    });
+
+    await harness.service.settleBases({} as IndustryTx, T0);
+
+    expect(fulfilled).toEqual([["p1", 0]]);
+    expect(runnable).toEqual([]);
+  });
+});
 
 interface ScenarioOptions {
   templateRevision?: number;
