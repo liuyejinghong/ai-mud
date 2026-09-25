@@ -4,7 +4,8 @@
 //   A1 制造结算按基地隔离：暂停 / 租约失效基地的工单、库存、设备、电力在别的基地结算时逐字段不变；
 //   A2 产速与全服运行基地数无关：同一基地同一 Δsim，1 / 2 / 5 个运行基地时结果相同；
 //   A3 同基地多张工单按 FIFO 分摊本子 tick 的制造能量预算，合计不超过预算；
-//   A4 制造取能从本基地储能扣减并计入 lastLoadW（m13-p-contract §4.2 同电力池、1500W）。
+//   A4 制造取能从本基地储能扣减并计入 lastLoadW（m13-p-contract §4.2 同电力池、1500W）；
+//   A6 开工请求（含同 commandId 幂等重放）不在请求路径触发任何结算副作用（ARCH-domain-02）。
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -386,5 +387,74 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
     const job = await readJob(withJob.jobIds[0]!);
     expect(job.current_unit_work_done).toBeGreaterThan(24.9);
     expect(job.current_unit_work_done).toBeLessThan(25.5);
+  }, 60_000);
+
+  it("A6: 开工与同 commandId 幂等重放都不在请求路径触发结算（本基地与其他运行基地均不推进）", async () => {
+    const now = Date.now();
+    const provisionAccount = async (label: string) => {
+      const accountId = randomUUID();
+      await client.query(
+        `INSERT INTO accounts (id, email, password_hash, role) VALUES ($1, $2, 'x', 'player')`,
+        [accountId, `p0int-${label}-${accountId}@example.invalid`]
+      );
+      const { baseId } = await ops.session.provision.execute({ accountId }, { commandId: randomUUID() });
+      // 运行中 + 租约有效 + 已有 5 分钟未结算：旧实现的请求路径全服结算会推进它。
+      await client.query(
+        `UPDATE bases SET time_mode = 'running', last_advanced_at = $2 WHERE id = $1`,
+        [baseId, new Date(now - 5 * MINUTE_MS)]
+      );
+      await client.query(
+        `INSERT INTO base_control_leases (base_id, lease_token, lease_until) VALUES ($1, $2, $3)
+         ON CONFLICT (base_id) DO UPDATE SET lease_until = EXCLUDED.lease_until`,
+        [baseId, `p0int-${label}`, new Date(now + 300_000)]
+      );
+      return { accountId, baseId };
+    };
+    const actor = await provisionAccount("a6-actor");
+    const bystander = await provisionAccount("a6-bystander");
+    const { rows: sites } = await client.query(
+      `SELECT id FROM base_sites WHERE base_id = $1 AND site_key = 'site_a'`,
+      [actor.baseId]
+    );
+    const siteId = sites[0].id as string;
+
+    const bystanderBefore = await snapshotBase(bystander.baseId);
+    const actorBefore = await snapshotBase(actor.baseId);
+    const input = {
+      definitionRef: { kind: "project" as const, stableId: "install-solar-array", revision: 1 },
+      siteId,
+      commandId: randomUUID()
+    };
+
+    const first = await ops.projects.create.execute({ accountId: actor.accountId }, input);
+    expect(first.duplicate).toBe(false);
+
+    const assertNoSettlement = async () => {
+      expect(await snapshotBase(bystander.baseId)).toEqual(bystanderBefore);
+      const actorAfter = await snapshotBase(actor.baseId);
+      expect(actorAfter.power).toEqual(actorBefore.power);
+      expect(actorAfter.operators).toEqual(actorBefore.operators);
+      const [baseRow] = actorAfter.base as Array<{ sim_time: Date; last_advanced_at: Date }>;
+      const [baseRowBefore] = actorBefore.base as Array<{ sim_time: Date; last_advanced_at: Date }>;
+      expect(baseRow?.sim_time).toEqual(baseRowBefore?.sim_time);
+      expect(baseRow?.last_advanced_at).toEqual(baseRowBefore?.last_advanced_at);
+      const steps = actorAfter.steps as Array<{ step_index: number; status: string; work_done: number }>;
+      expect(steps.map((step) => [step.step_index, step.status, step.work_done])).toEqual([
+        [0, "ready", 0],
+        [1, "pending", 0],
+        [2, "pending", 0],
+        [3, "pending", 0]
+      ]);
+    };
+    await assertNoSettlement();
+
+    const replay = await ops.projects.create.execute({ accountId: actor.accountId }, input);
+    expect(replay).toEqual({ projectId: first.projectId, duplicate: true });
+    await assertNoSettlement();
+    const { rows: projects } = await client.query(
+      `SELECT COUNT(*)::int AS n FROM base_projects WHERE base_id = $1`,
+      [actor.baseId]
+    );
+    expect(projects[0].n).toBe(1);
   }, 60_000);
 });
