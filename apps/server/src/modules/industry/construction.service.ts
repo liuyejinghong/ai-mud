@@ -1,7 +1,7 @@
 // M12-B 项目创建/取消业务（m12-p-contract.md §3.4—§3.5）。
 // 同事务：物料全额预留（任一不足整体回滚 RESOURCE_INSUFFICIENT）→ 插项目+步骤 →
 // 站点 reserved → 回执落结果；重放一致 → 原结果，不一致 → IDEMPOTENCY_CONFLICT。
-// 取消：非终态项目 → 释放全部未消耗预留 → cancelled → 释放站点。
+// 取消：非终态项目 → 释放全部未消耗预留 → cancelled → 释放站点 → 结案本项目打开的协作请求（B005）。
 // 事实只经端口写：assets（物料预留/释放）、world（站点）、application 收据端口由
 // composition 以 (tx) => AssetMutationService(tx) 形式注入（industry→assets 边允许）。
 import type {
@@ -16,6 +16,10 @@ import {
   type AssetMutationPort,
   type CommandReceipt
 } from "../ledger/asset-mutation.service.js";
+import {
+  CooperationRepository,
+  type CooperationRequestStore
+} from "./cooperation.repository.js";
 import type {
   IndustryProjectStore,
   IndustryTx
@@ -75,6 +79,9 @@ export type ConstructionReceiptsPort = Pick<
   "findReceiptForUpdate" | "claimReceipt" | "saveReceiptResult"
 >;
 
+// 同模块协作请求写面（industry 是 cooperation_requests 唯一写者）。
+export type ConstructionCooperationPort = Pick<CooperationRequestStore, "closeOpenByProject">;
+
 export interface ConstructionServiceDeps {
   lookup: ConstructionLookupPort;
   assets: ConstructionAssetPort;
@@ -83,6 +90,9 @@ export interface ConstructionServiceDeps {
   store: IndustryProjectStore;
   // 生产绑定：(tx) => new AssetMutationService(tx)。测试注入内存替身。
   receipts: (tx: ConstructionTx) => ConstructionReceiptsPort;
+  // B005 取消项目同事务结案协作请求。缺省 = (tx) => new CooperationRepository(tx)（同模块仓库，
+  // composition 未显式绑定时生产路径也生效）；测试注入内存替身。
+  cooperation?: (tx: ConstructionTx) => ConstructionCooperationPort;
 }
 
 export interface ConstructionPrincipal {
@@ -131,7 +141,11 @@ function isCancelResultPayload(value: unknown): value is CancelResultPayload {
 }
 
 export class ConstructionService {
-  constructor(private readonly deps: ConstructionServiceDeps) {}
+  private readonly openCooperation: (tx: ConstructionTx) => ConstructionCooperationPort;
+
+  constructor(private readonly deps: ConstructionServiceDeps) {
+    this.openCooperation = deps.cooperation ?? ((tx) => new CooperationRepository(tx));
+  }
 
   async create(
     tx: ConstructionTx,
@@ -278,6 +292,10 @@ export class ConstructionService {
     }
     await this.deps.store.updateProjectStatus(tx, project.id, "cancelled" as ProjectStatus);
     await this.deps.sites.releaseSite(tx, project.siteId);
+    // B005：同一事务结案本项目 pending/accepted 协作请求。否则 accepted 永不结案，helper 被
+    // reservedHelpers 永久排除、主屏“查看 N 项协作”一直指向已取消项目。helper 机器人本身在下一
+    // tick 由纯规则（working）或协作回收（charging 挂旧分配）释放为 idle。
+    await this.openCooperation(tx).closeOpenByProject(tx, baseId, project.id, "project_cancelled");
 
     const result: CancelResultPayload = {
       cancelled: true,
