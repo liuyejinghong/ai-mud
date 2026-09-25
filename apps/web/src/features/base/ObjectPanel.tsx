@@ -1,5 +1,5 @@
 import { newCommandId } from "../../lib/uuid.js";
-import { BASE_ITEM_NAMES } from "./EconomyBoard.js";
+import { BASE_ITEM_NAMES, describeReservationSources } from "./EconomyBoard.js";
 // 右侧对象面板：根据当前选中对象（项目 / 设备 / 站点）展示快照里的事实与可用操作。
 import type {
   BaseDeviceDto,
@@ -150,7 +150,12 @@ function ProjectDetail({
       <p className="base-detail-line">状态：{PROJECT_STATUS_LABELS[project.status]}</p>
       {timeMode === "paused" && cancellable ? (
         <div className="base-paused-task">
-          <p className="base-copy">基地时间已暂停，此项目不会推进。恢复计时后继续施工。</p>
+          <p className="base-copy">
+            基地时间已暂停，此项目不会推进。
+            {project.status === "blocked"
+              ? "恢复计时后仍需解决受阻条件。"
+              : "恢复计时后重新检查施工条件。"}
+          </p>
           <button type="button" className="base-primary-button" disabled={isBusy} onClick={onResume}>
             恢复计时
           </button>
@@ -347,12 +352,14 @@ function SiteDetail({
                       purchase.itemId === input.itemId && purchase.status === "in_transit"
                     ).reduce((sum, purchase) => sum + purchase.quantity, 0);
                     const short = available < input.quantity;
+                    const sourceSummary = describeReservationSources(resource);
                     return (
                       <li key={input.itemId}>
                         {BASE_ITEM_NAMES[input.itemId] ?? input.itemId} ×{input.quantity}
                         （可支配 {available}，总量 {resource?.quantity ?? 0}，已占用 {resource?.reservedQuantity ?? 0}
                         {short ? `，缺 ${input.quantity - available}` : ""}
                         {inTransit > 0 ? `，在途 ${inTransit}（到货前不可用）` : ""}）
+                        {sourceSummary ? ` 占用去向：${sourceSummary}` : ""}
                       </li>
                     );
                   })}

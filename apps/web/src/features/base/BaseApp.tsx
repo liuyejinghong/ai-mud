@@ -349,9 +349,9 @@ export function BaseApp({
   );
 
   const handleClockCommand = useCallback(
-    (input: BaseClockCommandInputDto) => {
+    (input: BaseClockCommandInputDto, area: "base" | "clock" = "clock") => {
       if (csrfToken === null) return;
-      void runCommand(() => setClock(input, csrfToken), "base");
+      void runCommand(() => setClock(input, csrfToken), area);
     },
     [csrfToken, runCommand]
   );

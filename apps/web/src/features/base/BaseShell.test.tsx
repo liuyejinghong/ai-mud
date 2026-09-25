@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BaseSnapshotDto } from "@ai-mud/shared";
 import { useState } from "react";
@@ -149,6 +149,13 @@ describe("BaseShell", () => {
 
     expect(screen.getByText("时间已暂停")).toBeTruthy();
     expect(screen.getByRole("button", { name: "恢复计时" })).toBeTruthy();
+  });
+
+  it("页首时间命令失败在时间控制旁提示，地图视图不吞掉反馈", () => {
+    render(<BaseShell {...shellProps(buildSnapshot())}
+      actionFeedback={{ area: "clock", kind: "error", message: "无法恢复计时" }} />);
+    expect(within(screen.getByLabelText("基地时间")).getByRole("alert").textContent)
+      .toBe("无法恢复计时");
   });
 
   it("计时时显示速度并提供暂停按钮", () => {

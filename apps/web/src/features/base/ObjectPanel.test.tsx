@@ -159,6 +159,7 @@ describe("ObjectPanel", () => {
 
     view.rerender(<ObjectPanel {...props} selectedResourceId={null} selectedSiteId="site-a" />);
     expect(screen.getByText(/锚固件 ×3.*可支配 0.*缺 3.*在途 3/)).toBeTruthy();
+    expect(screen.getByText(/占用去向：工程「安装太阳能阵列」×8/)).toBeTruthy();
   });
 
   it("选中空地时列出可建项目，点击建设按钮上报含 uuid 的命令参数", () => {
@@ -208,7 +209,7 @@ describe("ObjectPanel", () => {
     render(
       <ObjectPanel
         sites={sites}
-        projects={projects}
+        projects={[{ ...projects[0]!, status: "blocked" }]}
         devices={devices}
         purchases={[]}
         resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, reservedQuantity: 0, reservationSources: [], description: "维修耗材" }]}
@@ -230,6 +231,7 @@ describe("ObjectPanel", () => {
     expect(screen.getByText("工作量 10/80")).toBeTruthy();
     expect(screen.getByText("受阻：供电不足")).toBeTruthy();
     expect(screen.getByText(/基地时间已暂停，此项目不会推进/)).toBeTruthy();
+    expect(screen.getByText(/恢复计时后仍需解决受阻条件/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "恢复计时" }));
     expect(onResume).toHaveBeenCalledOnce();
   });

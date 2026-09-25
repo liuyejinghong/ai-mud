@@ -12,7 +12,7 @@ import type {
   RecipeTemplateDto
 } from "@ai-mud/shared";
 import { MANUFACTURING_MAX_OUTPUTS } from "@ai-mud/shared";
-import { BASE_ITEM_NAMES } from "./EconomyBoard.js";
+import { BASE_ITEM_NAMES, describeReservationSources } from "./EconomyBoard.js";
 import { describeBlockedReason } from "./ProjectBoard.js";
 
 export const MANUFACTURING_JOB_STATUS_LABELS: Record<ManufacturingJobStatus, string> = {
@@ -83,12 +83,15 @@ export function ManufacturingBoard({
                         const inTransit = purchases.filter((purchase) =>
                           purchase.itemId === input.itemId && purchase.status === "in_transit"
                         ).reduce((sum, purchase) => sum + purchase.quantity, 0);
+                        const sourceSummary = describeReservationSources(resource);
                         return (
                           <li key={input.itemId}>
                             {BASE_ITEM_NAMES[input.itemId] ?? input.itemId}：每台 ×{input.quantity}，
-                            本单需 ×{required}（可支配 {available}，已占用 {resource?.reservedQuantity ?? 0}
+                            本单需 ×{required}（可支配 {available}，总量 {resource?.quantity ?? 0}，
+                            已占用 {resource?.reservedQuantity ?? 0}
                             {available < required ? `，缺 ${required - available}` : ""}
                             {inTransit > 0 ? `，在途 ${inTransit}（到货前不可用）` : ""}）
+                            {sourceSummary ? ` 占用去向：${sourceSummary}` : ""}
                           </li>
                         );
                       })}

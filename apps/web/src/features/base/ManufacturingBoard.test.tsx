@@ -114,7 +114,11 @@ describe("ManufacturingBoard", () => {
       recipes: [recipeS1],
       resources: [
         { itemId: "spare_parts", name: "通用备件", quantity: 30, reservedQuantity: 0, reservationSources: [], description: "" },
-        { itemId: "anchor", name: "锚固件", quantity: 8, reservedQuantity: 8, reservationSources: [], description: "" }
+        {
+          itemId: "anchor", name: "锚固件", quantity: 8, reservedQuantity: 8,
+          reservationSources: [{ kind: "project", id: "p1", name: "安装太阳能阵列", quantity: 8 }],
+          description: ""
+        }
       ],
       purchases: [{
         purchaseId: "purchase-1", itemId: "anchor", itemName: "锚固件", quantity: 3,
@@ -124,7 +128,7 @@ describe("ManufacturingBoard", () => {
     fireEvent.change(screen.getByRole("spinbutton", { name: "制造 YD-S1 机器人数量" }), {
       target: { value: "2" }
     });
-    expect(screen.getByText(/锚固件：每台 ×3.*本单需 ×6.*可支配 0.*缺 6.*在途 3/)).toBeTruthy();
+    expect(screen.getByText(/锚固件：每台 ×3.*本单需 ×6.*可支配 0.*总量 8.*缺 6.*在途 3.*占用去向：工程「安装太阳能阵列」×8/)).toBeTruthy();
     expect(screen.getByText(/通用备件：每台 ×4.*本单需 ×8.*可支配 30/)).toBeTruthy();
   });
 

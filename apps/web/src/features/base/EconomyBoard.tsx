@@ -62,6 +62,7 @@ export function EconomyBoard({
             .map((order) => {
             const resource = resources.find((row) => row.itemId === order.requiredItemId);
             const available = resource ? resource.quantity - resource.reservedQuantity : 0;
+            const sourceSummary = describeReservationSources(resource);
             return (
               <li key={order.orderId}>
                 <div
@@ -75,8 +76,9 @@ export function EconomyBoard({
                   </span>
                   {order.status === "accepted" ? (
                     <span className="base-project-step">
-                      可支配 {available} · 已占用 {resource?.reservedQuantity ?? 0}
+                      可支配 {available} · 总量 {resource?.quantity ?? 0} · 已占用 {resource?.reservedQuantity ?? 0}
                       {available < order.quantity ? ` · 尚缺 ${order.quantity - available}` : ""}
+                      {sourceSummary ? ` · 占用去向：${sourceSummary}` : ""}
                     </span>
                   ) : null}
                 </div>
@@ -189,3 +191,11 @@ export const BASE_ITEM_NAMES: Record<string, string> = {
   anchor: "锚固件",
   spare_parts: "通用备件"
 };
+
+export function describeReservationSources(resource: BaseResourceDto | undefined): string | null {
+  if (!resource || resource.reservedQuantity === 0) return null;
+  const sources = resource.reservationSources.map((source) =>
+    `${source.kind === "project" ? "工程" : "制造工单"}「${source.name}」×${source.quantity}`
+  );
+  return sources.length > 0 ? sources.join("、") : "占用来源暂未同步";
+}

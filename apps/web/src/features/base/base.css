@@ -176,6 +176,11 @@
   gap: 4px;
 }
 
+.base-clock > .base-task-feedback {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .base-clock .base-primary-button {
   white-space: nowrap;
 }

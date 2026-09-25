@@ -80,11 +80,13 @@ describe("EconomyBoard", () => {
       orders: [{ ...order, status: "accepted" }],
       resources: [{
         itemId: "solar_panel_set", name: "太阳电池阵组件", quantity: 8,
-        reservedQuantity: 8, reservationSources: [], description: ""
+        reservedQuantity: 8,
+        reservationSources: [{ kind: "project", id: "p1", name: "安装太阳能阵列", quantity: 8 }],
+        description: ""
       }],
       onDeliverOrder
     });
-    expect(screen.getByText(/可支配 0 · 已占用 8 · 尚缺 6/)).toBeTruthy();
+    expect(screen.getByText(/可支配 0 · 总量 8 · 已占用 8 · 尚缺 6 · 占用去向：工程「安装太阳能阵列」×8/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "交付物资" }));
     expect(onDeliverOrder).toHaveBeenCalledWith("order-1");
   });

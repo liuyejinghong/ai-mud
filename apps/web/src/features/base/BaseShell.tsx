@@ -33,7 +33,7 @@ function kwh(wattHours: number): string {
 
 type Workspace = "base" | "economy" | "manufacturing" | "cooperation";
 export type BaseActionFeedback = {
-  area: "base" | "economy" | "manufacturing";
+  area: "base" | "clock" | "economy" | "manufacturing";
   kind: "pending" | "success" | "error";
   message: string;
 };
@@ -52,7 +52,7 @@ export interface BaseShellProps {
   onSelectDevice: (deviceId: string) => void;
   onCreateProject: (input: CreateProjectInputDto) => void;
   onCancelProject: (projectId: string) => void;
-  onClockCommand: (input: BaseClockCommandInputDto) => void;
+  onClockCommand: (input: BaseClockCommandInputDto, area?: "base" | "clock") => void;
   onSetSpeed: (speed: number) => void;
   onSelectResource: (itemId: string) => void;
   onLogout: () => void;
@@ -206,7 +206,7 @@ export function BaseShell({
               <strong className="base-paused-badge" role="status">
                 时间已暂停
               </strong>
-              <p className="base-summary-line base-pause-note">暂停期间不消耗物资，恢复后继续施工。</p>
+              <p className="base-summary-line base-pause-note">暂停期间不消耗物资；恢复后重新检查工程条件。</p>
             </>
           ) : (
             <p className="base-summary-line">
@@ -245,6 +245,7 @@ export function BaseShell({
               退出登录
             </button>
           </div>
+          <ActionFeedback area="clock" feedback={actionFeedback} />
         </section>
       </header>
 
@@ -327,7 +328,7 @@ export function BaseShell({
               onSelectProject={(projectId) => selectAndShow(() => onSelectProject(projectId))}
               onCreateProject={onCreateProject}
               onCancelProject={onCancelProject}
-              onResume={() => onClockCommand({ command: "resume" })}
+              onResume={() => onClockCommand({ command: "resume" }, "base")}
             />
             <ActionFeedback area="base" feedback={actionFeedback} />
           </div>
