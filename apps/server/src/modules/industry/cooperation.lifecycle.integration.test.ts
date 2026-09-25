@@ -1,6 +1,10 @@
 // B005 协作请求生命周期（真 PostgreSQL，随机临时库）。
-// 覆盖：取消项目在调用方事务内结案（含回滚一致）、取消后 helper 下一 tick 被再次选中、
-// content_missing 阻塞结案并释放原地充电的 helper、仓库条件写守卫（不复活已结案请求）。
+// 覆盖：取消项目在调用方事务内结案（含回滚一致）、取消后 helper 下一 tick 被再次选中
+// （working helper 与缺电原地 charging 的 helper 两条释放路径）、content_missing 阻塞结案并释放
+// 原地充电的 helper、仓库条件写守卫（不复活已结案请求）。
+// 结算用车道 A 的 BaseSettlementService 真身：缺工靠“本组没有机器人”制造，不依赖耗电/充电数值；
+// helper 电量须 ≥ ROBOT_WORK_DRAIN_WH（前提断言），deps 形状由构造函数类型检查，
+// 结算侧改签名或阈值会显式失败而不是静默失效。
 // 只用 industry 模块真身（仓库/结算/协作/建设服务）+ platform schema；机器人、站点、查找、
 // 回执、决策以最小内联适配器按 composition 同结构绑定，避免测试跨业务模块依赖。
 import { randomUUID } from "node:crypto";
@@ -33,7 +37,11 @@ import {
   type CooperationOperatorRecord,
   type CooperationRobotUpdate
 } from "./cooperation.service.js";
-import type { BaseRobotRecord, BaseTickRobotUpdate } from "./industry.pure.js";
+import {
+  ROBOT_WORK_DRAIN_WH,
+  type BaseRobotRecord,
+  type BaseTickRobotUpdate
+} from "./industry.pure.js";
 import { IndustryRepository, type IndustryTx } from "./industry.repository.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -423,11 +431,10 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
     expect(active.map((row) => row.id)).toEqual([acceptedB]);
   });
 
-  it("取消后下一 tick：helper 回到 idle，并被新项目的缺工步骤再次选中", async () => {
+  it("取消后下一 tick：working helper 被释放，并被新项目的缺工步骤再次选中", async () => {
     const db: Db = drizzle(migPool, { schema });
     const { accountId, baseId } = await seedBase(db);
-    // 驮运电量 < 500 Wh：运输步骤本组无人可出工 → 请求跨组支援。
-    await seedRobot(db, baseId, { deviceDefId: "yd-h1", groupId: "transport", batteryWh: 100, batteryCapacityWh: 20_000 });
+    // 基地没有运输组机器人：运输步骤本组无人可出工 → 请求跨组支援（不依赖耗电/充电数值）。
     const survey = await seedRobot(db, baseId, { deviceDefId: "yd-s1", groupId: "survey", batteryWh: 10_000, batteryCapacityWh: 10_000 });
     const a = await seedProject(db, baseId, [
       { kind: "transport", groupId: "transport", status: "ready", workRequired: 60 },
@@ -445,6 +452,10 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
       })
     );
     expect((await requestsOf(db, baseId))[0]).toMatchObject({ id: requestA!.id, status: "expired" });
+    // 前提：取消命令不直接改机器人（npc 唯一写者），释放发生在下一 tick；helper 电量仍够出工。
+    const surveyAfterCancel = await robotOf(db, survey);
+    expect(surveyAfterCancel).toMatchObject({ status: "working", currentProjectId: a.projectId });
+    expect(surveyAfterCancel.batteryWh).toBeGreaterThanOrEqual(ROBOT_WORK_DRAIN_WH);
 
     const b = await seedProject(db, baseId, [
       { kind: "transport", groupId: "transport", status: "ready", workRequired: 100 }
@@ -456,6 +467,41 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
     const requestB = (await requestsOf(db, baseId)).find((row) => row.projectId === b.projectId);
     expect(requestB).toMatchObject({ status: "accepted", helperOperatorId: survey });
     expect(await robotOf(db, survey)).toMatchObject({ status: "working", currentProjectId: b.projectId, currentStepIndex: 0 });
+  });
+
+  it("取消后下一 tick：缺电原地 charging、仍挂旧分配的 helper 由协作回收释放，并被新项目再次选中", async () => {
+    const db: Db = drizzle(migPool, { schema });
+    const { accountId, baseId } = await seedBase(db);
+    const a = await seedProject(db, baseId, [
+      { kind: "installation", groupId: "engineering", status: "blocked", workRequired: 80, workDone: 10, blockedReason: "insufficient_power" }
+    ]);
+    // C07：缺电阻塞时 helper 原地充电、保留分配（纯规则只回收 working，不回收 charging）。
+    const survey = await seedRobot(db, baseId, {
+      deviceDefId: "yd-s1", groupId: "survey", batteryWh: 8_000, batteryCapacityWh: 10_000,
+      status: "charging", currentProjectId: a.projectId, currentStepIndex: 0
+    });
+    const requestA = await seedRequest(db, { baseId, projectId: a.projectId, stepIndex: 0, status: "accepted", helperOperatorId: survey });
+
+    await db.transaction((tx) =>
+      makeConstruction(db, new MemoryReceipts()).cancel(tx, { accountId }, {
+        projectId: a.projectId, commandId: randomUUID()
+      })
+    );
+    expect((await requestsOf(db, baseId))[0]).toMatchObject({ id: requestA, status: "expired" });
+    // 前提：取消后 helper 仍挂旧分配（charging），电量够出工——只有协作回收能把它放回候选。
+    const surveyAfterCancel = await robotOf(db, survey);
+    expect(surveyAfterCancel).toMatchObject({ status: "charging", currentProjectId: a.projectId, currentStepIndex: 0 });
+    expect(surveyAfterCancel.batteryWh).toBeGreaterThanOrEqual(ROBOT_WORK_DRAIN_WH);
+
+    const b = await seedProject(db, baseId, [
+      { kind: "transport", groupId: "transport", status: "ready", workRequired: 100 }
+    ]);
+    await db.transaction((tx) => makeSettlement(db, baseId, SIM_NOON).settleBases(tx, new Date()));
+
+    const requestB = (await requestsOf(db, baseId)).find((row) => row.projectId === b.projectId);
+    expect(requestB).toMatchObject({ status: "accepted", helperOperatorId: survey });
+    expect(await robotOf(db, survey)).toMatchObject({ status: "working", currentProjectId: b.projectId, currentStepIndex: 0 });
+    expect((await requestsOf(db, baseId)).find((row) => row.id === requestA)).toMatchObject({ status: "expired" });
   });
 
   it("内容缺失阻塞：accepted 在同一 tick 结案，原地充电的 helper 释放为 idle", async () => {
