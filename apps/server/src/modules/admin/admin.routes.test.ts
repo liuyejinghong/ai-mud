@@ -289,9 +289,18 @@ const worldResetResponse: WorldResetResponseDto = {
   message: "世界已重置并完成基础初始化。"
 };
 
-function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
+// 既有用例覆盖旧世界管理面本身，因此默认显式开启旧世界开关（生产由 LEGACY_WORLD_ENABLED 决定，默认关闭）。
+function buildAdminRouteTestApp(
+  deps: Partial<AdminRouteDependencies>,
+  options: { legacyWorldEnabled: boolean } = { legacyWorldEnabled: true }
+) {
   const app = Fastify();
-  const baseDeps: AdminRouteDependencies = {
+  void registerAdminRoutes(app, { ...buildAdminRouteTestAppDeps(), ...deps }, options);
+  return app;
+}
+
+function buildAdminRouteTestAppDeps(): AdminRouteDependencies {
+  return {
     getCurrentAdmin: async () => null,
     verifyAdminMutation: async () => false,
     listActivationCodes: async () => [],
@@ -344,8 +353,6 @@ function buildAdminRouteTestApp(deps: Partial<AdminRouteDependencies>) {
     },
     now: () => new Date("2026-07-01T00:00:00.000Z")
   };
-  void registerAdminRoutes(app, { ...baseDeps, ...deps });
-  return app;
 }
 
 describe("registerAdminRoutes", () => {
@@ -1300,5 +1307,160 @@ describe("registerAdminRoutes", () => {
     expect(simulateCalls).toEqual([
       { days: 1, startAt: new Date("2026-07-01T00:00:00.000Z") }
     ]);
+  });
+
+});
+
+// 车道 C2/C3（ARCH-boundaries-01/02）：LEGACY_WORLD_ENABLED 关闭（默认）时，旧黑松世界的管理面不注册。
+describe("registerAdminRoutes with the legacy world disabled", () => {
+  const admin = {
+    getCurrentAdmin: async () => ({ id: "admin-1", email: "admin@example.com", role: "admin" as const }),
+    verifyAdminMutation: async () => true
+  };
+
+  it("defaults to the legacy world being disabled when no options are passed", async () => {
+    const resetCalls: unknown[] = [];
+    const app = Fastify();
+    const deps: AdminRouteDependencies = {
+      ...buildAdminRouteTestAppDeps(),
+      ...admin,
+      resetWorld: async (input) => {
+        resetCalls.push(input);
+        return worldResetResponse;
+      }
+    };
+    void registerAdminRoutes(app, deps);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/world-reset",
+      payload: { confirmationText: "RESET BLACKPINE", reason: "经济系统崩溃后重置" }
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(resetCalls).toEqual([]);
+  });
+
+  it("does not register the world reset route even for admins with a mutation token", async () => {
+    const resetCalls: unknown[] = [];
+    const app = buildAdminRouteTestApp(
+      {
+        ...admin,
+        resetWorld: async (input) => {
+          resetCalls.push(input);
+          return worldResetResponse;
+        }
+      },
+      { legacyWorldEnabled: false }
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/world-reset",
+      payload: { confirmationText: "RESET BLACKPINE", reason: "经济系统崩溃后重置" }
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(resetCalls).toEqual([]);
+  });
+
+  it.each([
+    ["GET", "/admin/economy"],
+    ["GET", "/admin/npc-memory"],
+    ["POST", "/admin/npcs/settle"],
+    ["POST", "/admin/npcs/simulate"]
+  ] as const)("does not register legacy world admin endpoint %s %s", async (method, url) => {
+    let legacyCalls = 0;
+    const app = buildAdminRouteTestApp(
+      {
+        ...admin,
+        getEconomySnapshot: async () => {
+          legacyCalls += 1;
+          return economySnapshot;
+        },
+        listNpcMemory: async () => {
+          legacyCalls += 1;
+          return { entries: [], fragments: [] };
+        },
+        settleNpcWorld: async () => {
+          legacyCalls += 1;
+          throw new Error("legacy settle must not run");
+        },
+        runNpcSimulation: async () => {
+          legacyCalls += 1;
+          return npcSimulationReport;
+        }
+      },
+      { legacyWorldEnabled: false }
+    );
+
+    const response = await app.inject({ method, url, ...(method === "POST" ? { payload: {} } : {}) });
+
+    expect(response.statusCode).toBe(404);
+    expect(legacyCalls).toBe(0);
+  });
+
+  it("keeps the NPC summary readable for the world health page without touching (and seeding) the legacy NPC world", async () => {
+    let legacySnapshotCalls = 0;
+    const app = buildAdminRouteTestApp(
+      {
+        ...admin,
+        getNpcSnapshot: async () => {
+          legacySnapshotCalls += 1;
+          throw new Error("legacy NPC read seeds the old world");
+        },
+        now: () => new Date("2026-09-25T08:00:00.000Z")
+      },
+      { legacyWorldEnabled: false }
+    );
+
+    const response = await app.inject({ method: "GET", url: "/admin/npcs" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      generatedAt: "2026-09-25T08:00:00.000Z",
+      settlementId: "blackpine_outpost",
+      treasury: { gold: 0, silver: 0, copper: 0, totalCopper: 0 },
+      npcs: []
+    });
+    expect(legacySnapshotCalls).toBe(0);
+  });
+
+  it("still guards the NPC summary behind an admin session", async () => {
+    const app = buildAdminRouteTestApp({ getCurrentAdmin: async () => null }, { legacyWorldEnabled: false });
+
+    const response = await app.inject({ method: "GET", url: "/admin/npcs" });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it.each([
+    ["GET", "/admin/activation-codes"],
+    ["GET", "/admin/accounts"],
+    ["GET", "/admin/world-runtime"],
+    ["GET", "/admin/asset-ledger/health"],
+    ["GET", "/admin/ai-calls"],
+    ["GET", "/admin/ai-layer/status"]
+  ] as const)("keeps non-legacy admin endpoint %s %s", async (method, url) => {
+    const app = buildAdminRouteTestApp(admin, { legacyWorldEnabled: false });
+
+    const response = await app.inject({ method, url });
+
+    expect(response.statusCode).toBe(200);
+  });
+
+  it("keeps announcement publishing behind the admin guards", async () => {
+    const app = buildAdminRouteTestApp(
+      { getCurrentAdmin: async () => null },
+      { legacyWorldEnabled: false }
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/admin/announcements",
+      payload: { body: "维护通知" }
+    });
+
+    expect(response.statusCode).toBe(401);
   });
 });

@@ -3,7 +3,11 @@ import type { NodePgClient } from "drizzle-orm/node-postgres";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { BASE_MAX_CATCHUP_MS } from "@ai-mud/shared";
 import type { BaseDb, BaseRepoTx } from "./base.repository.js";
-import { BaseRepository, hashRequestPayload } from "./base.repository.js";
+import {
+  BaseRepository,
+  hashRequestPayload,
+  scopeTickTransactionToBase
+} from "./base.repository.js";
 
 // M12-A 仓储用例：真实 drizzle 查询构建 + 假 pg 客户端（内存行存储）。
 // 覆盖：lockAdvanceableBases 的推进政策（pause 不返回 / 租约过期不返回 /
@@ -40,7 +44,19 @@ class FakePgClient {
 
     if (text.startsWith("select")) {
       let rows: Array<Record<string, unknown>> = [];
-      if (/from "bases"/.test(text)) {
+      if (/from "bases" inner join "base_control_leases"/.test(text)) {
+        // 到期清单：running ∧ lease_until > $2（按 id 排序由 SQL 声明，这里按 id 排序模拟）。
+        rows = this.bases
+          .filter((base) => base.time_mode === params[0])
+          .filter((base) =>
+            this.leases.some(
+              (lease) =>
+                lease.base_id === base.id &&
+                (lease.lease_until as Date).getTime() > new Date(params[1] as string).getTime()
+            )
+          )
+          .sort((left, right) => String(left.id).localeCompare(String(right.id)));
+      } else if (/from "bases"/.test(text)) {
         rows = this.filterBases(text, params);
       } else if (/from "base_control_leases"/.test(text)) {
         rows = this.leases.filter((lease) => lease.base_id === params[0]);
@@ -181,6 +197,9 @@ class FakePgClient {
   }
 
   private filterBases(text: string, params: unknown[]): Array<Record<string, unknown>> {
+    if (/"time_mode" = \$1 and "bases"."id" = \$2/.test(text)) {
+      return this.bases.filter((base) => base.time_mode === params[0] && base.id === params[1]);
+    }
     if (/"account_id" = \$/.test(text)) {
       return this.bases.filter((base) => base.account_id === params[0]);
     }
@@ -316,6 +335,85 @@ describe("BaseRepository.lockAdvanceableBases", () => {
 
     // Δwall <= 0 的基地被跳过，不产生任何推进记录。
     expect(advanceable).toHaveLength(0);
+  });
+});
+
+describe("BaseRepository per-base tick isolation (车道 C4)", () => {
+  function leaseFor(baseId: string, untilOffsetMs = MINUTE_MS) {
+    return {
+      base_id: baseId,
+      lease_token: "t",
+      lease_until: new Date(NOW.getTime() + untilOffsetMs),
+      updated_at: NOW
+    };
+  }
+
+  it("locks running bases in a deterministic order and skips rows another transaction holds", async () => {
+    const { client, repo, tx } = createRepository();
+    client.bases.push(seedBase({ id: "b-1" }));
+    client.leases.push(leaseFor("b-1"));
+
+    await repo.lockAdvanceableBases(tx, NOW);
+
+    const lockQuery = client.queries[0]?.text ?? "";
+    expect(lockQuery).toContain('order by "bases"."id"');
+    expect(lockQuery).toContain("for update skip locked");
+  });
+
+  it("only locks and returns the base a tick transaction is scoped to", async () => {
+    const { client, repo, tx } = createRepository();
+    client.bases.push(seedBase({ id: "b-1" }), seedBase({ id: "b-2" }), seedBase({ id: "b-3" }));
+    client.leases.push(leaseFor("b-1"), leaseFor("b-2"), leaseFor("b-3"));
+
+    scopeTickTransactionToBase(tx, "b-2");
+    const advanceable = await repo.lockAdvanceableBases(tx, NOW);
+
+    expect(advanceable.map((base) => base.baseId)).toEqual(["b-2"]);
+    expect(client.queries[0]?.params).toEqual(["running", "b-2"]);
+    expect(client.queries[0]?.text).toContain("for update skip locked");
+  });
+
+  it("does not leak a tick scope into other transaction handles", async () => {
+    const scoped = createRepository();
+    scoped.client.bases.push(seedBase({ id: "b-1" }));
+    scoped.client.leases.push(leaseFor("b-1"));
+    scopeTickTransactionToBase(scoped.tx, "b-1");
+
+    const unscoped = createRepository();
+    unscoped.client.bases.push(seedBase({ id: "b-1" }), seedBase({ id: "b-2" }));
+    unscoped.client.leases.push(leaseFor("b-1"), leaseFor("b-2"));
+
+    const advanceable = await unscoped.repo.lockAdvanceableBases(unscoped.tx, NOW);
+
+    expect(advanceable.map((base) => base.baseId)).toEqual(["b-1", "b-2"]);
+    expect(unscoped.client.queries[0]?.params).toEqual(["running"]);
+  });
+
+  it("lists due bases (running with a live lease) in id order without taking locks or N+1 lease reads", async () => {
+    const { client, repo, tx } = createRepository();
+    client.bases.push(
+      seedBase({ id: "b-3" }),
+      seedBase({ id: "b-1" }),
+      seedBase({ id: "b-paused", time_mode: "paused" }),
+      seedBase({ id: "b-no-lease" }),
+      seedBase({ id: "b-expired" })
+    );
+    client.leases.push(
+      leaseFor("b-3"),
+      leaseFor("b-1"),
+      leaseFor("b-paused"),
+      leaseFor("b-expired", -MINUTE_MS)
+    );
+
+    const due = await repo.listAdvanceableBaseIds(tx);
+
+    expect(due).toEqual(["b-1", "b-3"]);
+    expect(client.queries).toHaveLength(1);
+    const listQuery = client.queries[0]?.text ?? "";
+    expect(listQuery).toContain('inner join "base_control_leases"');
+    expect(listQuery).toContain('order by "bases"."id"');
+    expect(listQuery).not.toContain("for update");
+    expect(client.queries[0]?.params).toEqual(["running", NOW.toISOString()]);
   });
 });
 

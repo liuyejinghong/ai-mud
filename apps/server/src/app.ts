@@ -2,7 +2,7 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { createBaseOperations } from "./application/base/composition.js";
-import { loadEnv, type Env } from "./config/env.js";
+import { isLegacyWorldEnabled, loadEnv, type Env } from "./config/env.js";
 import { createDb, dbPoolOptionsFromEnv, type Db, type DbConnection } from "./db/client.js";
 import { registerAdminRoutes } from "./modules/admin/admin.routes.js";
 import {
@@ -27,14 +27,20 @@ import { LedgerRepository } from "./modules/ledger/ledger.repository.js";
 import { LedgerService } from "./modules/ledger/ledger.service.js";
 import { NpcRepository } from "./modules/npc/npc.repository.js";
 import { NpcService } from "./modules/npc/npc.service.js";
+import {
+  BaseRepository,
+  scopeTickTransactionToBase
+} from "./modules/world-runtime/base.repository.js";
 import { systemWorldClock } from "./modules/world-runtime/world-clock.js";
 import { WorldRuntimeRepository } from "./modules/world-runtime/world-runtime.repository.js";
 import { WorldPostTickService } from "./modules/world-runtime/world-post-tick.service.js";
 import {
+  createPerBaseTickParticipant,
   floorToTick,
   NPC_WORLD_RUNTIME_KEY,
   WorldRuntimeService,
-  type WorldRuntimeSettleResult
+  type WorldRuntimeSettleResult,
+  type WorldTickParticipant
 } from "./modules/world-runtime/world-runtime.service.js";
 
 declare module "fastify" {
@@ -106,6 +112,8 @@ export function createWorldRuntimeScheduler(input: {
 export async function buildApp(input?: { env?: Env; db?: Db }) {
   const app = Fastify({ logger: true });
   const config = input?.env ?? loadEnv();
+  // 第 0 阶段车道 C1–C3（评审 ARCH-boundaries-01/02）：旧西幻世界默认不参与 tick、不注册路由。
+  const legacyWorldEnabled = isLegacyWorldEnabled(config);
   let dbConnection: DbConnection | null = null;
   let db: Db;
 
@@ -116,12 +124,10 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
     db = dbConnection.db;
   }
   const baseOps = createBaseOperations({ db, config });
-  const runSettleDue = async (now = systemWorldClock.now()) => {
-    const runtime = new WorldRuntimeService({
-      repo: new WorldRuntimeRepository(db),
-      clock: systemWorldClock,
-      maxStepsPerRun: config.WORLD_TICK_MAX_STEPS,
-      participants: [
+
+  // 旧世界参与者：与世界时钟同一事务、全有或全无（沿用 ARCH-02 语义），只在开关开启时存在。
+  const legacyWorldParticipants: WorldTickParticipant[] = legacyWorldEnabled
+    ? [
         async (tx, tickAt) => {
           const npcService = new NpcService(
             new NpcRepository(tx),
@@ -132,11 +138,43 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
         },
         async (tx, tickAt) => {
           await new GameRepository(tx).refreshDueInstanceResources({ now: tickAt });
-        },
-        async (tx, tickAt) => {
-          await baseOps.settlement.settleBases(tx, tickAt);
         }
       ]
+    : [];
+
+  // 基地结算（车道 C4，评审 ARCH-domain-03）：世界步提交后，到期基地逐个在各自的短事务里结算；
+  // 一个基地抛错只回滚它自己，日志带 baseId，下个 tick 按真实流逝重试；其他基地与世界时钟照常推进。
+  const baseTickRepo = new BaseRepository(db, systemWorldClock);
+  const baseTick = createPerBaseTickParticipant({
+    listDueBaseIds: () => baseTickRepo.listAdvanceableBaseIds(db),
+    settleBase: (baseId, tickAt) =>
+      db.transaction(async (tx) => {
+        scopeTickTransactionToBase(tx, baseId);
+        await baseOps.settlement.settleBases(tx, tickAt);
+      }),
+    onBaseFailure: ({ baseId, tickAt, error }) => {
+      app.log.error(
+        { err: error, baseId, tickAt: tickAt.toISOString() },
+        "base settlement failed; other bases and the world clock continue"
+      );
+    }
+  });
+
+  const runSettleDue = async (now = systemWorldClock.now()) => {
+    const runtime = new WorldRuntimeService({
+      repo: new WorldRuntimeRepository(db),
+      clock: systemWorldClock,
+      maxStepsPerRun: config.WORLD_TICK_MAX_STEPS,
+      participants: legacyWorldParticipants,
+      isolated: {
+        participants: [baseTick],
+        onFailure: ({ tickAt, error }) => {
+          app.log.error(
+            { err: error, tickAt: tickAt.toISOString() },
+            "base settlement phase failed; the world clock continues"
+          );
+        }
+      }
     });
     return runtime.settleDue(now);
   };
@@ -146,19 +184,22 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
       const row = await new WorldRuntimeRepository(db).find(NPC_WORLD_RUNTIME_KEY);
       return row?.worldEpoch ?? 1;
     },
-    runPostTick: async (now) => {
-      const postTick = new WorldPostTickService({
-        tasks: createNpcTaskService(app),
-        rumors: createRumorService(app),
-        onFailure: (failure) => {
-          app.log.error(
-            { err: failure.error, phase: failure.phase, npcActorId: failure.npcActorId },
-            "world post-tick operation failed"
-          );
+    // 旧 post-tick（NPC 任务含铜币托管、传闻，均写 ai_call_logs）只属于旧世界。
+    runPostTick: legacyWorldEnabled
+      ? async (now) => {
+          const postTick = new WorldPostTickService({
+            tasks: createNpcTaskService(app),
+            rumors: createRumorService(app),
+            onFailure: (failure) => {
+              app.log.error(
+                { err: failure.error, phase: failure.phase, npcActorId: failure.npcActorId },
+                "world post-tick operation failed"
+              );
+            }
+          });
+          await postTick.run(now);
         }
-      });
-      await postTick.run(now);
-    },
+      : async () => {},
     onPostTickError: (error) => {
       app.log.error({ err: error }, "world post-tick failed");
     }
@@ -226,8 +267,10 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
   });
   await app.register(cookie, { secret: config.SESSION_SECRET });
   await app.register(registerAuthRoutes);
-  await app.register(registerGameRoutes);
-  await app.register(registerAdminRoutes);
+  if (legacyWorldEnabled) await app.register(registerGameRoutes);
+  await app.register((instance) =>
+    registerAdminRoutes(instance, undefined, { legacyWorldEnabled })
+  );
   await app.register((instance) => registerBaseSessionRoutes(instance, baseOps.session));
   await app.register((instance) => registerBaseProjectsRoutes(instance, baseOps.projects));
   await app.register((instance) =>

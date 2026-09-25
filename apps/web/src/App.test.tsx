@@ -39,7 +39,6 @@ vi.mock("./features/admin/SystemAnnouncementAdmin.js", () => ({
 vi.mock("./features/admin/WorldHealthAdmin.js", () => ({
   WorldHealthAdmin: () => <h2>世界健康总览</h2>
 }));
-vi.mock("./features/admin/WorldResetAdmin.js", () => ({ WorldResetAdmin: () => <h2>世界重置</h2> }));
 
 const session = {
   user: { id: "account-1", email: "player@example.test", role: "player" as const, status: "active" as const },
@@ -118,6 +117,22 @@ describe("App", () => {
     expect(screen.queryByRole("tabpanel")).toBeNull();
     expect(screen.queryByRole("heading", { name: "世界健康总览" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "系统公告" })).toBeNull();
+  });
+
+  // 车道 C2（ARCH-boundaries-01）：旧“世界重置”只作用于旧黑松世界、曾把共享 tick 时钟拨回 1970 令全部基地停产，
+  // 管理台不再提供该页签。
+  it("does not offer the legacy world reset tab in the management workspace", async () => {
+    vi.mocked(getCurrentSession).mockResolvedValue(adminSession);
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "管理" }));
+
+    expect(screen.getByRole("tablist")).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "世界重置" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "重置黑松世界" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "系统公告" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "内容工坊" })).toBeTruthy();
   });
 
   // AUTH-01 回归（刷新 race）：session 晚到时，BaseApp 不得先以"未登录"形态挂载——

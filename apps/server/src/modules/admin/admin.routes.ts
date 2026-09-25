@@ -487,13 +487,31 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
   };
 }
 
+export interface AdminRouteOptions {
+  // 第 0 阶段车道 C2/C3（评审 ARCH-boundaries-01/02）：旧黑松世界的管理面——世界重置、NPC 结算/仿真、
+  // 经济监控、NPC 记忆——只在 LEGACY_WORLD_ENABLED=true 时注册。缺省即关闭（fail-closed）。
+  legacyWorldEnabled: boolean;
+}
+
+function emptyNpcSnapshot(now: Date): NpcSnapshotResponse {
+  return {
+    generatedAt: now.toISOString(),
+    settlementId: BLACKPINE_MARKET_ID,
+    treasury: formatMoney(0),
+    npcs: []
+  };
+}
+
 export async function registerAdminRoutes(
   app: FastifyInstance,
-  maybeDependencies?: unknown
+  maybeDependencies?: unknown,
+  options: AdminRouteOptions = { legacyWorldEnabled: false }
 ) {
   const deps = hasAdminRouteDependencies(maybeDependencies)
     ? maybeDependencies
     : createDefaultDependencies(app);
+  // 旧世界关闭时为 null：`legacyWorld?.get(...)` / `legacyWorld?.post(...)` 整条注册被跳过（路由 404）。
+  const legacyWorld: FastifyInstance | null = options.legacyWorldEnabled ? app : null;
 
   app.get("/admin/activation-codes", async (request, reply) => {
     const admin = await deps.getCurrentAdmin(request);
@@ -513,7 +531,7 @@ export async function registerAdminRoutes(
     return { accounts: await deps.listAccounts() };
   });
 
-  app.get("/admin/economy", async (request, reply) => {
+  legacyWorld?.get("/admin/economy", async (request, reply) => {
     const admin = await deps.getCurrentAdmin(request);
     if (!admin) {
       return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
@@ -537,6 +555,8 @@ export async function registerAdminRoutes(
       return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
     }
 
+    // 旧世界关闭时仍注册（管理台首页“世界健康”依赖它），但不碰旧 NPC 服务：它的读路径会 seed 旧世界。
+    if (!options.legacyWorldEnabled) return emptyNpcSnapshot(deps.now());
     return deps.getNpcSnapshot();
   });
 
@@ -570,7 +590,7 @@ export async function registerAdminRoutes(
     return deps.getAiLayerStatus();
   });
 
-  app.get("/admin/npc-memory", async (request, reply) => {
+  legacyWorld?.get("/admin/npc-memory", async (request, reply) => {
     const admin = await deps.getCurrentAdmin(request);
     if (!admin) {
       return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
@@ -582,7 +602,7 @@ export async function registerAdminRoutes(
     };
   });
 
-  app.post("/admin/npcs/settle", async (request, reply) => {
+  legacyWorld?.post("/admin/npcs/settle", async (request, reply) => {
     const admin = await deps.getCurrentAdmin(request);
     if (!admin) {
       return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
@@ -594,7 +614,7 @@ export async function registerAdminRoutes(
     return deps.settleNpcWorld();
   });
 
-  app.post("/admin/npcs/simulate", async (request, reply) => {
+  legacyWorld?.post("/admin/npcs/simulate", async (request, reply) => {
     const admin = await deps.getCurrentAdmin(request);
     if (!admin) {
       return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
@@ -782,7 +802,7 @@ export async function registerAdminRoutes(
     }
   });
 
-  app.post("/admin/world-reset", async (request, reply) => {
+  legacyWorld?.post("/admin/world-reset", async (request, reply) => {
     const admin = await deps.getCurrentAdmin(request);
     if (!admin) {
       return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");

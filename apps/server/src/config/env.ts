@@ -35,6 +35,14 @@ const envSchema = z
       .transform((value) => (value === undefined ? true : value === "true")),
     WORLD_TICK_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
     WORLD_TICK_MAX_STEPS: z.coerce.number().int().positive().default(60),
+    // 旧西幻（黑松）世界开关，默认关闭（第 0 阶段车道 C1–C3，评审 ARCH-boundaries-01/02）。
+    // 关闭时：旧 NPC 世界结算、旧副本资源刷新、post-tick 旧 NPC 任务与传闻不进 tick；
+    // /game/* 与旧世界管理接口（含世界重置）不注册。代码与数据保留，仅供旧世界回归/仿真显式开启。
+    // 只有字面 "true" 开启；读取一律经 isLegacyWorldEnabled()。
+    LEGACY_WORLD_ENABLED: z
+      .string()
+      .optional()
+      .transform((value) => (value === undefined ? undefined : value === "true")),
     // 连接池与会话超时（车道 C5，评审 ARCH-domain-08）：未设置时由 db/client.ts
     // DEFAULT_DB_POOL_OPTIONS 给出有限默认值；不接受 0（pg 的 0 = 无限等待/不限时）。
     DB_POOL_MAX: z.coerce.number().int().positive().optional(),
@@ -86,4 +94,8 @@ export type Env = z.infer<typeof envSchema>;
 
 export function loadEnv(input: NodeJS.ProcessEnv = process.env): Env {
   return envSchema.parse(input);
+}
+
+export function isLegacyWorldEnabled(env: Pick<Env, "LEGACY_WORLD_ENABLED">): boolean {
+  return env.LEGACY_WORLD_ENABLED === true;
 }

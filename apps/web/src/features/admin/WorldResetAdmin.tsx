@@ -1,3 +1,5 @@
+// 归档（第 0 阶段车道 C2）：不再挂载于管理台 AdminShell。服务端 POST /admin/world-reset 仅在
+// LEGACY_WORLD_ENABLED=true 时注册，且重置后共享时钟对齐到重置时刻所在 tick（不再写 1970）。
 import { useState } from "react";
 import { resetWorld } from "./adminApi";
 import "./ActivationCodeAdmin.css";

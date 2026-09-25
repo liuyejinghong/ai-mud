@@ -33,6 +33,7 @@ import { NpcRepository } from "../npc/npc.repository.js";
 import { NpcService } from "../npc/npc.service.js";
 import { LedgerRepository } from "../ledger/ledger.repository.js";
 import { LedgerService } from "../ledger/ledger.service.js";
+import { floorToTick, NPC_WORLD_RUNTIME_KEY } from "../world-runtime/world-runtime.service.js";
 import type { WorldResetRepositoryPort } from "./world-reset.service.js";
 
 type WorldResetDb = Pick<Db, "delete" | "insert" | "select" | "update">;
@@ -71,7 +72,7 @@ const CLEARED_TABLES = [
 export class WorldResetRepository implements WorldResetRepositoryPort {
   constructor(private readonly db: WorldResetDb) {}
 
-  async resetWorldState(): Promise<{ clearedTables: string[] }> {
+  async resetWorldState(input: { resetAt: Date }): Promise<{ clearedTables: string[] }> {
     await this.db
       .update(aiCallLogs)
       .set({ characterId: null, npcActorId: null });
@@ -105,9 +106,12 @@ export class WorldResetRepository implements WorldResetRepositoryPort {
       .limit(1);
     const nextEpoch = (runtimeRow?.worldEpoch ?? 0) + 1;
     await this.db.delete(worldRuntimeState);
+    // 车道 C2（评审 ARCH-boundaries-01）：这一行也是基地结算的 tick 时钟。写成纪元 0 会让此后每个
+    // 世界 tick 步都被基地判为追补步（只推时钟、不生产），约一年才追平；对齐到重置时刻所在 tick。
+    // Directive: 不要改回 new Date(0)。
     await this.db.insert(worldRuntimeState).values({
-      key: "npc_world",
-      lastSettledAt: new Date(0),
+      key: NPC_WORLD_RUNTIME_KEY,
+      lastSettledAt: floorToTick(input.resetAt),
       worldEpoch: nextEpoch
     });
     await this.db.delete(itemInstances);

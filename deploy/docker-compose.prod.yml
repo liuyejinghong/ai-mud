@@ -38,6 +38,8 @@ services:
       WEB_ORIGINS: ""
       WORLD_TICK_ENABLED: "true"
       WORLD_TICK_INTERVAL_MS: "60000"
+      # 旧西幻（黑松）世界默认关闭：不参与 tick，不注册 /game/* 与旧世界管理接口（含世界重置）。
+      LEGACY_WORLD_ENABLED: "${LEGACY_WORLD_ENABLED:-false}"
       # 连接池与会话超时（毫秒；缺省值与 apps/server/src/db/client.ts DEFAULT_DB_POOL_OPTIONS 一致）。
       DB_POOL_MAX: "${DB_POOL_MAX:-10}"
       DB_POOL_CONNECTION_TIMEOUT_MS: "${DB_POOL_CONNECTION_TIMEOUT_MS:-10000}"

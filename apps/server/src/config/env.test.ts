@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadEnv } from "./env.js";
+import { isLegacyWorldEnabled, loadEnv } from "./env.js";
 
 const baseEnv = {
   DATABASE_URL: "postgres://example",
@@ -25,6 +25,14 @@ describe("loadEnv", () => {
         TEST_GATHERING_CYCLE_MS: "200"
       })
     ).toThrow("TEST_GATHERING_CYCLE_MS");
+  });
+
+  // 车道 C1（ARCH-boundaries-02）：旧西幻世界默认关闭，只有显式 "true" 才开启。
+  it("keeps the legacy world disabled unless LEGACY_WORLD_ENABLED is explicitly true", () => {
+    expect(isLegacyWorldEnabled(loadEnv(baseEnv))).toBe(false);
+    expect(isLegacyWorldEnabled(loadEnv({ ...baseEnv, LEGACY_WORLD_ENABLED: "false" }))).toBe(false);
+    expect(isLegacyWorldEnabled(loadEnv({ ...baseEnv, LEGACY_WORLD_ENABLED: "1" }))).toBe(false);
+    expect(isLegacyWorldEnabled(loadEnv({ ...baseEnv, LEGACY_WORLD_ENABLED: "true" }))).toBe(true);
   });
 
   // 车道 C5（ARCH-domain-08）：连接池与会话超时可配置并做 env 校验。
