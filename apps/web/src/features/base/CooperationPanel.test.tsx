@@ -36,10 +36,12 @@ function makeRequest(overrides: Partial<CooperationRequestDto> = {}): Cooperatio
 afterEach(cleanup);
 
 describe("CooperationPanel", () => {
-  it("没有协作请求时不渲染任何内容", () => {
+  it("没有协作请求时显示工作区空态", () => {
     const { container } = render(<CooperationPanel requests={[]} devices={devices} />);
 
-    expect(container.textContent).toBe("");
+    expect(screen.getByText("目前没有协作请求。")).toBeTruthy();
+    expect(container.querySelector("section.base-cooperation")).toBeTruthy();
+    expect(container.querySelector(".base-cooperation-history")).toBeNull();
   });
 
   it("待支援请求显示项目、步骤和阻塞说明", () => {

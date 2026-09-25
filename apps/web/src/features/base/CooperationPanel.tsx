@@ -22,10 +22,6 @@ export interface CooperationPanelProps {
 }
 
 export function CooperationPanel({ requests, devices }: CooperationPanelProps) {
-  if (requests.length === 0) {
-    return null;
-  }
-
   const active = requests.filter((request) => request.status === "pending" || request.status === "accepted");
   const history = requests.filter((request) => request.status !== "pending" && request.status !== "accepted");
   const declined = history.filter((request) => request.status === "declined").length;
@@ -70,7 +66,9 @@ export function CooperationPanel({ requests, devices }: CooperationPanelProps) {
       {active.length > 0 ? (
         <ul className="base-cooperation-list">{active.map(requestItem)}</ul>
       ) : (
-        <p className="base-copy">目前没有进行中的支援请求。</p>
+        <p className="base-copy">
+          {requests.length === 0 ? "目前没有协作请求。" : "目前没有进行中的支援请求。"}
+        </p>
       )}
       {history.length > 0 ? (
         <details className="base-cooperation-history">
