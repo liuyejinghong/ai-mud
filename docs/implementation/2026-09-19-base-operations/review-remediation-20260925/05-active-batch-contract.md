@@ -10,7 +10,7 @@
 
 - U/C/T 不新增 shared DTO、数据库字段、public API、版本号、依赖或允许边。读取现有 `BaseSnapshotDto` 的 `timeMode`、项目/工单状态、资源、协作请求和订单；不在客户端计算权威库存、ETA、成功条件或奖励。
 - 命令处理中、成功回读和服务端错误显示在发起命令的工作区。快照刷新失败单独提示，不能把提交成功误写成已完成。暂停由 `timeMode` 判断；项目步骤的 `ready` 不代表正在计时。终态工单不提供取消，服务端拒绝仍保留。
-- C 按 `requestId` 保留每条真实请求，只折叠历史呈现；不以相同文字合并不同请求、不删历史。后端重复意图先用隔离测试证明，再增补合同与唯一写者。
+- C 按 `requestId` 保留每条真实请求，只折叠历史呈现；不以相同文字合并不同请求、不删历史。后端已发现可重复建单的路径，按下文 C07 增量先固定失败用例，再修复；线上 53 条的逐条成因仍未读回。
 - M 调查已追到 canonical 资产与订单交付写路径。库存 `quantity` 是总量，`reservedQuantity` 是占用，可支配量为两者之差；在途采购单列且到货前不入库存。开局锚固件 8 个被首工程预留 8 个，快照丢失占用字段，足以解释 F04。订单交付现只按总量判断，可能由数据库约束而非业务错误拒绝，需按可支配量做条件更新；不改资产归属、预留状态机或订单奖励。
 
 ## 文件所有权
@@ -18,7 +18,8 @@
 | 线 | 唯一可写源码/测试文件 |
 |---|---|
 | U | `BaseApp.tsx`、`BaseApp.test.tsx`、`BaseShell.tsx`、`BaseShell.test.tsx`、`BaseMap.tsx`、`BaseMap.test.tsx`、`ObjectPanel.tsx`、`ObjectPanel.test.tsx`、`ProjectBoard.tsx`、`ProjectBoard.test.tsx`、`base.css`（均在 `apps/web/src/features/base/`） |
-| C | `apps/web/src/features/base/CooperationPanel.tsx`、`CooperationPanel.test.tsx` |
+| C 前端 | `apps/web/src/features/base/CooperationPanel.tsx`、`CooperationPanel.test.tsx` |
+| C 后端 | `apps/server/src/modules/industry/base-settlement.service.ts`、`base-settlement.service.test.ts`、`cooperation.service.ts`、`cooperation.service.test.ts`、`cooperation.repository.ts`；`apps/server/src/application/base/composition.ts`；必要真 PG 回归限 `apps/server/src/tests/base-operations/m14/cooperation-shadow.integration.test.ts` |
 | T | `apps/web/src/features/base/BaseIntroModal.tsx`、`BaseIntroModal.test.tsx`、`ManufacturingBoard.tsx`、`ManufacturingBoard.test.tsx` |
 | M 后端 | `packages/shared/src/base.ts`；`apps/server/src/modules/world-runtime/base.service.ts`、`base.service.test.ts`；`apps/server/src/modules/economy/order.repository.ts`；新增订单条件写回归限 `apps/server/src/tests/base-operations/m12/base-provision.integration.test.ts` |
 | M 前端 | U/C/T 集成后由 I 串行接手 `ObjectPanel.tsx`、`ObjectPanel.test.tsx`、`ManufacturingBoard.tsx`、`ManufacturingBoard.test.tsx`、`EconomyBoard.tsx`、`EconomyBoard.test.tsx`、`BaseShell.tsx`、`BaseShell.test.tsx`；U/C/T 活跃时不得并写 |
@@ -32,6 +33,10 @@ U 唯一修改 `BaseShell` 的面板接线和 `base.css`，C/T 只改自己的�
 `BaseResourceDto` 兼容性增加必填 `reservedQuantity: number` 与 `reservationSources: Array<{kind: "project" | "manufacturing"; id: string; name: string; quantity: number}>`。服务端仍以 `base_inventory` 为总量/占用的唯一事实；来源只从同基地既有项目与制造工单的持久 `reservedInputs` 生成，不作第二套库存。快照内 `quantity - reservedQuantity` 是可支配量；UI 可用它预览，但每条命令仍由服务端原子重验。未入库的 `purchases.in_transit` 不计入可支配量。旧客户端忽略新增响应字段；本批前后端同构建交付，不改版本号、数据库、迁移或 allowlist。
 
 订单交付的现有 economy 条件写路径改为 `quantity - reservedQuantity >= 需求`；失败沿用 `RESOURCE_INSUFFICIENT` 与原事务回滚，成功只扣非预留量。最小回归为总 8/占 8/交 3 被业务拒绝、总 8/占 2/交 3 成功并剩总 5/占 2，订单/账款/回执按原子合同处理；真 PG 仅在明确隔离的临时库执行。M 前端在工程、制造、订单和物资详情显示总量、占用、可支配量及来源；批量制造按计划产出总数计算材料需求。服务端若拒绝，客户端刷新快照并将失败与新缺口留在原工作区。不为错误文案另增通用 `details` 协议。
+
+## C07 后端增量（源码路径核对后冻结）
+
+既有 M14 合同要求“本组缺工时请求、accepted helper 为指定步骤出工、步骤完成即 fulfilled”。当前结算只把本 tick 进度变动的 running 步骤送协作，且不检查本组是否在出工；请求查重只看 pending；跨组 helper 身份没有传给纯结算；整个项目完成才结案中途步骤。C 后端仅修这些已存在的同一步生命周期，不删历史、不改 Jev 选择预算或规则数值。新增测试要先证明：ready 且本组无人可请求、running 且本组正在工作不请求、已有 accepted 不新建、accepted helper 下一 tick 能出工、中途步骤完成即时结案。隔离真 PG 验证本事务的机器人状态读可见；保留 `recordAuditInCallerTx`，不能复发 B001 的跨连接审计死锁。
 
 ## 共同样例与门槛
 
