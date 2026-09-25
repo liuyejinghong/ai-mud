@@ -61,17 +61,22 @@
   margin: 0;
 }
 
+.base-credit-summary {
+  margin-left: 16px;
+  font-size: 12px;
+  letter-spacing: 0;
+  color: #b7cbda;
+}
+
 .base-topbar > [aria-label="电力"] {
   grid-column: 1;
   grid-row: 2;
-  display: flex;
-  flex-wrap: wrap;
-  align-content: start;
-  gap: 4px 12px;
 }
 
-.base-topbar > [aria-label="电力"] h2 {
-  flex-basis: 100%;
+.base-power-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
 }
 
 .base-drawer {
@@ -733,6 +738,40 @@
   background: rgba(255, 122, 107, 0.1);
 }
 
+.base-cooperation-list {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.base-cooperation-item {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid #24556b;
+  font-size: 13px;
+}
+
+.base-cooperation-target {
+  font-weight: 600;
+}
+
+.base-cooperation-status,
+.base-cooperation-history > summary {
+  color: #8fd4ff;
+}
+
+.base-cooperation-history > summary,
+.base-cooperation-item summary {
+  cursor: pointer;
+}
+
+.base-cooperation-item code {
+  overflow-wrap: anywhere;
+}
+
 .base-paused-task {
   margin: 8px 0;
   padding: 8px;
@@ -781,5 +820,26 @@
 
   .base-purchase-row {
     flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 620px) {
+  .base-shell {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .base-topbar,
+  .base-current-task {
+    padding: 8px;
+  }
+
+  .base-workspace-nav {
+    padding: 4px;
+  }
+
+  .base-clock > h2,
+  .base-pause-note {
+    display: none;
   }
 }

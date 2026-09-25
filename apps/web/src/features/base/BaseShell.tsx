@@ -145,16 +145,21 @@ export function BaseShell({
   return (
     <main className="base-shell">
       <header className="base-panel base-topbar" aria-label="基地状态总览">
-        <h1 className="base-panel-title">{snapshot.name || "火星先遣基地"}</h1>
-        <section className="base-summary" aria-label="电力">
-          <h2 className="base-panel-title">电力</h2>
+        <h1 className="base-panel-title">
+          {snapshot.name || "火星先遣基地"}
+          <small className="base-credit-summary">账款 {snapshot.credits} credits</small>
+        </h1>
+        <details className="base-summary base-drawer" aria-label="电力">
+          <summary>电力 · 可用 {kw(snapshot.power.availableW)} kW · 储能 {kwh(snapshot.power.storageWh)} kWh</summary>
+          <div className="base-power-details">
           <p className="base-summary-line">发电能力 {kw(snapshot.power.generationWPeak)} kW</p>
           <p className="base-summary-line">当前可用 {kw(snapshot.power.availableW)} kW</p>
           <p className="base-summary-line">
             储能 {kwh(snapshot.power.storageWh)}/{kwh(snapshot.power.storageCapacityWh)} kWh
           </p>
           <p className="base-summary-line">负载 {kw(snapshot.power.loadW)} kW</p>
-        </section>
+          </div>
+        </details>
 
         <details className="base-summary base-drawer" aria-label="物资">
           <summary>物资 · {snapshot.resources.length} 种</summary>
@@ -201,7 +206,7 @@ export function BaseShell({
               <strong className="base-paused-badge" role="status">
                 时间已暂停
               </strong>
-              <p className="base-summary-line">暂停期间不消耗物资，恢复后继续施工。</p>
+              <p className="base-summary-line base-pause-note">暂停期间不消耗物资，恢复后继续施工。</p>
             </>
           ) : (
             <p className="base-summary-line">
@@ -353,7 +358,7 @@ export function BaseShell({
         />
       </section>
       <section className="base-workspace" hidden={workspace !== "cooperation"} aria-label="协作工作区">
-        <CooperationPanel requests={snapshot.cooperationRequests} />
+        <CooperationPanel requests={snapshot.cooperationRequests} devices={snapshot.devices} />
       </section>
     </main>
   );
