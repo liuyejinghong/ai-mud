@@ -152,6 +152,34 @@ describe("ManufacturingBoard", () => {
     expect(onCancelJob).toHaveBeenCalledWith("job-1");
   });
 
+  it.each(["paused", "blocked"] as const)("%s 工单仍可取消（A09）", (status) => {
+    const onCancelJob = vi.fn();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderBoard({ jobs: [{ ...jobActive, status }], onCancelJob });
+
+    fireEvent.click(screen.getByRole("button", { name: "取消工单 制造 YD-H1 机器人" }));
+
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(onCancelJob).toHaveBeenCalledOnce();
+    expect(onCancelJob).toHaveBeenCalledWith("job-1");
+  });
+
+  it.each([
+    ["completed", "已完成", 3],
+    ["cancelled", "已取消", 1]
+  ] as const)("%s 工单保留结果但不能再取消（A09）", (status, label, outputsDone) => {
+    const onCancelJob = vi.fn();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderBoard({ jobs: [{ ...jobActive, status, outputsDone }], onCancelJob });
+
+    expect(screen.getByText(`产出 ${outputsDone}/3 台`)).toBeTruthy();
+    expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "取消工单 制造 YD-H1 机器人" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^制造 YD-H1 机器人/ }));
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(onCancelJob).not.toHaveBeenCalled();
+  });
+
   it("点击工单卡片上报选择并反映 aria-pressed 选中态", () => {
     const onSelectJob = vi.fn();
     renderBoard({

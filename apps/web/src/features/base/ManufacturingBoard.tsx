@@ -195,19 +195,21 @@ export function ManufacturingBoard({
                         <span className="base-blocked-reason">已阻塞：{blockedLabel}</span>
                       ) : null}
                     </button>
-                    <button
-                      type="button"
-                      className="base-danger-button"
-                      disabled={isBusy}
-                      aria-label={`取消工单 ${job.recipeName}`}
-                      onClick={() => {
-                        if (window.confirm(cancelConfirmText(job))) {
-                          onCancelJob(job.jobId);
-                        }
-                      }}
-                    >
-                      取消
-                    </button>
+                    {job.status === "active" || job.status === "paused" || job.status === "blocked" ? (
+                      <button
+                        type="button"
+                        className="base-danger-button"
+                        disabled={isBusy}
+                        aria-label={`取消工单 ${job.recipeName}`}
+                        onClick={() => {
+                          if (window.confirm(cancelConfirmText(job))) {
+                            onCancelJob(job.jobId);
+                          }
+                        }}
+                      >
+                        取消
+                      </button>
+                    ) : null}
                   </li>
                 );
               })}
