@@ -6,6 +6,7 @@ import type {
   BaseProjectDto,
   BaseResourceDto,
   BaseSiteDto,
+  BaseTimeMode,
   CreateProjectInputDto,
   DefinitionRefDto,
   RobotStatus
@@ -45,10 +46,12 @@ export interface ObjectPanelProps {
   selectedSiteId: string | null;
   selectedProjectId: string | null;
   selectedDeviceId: string | null;
+  timeMode: BaseTimeMode;
   isBusy: boolean;
   onSelectProject: (projectId: string) => void;
   onCreateProject: (input: CreateProjectInputDto) => void;
   onCancelProject: (projectId: string) => void;
+  onResume: () => void;
 }
 
 export function ObjectPanel({
@@ -61,10 +64,12 @@ export function ObjectPanel({
   selectedSiteId,
   selectedProjectId,
   selectedDeviceId,
+  timeMode,
   isBusy,
   onSelectProject,
   onCreateProject,
-  onCancelProject
+  onCancelProject,
+  onResume
 }: ObjectPanelProps) {
   const selectedProject =
     selectedProjectId !== null
@@ -92,8 +97,10 @@ export function ObjectPanel({
       ) : selectedProject ? (
         <ProjectDetail
           project={selectedProject}
+          timeMode={timeMode}
           isBusy={isBusy}
           onCancelProject={onCancelProject}
+          onResume={onResume}
         />
       ) : selectedDevice ? (
         <DeviceDetail device={selectedDevice} projects={projects} />
@@ -107,6 +114,8 @@ export function ObjectPanel({
           onSelectProject={onSelectProject}
           onCreateProject={onCreateProject}
         />
+      ) : selectedResourceId || selectedProjectId || selectedDeviceId || selectedSiteId ? (
+        <p className="base-copy">所选对象已不在当前基地状态中，请返回地图重新选择。</p>
       ) : (
         <p className="base-copy">
           点击地图上的地点、下方项目或顶部设备，查看它的详情。
@@ -118,12 +127,16 @@ export function ObjectPanel({
 
 function ProjectDetail({
   project,
+  timeMode,
   isBusy,
-  onCancelProject
+  onCancelProject,
+  onResume
 }: {
   project: BaseProjectDto;
+  timeMode: BaseTimeMode;
   isBusy: boolean;
   onCancelProject: (projectId: string) => void;
+  onResume: () => void;
 }) {
   const cancellable = project.status !== "completed" && project.status !== "cancelled" && project.status !== "failed";
 
@@ -131,6 +144,14 @@ function ProjectDetail({
     <div className="base-detail">
       <h3>{project.name}</h3>
       <p className="base-detail-line">状态：{PROJECT_STATUS_LABELS[project.status]}</p>
+      {timeMode === "paused" && cancellable ? (
+        <div className="base-paused-task">
+          <p className="base-copy">基地时间已暂停，此项目不会推进。恢复计时后继续施工。</p>
+          <button type="button" className="base-primary-button" disabled={isBusy} onClick={onResume}>
+            恢复计时
+          </button>
+        </div>
+      ) : null}
       <ol className="base-step-list">
         {project.steps.map((step) => {
           const blockedLabel = describeBlockedReason(step.blockedReason);

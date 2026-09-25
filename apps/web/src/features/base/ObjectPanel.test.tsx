@@ -84,6 +84,8 @@ describe("ObjectPanel", () => {
         onSelectProject={noop}
         onCreateProject={noop}
         onCancelProject={noop}
+        timeMode="running"
+        onResume={noop}
       />
     );
 
@@ -116,6 +118,8 @@ describe("ObjectPanel", () => {
         onSelectProject={noop}
         onCreateProject={noop}
         onCancelProject={noop}
+        timeMode="running"
+        onResume={noop}
       />
     );
 
@@ -141,6 +145,8 @@ describe("ObjectPanel", () => {
         onSelectProject={noop}
         onCreateProject={onCreateProject}
         onCancelProject={noop}
+        timeMode="running"
+        onResume={noop}
       />
     );
 
@@ -163,7 +169,8 @@ describe("ObjectPanel", () => {
     );
   });
 
-  it("选中项目时显示步骤与受阻原因", () => {
+  it("暂停项目在现场说明原因并能恢复，同时保留步骤受阻信息", () => {
+    const onResume = vi.fn();
     render(
       <ObjectPanel
         sites={sites}
@@ -179,12 +186,17 @@ describe("ObjectPanel", () => {
         onSelectProject={noop}
         onCreateProject={noop}
         onCancelProject={noop}
+        timeMode="paused"
+        onResume={onResume}
       />
     );
 
     expect(screen.getByText("设备安装 · 受阻")).toBeTruthy();
     expect(screen.getByText("工作量 10/80")).toBeTruthy();
     expect(screen.getByText("受阻：供电不足")).toBeTruthy();
+    expect(screen.getByText(/基地时间已暂停，此项目不会推进/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "恢复计时" }));
+    expect(onResume).toHaveBeenCalledOnce();
   });
 
   it("取消项目必须先确认，确认后才上报", () => {
@@ -205,6 +217,8 @@ describe("ObjectPanel", () => {
         onSelectProject={noop}
         onCreateProject={noop}
         onCancelProject={onCancelProject}
+        timeMode="running"
+        onResume={noop}
       />
     );
 
@@ -234,6 +248,8 @@ describe("ObjectPanel", () => {
         onSelectProject={noop}
         onCreateProject={noop}
         onCancelProject={noop}
+        timeMode="running"
+        onResume={noop}
       />
     );
 

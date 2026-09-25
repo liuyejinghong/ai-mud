@@ -25,6 +25,7 @@ import {
 import { logout } from "../auth/authApi.js";
 import { BaseIntroModal } from "./BaseIntroModal.js";
 import { BaseShell } from "./BaseShell.js";
+import type { BaseActionFeedback } from "./BaseShell.js";
 
 const SNAPSHOT_POLL_MS = 5_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -167,11 +168,12 @@ export function BaseApp({
   const [password, setPassword] = useState("");
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<BaseActionFeedback | null>(null);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [completionBanner, setCompletionBanner] = useState<string | null>(null);
   const completedSeenRef = useRef<Set<string>>(new Set());
   const hasPrevSnapshotRef = useRef(false);
+  const baseIdRef = useRef<string | null>(null);
   const [isActionBusy, setIsActionBusy] = useState(false);
 
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
@@ -184,6 +186,18 @@ export function BaseApp({
   const refreshSnapshot = useCallback(async () => {
     try {
       const next = await getSnapshot();
+      if (baseIdRef.current !== null && baseIdRef.current !== next.baseId) {
+        completedSeenRef.current.clear();
+        hasPrevSnapshotRef.current = false;
+        setCompletionBanner(null);
+        setSelectedSiteId(null);
+        setSelectedProjectId(null);
+        setSelectedDeviceId(null);
+        setSelectedResourceId(null);
+        setSelectedJobId(null);
+        setActionFeedback(null);
+      }
+      baseIdRef.current = next.baseId;
       // 完工提示：对比上一轮快照，新出现的已完成项目横幅告知（等待期的关键反馈）。
       // 冷启动（首次拉到快照）只静默记住已完成集合，不横幅——历史完工不该在登录时轰炸。
       if (hasPrevSnapshotRef.current) {
@@ -206,6 +220,14 @@ export function BaseApp({
     } catch (error) {
       if (error instanceof BaseApiError && error.status === 401) {
         setPhase("unauthenticated");
+        setSnapshot(null);
+        baseIdRef.current = null;
+        setSelectedSiteId(null);
+        setSelectedProjectId(null);
+        setSelectedDeviceId(null);
+        setSelectedResourceId(null);
+        setSelectedJobId(null);
+        setActionFeedback(null);
       } else {
         // 非会话失效的快照失败必须给可见反馈：首载卡在"连接中"、轮询静默失败会留下
         // 无从恢复的陈旧画面（SYNC-01）。
@@ -282,14 +304,27 @@ export function BaseApp({
   };
 
   const runCommand = useCallback(
-    async (command: () => Promise<unknown>) => {
+    async (command: () => Promise<unknown>, area: BaseActionFeedback["area"]) => {
+      const commandBaseId = baseIdRef.current;
       setIsActionBusy(true);
-      setActionError(null);
+      setActionFeedback({ area, kind: "pending", message: "正在处理请求…" });
       try {
         await command();
-        await refreshSnapshot();
+        const next = await refreshSnapshot();
+        if (baseIdRef.current === commandBaseId) {
+          setActionFeedback({
+            area,
+            kind: "success",
+            message: next ? "请求已受理，基地状态已更新。" : "请求已受理，等待基地状态刷新。"
+          });
+        }
       } catch (error) {
-        setActionError(describeError(error));
+        if (error instanceof BaseApiError && error.code === "RESOURCE_INSUFFICIENT") {
+          await refreshSnapshot();
+        }
+        if (baseIdRef.current === commandBaseId) {
+          setActionFeedback({ area, kind: "error", message: describeError(error) });
+        }
       } finally {
         setIsActionBusy(false);
       }
@@ -300,7 +335,7 @@ export function BaseApp({
   const handleCreateProject = useCallback(
     (input: CreateProjectInputDto) => {
       if (csrfToken === null) return;
-      void runCommand(() => createProject(input, csrfToken));
+      void runCommand(() => createProject(input, csrfToken), "base");
     },
     [csrfToken, runCommand]
   );
@@ -308,7 +343,7 @@ export function BaseApp({
   const handleCancelProject = useCallback(
     (projectId: string) => {
       if (csrfToken === null) return;
-      void runCommand(() => cancelProject(projectId, newCommandId(), csrfToken));
+      void runCommand(() => cancelProject(projectId, newCommandId(), csrfToken), "base");
     },
     [csrfToken, runCommand]
   );
@@ -316,7 +351,7 @@ export function BaseApp({
   const handleClockCommand = useCallback(
     (input: BaseClockCommandInputDto) => {
       if (csrfToken === null) return;
-      void runCommand(() => setClock(input, csrfToken));
+      void runCommand(() => setClock(input, csrfToken), "base");
     },
     [csrfToken, runCommand]
   );
@@ -330,12 +365,18 @@ export function BaseApp({
       setCsrfToken(null);
       setAccountEmail(null);
       setSnapshot(null);
+      baseIdRef.current = null;
+      completedSeenRef.current.clear();
+      hasPrevSnapshotRef.current = false;
+      setCompletionBanner(null);
+      setActionFeedback(null);
       setPhase("unauthenticated");
       setIntroDismissed(false);
       setSelectedResourceId(null);
       setSelectedSiteId(null);
       setSelectedProjectId(null);
       setSelectedDeviceId(null);
+      setSelectedJobId(null);
       onLogout?.();
     }
   }, [onLogout]);
@@ -371,7 +412,7 @@ export function BaseApp({
   const handleCreateJob = useCallback(
     (input: CreateManufacturingJobInputDto) => {
       if (csrfToken === null) return;
-      void runCommand(() => createManufacturingJob(input, csrfToken));
+      void runCommand(() => createManufacturingJob(input, csrfToken), "manufacturing");
     },
     [csrfToken, runCommand]
   );
@@ -379,7 +420,7 @@ export function BaseApp({
   const handleCancelJob = useCallback(
     (jobId: string) => {
       if (csrfToken === null) return;
-      void runCommand(() => cancelManufacturingJob(jobId, newCommandId(), csrfToken));
+      void runCommand(() => cancelManufacturingJob(jobId, newCommandId(), csrfToken), "manufacturing");
     },
     [csrfToken, runCommand]
   );
@@ -395,7 +436,7 @@ export function BaseApp({
   const handleAcceptOrder = useCallback(
     (orderId: string) => {
       if (csrfToken === null) return;
-      void runCommand(() => acceptOrder(orderId, newCommandId(), csrfToken));
+      void runCommand(() => acceptOrder(orderId, newCommandId(), csrfToken), "economy");
     },
     [csrfToken, runCommand]
   );
@@ -403,7 +444,7 @@ export function BaseApp({
   const handleDeliverOrder = useCallback(
     (orderId: string) => {
       if (csrfToken === null) return;
-      void runCommand(() => deliverOrder({ orderId, commandId: newCommandId() }, csrfToken));
+      void runCommand(() => deliverOrder({ orderId, commandId: newCommandId() }, csrfToken), "economy");
     },
     [csrfToken, runCommand]
   );
@@ -411,8 +452,9 @@ export function BaseApp({
   const handlePurchase = useCallback(
     (itemId: string, quantity: number) => {
       if (csrfToken === null) return;
-      void runCommand(() =>
-        createPurchase({ itemId, quantity, commandId: newCommandId() }, csrfToken)
+      void runCommand(
+        () => createPurchase({ itemId, quantity, commandId: newCommandId() }, csrfToken),
+        "economy"
       );
     },
     [csrfToken, runCommand]
@@ -502,18 +544,15 @@ export function BaseApp({
           </button>
         </div>
       ) : null}
-      {actionError ? (
-        <p role="alert" className="base-error base-action-error">
-          {actionError}
-        </p>
-      ) : null}
       {snapshotError ? (
         <p role="alert" className="base-error base-action-error">
           基地状态刷新失败：{snapshotError}（将自动重试）
         </p>
       ) : null}
       <BaseShell
+        key={snapshot.baseId}
         snapshot={snapshot}
+        actionFeedback={actionFeedback}
         csrfToken={csrfToken}
         selectedSiteId={selectedSiteId}
         selectedProjectId={selectedProjectId}
