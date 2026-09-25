@@ -1,6 +1,6 @@
 # 2026-09-25 修复批次 P 合同
 
-状态：`CONTRACT_READY`（U/C/T 的现有前端合同）；M 保持只读调查，若需改公共投影须先补本合同。基线为本地 `main` 的 `041fe3f86278c85869ef5b47e06873fdb9d8750c`，产品 1.0.0，`schemaVersion=31`、`apiVersion=47`、`contentVersion=14`。远端 main 本轮因本机代理不可用未核实。当前实现分支为 `codex/review-remediation-20260925`，与原评审分支隔离。
+状态：`CONTRACT_READY`（U/C/T 和下述 M 增量）。基线为本地 `main` 的 `041fe3f86278c85869ef5b47e06873fdb9d8750c`，产品 1.0.0，`schemaVersion=31`、`apiVersion=47`、`contentVersion=15`。远端 main 本轮因本机代理不可用未核实。当前实现分支为 `codex/review-remediation-20260925`，与原评审分支隔离。
 
 ## 玩家任务流
 
@@ -11,7 +11,7 @@
 - U/C/T 不新增 shared DTO、数据库字段、public API、版本号、依赖或允许边。读取现有 `BaseSnapshotDto` 的 `timeMode`、项目/工单状态、资源、协作请求和订单；不在客户端计算权威库存、ETA、成功条件或奖励。
 - 命令处理中、成功回读和服务端错误显示在发起命令的工作区。快照刷新失败单独提示，不能把提交成功误写成已完成。暂停由 `timeMode` 判断；项目步骤的 `ready` 不代表正在计时。终态工单不提供取消，服务端拒绝仍保留。
 - C 按 `requestId` 保留每条真实请求，只折叠历史呈现；不以相同文字合并不同请求、不删历史。后端重复意图先用隔离测试证明，再增补合同与唯一写者。
-- M 先查库存/预留/在途的唯一事实、单位与消费者。字段和写路径未冻结前不得修改 DTO、资产或制造扣减；F04 的线上截图只证明解释缺口，不证明资产错误。
+- M 调查已追到 canonical 资产与订单交付写路径。库存 `quantity` 是总量，`reservedQuantity` 是占用，可支配量为两者之差；在途采购单列且到货前不入库存。开局锚固件 8 个被首工程预留 8 个，快照丢失占用字段，足以解释 F04。订单交付现只按总量判断，可能由数据库约束而非业务错误拒绝，需按可支配量做条件更新；不改资产归属、预留状态机或订单奖励。
 
 ## 文件所有权
 
@@ -20,11 +20,18 @@
 | U | `BaseApp.tsx`、`BaseApp.test.tsx`、`BaseShell.tsx`、`BaseShell.test.tsx`、`BaseMap.tsx`、`BaseMap.test.tsx`、`ObjectPanel.tsx`、`ObjectPanel.test.tsx`、`ProjectBoard.tsx`、`ProjectBoard.test.tsx`、`base.css`（均在 `apps/web/src/features/base/`） |
 | C | `apps/web/src/features/base/CooperationPanel.tsx`、`CooperationPanel.test.tsx` |
 | T | `apps/web/src/features/base/BaseIntroModal.tsx`、`BaseIntroModal.test.tsx`、`ManufacturingBoard.tsx`、`ManufacturingBoard.test.tsx` |
-| M | 本阶段只读，无源码写权；调查结论由 I 记入本目录 |
+| M 后端 | `packages/shared/src/base.ts`；`apps/server/src/modules/world-runtime/base.service.ts`、`base.service.test.ts`；`apps/server/src/modules/economy/order.repository.ts`；新增订单条件写回归限 `apps/server/src/tests/base-operations/m12/base-provision.integration.test.ts` |
+| M 前端 | U/C/T 集成后由 I 串行接手 `ObjectPanel.tsx`、`ObjectPanel.test.tsx`、`ManufacturingBoard.tsx`、`ManufacturingBoard.test.tsx`、`EconomyBoard.tsx`、`EconomyBoard.test.tsx`、`BaseShell.tsx`、`BaseShell.test.tsx`；U/C/T 活跃时不得并写 |
 | Q | 独立验收证据，不改业务代码；若需新增测试，先指定精确文件 |
 | I | 本目录与上级 `README.md` 的状态、证据和集成提交；共享源码变更先更新所有权表 |
 
 U 唯一修改 `BaseShell` 的面板接线和 `base.css`，C/T 只改自己的组件并按现有 props 消费容器。各线使用独立 worktree；文件和分支所有者不能交叉写。`EconomyBoard` 的本地采购输入与 `ManufacturingBoard` 的本地数量须在工作区切换后留存；U 可通过保持组件挂载达成，无需改这两个组件。
+
+## M 合同增量（调查后冻结）
+
+`BaseResourceDto` 兼容性增加必填 `reservedQuantity: number` 与 `reservationSources: Array<{kind: "project" | "manufacturing"; id: string; name: string; quantity: number}>`。服务端仍以 `base_inventory` 为总量/占用的唯一事实；来源只从同基地既有项目与制造工单的持久 `reservedInputs` 生成，不作第二套库存。快照内 `quantity - reservedQuantity` 是可支配量；UI 可用它预览，但每条命令仍由服务端原子重验。未入库的 `purchases.in_transit` 不计入可支配量。旧客户端忽略新增响应字段；本批前后端同构建交付，不改版本号、数据库、迁移或 allowlist。
+
+订单交付的现有 economy 条件写路径改为 `quantity - reservedQuantity >= 需求`；失败沿用 `RESOURCE_INSUFFICIENT` 与原事务回滚，成功只扣非预留量。最小回归为总 8/占 8/交 3 被业务拒绝、总 8/占 2/交 3 成功并剩总 5/占 2，订单/账款/回执按原子合同处理；真 PG 仅在明确隔离的临时库执行。M 前端在工程、制造、订单和物资详情显示总量、占用、可支配量及来源；批量制造按计划产出总数计算材料需求。服务端若拒绝，客户端刷新快照并将失败与新缺口留在原工作区。不为错误文案另增通用 `details` 协议。
 
 ## 共同样例与门槛
 
