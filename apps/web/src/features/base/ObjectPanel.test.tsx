@@ -74,7 +74,8 @@ describe("ObjectPanel", () => {
         sites={sites}
         projects={projects}
         devices={devices}
-        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, description: "维修耗材" }]}
+        purchases={[]}
+        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, reservedQuantity: 0, reservationSources: [], description: "维修耗材" }]}
         selectedResourceId={null}
         selectedSiteId={null}
         selectedProjectId={null}
@@ -84,6 +85,8 @@ describe("ObjectPanel", () => {
         onSelectProject={noop}
         onCreateProject={noop}
         onCancelProject={noop}
+        timeMode="running"
+        onResume={noop}
       />
     );
 
@@ -96,7 +99,8 @@ describe("ObjectPanel", () => {
         sites={sites}
         projects={projects}
         devices={devices}
-        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, description: "维修耗材" }]}
+        purchases={[]}
+        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, reservedQuantity: 0, reservationSources: [], description: "维修耗材" }]}
         selectedResourceId={null}
         selectedSiteId="site-a"
         selectedProjectId={null}
@@ -116,12 +120,46 @@ describe("ObjectPanel", () => {
         onSelectProject={noop}
         onCreateProject={noop}
         onCancelProject={noop}
+        timeMode="running"
+        onResume={noop}
       />
     );
 
-    expect(screen.getByText(/太阳电池阵组件 ×6（现有 0，缺 6）/)).toBeTruthy();
-    expect(screen.getByText(/通用备件 ×4（现有 30）/)).toBeTruthy();
+    expect(screen.getByText(/太阳电池阵组件 ×6.*可支配 0.*缺 6/)).toBeTruthy();
+    expect(screen.getByText(/通用备件 ×4.*可支配 30/)).toBeTruthy();
     expect(screen.queryByText(/，缺/)).toBeTruthy();
+  });
+
+  it("总量已被工程占用时显示可支配缺口、来源和未入库在途", () => {
+    const anchor = {
+      itemId: "anchor", name: "锚固件", quantity: 8, reservedQuantity: 8,
+      reservationSources: [{ kind: "project" as const, id: "project-live", name: "安装太阳能阵列", quantity: 8 }],
+      description: "地基材料"
+    };
+    const purchases = [{
+      purchaseId: "purchase-1", itemId: "anchor", itemName: "锚固件", quantity: 3,
+      costCredits: 30, status: "in_transit" as const, arrivesAtSim: "2126-01-01T12:00:00.000Z"
+    }];
+    const props = {
+      sites, projects, devices, resources: [anchor], purchases,
+      selectedResourceId: "anchor", selectedSiteId: null, selectedProjectId: null,
+      selectedDeviceId: null, timeMode: "running" as const, isBusy: false,
+      buildableProjects: [{
+        definitionRef: { kind: "project" as const, stableId: "solar", revision: 1 },
+        name: "第二太阳能阵列", description: "扩建", inputs: [{ itemId: "anchor", quantity: 3 }]
+      }],
+      onSelectProject: noop, onCreateProject: noop, onCancelProject: noop, onResume: noop
+    };
+    const view = render(<ObjectPanel {...props} />);
+    expect(screen.getByText("库存总量：×8")).toBeTruthy();
+    expect(screen.getByText("已占用：×8")).toBeTruthy();
+    expect(screen.getByText("可支配：×0")).toBeTruthy();
+    expect(screen.getByText(/工程「安装太阳能阵列」占用 ×8/)).toBeTruthy();
+    expect(screen.getByText(/在途：×3（到货前不可支配）/)).toBeTruthy();
+
+    view.rerender(<ObjectPanel {...props} selectedResourceId={null} selectedSiteId="site-a" />);
+    expect(screen.getByText(/锚固件 ×3.*可支配 0.*缺 3.*在途 3/)).toBeTruthy();
+    expect(screen.getByText(/占用去向：工程「安装太阳能阵列」×8/)).toBeTruthy();
   });
 
   it("选中空地时列出可建项目，点击建设按钮上报含 uuid 的命令参数", () => {
@@ -131,7 +169,8 @@ describe("ObjectPanel", () => {
         sites={sites}
         projects={projects}
         devices={devices}
-        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, description: "维修耗材" }]}
+        purchases={[]}
+        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, reservedQuantity: 0, reservationSources: [], description: "维修耗材" }]}
         selectedResourceId={null}
         selectedSiteId="site-a"
         selectedProjectId={null}
@@ -141,6 +180,8 @@ describe("ObjectPanel", () => {
         onSelectProject={noop}
         onCreateProject={onCreateProject}
         onCancelProject={noop}
+        timeMode="running"
+        onResume={noop}
       />
     );
 
@@ -163,13 +204,15 @@ describe("ObjectPanel", () => {
     );
   });
 
-  it("选中项目时显示步骤与受阻原因", () => {
+  it("暂停项目在现场说明原因并能恢复，同时保留步骤受阻信息", () => {
+    const onResume = vi.fn();
     render(
       <ObjectPanel
         sites={sites}
-        projects={projects}
+        projects={[{ ...projects[0]!, status: "blocked" }]}
         devices={devices}
-        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, description: "维修耗材" }]}
+        purchases={[]}
+        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, reservedQuantity: 0, reservationSources: [], description: "维修耗材" }]}
         selectedResourceId={null}
         selectedSiteId={null}
         selectedProjectId="project-live"
@@ -179,12 +222,18 @@ describe("ObjectPanel", () => {
         onSelectProject={noop}
         onCreateProject={noop}
         onCancelProject={noop}
+        timeMode="paused"
+        onResume={onResume}
       />
     );
 
     expect(screen.getByText("设备安装 · 受阻")).toBeTruthy();
     expect(screen.getByText("工作量 10/80")).toBeTruthy();
     expect(screen.getByText("受阻：供电不足")).toBeTruthy();
+    expect(screen.getByText(/基地时间已暂停，此项目不会推进/)).toBeTruthy();
+    expect(screen.getByText(/恢复计时后仍需解决受阻条件/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "恢复计时" }));
+    expect(onResume).toHaveBeenCalledOnce();
   });
 
   it("取消项目必须先确认，确认后才上报", () => {
@@ -195,7 +244,8 @@ describe("ObjectPanel", () => {
         sites={sites}
         projects={projects}
         devices={devices}
-        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, description: "维修耗材" }]}
+        purchases={[]}
+        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, reservedQuantity: 0, reservationSources: [], description: "维修耗材" }]}
         selectedResourceId={null}
         selectedSiteId={null}
         selectedProjectId="project-live"
@@ -205,6 +255,8 @@ describe("ObjectPanel", () => {
         onSelectProject={noop}
         onCreateProject={noop}
         onCancelProject={onCancelProject}
+        timeMode="running"
+        onResume={noop}
       />
     );
 
@@ -224,7 +276,8 @@ describe("ObjectPanel", () => {
         sites={sites}
         projects={projects}
         devices={devices}
-        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, description: "维修耗材" }]}
+        purchases={[]}
+        resources={[{ itemId: "spare_parts", name: "通用备件", quantity: 30, reservedQuantity: 0, reservationSources: [], description: "维修耗材" }]}
         selectedResourceId={null}
         selectedSiteId={null}
         selectedProjectId={null}
@@ -234,6 +287,8 @@ describe("ObjectPanel", () => {
         onSelectProject={noop}
         onCreateProject={noop}
         onCancelProject={noop}
+        timeMode="running"
+        onResume={noop}
       />
     );
 

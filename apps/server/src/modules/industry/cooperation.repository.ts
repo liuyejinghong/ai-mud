@@ -1,7 +1,7 @@
 // M14-B cooperation_requests 访问（m14-p-contract.md §2/§3；industry 唯一写者）。
 // 协作请求是 industry 的真实调度事实（跨组支援）：不支持玩家创建/取消（合同 §3.4）。
 // 必须在调用方事务内执行（tx 透传构造 + 方法透传），本类永不自开或提交事务。
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { CooperationStatus } from "@ai-mud/shared";
 import type { Db } from "../../db/client.js";
 import { cooperationRequests } from "../../db/schema.js";
@@ -38,7 +38,7 @@ export interface CreateCooperationRequestInput {
 export interface CooperationRequestStore {
   create(tx: CooperationTx, input: CreateCooperationRequestInput): Promise<{ requestId: string }>;
   listByBase(tx: CooperationTx, baseId: string): Promise<CooperationRequestRecord[]>;
-  findPendingByStep(
+  findOpenByStep(
     tx: CooperationTx,
     baseId: string,
     projectId: string,
@@ -107,7 +107,7 @@ export class CooperationRepository implements CooperationRequestStore {
     return rows.map(toRecord);
   }
 
-  async findPendingByStep(
+  async findOpenByStep(
     _tx: CooperationTx,
     baseId: string,
     projectId: string,
@@ -121,9 +121,11 @@ export class CooperationRepository implements CooperationRequestStore {
           eq(cooperationRequests.baseId, baseId),
           eq(cooperationRequests.projectId, projectId),
           eq(cooperationRequests.stepIndex, stepIndex),
-          eq(cooperationRequests.status, "pending")
+          inArray(cooperationRequests.status, ["pending", "accepted"])
         )
       )
+      // 旧数据若同时有 pending/accepted，先返回 accepted，避免重复决策。
+      .orderBy(asc(cooperationRequests.status))
       .limit(1);
     const row = rows[0];
     return row ? toRecord(row) : null;

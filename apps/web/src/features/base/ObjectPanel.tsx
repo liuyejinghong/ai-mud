@@ -1,13 +1,15 @@
 import { newCommandId } from "../../lib/uuid.js";
-import { BASE_ITEM_NAMES } from "./EconomyBoard.js";
+import { BASE_ITEM_NAMES, describeReservationSources } from "./EconomyBoard.js";
 // 右侧对象面板：根据当前选中对象（项目 / 设备 / 站点）展示快照里的事实与可用操作。
 import type {
   BaseDeviceDto,
   BaseProjectDto,
   BaseResourceDto,
   BaseSiteDto,
+  BaseTimeMode,
   CreateProjectInputDto,
   DefinitionRefDto,
+  PurchaseOrderDto,
   RobotStatus
 } from "@ai-mud/shared";
 import { BASE_ROBOT_GROUP_NAMES, definitionRefKey } from "@ai-mud/shared";
@@ -41,14 +43,17 @@ export interface ObjectPanelProps {
   devices: BaseDeviceDto[];
   buildableProjects: BuildableTemplateDto[];
   resources: BaseResourceDto[];
+  purchases: PurchaseOrderDto[];
   selectedResourceId: string | null;
   selectedSiteId: string | null;
   selectedProjectId: string | null;
   selectedDeviceId: string | null;
+  timeMode: BaseTimeMode;
   isBusy: boolean;
   onSelectProject: (projectId: string) => void;
   onCreateProject: (input: CreateProjectInputDto) => void;
   onCancelProject: (projectId: string) => void;
+  onResume: () => void;
 }
 
 export function ObjectPanel({
@@ -57,14 +62,17 @@ export function ObjectPanel({
   devices,
   buildableProjects,
   resources,
+  purchases,
   selectedResourceId,
   selectedSiteId,
   selectedProjectId,
   selectedDeviceId,
+  timeMode,
   isBusy,
   onSelectProject,
   onCreateProject,
-  onCancelProject
+  onCancelProject,
+  onResume
 }: ObjectPanelProps) {
   const selectedProject =
     selectedProjectId !== null
@@ -88,12 +96,14 @@ export function ObjectPanel({
       <h2 className="base-panel-title">对象详情</h2>
 
       {selectedResource ? (
-        <ResourceDetail resource={selectedResource} />
+        <ResourceDetail resource={selectedResource} purchases={purchases} />
       ) : selectedProject ? (
         <ProjectDetail
           project={selectedProject}
+          timeMode={timeMode}
           isBusy={isBusy}
           onCancelProject={onCancelProject}
+          onResume={onResume}
         />
       ) : selectedDevice ? (
         <DeviceDetail device={selectedDevice} projects={projects} />
@@ -103,10 +113,13 @@ export function ObjectPanel({
           buildableProjects={buildableProjects}
           projects={projects}
           resources={resources}
+          purchases={purchases}
           isBusy={isBusy}
           onSelectProject={onSelectProject}
           onCreateProject={onCreateProject}
         />
+      ) : selectedResourceId || selectedProjectId || selectedDeviceId || selectedSiteId ? (
+        <p className="base-copy">所选对象已不在当前基地状态中，请返回地图重新选择。</p>
       ) : (
         <p className="base-copy">
           点击地图上的地点、下方项目或顶部设备，查看它的详情。
@@ -118,12 +131,16 @@ export function ObjectPanel({
 
 function ProjectDetail({
   project,
+  timeMode,
   isBusy,
-  onCancelProject
+  onCancelProject,
+  onResume
 }: {
   project: BaseProjectDto;
+  timeMode: BaseTimeMode;
   isBusy: boolean;
   onCancelProject: (projectId: string) => void;
+  onResume: () => void;
 }) {
   const cancellable = project.status !== "completed" && project.status !== "cancelled" && project.status !== "failed";
 
@@ -131,6 +148,19 @@ function ProjectDetail({
     <div className="base-detail">
       <h3>{project.name}</h3>
       <p className="base-detail-line">状态：{PROJECT_STATUS_LABELS[project.status]}</p>
+      {timeMode === "paused" && cancellable ? (
+        <div className="base-paused-task">
+          <p className="base-copy">
+            基地时间已暂停，此项目不会推进。
+            {project.status === "blocked"
+              ? "恢复计时后仍需解决受阻条件。"
+              : "恢复计时后重新检查施工条件。"}
+          </p>
+          <button type="button" className="base-primary-button" disabled={isBusy} onClick={onResume}>
+            恢复计时
+          </button>
+        </div>
+      ) : null}
       <ol className="base-step-list">
         {project.steps.map((step) => {
           const blockedLabel = describeBlockedReason(step.blockedReason);
@@ -211,11 +241,29 @@ function DeviceDetail({
   );
 }
 
-function ResourceDetail({ resource }: { resource: BaseResourceDto }) {
+function ResourceDetail({ resource, purchases }: {
+  resource: BaseResourceDto;
+  purchases: PurchaseOrderDto[];
+}) {
+  const inTransit = purchases.filter((purchase) =>
+    purchase.itemId === resource.itemId && purchase.status === "in_transit"
+  ).reduce((sum, purchase) => sum + purchase.quantity, 0);
   return (
     <div className="base-detail">
       <h3>{resource.name}</h3>
-      <p className="base-detail-line">库存：×{resource.quantity}</p>
+      <p className="base-detail-line">库存总量：×{resource.quantity}</p>
+      <p className="base-detail-line">已占用：×{resource.reservedQuantity}</p>
+      <p className="base-detail-line">可支配：×{resource.quantity - resource.reservedQuantity}</p>
+      {resource.reservationSources.length > 0 ? (
+        <ul className="base-attr-list" aria-label="占用去向">
+          {resource.reservationSources.map((source) => (
+            <li key={`${source.kind}:${source.id}`}>
+              {source.kind === "project" ? "工程" : "制造工单"}「{source.name}」占用 ×{source.quantity}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {inTransit > 0 ? <p className="base-detail-line">在途：×{inTransit}（到货前不可支配）</p> : null}
       <p className="base-copy">{resource.description}</p>
     </div>
   );
@@ -226,6 +274,7 @@ function SiteDetail({
   buildableProjects,
   projects,
   resources,
+  purchases,
   isBusy,
   onSelectProject,
   onCreateProject
@@ -234,6 +283,7 @@ function SiteDetail({
   buildableProjects: BuildableTemplateDto[];
   projects: BaseProjectDto[];
   resources: BaseResourceDto[];
+  purchases: PurchaseOrderDto[];
   isBusy: boolean;
   onSelectProject: (projectId: string) => void;
   onCreateProject: (input: CreateProjectInputDto) => void;
@@ -296,14 +346,20 @@ function SiteDetail({
               {template.inputs ? (
                 <ul className="base-buildable-inputs">
                   {template.inputs.map((input) => {
-                    const owned =
-                      resources.find((resource) => resource.itemId === input.itemId)?.quantity ?? 0;
-                    const short = owned < input.quantity;
+                    const resource = resources.find((row) => row.itemId === input.itemId);
+                    const available = resource ? resource.quantity - resource.reservedQuantity : 0;
+                    const inTransit = purchases.filter((purchase) =>
+                      purchase.itemId === input.itemId && purchase.status === "in_transit"
+                    ).reduce((sum, purchase) => sum + purchase.quantity, 0);
+                    const short = available < input.quantity;
+                    const sourceSummary = describeReservationSources(resource);
                     return (
                       <li key={input.itemId}>
-                        {BASE_ITEM_NAMES[input.itemId] ?? input.itemId} ×{input.quantity}（现有{" "}
-                        {owned}
-                        {short ? `，缺 ${input.quantity - owned}` : ""}）
+                        {BASE_ITEM_NAMES[input.itemId] ?? input.itemId} ×{input.quantity}
+                        （可支配 {available}，总量 {resource?.quantity ?? 0}，已占用 {resource?.reservedQuantity ?? 0}
+                        {short ? `，缺 ${input.quantity - available}` : ""}
+                        {inTransit > 0 ? `，在途 ${inTransit}（到货前不可用）` : ""}）
+                        {sourceSummary ? ` 占用去向：${sourceSummary}` : ""}
                       </li>
                     );
                   })}

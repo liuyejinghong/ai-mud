@@ -1,7 +1,9 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BaseSnapshotDto } from "@ai-mud/shared";
+import { useState } from "react";
 import { BaseShell } from "./BaseShell.js";
+import type { BaseShellProps } from "./BaseShell.js";
 
 function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDto {
   return {
@@ -21,8 +23,8 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
       loadW: 1000
     },
     resources: [
-      { itemId: "solar_panel_set", name: "太阳能板组", quantity: 6, description: "测试物资说明" },
-      { itemId: "anchor", name: "地锚", quantity: 8, description: "测试物资说明" }
+      { itemId: "solar_panel_set", name: "太阳能板组", quantity: 6, reservedQuantity: 0, reservationSources: [], description: "测试物资说明" },
+      { itemId: "anchor", name: "地锚", quantity: 8, reservedQuantity: 0, reservationSources: [], description: "测试物资说明" }
     ],
     sites: [
       { siteId: "site-array", name: "测试站点", siteKey: "array", state: "built", note: null, description: null, attributes: [] },
@@ -89,34 +91,36 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
 
 const noop = () => undefined;
 
+function shellProps(snapshot: BaseSnapshotDto): BaseShellProps {
+  return {
+    snapshot,
+    csrfToken: "csrf-1",
+    selectedSiteId: null,
+    selectedProjectId: null,
+    selectedDeviceId: null,
+    selectedResourceId: null,
+    selectedJobId: null,
+    isBusy: false,
+    onSelectSite: noop,
+    onSelectProject: noop,
+    onSelectDevice: noop,
+    onSelectResource: noop,
+    onSelectJob: noop,
+    onCreateProject: noop,
+    onCancelProject: noop,
+    onCreateJob: noop,
+    onCancelJob: noop,
+    onAcceptOrder: noop,
+    onDeliverOrder: noop,
+    onPurchase: noop,
+    onSetSpeed: noop,
+    onClockCommand: noop,
+    onLogout: noop
+  };
+}
+
 function renderShell(snapshot: BaseSnapshotDto) {
-  return render(
-    <BaseShell
-      snapshot={snapshot}
-      csrfToken="csrf-1"
-      selectedSiteId={null}
-      selectedProjectId={null}
-      selectedDeviceId={null}
-      isBusy={false}
-      onSelectSite={noop}
-      onSelectProject={noop}
-      onSelectDevice={noop}
-      onCreateProject={noop}
-      onCancelProject={noop}
-      onLogout={() => undefined}
-        onCreateJob={() => undefined}
-        onCancelJob={() => undefined}
-        onAcceptOrder={() => undefined}
-        onDeliverOrder={() => undefined}
-        onPurchase={() => undefined}
-        onSelectJob={() => undefined}
-        selectedJobId={null}
-        onSelectResource={() => undefined}
-        selectedResourceId={null}
-        onSetSpeed={() => undefined}
-        onClockCommand={noop}
-    />
-  );
+  return render(<BaseShell {...shellProps(snapshot)} />);
 }
 
 beforeEach(() => {
@@ -145,6 +149,13 @@ describe("BaseShell", () => {
 
     expect(screen.getByText("时间已暂停")).toBeTruthy();
     expect(screen.getByRole("button", { name: "恢复计时" })).toBeTruthy();
+  });
+
+  it("页首时间命令失败在时间控制旁提示，地图视图不吞掉反馈", () => {
+    render(<BaseShell {...shellProps(buildSnapshot())}
+      actionFeedback={{ area: "clock", kind: "error", message: "无法恢复计时" }} />);
+    expect(within(screen.getByLabelText("基地时间")).getByRole("alert").textContent)
+      .toBe("无法恢复计时");
   });
 
   it("计时时显示速度并提供暂停按钮", () => {
@@ -216,6 +227,45 @@ describe("BaseShell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /驮运者一号 · 作业中/ }));
     expect(onSelectDevice).toHaveBeenCalledWith("device-1");
+  });
+
+  it("从地图选择建设位后进入详情，切换工作区再回来仍保留选择", () => {
+    const snapshot = buildSnapshot({
+      projects: [],
+      sites: [{
+        siteId: "site-a", name: "建设位 A", siteKey: "site_a",
+        state: "free", note: null, description: null, attributes: []
+      }],
+      buildableProjects: [{
+        definitionRef: { kind: "project", stableId: "install_solar_array", revision: 1 },
+        name: "安装太阳电池阵", description: "增加发电能力", inputs: []
+      }]
+    });
+    function ShellWithSelection() {
+      const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+      return <BaseShell {...shellProps(snapshot)}
+        selectedSiteId={selectedSiteId} onSelectSite={setSelectedSiteId} />;
+    }
+    render(<ShellWithSelection />);
+
+    expect(screen.getByRole("heading", { name: /当前目标 · 安装太阳电池阵/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /建设位 A.*可开工工程/ }));
+    expect(screen.getByRole("button", { name: "在这里建设" })).toBeTruthy();
+    expect(document.activeElement?.contains(screen.getByLabelText("对象详情"))).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "经营" }));
+    fireEvent.click(screen.getByRole("button", { name: "基地" }));
+    expect(screen.getByRole("button", { name: "在这里建设" })).toBeTruthy();
+  });
+
+  it("经营输入在切换工作区后保留", () => {
+    renderShell(buildSnapshot());
+    fireEvent.click(screen.getByRole("button", { name: "经营" }));
+    const quantity = screen.getByRole("spinbutton", { name: "购买数量·太阳电池阵组件" }) as HTMLInputElement;
+    fireEvent.change(quantity, { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: "制造" }));
+    fireEvent.click(screen.getByRole("button", { name: "经营" }));
+    expect(screen.getByRole("spinbutton", { name: "购买数量·太阳电池阵组件" })).toHaveProperty("value", "3");
   });
 });
 

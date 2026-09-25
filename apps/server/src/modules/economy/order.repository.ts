@@ -198,8 +198,10 @@ export class OrderRepository {
 
   // ---------- base_inventory 交付消耗写路径（M16-P 裁决，见文件头） ----------
 
-  // 条件 UPDATE quantity >= qty → 数量减：不足返回 false 不产生任何写入（真消耗，
-  // 不动 reserved_quantity——交付消耗的是自有可用库存，与预留管线无关）。
+  // 条件 UPDATE quantity - reserved_quantity >= qty（M 合同：交付只消费可支配量）→
+  // 数量减：不足返回 false 不产生任何写入（真消耗，不动 reserved_quantity——预留仍归
+  // 项目/制造管线）。只看总量时，占用中的交付会越过业务拒绝打穿
+  // reserved<=quantity 约束（原生约束错误而非 RESOURCE_INSUFFICIENT）。
   async consumeBaseInventoryIfAvailable(
     tx: EconomyTx,
     baseId: string,
@@ -216,7 +218,7 @@ export class OrderRepository {
         and(
           eq(baseInventory.baseId, baseId),
           eq(baseInventory.itemId, itemId),
-          sql`${baseInventory.quantity} >= ${quantity}`
+          sql`${baseInventory.quantity} - ${baseInventory.reservedQuantity} >= ${quantity}`
         )
       )
       .returning({ id: baseInventory.id });

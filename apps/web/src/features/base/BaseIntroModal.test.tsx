@@ -12,8 +12,16 @@ describe("BaseIntroModal", () => {
     expect(screen.getByText(/首批无人货运飞船/)).toBeTruthy();
     expect(screen.getByText(/第一个任务/)).toBeTruthy();
     expect(screen.getByText(/恢复计时/)).toBeTruthy();
-    expect(screen.getByText(/建设位 A/)).toBeTruthy();
+    expect(screen.getByText(/点地图上的「建设位 A」/)).toBeTruthy();
     expect(screen.getByText(/自动暂停/)).toBeTruthy();
+  });
+
+  it("按现有能力说明首工程与可立即使用的经营功能（A08）", () => {
+    render(<BaseIntroModal baseName="先遣前哨" onDismiss={() => undefined} />);
+
+    expect(screen.getByText(/现有的 15 kW 峰值发电能力再增加 5 kW/)).toBeTruthy();
+    expect(screen.getByText(/现在就能接外部订单赚账款/)).toBeTruthy();
+    expect(screen.getByText(/采购材料、制造新机器人/)).toBeTruthy();
   });
 
   it("点击「开始指挥」上报关闭", () => {

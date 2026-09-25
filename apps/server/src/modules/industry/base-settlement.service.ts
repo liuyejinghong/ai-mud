@@ -11,6 +11,7 @@ import { definitionRefKey } from "@ai-mud/shared";
 import {
   CONTENT_BLOCK_REASON,
   computeBaseTick,
+  ROBOT_WORK_DRAIN_WH,
   type BaseProjectRecord,
   type BaseRobotRecord,
   type BaseStepRecord,
@@ -78,11 +79,20 @@ export interface BaseSettlementDeps {
   };
   // M14 协作（可选：未绑定时跳过）。
   cooperation?: {
+    listOpenRequests(
+      tx: IndustryTx,
+      baseId: string
+    ): Promise<Array<{
+      status: "pending" | "accepted";
+      operatorId: string | null;
+      projectId: string;
+      stepIndex: number;
+    }>>;
     // 检测缺工步骤→发起/决策协作请求→接受 helper 绑定（M14-B 服务）。
     detectAndResolve(
       tx: IndustryTx,
       baseId: string,
-      runningSteps: Array<{
+      needySteps: Array<{
         projectId: string;
         projectName: string;
         stepIndex: number;
@@ -91,9 +101,13 @@ export interface BaseSettlementDeps {
       meta: { baseRevision: number; epoch: number; clock: { now(): Date } }
     ): Promise<unknown>;
     // accepted helper 转入 working。
-    applyAcceptedHelpers(tx: IndustryTx, baseId: string, clock: { now(): Date }): Promise<unknown>;
-    // 项目完成时标记相关协作 fulfilled。
-    markFulfilledByProject(tx: IndustryTx, baseId: string, projectId: string): Promise<unknown>;
+    applyAcceptedHelpers(
+      tx: IndustryTx,
+      baseId: string,
+      runnableSteps: Array<{ projectId: string; stepIndex: number }>
+    ): Promise<unknown>;
+    // 步骤完成时标记相关协作 fulfilled。
+    markFulfilledByStep(tx: IndustryTx, baseId: string, projectId: string, stepIndex: number): Promise<unknown>;
   };
   sites: SettlementSitePort;
   assets: SettlementAssetPort;
@@ -195,6 +209,21 @@ export class BaseSettlementService {
 
     const steps = await industry.listSteps(matchedProjects.map((project) => project.id));
 
+    const openRequests = this.deps.cooperation
+      ? await this.deps.cooperation.listOpenRequests(tx, baseId)
+      : [];
+    const helperOperatorIds = new Set(
+      robotRecords
+        .filter((robot) => openRequests.some((helper) =>
+          helper.status === "accepted" &&
+          helper.operatorId === robot.operatorId &&
+          helper.projectId === robot.currentProjectId &&
+          helper.stepIndex === robot.currentStepIndex &&
+          robot.status === "working"
+        ))
+        .map((robot) => robot.operatorId)
+    );
+
     const weatherLight = this.deps.weather
       ? (await this.deps.weather.current(baseId, simTime)).lightFactor
       : 1;
@@ -206,6 +235,7 @@ export class BaseSettlementService {
       projects: matchedProjects,
       steps,
       robots: robotRecords,
+      helperOperatorIds,
       templates: { robotByStableId, projectByStableId }
     });
 
@@ -291,36 +321,69 @@ export class BaseSettlementService {
     // ---------- 落盘：作业者（npc 唯一写者） ----------
     if (result.robotUpdates.length > 0) await robots.applyRobotUpdates(tx, result.robotUpdates);
 
+    if (this.deps.cooperation) {
+      const finishedProjects = new Set(projects.filter((project) => project.status === "completed").map((project) => project.id));
+      const finishedSteps = new Set(
+        [...steps, ...result.stepUpdates]
+          .filter((step) => step.status === "completed")
+          .map((step) => `${step.projectId}:${step.stepIndex}`)
+      );
+      const fulfilled = new Set<string>();
+      for (const request of openRequests) {
+        const key = `${request.projectId}:${request.stepIndex}`;
+        if (fulfilled.has(key) || (!finishedProjects.has(request.projectId) && !finishedSteps.has(key))) continue;
+        await this.deps.cooperation.markFulfilledByStep(tx, baseId, request.projectId, request.stepIndex);
+        fulfilled.add(key);
+      }
+    }
+
     // ---------- M14 协作：缺工步骤检测/决策/accepted helper 绑定 ----------
     if (this.deps.cooperation) {
-      // 缺工步骤 = 本 tick 后仍 running 的步骤；组信息从持久化步骤读。
-      const runningStepUpdates = result.stepUpdates.filter((step) => step.status === "running");
-      const runningSteps: Array<{
+      const stepStatus = new Map(result.stepUpdates.map((step) => [`${step.projectId}:${step.stepIndex}`, step.status]));
+      const robotUpdates = new Map(result.robotUpdates.map((robot) => [robot.operatorId, robot]));
+      const runnableSteps: Array<{ projectId: string; stepIndex: number }> = [];
+      const needySteps: Array<{
         projectId: string;
         projectName: string;
         stepIndex: number;
         groupId: string;
       }> = [];
-      for (const step of runningStepUpdates) {
+      for (const step of steps) {
+        const status = stepStatus.get(`${step.projectId}:${step.stepIndex}`) ?? step.status;
+        if (status !== "ready" && status !== "running") continue;
         const project = matchedProjects.find((entry) => entry.id === step.projectId);
         if (!project) continue;
+        runnableSteps.push({ projectId: step.projectId, stepIndex: step.stepIndex });
+        const ownWorker = robotRecords.some((robot) => {
+          if (robot.groupId !== step.groupId) return false;
+          const current = robotUpdates.get(robot.operatorId) ?? robot;
+          return current.status === "working" &&
+            current.currentProjectId === step.projectId &&
+            current.currentStepIndex === step.stepIndex;
+        });
+        if (ownWorker) continue;
+        if (status === "ready" && robotRecords.some((robot) => {
+          if (robot.groupId !== step.groupId) return false;
+          const current = robotUpdates.get(robot.operatorId) ?? robot;
+          const template = robotByStableId.get(robot.deviceDefId);
+          return (current.status === "idle" || current.status === "charging") &&
+            current.batteryWh >= ROBOT_WORK_DRAIN_WH &&
+            (template?.workRatePerTick ?? 0) > 0;
+        })) continue;
         const template = matchedTemplates.get(step.projectId);
-        const stepRecord = (await industry.listSteps([project.id])).find(
-          (entry) => entry.stepIndex === step.stepIndex
-        );
-        runningSteps.push({
+        needySteps.push({
           projectId: step.projectId,
           projectName: template?.name ?? step.projectId,
           stepIndex: step.stepIndex,
-          groupId: stepRecord?.groupId ?? "engineering"
+          groupId: step.groupId
         });
       }
-      await this.deps.cooperation.detectAndResolve(tx, baseId, runningSteps, {
+      await this.deps.cooperation.detectAndResolve(tx, baseId, needySteps, {
         baseRevision: 1,
         epoch: 1,
         clock: { now: () => simTime }
       });
-      await this.deps.cooperation.applyAcceptedHelpers(tx, baseId, { now: () => simTime });
+      await this.deps.cooperation.applyAcceptedHelpers(tx, baseId, runnableSteps);
     }
 
     // ---------- 完成项目：消耗全部预留 + 站点 built（原子在同一 tick 事务内） ----------
@@ -344,9 +407,6 @@ export class BaseSettlementService {
       );
       // 设施投产：供能上限并入基地（m12-p-contract §3.3，G03「投产后供能改变」）。
       await industry.addGenerationWPeak(tx, baseId, template.outputFacility.generationWPeak);
-      if (this.deps.cooperation) {
-        await this.deps.cooperation.markFulfilledByProject(tx, baseId, project.id);
-      }
     }
   }
 }

@@ -107,10 +107,21 @@ export interface BasePowerDto {
   loadW: number;
 }
 
+// 库存占用来源（M 合同增量）：总量/占用事实以 base_inventory 为唯一权威；
+// 来源只是同基地仍持有预留的项目/制造工单的只读投影，可支配量 = quantity - reservedQuantity。
+export interface BaseResourceReservationSourceDto {
+  kind: "project" | "manufacturing";
+  id: string;
+  name: string;
+  quantity: number;
+}
+
 export interface BaseResourceDto {
   itemId: string;
   name: string;
   quantity: number;
+  reservedQuantity: number;
+  reservationSources: BaseResourceReservationSourceDto[];
   description: string;
 }
 

@@ -2,16 +2,17 @@ import { newCommandId } from "../../lib/uuid.js";
 // 制造面板（M13-D，玩家制造界面）：左侧可用配方（材料清单 + 数量 + 开工），右侧制造工单
 // （状态 / 产出进度 / 当前台进度 / 阻塞原因 / 取消）。横向面板，接入 BaseShell 归 M13-I。
 // 数据一律来自快照 props（manufacturingJobs / 当前配方模板列表），不在客户端推算工作量。
-// 材料名暂以 itemId 显示：快照未带配方材料名，v0.13 物品名映射（catalog getItemInfo）另行接入。
 import { useState } from "react";
 import type {
+  BaseResourceDto,
   CreateManufacturingJobInputDto,
   ManufacturingJobDto,
   ManufacturingJobStatus,
+  PurchaseOrderDto,
   RecipeTemplateDto
 } from "@ai-mud/shared";
 import { MANUFACTURING_MAX_OUTPUTS } from "@ai-mud/shared";
-import { BASE_ITEM_NAMES } from "./EconomyBoard.js";
+import { BASE_ITEM_NAMES, describeReservationSources } from "./EconomyBoard.js";
 import { describeBlockedReason } from "./ProjectBoard.js";
 
 export const MANUFACTURING_JOB_STATUS_LABELS: Record<ManufacturingJobStatus, string> = {
@@ -25,6 +26,8 @@ export const MANUFACTURING_JOB_STATUS_LABELS: Record<ManufacturingJobStatus, str
 export interface ManufacturingBoardProps {
   jobs: ManufacturingJobDto[];
   recipes: RecipeTemplateDto[];
+  resources: BaseResourceDto[];
+  purchases: PurchaseOrderDto[];
   isBusy: boolean;
   onCreateJob: (input: CreateManufacturingJobInputDto) => void;
   onCancelJob: (jobId: string) => void;
@@ -45,6 +48,8 @@ function cancelConfirmText(job: ManufacturingJobDto): string {
 export function ManufacturingBoard({
   jobs,
   recipes,
+  resources,
+  purchases,
   isBusy,
   onCreateJob,
   onCancelJob,
@@ -56,15 +61,7 @@ export function ManufacturingBoard({
   return (
     <section className="base-panel base-manufacturing" aria-label="制造">
       <h2 className="base-panel-title">制造</h2>
-      <div
-        className="base-manufacturing-columns"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 3fr) minmax(0, 2fr)",
-          gap: 10,
-          alignItems: "start"
-        }}
-      >
+      <div className="base-manufacturing-columns">
         <div>
           <h3 className="base-kicker">可用配方</h3>
           {recipes.length === 0 ? (
@@ -78,15 +75,27 @@ export function ManufacturingBoard({
                   <li key={stableId}>
                     <span className="base-buildable-name">{recipe.name}</span>
                     <span className="base-copy">{recipe.description}</span>
-                    <span className="base-project-step">
-                      材料：
-                      {recipe.inputs
-                        .map(
-                          (input) =>
-                            `${BASE_ITEM_NAMES[input.itemId] ?? input.itemId}×${input.quantity}`
-                        )
-                        .join("、")}
-                    </span>
+                    <ul className="base-buildable-inputs">
+                      {recipe.inputs.map((input) => {
+                        const required = input.quantity * planned;
+                        const resource = resources.find((row) => row.itemId === input.itemId);
+                        const available = resource ? resource.quantity - resource.reservedQuantity : 0;
+                        const inTransit = purchases.filter((purchase) =>
+                          purchase.itemId === input.itemId && purchase.status === "in_transit"
+                        ).reduce((sum, purchase) => sum + purchase.quantity, 0);
+                        const sourceSummary = describeReservationSources(resource);
+                        return (
+                          <li key={input.itemId}>
+                            {BASE_ITEM_NAMES[input.itemId] ?? input.itemId}：每台 ×{input.quantity}，
+                            本单需 ×{required}（可支配 {available}，总量 {resource?.quantity ?? 0}，
+                            已占用 {resource?.reservedQuantity ?? 0}
+                            {available < required ? `，缺 ${required - available}` : ""}
+                            {inTransit > 0 ? `，在途 ${inTransit}（到货前不可用）` : ""}）
+                            {sourceSummary ? ` 占用去向：${sourceSummary}` : ""}
+                          </li>
+                        );
+                      })}
+                    </ul>
                     <span className="base-project-step">每台工作量 {recipe.workPerUnit}</span>
                     <span
                       className="base-recipe-actions"
@@ -195,19 +204,21 @@ export function ManufacturingBoard({
                         <span className="base-blocked-reason">已阻塞：{blockedLabel}</span>
                       ) : null}
                     </button>
-                    <button
-                      type="button"
-                      className="base-danger-button"
-                      disabled={isBusy}
-                      aria-label={`取消工单 ${job.recipeName}`}
-                      onClick={() => {
-                        if (window.confirm(cancelConfirmText(job))) {
-                          onCancelJob(job.jobId);
-                        }
-                      }}
-                    >
-                      取消
-                    </button>
+                    {job.status === "active" || job.status === "paused" || job.status === "blocked" ? (
+                      <button
+                        type="button"
+                        className="base-danger-button"
+                        disabled={isBusy}
+                        aria-label={`取消工单 ${job.recipeName}`}
+                        onClick={() => {
+                          if (window.confirm(cancelConfirmText(job))) {
+                            onCancelJob(job.jobId);
+                          }
+                        }}
+                      >
+                        取消
+                      </button>
+                    ) : null}
                   </li>
                 );
               })}

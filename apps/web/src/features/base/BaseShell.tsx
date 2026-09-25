@@ -1,4 +1,5 @@
-// 基地主壳：四区布局。只转发快照与回调，自己不发任何请求。
+// 基地工作区只组织已有快照和命令，不发额外请求。
+import { useEffect, useRef, useState } from "react";
 import type {
   BaseClockCommandInputDto,
   CreateManufacturingJobInputDto,
@@ -12,7 +13,7 @@ import { CooperationPanel } from "./CooperationPanel.js";
 import { EconomyBoard } from "./EconomyBoard.js";
 import { ManufacturingBoard } from "./ManufacturingBoard.js";
 import { ObjectPanel } from "./ObjectPanel.js";
-import { ProjectBoard } from "./ProjectBoard.js";
+import { ProjectBoard, PROJECT_STATUS_LABELS } from "./ProjectBoard.js";
 import "./base.css";
 
 const ROBOT_STATUS_LABELS: Record<RobotStatus, string> = {
@@ -30,6 +31,13 @@ function kwh(wattHours: number): string {
   return (wattHours / 1000).toFixed(1);
 }
 
+type Workspace = "base" | "economy" | "manufacturing" | "cooperation";
+export type BaseActionFeedback = {
+  area: "base" | "clock" | "economy" | "manufacturing";
+  kind: "pending" | "success" | "error";
+  message: string;
+};
+
 export interface BaseShellProps {
   snapshot: BaseSnapshotDto;
   selectedJobId: string | null;
@@ -44,7 +52,7 @@ export interface BaseShellProps {
   onSelectDevice: (deviceId: string) => void;
   onCreateProject: (input: CreateProjectInputDto) => void;
   onCancelProject: (projectId: string) => void;
-  onClockCommand: (input: BaseClockCommandInputDto) => void;
+  onClockCommand: (input: BaseClockCommandInputDto, area?: "base" | "clock") => void;
   onSetSpeed: (speed: number) => void;
   onSelectResource: (itemId: string) => void;
   onLogout: () => void;
@@ -56,6 +64,7 @@ export interface BaseShellProps {
   onPurchase: (itemId: string, quantity: number) => void;
   accountEmail?: string | null;
   crewByStep?: Record<string, number>;
+  actionFeedback?: BaseActionFeedback | null;
 }
 
 export function BaseShell({
@@ -84,15 +93,50 @@ export function BaseShell({
   onPurchase,
   accountEmail = null,
   crewByStep = {},
+  actionFeedback = null,
 }: BaseShellProps) {
+  const [workspace, setWorkspace] = useState<Workspace>("base");
+  const [detailOpen, setDetailOpen] = useState(false);
+  const focusTarget = useRef<"map" | "detail" | null>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
   const isPaused = snapshot.timeMode === "paused";
+  const hasSelection = selectedSiteId !== null || selectedProjectId !== null ||
+    selectedDeviceId !== null || selectedResourceId !== null;
+  const activeProject = snapshot.projects.find((project) =>
+    project.status === "planned" || project.status === "active" ||
+    project.status === "paused" || project.status === "blocked"
+  );
+  const freeSite = snapshot.sites.find((site) => site.state === "free");
+  const nextProject = snapshot.buildableProjects[0];
+  const activeRequests = snapshot.cooperationRequests.filter((request) =>
+    request.status === "pending" || request.status === "accepted"
+  ).length;
+
+  useEffect(() => {
+    if (focusTarget.current === "detail" && hasSelection) {
+      detailRef.current?.focus();
+      focusTarget.current = null;
+    } else if (focusTarget.current === "map" && !detailOpen) {
+      mapRef.current?.focus();
+      focusTarget.current = null;
+    }
+  }, [detailOpen, hasSelection, selectedSiteId, selectedProjectId, selectedDeviceId, selectedResourceId]);
+
+  function selectAndShow(select: () => void) {
+    focusTarget.current = "detail";
+    setWorkspace("base");
+    setDetailOpen(true);
+    select();
+  }
+
   const deviceSummary = snapshot.devices.map((device: BaseDeviceDto) => (
     <button
       key={device.deviceId}
       type="button"
       className={`base-device-chip${selectedDeviceId === device.deviceId ? " is-selected" : ""}`}
       aria-pressed={selectedDeviceId === device.deviceId}
-      onClick={() => onSelectDevice(device.deviceId)}
+      onClick={() => selectAndShow(() => onSelectDevice(device.deviceId))}
     >
       {device.name} · {ROBOT_STATUS_LABELS[device.status]}
     </button>
@@ -101,19 +145,24 @@ export function BaseShell({
   return (
     <main className="base-shell">
       <header className="base-panel base-topbar" aria-label="基地状态总览">
-        <h1 className="base-panel-title">{snapshot.name || "火星先遣基地"}</h1>
-        <section className="base-summary" aria-label="电力">
-          <h2 className="base-panel-title">电力</h2>
+        <h1 className="base-panel-title">
+          {snapshot.name || "火星先遣基地"}
+          <small className="base-credit-summary">账款 {snapshot.credits} credits</small>
+        </h1>
+        <details className="base-summary base-drawer" aria-label="电力">
+          <summary>电力 · 可用 {kw(snapshot.power.availableW)} kW · 储能 {kwh(snapshot.power.storageWh)} kWh</summary>
+          <div className="base-power-details">
           <p className="base-summary-line">发电能力 {kw(snapshot.power.generationWPeak)} kW</p>
           <p className="base-summary-line">当前可用 {kw(snapshot.power.availableW)} kW</p>
           <p className="base-summary-line">
             储能 {kwh(snapshot.power.storageWh)}/{kwh(snapshot.power.storageCapacityWh)} kWh
           </p>
           <p className="base-summary-line">负载 {kw(snapshot.power.loadW)} kW</p>
-        </section>
+          </div>
+        </details>
 
-        <section className="base-summary" aria-label="物资">
-          <h2 className="base-panel-title">物资</h2>
+        <details className="base-summary base-drawer" aria-label="物资">
+          <summary>物资 · {snapshot.resources.length} 种</summary>
           {snapshot.resources.length === 0 ? (
             <p className="base-copy">仓库是空的。</p>
           ) : (
@@ -124,24 +173,31 @@ export function BaseShell({
                     type="button"
                     className="base-resource-chip"
                     aria-pressed={selectedResourceId === resource.itemId}
-                    onClick={() => onSelectResource(resource.itemId)}
+                    onClick={() => {
+                      if (selectedResourceId === resource.itemId) {
+                        setDetailOpen(false);
+                        onSelectResource(resource.itemId);
+                      } else {
+                        selectAndShow(() => onSelectResource(resource.itemId));
+                      }
+                    }}
                   >
-                    {resource.name} ×{resource.quantity}
+                    {resource.name} · 可支配 ×{resource.quantity - resource.reservedQuantity}
                   </button>
                 </li>
               ))}
             </ul>
           )}
-        </section>
+        </details>
 
-        <section className="base-summary" aria-label="设备">
-          <h2 className="base-panel-title">设备</h2>
+        <details className="base-summary base-drawer" aria-label="设备">
+          <summary>设备 · {fleetStatus(snapshot)}</summary>
           {snapshot.devices.length === 0 ? (
             <p className="base-copy">还没有设备。</p>
           ) : (
             <div className="base-device-chips">{deviceSummary}</div>
           )}
-        </section>
+        </details>
 
         <section className="base-summary base-clock" aria-label="基地时间">
           <h2 className="base-panel-title">时间</h2>
@@ -150,14 +206,13 @@ export function BaseShell({
               <strong className="base-paused-badge" role="status">
                 时间已暂停
               </strong>
-              <p className="base-summary-line">暂停期间不消耗物资，恢复后继续施工。</p>
+              <p className="base-summary-line base-pause-note">暂停期间不消耗物资；恢复后重新检查工程条件。</p>
             </>
           ) : (
             <p className="base-summary-line">
               计时中 · 速度 ×{snapshot.speed}
             </p>
           )}
-          <p className="base-summary-line">{fleetStatus(snapshot)}</p>
           <p className="base-summary-line base-simtime">{formatSimClock(snapshot.simTime)}</p>
           <div className="base-speed-row" role="group" aria-label="时间流速">
             {[1, 2, 4].map((speed) => (
@@ -182,7 +237,7 @@ export function BaseShell({
               {isPaused ? "恢复计时" : "暂停计时"}
             </button>
             {accountEmail ? (
-              <span className="base-copy" style={{ alignSelf: "center" }}>
+              <span className="base-account-email" title={accountEmail}>
                 {accountEmail}
               </span>
             ) : null}
@@ -190,61 +245,136 @@ export function BaseShell({
               退出登录
             </button>
           </div>
+          <ActionFeedback area="clock" feedback={actionFeedback} />
         </section>
       </header>
 
-      <BaseMap
-        sites={snapshot.sites}
-        projects={snapshot.projects}
-        selectedSiteId={selectedSiteId}
-        onSelectSite={onSelectSite}
-      />
+      <nav className="base-workspace-nav" aria-label="基地工作区">
+        {([
+          ["base", "基地"],
+          ["economy", "经营"],
+          ["manufacturing", "制造"],
+          ["cooperation", activeRequests > 0 ? `协作 · ${activeRequests}` : "协作"]
+        ] as const).map(([area, label]) => (
+          <button key={area} type="button" aria-pressed={workspace === area}
+            onClick={() => setWorkspace(area)}>{label}</button>
+        ))}
+      </nav>
 
-      <ObjectPanel
-        sites={snapshot.sites}
-        projects={snapshot.projects}
-        devices={sortedDevices(snapshot.devices)}
-        buildableProjects={snapshot.buildableProjects}
-        resources={snapshot.resources}
-        selectedResourceId={selectedResourceId ?? null}
-        selectedSiteId={selectedSiteId}
-        selectedProjectId={selectedProjectId}
-        selectedDeviceId={selectedDeviceId}
-        isBusy={isBusy}
-        onSelectProject={onSelectProject}
-        onCreateProject={onCreateProject}
-        onCancelProject={onCancelProject}
-      />
+      <section className="base-workspace" hidden={workspace !== "base"} aria-label="基地主场景">
+        <section className="base-panel base-current-task" aria-label="当前目标">
+          {activeProject ? (
+            <>
+              <div>
+                <h2 className="base-panel-title">当前工程 · {activeProject.name}</h2>
+                <p className="base-copy">
+                  {PROJECT_STATUS_LABELS[activeProject.status]}
+                  {isPaused ? " · 基地时间已暂停，工程不会推进" : ""}
+                </p>
+              </div>
+              <button type="button" className="base-primary-button"
+                onClick={() => selectAndShow(() => onSelectProject(activeProject.projectId))}
+              >查看当前工程</button>
+            </>
+          ) : freeSite && nextProject ? (
+            <>
+              <div>
+                <h2 className="base-panel-title">当前目标 · {nextProject.name}</h2>
+                <p className="base-copy">{nextProject.description}</p>
+              </div>
+              <button type="button" className="base-primary-button"
+                onClick={() => selectAndShow(() => onSelectSite(freeSite.siteId))}
+              >前往{freeSite.name}</button>
+            </>
+          ) : (
+            <div>
+              <h2 className="base-panel-title">当前目标</h2>
+              <p className="base-copy">当前没有可开工的建设位；可以查看已有项目或经营补给。</p>
+            </div>
+          )}
+          {activeRequests > 0 ? (
+            <button type="button" className="base-link-button"
+              onClick={() => setWorkspace("cooperation")}
+            >查看 {activeRequests} 项协作</button>
+          ) : null}
+        </section>
+        <div className={`base-scene${detailOpen && hasSelection ? " show-detail" : ""}`}>
+          <div className="base-map-wrap" ref={mapRef} tabIndex={-1}>
+            <BaseMap sites={snapshot.sites} projects={snapshot.projects}
+              selectedSiteId={selectedSiteId}
+              onSelectSite={(siteId) => selectAndShow(() => onSelectSite(siteId))}
+            />
+          </div>
+          <div className="base-detail-wrap" ref={detailRef} tabIndex={-1}>
+            <div className="base-back-row">
+              <button type="button" className="base-link-button" onClick={() => {
+                focusTarget.current = "map";
+                setDetailOpen(false);
+              }}>返回地图</button>
+            </div>
+            <ObjectPanel
+              sites={snapshot.sites}
+              projects={snapshot.projects}
+              devices={sortedDevices(snapshot.devices)}
+              buildableProjects={snapshot.buildableProjects}
+              resources={snapshot.resources}
+              purchases={snapshot.purchases}
+              selectedResourceId={selectedResourceId}
+              selectedSiteId={selectedSiteId}
+              selectedProjectId={selectedProjectId}
+              selectedDeviceId={selectedDeviceId}
+              timeMode={snapshot.timeMode}
+              isBusy={isBusy}
+              onSelectProject={(projectId) => selectAndShow(() => onSelectProject(projectId))}
+              onCreateProject={onCreateProject}
+              onCancelProject={onCancelProject}
+              onResume={() => onClockCommand({ command: "resume" }, "base")}
+            />
+            <ActionFeedback area="base" feedback={actionFeedback} />
+          </div>
+        </div>
+        {snapshot.projects.length > 0 ? (
+          <ProjectBoard projects={snapshot.projects}
+            buildableProjects={snapshot.buildableProjects}
+            selectedProjectId={selectedProjectId}
+            onSelectProject={(projectId) => selectAndShow(() => onSelectProject(projectId))}
+            crewByStep={crewByStep}
+          />
+        ) : null}
+      </section>
 
-      <EconomyBoard
-        credits={snapshot.credits}
-        orders={snapshot.orders}
-        purchases={snapshot.purchases}
-        resources={snapshot.resources}
-        isBusy={isBusy}
-        onAcceptOrder={onAcceptOrder}
-        onDeliverOrder={onDeliverOrder}
-        onPurchase={onPurchase}
-      />
-      <CooperationPanel requests={snapshot.cooperationRequests} />
-      <ManufacturingBoard
-        jobs={snapshot.manufacturingJobs}
-        recipes={snapshot.availableRecipes}
-        isBusy={isBusy}
-        selectedJobId={selectedJobId}
-        onSelectJob={onSelectJob}
-        onCreateJob={onCreateJob}
-        onCancelJob={onCancelJob}
-      />
-      <ProjectBoard
-        projects={snapshot.projects}
-        buildableProjects={snapshot.buildableProjects}
-        selectedProjectId={selectedProjectId}
-        onSelectProject={onSelectProject}
-        crewByStep={crewByStep}
-      />
+      <section className="base-workspace" hidden={workspace !== "economy"} aria-label="经营工作区">
+        <ActionFeedback area="economy" feedback={actionFeedback} />
+        <EconomyBoard credits={snapshot.credits} orders={snapshot.orders}
+          purchases={snapshot.purchases} resources={snapshot.resources}
+          isBusy={isBusy} onAcceptOrder={onAcceptOrder}
+          onDeliverOrder={onDeliverOrder} onPurchase={onPurchase}
+        />
+      </section>
+      <section className="base-workspace" hidden={workspace !== "manufacturing"} aria-label="制造工作区">
+        <ActionFeedback area="manufacturing" feedback={actionFeedback} />
+        <ManufacturingBoard jobs={snapshot.manufacturingJobs}
+          recipes={snapshot.availableRecipes} resources={snapshot.resources}
+          purchases={snapshot.purchases} isBusy={isBusy}
+          selectedJobId={selectedJobId} onSelectJob={onSelectJob}
+          onCreateJob={onCreateJob} onCancelJob={onCancelJob}
+        />
+      </section>
+      <section className="base-workspace" hidden={workspace !== "cooperation"} aria-label="协作工作区">
+        <CooperationPanel requests={snapshot.cooperationRequests} devices={snapshot.devices} />
+      </section>
     </main>
   );
+}
+
+function ActionFeedback({ area, feedback }: {
+  area: BaseActionFeedback["area"];
+  feedback: BaseActionFeedback | null;
+}) {
+  if (feedback?.area !== area) return null;
+  return <p className="base-task-feedback" role={feedback.kind === "error" ? "alert" : "status"}>
+    {feedback.message}
+  </p>;
 }
 
 // 基地时间显示：simTime 的 UTC 小时即基地昼夜基准（与结算规则一致）。

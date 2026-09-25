@@ -1,32 +1,4 @@
-// M14-B 协作调度（m14-p-contract.md §3 冻结语义；industry 唯一写者 cooperation_requests）。
-// 必须在调用方事务内执行，本模块永不自开/提交事务；模型网络在事务外由 ai 网关的超时
-// 保护承担（DECISION_TIMEOUT_MS + Promise.race），本模块只消费其 DecisionOutcomeDto。
-//
-// 【I 挂载说明】（base-settlement.service.ts 是 M12-B 文件，由 I 集成，本线不改）：
-//  1. detect——在 BaseSettlementService.settleBase 内，saveStepUpdates / saveProjectUpdates /
-//     robots.applyRobotUpdates 全部落盘之后调用（本 tick 步骤终态与机器人终态均已可见）：
-//       const runningSteps = <本 tick 落盘后仍 status='running'、且该步骤上无同组 working
-//         机器人的步骤>（CooperationDetectionStep：projectId + projectName(项目模板名) +
-//         stepIndex + groupId=步骤所属组，由挂钩处从 stepUpdates/robotUpdates 终态计算）；
-//       await detectAndResolveCooperation(tx, baseId, runningSteps, {
-//         robots: this.deps.openRobots(tx),        // RobotRuntimeService 结构兼容（本文件端口）
-//         gateway: <DecisionGateway 实例>,          // 结构兼容 CooperationDecisionPort
-//         clock,                                    // 基地 tick 时钟（simTime 或墙钟，I 定）
-//         baseRevision: <bases.base_revision>,      // DecisionRequestDto.planRevision
-//         epoch: <基地纪元>,                        // DecisionRequestDto.epoch
-//         openCooperation: (tx) => new CooperationRepository(tx)
-//       });
-//  2. apply——紧跟 detect 之后：await applyAcceptedHelpers(tx, baseId, { robots, openCooperation })
-//     把 accepted helper 指向请求步骤并置 working（仅当它仍空闲）。
-//  3. fulfilled——在项目 completion 处理循环（result.projectCompletions）内，对完成项目的每个
-//     步骤调 new CooperationRepository(tx).markFulfilledByStep(tx, baseId, projectId, stepIndex)：
-//     该步骤 pending/accepted 请求 → fulfilled；helper 回 idle 由 computeBaseTick 的完成释放
-//     （按 projectId+stepIndex 释放，不分 组）负责。
-//
-// 【已知 seam（合同疑问，非本线文件）】industry.pure 的出工资格/补位/工作量归组均按
-// groupId 严格相等判定：跨组 helper 在下一 tick 会被判“分配失效”转 idle，其工作量不计入。
-// 让“跨组 working”真正持续出工需要 M12-B/I 在 pure 增加 helper 豁免（本线只落调度事实：
-// 请求/决策审计/helper 指派），不绕过现有检查。
+// M14-B 协作调度：调用方事务内读写请求与机器人；步骤完成由结算逐步结案。
 import { randomUUID } from "node:crypto";
 import type {
   BaseRobotGroupId,
@@ -82,9 +54,7 @@ export interface CooperationClock {
 
 // ---------- 输入/依赖 ----------
 
-// 缺工步骤（调用方计算传入，签名约定）：本 tick 落盘后 status='running' 且该步骤上
-// 无同组 working 机器人（currentProjectId=projectId && currentStepIndex=stepIndex &&
-// status='working' && groupId=步骤组 的机器人数为 0）。
+// 调用方只传 ready/running 且本组无可出工机器人的步骤。
 export interface CooperationDetectionStep {
   projectId: string;
   projectName: string;
@@ -116,7 +86,7 @@ export interface CooperationResolutionResult {
 export async function detectAndResolveCooperation(
   tx: CooperationTx,
   baseId: string,
-  runningSteps: CooperationDetectionStep[],
+  needySteps: CooperationDetectionStep[],
   deps: CooperationDeps
 ): Promise<CooperationResolutionResult> {
   const repo = deps.openCooperation(tx);
@@ -128,9 +98,15 @@ export async function detectAndResolveCooperation(
     helpersAccepted: 0,
     expired: 0
   };
+  // 已接受和本次新接受的 helper 都不能再分给其他步骤。
+  const reservedHelpers = new Set(
+    (await repo.listByBase(tx, baseId)).flatMap((request) =>
+      request.status === "accepted" && request.helperOperatorId ? [request.helperOperatorId] : []
+    )
+  );
 
   const seenSteps = new Set<string>();
-  for (const step of runningSteps) {
+  for (const step of needySteps) {
     const stepKey = `${step.projectId}:${step.stepIndex}`;
     if (seenSteps.has(stepKey)) continue; // 同步骤重复输入只处理一次
     seenSteps.add(stepKey);
@@ -142,6 +118,7 @@ export async function detectAndResolveCooperation(
         (operator) =>
           operator.groupId !== step.groupId &&
           operator.status === "idle" &&
+          !reservedHelpers.has(operator.operatorId) &&
           operator.batteryWh >= ROBOT_WORK_DRAIN_WH &&
           operator.batteryCapacityWh > 0
       )
@@ -158,7 +135,8 @@ export async function detectAndResolveCooperation(
 
     const question = cooperationQuestion(step);
 
-    let request = await repo.findPendingByStep(tx, baseId, step.projectId, step.stepIndex);
+    let request = await repo.findOpenByStep(tx, baseId, step.projectId, step.stepIndex);
+    if (request?.status === "accepted") continue;
     if (!request) {
       // helperGroupId：有候选取最高分候选的组；无候选回退与请求组不同的首个固定组
       // （列 notNull 占位，abstain 期间无 helper 语义）。
@@ -213,6 +191,7 @@ export async function detectAndResolveCooperation(
     // 决策只选 ID（合同 §1）：selected → accepted + helper_operator_id；abstain → 保持 pending。
     if (outcome.selectedCandidateId !== null) {
       await repo.accept(tx, request.requestId, outcome.selectedCandidateId, decisionId);
+      reservedHelpers.add(outcome.selectedCandidateId);
       result.helpersAccepted += 1;
     }
   }
@@ -233,12 +212,13 @@ export async function detectAndResolveCooperation(
 
 // ---------- accepted helper 出工（合同 §3.3 前半：临时接入该步骤作业） ----------
 
-// 把 accepted 请求的 helper operator 指向请求步骤并置 working——仅当它仍空闲
-// （已被常规分配/充电/离线的 helper 不覆盖，请求保持 accepted 由后续 tick 再试）。
+// 把 accepted helper 指向仍可推进的请求步骤；复电后原地充电的 helper 可重新出工。
+// 已被其他任务占用或电量不足时，请求保持 accepted，后续 tick 再试。
 // 返回实际接入的 helper 数。
 export async function applyAcceptedHelpers(
   tx: CooperationTx,
   baseId: string,
+  runnableSteps: Array<{ projectId: string; stepIndex: number }>,
   deps: Pick<CooperationDeps, "robots" | "openCooperation">
 ): Promise<number> {
   const repo = deps.openCooperation(tx);
@@ -249,12 +229,21 @@ export async function applyAcceptedHelpers(
 
   const operators = await deps.robots.listOperators(baseId);
   const operatorById = new Map(operators.map((operator) => [operator.operatorId, operator]));
+  const runnable = new Set(runnableSteps.map((step) => `${step.projectId}:${step.stepIndex}`));
 
   const updates: CooperationRobotUpdate[] = [];
+  const claimed = new Set<string>();
   for (const request of accepted) {
     if (!request.helperOperatorId) continue;
+    if (!runnable.has(`${request.projectId}:${request.stepIndex}`)) continue;
     const helper = operatorById.get(request.helperOperatorId);
-    if (!helper || helper.status !== "idle") continue;
+    if (!helper || helper.batteryWh < ROBOT_WORK_DRAIN_WH || claimed.has(helper.operatorId)) continue;
+    if (helper.status !== "idle" && !(
+      helper.status === "charging" &&
+      helper.currentProjectId === request.projectId &&
+      helper.currentStepIndex === request.stepIndex
+    )) continue;
+    claimed.add(helper.operatorId);
     updates.push({
       operatorId: helper.operatorId,
       batteryWh: helper.batteryWh,

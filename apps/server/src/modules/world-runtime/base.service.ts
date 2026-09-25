@@ -3,6 +3,7 @@ import type {
   BaseDeviceDto,
   BaseProjectDto,
   BaseResourceDto,
+  BaseResourceReservationSourceDto,
   BaseRobotGroupId,
   BaseSiteDto,
   BaseSnapshotDto,
@@ -254,10 +255,23 @@ export interface BaseServiceDeps {
         outputsDone: number;
         currentUnitWorkDone: number;
         blockedReason: string | null;
+        // 剩余预留（结算逐台递减；快照占用来源投影用）。manufacturing.repository
+        // 的 ManufacturingJobRecord 已含此列，组合根原样透传，无需适配。
+        reservedInputs: Array<{ itemId: string; quantity: number }>;
       }>
     >;
   };
 }
+
+// 占用来源只统计仍持有预留的持有者：项目终态（completed/cancelled/failed，与
+// construction.service TERMINAL_PROJECT_STATUSES 对齐——完成已消耗、取消已释放）
+// 与工单终态（completed/cancelled，与 manufacturing.service 对齐）不再计入。
+const RESERVATION_TERMINAL_PROJECT_STATUSES: ReadonlySet<string> = new Set([
+  "completed",
+  "cancelled",
+  "failed"
+]);
+const RESERVATION_TERMINAL_JOB_STATUSES: ReadonlySet<string> = new Set(["completed", "cancelled"]);
 
 // 领域错误：code 为 shared ErrorCode。transport 不 import 本类，
 // 靠 { code, message } 形状识别（见 base-session.routes.ts）。
@@ -431,6 +445,7 @@ export class BaseService {
           ? await this.deps.industryRead.listSteps(projectRecords.map((project) => project.id))
           : [];
       const operators = await this.deps.robotRead.listOperators(baseId);
+      const jobRecords = await this.deps.manufacturingRead.listJobsForBase(baseId);
 
       const seed = this.deps.catalog.getProvisionSeed();
       const siteNames = new Map(seed.sites.map((site) => [site.siteKey, site.name]));
@@ -452,11 +467,37 @@ export class BaseService {
         };
       });
 
+      // 占用来源投影（M 合同）：总量/占用事实只在 base_inventory（assets 唯一写者）；
+      // 这里把同基地仍持有预留的项目/工单（非终态）映射到物品，不构成第二套库存，
+      // 也不与 reservedQuantity 对账（终态行的持久 reserved_inputs 是历史值，剔除）。
+      const reservationSources = new Map<string, BaseResourceReservationSourceDto[]>();
+      const collectSources = (itemId: string, source: BaseResourceReservationSourceDto) => {
+        const bucket = reservationSources.get(itemId);
+        if (bucket) bucket.push(source);
+        else reservationSources.set(itemId, [source]);
+      };
+      for (const project of projectRecords) {
+        if (RESERVATION_TERMINAL_PROJECT_STATUSES.has(project.status)) continue;
+        const name = this.deps.catalog.getProjectTemplate(project.projectDefId)?.name ?? project.projectDefId;
+        for (const item of project.reservedInputs) {
+          collectSources(item.itemId, { kind: "project", id: project.id, name, quantity: item.quantity });
+        }
+      }
+      for (const job of jobRecords) {
+        if (RESERVATION_TERMINAL_JOB_STATUSES.has(job.status)) continue;
+        const name = this.deps.catalog.getRecipeTemplate(job.recipeDefId)?.name ?? job.recipeDefId;
+        for (const item of job.reservedInputs) {
+          collectSources(item.itemId, { kind: "manufacturing", id: job.id, name, quantity: item.quantity });
+        }
+      }
+
       const resources: BaseResourceDto[] = inventory.map((row) => ({
         itemId: row.itemId,
         name: itemInfo[row.itemId]?.name ?? row.itemId,
         description: itemInfo[row.itemId]?.description ?? "",
-        quantity: row.quantity
+        quantity: row.quantity,
+        reservedQuantity: row.reservedQuantity,
+        reservationSources: reservationSources.get(row.itemId) ?? []
       }));
 
       const devices: BaseDeviceDto[] = operators.map((operator) => {
@@ -593,7 +634,7 @@ export class BaseService {
             createdAt: request.createdAt?.toISOString() ?? ""
           })
         ),
-        manufacturingJobs: (await this.deps.manufacturingRead.listJobsForBase(baseId)).map(
+        manufacturingJobs: jobRecords.map(
           (job) => ({
             jobId: job.id,
             recipeRef: {

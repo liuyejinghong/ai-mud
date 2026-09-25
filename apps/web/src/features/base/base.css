@@ -51,10 +51,63 @@
 }
 
 .base-topbar {
-  grid-area: topbar;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+
+.base-topbar > h1 {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.base-credit-summary {
+  margin-left: 16px;
+  font-size: 12px;
+  letter-spacing: 0;
+  color: #b7cbda;
+}
+
+.base-topbar > [aria-label="电力"] {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.base-power-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.base-drawer {
+  min-width: 0;
+  font-size: 13px;
+}
+
+.base-drawer summary {
+  cursor: pointer;
+  color: #8fd4ff;
+}
+
+.base-topbar > [aria-label="物资"] {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.base-topbar > [aria-label="设备"] {
+  grid-column: 1;
+  grid-row: 4;
+}
+
+.base-account-email {
+  display: inline-block;
+  max-width: 16ch;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #b7cbda;
+  font-size: 12px;
 }
 
 .base-summary-line {
@@ -101,14 +154,35 @@
 }
 
 .base-clock {
+  grid-column: 2;
+  grid-row: 2 / span 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px;
+  align-items: center;
+  align-content: start;
+}
+
+.base-clock > h2 {
+  grid-column: 1 / -1;
+}
+
+.base-clock-actions {
+  grid-column: 2;
+  grid-row: 2 / span 3;
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 4px;
-  align-items: flex-start;
+}
+
+.base-clock > .base-task-feedback {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
 .base-clock .base-primary-button {
-  align-self: flex-start;
+  white-space: nowrap;
 }
 
 .base-paused-badge {
@@ -128,7 +202,7 @@
 }
 
 .base-map {
-  grid-area: map;
+  height: 100%;
 }
 
 .base-site-grid {
@@ -179,7 +253,7 @@
 }
 
 .base-object-panel {
-  grid-area: panel;
+  height: 100%;
 }
 
 .base-detail h3 {
@@ -231,6 +305,21 @@
   list-style: none;
   display: grid;
   gap: 10px;
+}
+
+.base-buildable-inputs {
+  margin: 6px 0;
+  padding-left: 18px;
+  color: #c4d9e8;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.base-manufacturing-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 10px;
+  align-items: start;
 }
 
 .base-buildable-name {
@@ -478,31 +567,6 @@
   gap: 4px;
 }
 
-.base-clock-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.base-logout-button {
-  border: 1px solid #24556b;
-  background: transparent;
-  color: #9fc9d6;
-  border-radius: 6px;
-  padding: 6px 12px;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.base-logout-button:hover {
-  border-color: #29d7b1;
-  color: #29d7b1;
-}
-
-.base-clock-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
 .base-logout-button {
   border: 1px solid #24556b;
   background: transparent;
@@ -595,4 +659,211 @@
   gap: 10px;
   border-bottom: 1px dashed rgba(36, 85, 107, 0.6);
   padding: 4px 0;
+}
+
+.base-workspace-nav {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 6px;
+  border: 1px solid #24556b;
+  background: #06131e;
+}
+
+.base-workspace-nav button {
+  flex: 0 0 auto;
+  border: 1px solid #24556b;
+  border-radius: 4px;
+  background: transparent;
+  color: #d8ecfa;
+  padding: 6px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.base-workspace-nav button[aria-pressed="true"] {
+  border-color: #ffd166;
+  color: #ffd166;
+  background: rgba(255, 209, 102, 0.1);
+}
+
+.base-workspace button:focus-visible,
+.base-workspace-nav button:focus-visible,
+.base-drawer summary:focus-visible {
+  outline: 2px solid #ffd166;
+  outline-offset: 2px;
+}
+
+.base-workspace {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.base-workspace[hidden] {
+  display: none;
+}
+
+.base-current-task {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.base-current-task > div {
+  flex: 1 1 280px;
+}
+
+.base-current-task p {
+  margin: 0;
+}
+
+.base-scene {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.base-map-wrap,
+.base-detail-wrap {
+  min-width: 0;
+}
+
+.base-map-wrap:focus,
+.base-detail-wrap:focus {
+  outline: 2px solid #ffd166;
+  outline-offset: 2px;
+}
+
+.base-back-row {
+  display: none;
+}
+
+.base-task-feedback {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid #35b6ff;
+  background: rgba(53, 182, 255, 0.1);
+  font-size: 13px;
+}
+
+.base-task-feedback[role="alert"] {
+  border-color: #ff7a6b;
+  color: #ffc4bc;
+  background: rgba(255, 122, 107, 0.1);
+}
+
+.base-cooperation-list {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.base-cooperation-item {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid #24556b;
+  font-size: 13px;
+}
+
+.base-cooperation-target {
+  font-weight: 600;
+}
+
+.base-cooperation-status,
+.base-cooperation-history > summary {
+  color: #8fd4ff;
+}
+
+.base-cooperation-history > summary,
+.base-cooperation-item summary {
+  cursor: pointer;
+}
+
+.base-cooperation-item code {
+  overflow-wrap: anywhere;
+}
+
+.base-paused-task {
+  margin: 8px 0;
+  padding: 8px;
+  border-left: 3px solid #ffb347;
+  background: rgba(255, 179, 71, 0.08);
+}
+
+@media (max-width: 800px) {
+  .base-topbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .base-topbar > h1,
+  .base-topbar > [aria-label="电力"],
+  .base-topbar > [aria-label="物资"],
+  .base-topbar > [aria-label="设备"],
+  .base-clock {
+    grid-column: 1;
+  }
+
+  .base-clock { grid-row: 2; }
+  .base-topbar > [aria-label="电力"] { grid-row: 3; }
+  .base-topbar > [aria-label="物资"] { grid-row: 4; }
+  .base-topbar > [aria-label="设备"] { grid-row: 5; }
+
+  .base-scene {
+    display: block;
+  }
+
+  .base-detail-wrap {
+    display: none;
+  }
+
+  .base-scene.show-detail .base-map-wrap {
+    display: none;
+  }
+
+  .base-scene.show-detail .base-detail-wrap,
+  .base-scene.show-detail .base-back-row {
+    display: block;
+  }
+
+  .base-back-row {
+    margin-bottom: 8px;
+  }
+
+  .base-purchase-row {
+    flex-wrap: wrap;
+  }
+
+  .base-manufacturing-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .base-shell {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .base-topbar,
+  .base-current-task {
+    padding: 8px;
+  }
+
+  .base-workspace-nav {
+    padding: 4px;
+  }
+
+  .base-clock > h2,
+  .base-pause-note {
+    display: none;
+  }
 }

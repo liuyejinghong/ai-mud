@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { BaseSnapshotDto } from "@ai-mud/shared";
+import type { BaseSnapshotDto, RecipeTemplateDto } from "@ai-mud/shared";
 import { BASE_LEASE_TTL_MS } from "@ai-mud/shared";
 import type { BaseDb, BaseRecord, BaseRepoTx, BaseRepository } from "./base.repository.js";
 import { BASE_PROVISION_COMMAND_KIND, hashRequestPayload } from "./base.repository.js";
@@ -243,12 +243,14 @@ class FakeCatalog implements Pick<ContentCatalogPort, "getProvisionSeed" | "getR
   robots = new Map<string, RobotTemplateSpec>();
   projects = new Map<string, ProjectTemplateSpec>();
 
+  recipes = new Map<string, RecipeTemplateDto>();
+
   listTemplates() {
     return { robots: [...this.robots.values()], projects: [...this.projects.values()] };
   }
 
   getRecipeTemplate(stableId: string) {
-    return null;
+    return this.recipes.get(stableId) ?? null;
   }
 
   listRecipes() {
@@ -348,6 +350,10 @@ const PROVISION_SEED: ProvisionSeedSpec = {
   ]
 };
 
+type ManufacturingJobReadRecord = Awaited<
+  ReturnType<BaseServiceDeps["manufacturingRead"]["listJobsForBase"]>
+>[number];
+
 interface Fixture {
   service: BaseService;
   repo: FakeBaseRepository;
@@ -357,6 +363,7 @@ interface Fixture {
   catalog: FakeCatalog;
   industryRead: FakeIndustryRead;
   robotRead: FakeRobotRead;
+  manufacturingJobs: ManufacturingJobReadRecord[];
 }
 
 function createFixture(options: {
@@ -390,6 +397,7 @@ function createFixture(options: {
   });
   const industryRead = new FakeIndustryRead();
   const robotRead = new FakeRobotRead();
+  const manufacturingJobs: ManufacturingJobReadRecord[] = [];
   const fakeDb = {} as unknown as BaseDb; // 无 transaction：直用当前 repo（透传模式的替身路径）
 
   const service = new BaseService({
@@ -402,7 +410,7 @@ function createFixture(options: {
     catalog,
     industryRead,
     robotRead,
-    manufacturingRead: { listJobsForBase: async () => [] },
+    manufacturingRead: { listJobsForBase: async () => manufacturingJobs },
     cooperationRead: { listByBase: async () => [] },
     economyRead: {
       getCredits: async () => 500,
@@ -410,7 +418,7 @@ function createFixture(options: {
       listPurchasesForBase: async () => []
     }
   });
-  return { service, repo, assets, robots, industryInit, catalog, industryRead, robotRead };
+  return { service, repo, assets, robots, industryInit, catalog, industryRead, robotRead, manufacturingJobs };
 }
 
 describe("BaseService.provision", () => {
@@ -662,7 +670,7 @@ describe("BaseService.snapshot", () => {
       leaseUntil: new Date(T1.getTime() + 60_000)
     });
     fx.assets.inventory = [
-      { itemId: "anchor", quantity: 8, reservedQuantity: 0 },
+      { itemId: "anchor", quantity: 8, reservedQuantity: 8 },
       { itemId: "spare_parts", quantity: 30, reservedQuantity: 6 }
     ];
     fx.industryRead.power = {
@@ -729,6 +737,25 @@ describe("BaseService.snapshot", () => {
         currentStepIndex: null
       }
     ];
+    fx.catalog.recipes.set("manufacture-yd-s1", {
+      ref: { kind: "recipe", stableId: "manufacture-yd-s1", revision: 1 },
+      name: "制造望山巡检机器人",
+      description: "用备件组装一台轻量勘测巡检机器人。",
+      inputs: [{ itemId: "spare_parts", quantity: 3 }],
+      workPerUnit: 20,
+      output: { templateStableId: "yd-s1", initialBatteryWh: 6000 }
+    });
+    fx.manufacturingJobs.push({
+      id: "job-1",
+      recipeDefId: "manufacture-yd-s1",
+      recipeRevision: 1,
+      status: "active",
+      outputsPlanned: 2,
+      outputsDone: 0,
+      currentUnitWorkDone: 0,
+      reservedInputs: [{ itemId: "spare_parts", quantity: 6 }],
+      blockedReason: null
+    });
 
     const snapshot: BaseSnapshotDto = await fx.service.snapshot({ accountId: ACCOUNT_ID });
 
@@ -749,8 +776,24 @@ describe("BaseService.snapshot", () => {
         loadW: 1000
       },
       resources: [
-        { itemId: "anchor", name: "锚固件", quantity: 8, description: "地基锚固件" },
-        { itemId: "spare_parts", name: "通用备件", quantity: 30, description: "维修耗材" }
+        {
+          itemId: "anchor",
+          name: "锚固件",
+          quantity: 8,
+          reservedQuantity: 8,
+          reservationSources: [{ kind: "project", id: "p-1", name: "安装太阳电池阵", quantity: 8 }],
+          description: "地基锚固件"
+        },
+        {
+          itemId: "spare_parts",
+          name: "通用备件",
+          quantity: 30,
+          reservedQuantity: 6,
+          reservationSources: [
+            { kind: "manufacturing", id: "job-1", name: "制造望山巡检机器人", quantity: 6 }
+          ],
+          description: "维修耗材"
+        }
       ],
       sites: [
         {
@@ -834,7 +877,18 @@ describe("BaseService.snapshot", () => {
         }
       ],
       availableRecipes: [],
-      manufacturingJobs: [],
+      manufacturingJobs: [
+        {
+          jobId: "job-1",
+          recipeRef: { kind: "recipe", stableId: "manufacture-yd-s1", revision: 1 },
+          recipeName: "制造望山巡检机器人",
+          status: "active",
+          outputsPlanned: 2,
+          outputsDone: 0,
+          currentUnitWorkDone: 0,
+          blockedReason: null
+        }
+      ],
       cooperationRequests: [],
       credits: 500,
       orders: [],
@@ -850,6 +904,91 @@ describe("BaseService.snapshot", () => {
         heldByThisSession: true,
         leaseUntil: new Date(T1.getTime() + 60_000).toISOString()
       }
+    });
+  });
+
+  it("projects reservationSources from live holders only, skipping terminal projects and jobs", async () => {
+    const fx = createFixture({ now: T1 });
+    fx.repo.bases.push(makeBase());
+    fx.assets.inventory = [
+      { itemId: "anchor", quantity: 8, reservedQuantity: 8 },
+      { itemId: "spare_parts", quantity: 30, reservedQuantity: 6 }
+    ];
+    fx.industryRead.projects = [
+      {
+        id: "p-1",
+        projectDefId: "install_solar_array",
+        templateRevision: 1,
+        status: "active",
+        currentStepIndex: 0,
+        siteId: "site-a",
+        reservedInputs: [{ itemId: "anchor", quantity: 4 }]
+      },
+      {
+        // 已取消：预留已释放，持久 reserved_inputs 是历史值，不得再作占用来源。
+        id: "p-2",
+        projectDefId: "install_solar_array",
+        templateRevision: 1,
+        status: "cancelled",
+        currentStepIndex: 0,
+        siteId: "site-b",
+        reservedInputs: [{ itemId: "anchor", quantity: 8 }]
+      }
+    ];
+    // recipeDefId 不在目录里：来源名称回退到定义 ID（同项目/工单名称回退语义）。
+    fx.manufacturingJobs.push(
+      {
+        id: "job-1",
+        recipeDefId: "manufacture-ghost",
+        recipeRevision: 1,
+        status: "paused",
+        outputsPlanned: 2,
+        outputsDone: 0,
+        currentUnitWorkDone: 0,
+        reservedInputs: [
+          { itemId: "anchor", quantity: 4 },
+          { itemId: "spare_parts", quantity: 6 }
+        ],
+        blockedReason: null
+      },
+      {
+        // 已完成：结算逐台消耗后不再持有预留。
+        id: "job-2",
+        recipeDefId: "manufacture-ghost",
+        recipeRevision: 1,
+        status: "completed",
+        outputsPlanned: 1,
+        outputsDone: 1,
+        currentUnitWorkDone: 0,
+        reservedInputs: [{ itemId: "anchor", quantity: 4 }],
+        blockedReason: null
+      }
+    );
+
+    const snapshot = await fx.service.snapshot({ accountId: ACCOUNT_ID });
+
+    const anchor = snapshot.resources.find((resource) => resource.itemId === "anchor");
+    const spareParts = snapshot.resources.find((resource) => resource.itemId === "spare_parts");
+    expect(anchor).toEqual({
+      itemId: "anchor",
+      name: "锚固件",
+      quantity: 8,
+      reservedQuantity: 8,
+      reservationSources: [
+        { kind: "project", id: "p-1", name: "安装太阳电池阵", quantity: 4 },
+        { kind: "manufacturing", id: "job-1", name: "manufacture-ghost", quantity: 4 }
+      ],
+      description: "地基锚固件"
+    });
+    expect(spareParts).toEqual({
+      itemId: "spare_parts",
+      name: "通用备件",
+      quantity: 30,
+      reservedQuantity: 6,
+      reservationSources: [
+        { kind: "manufacturing", id: "job-1", name: "manufacture-ghost", quantity: 6 }
+      ],
+      description: "维修耗材"
     });
   });
 
