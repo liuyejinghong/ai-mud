@@ -35,6 +35,12 @@ const envSchema = z
       .transform((value) => (value === undefined ? true : value === "true")),
     WORLD_TICK_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
     WORLD_TICK_MAX_STEPS: z.coerce.number().int().positive().default(60),
+    // 连接池与会话超时（车道 C5，评审 ARCH-domain-08）：未设置时由 db/client.ts
+    // DEFAULT_DB_POOL_OPTIONS 给出有限默认值；不接受 0（pg 的 0 = 无限等待/不限时）。
+    DB_POOL_MAX: z.coerce.number().int().positive().optional(),
+    DB_POOL_CONNECTION_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+    DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+    DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
     TEST_GATHERING_CYCLE_MS: z.coerce.number().int().min(100).max(5_000).optional(),
     AI_NPC_DIALOGUE_ENABLED: z
       .string()

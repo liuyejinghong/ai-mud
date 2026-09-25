@@ -26,4 +26,39 @@ describe("loadEnv", () => {
       })
     ).toThrow("TEST_GATHERING_CYCLE_MS");
   });
+
+  // 车道 C5（ARCH-domain-08）：连接池与会话超时可配置并做 env 校验。
+  it("parses database pool and session timeouts", () => {
+    const env = loadEnv({
+      ...baseEnv,
+      DB_POOL_MAX: "20",
+      DB_POOL_CONNECTION_TIMEOUT_MS: "5000",
+      DB_STATEMENT_TIMEOUT_MS: "15000",
+      DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: "45000"
+    });
+
+    expect(env.DB_POOL_MAX).toBe(20);
+    expect(env.DB_POOL_CONNECTION_TIMEOUT_MS).toBe(5_000);
+    expect(env.DB_STATEMENT_TIMEOUT_MS).toBe(15_000);
+    expect(env.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS).toBe(45_000);
+  });
+
+  it("leaves database timeouts unset so the client applies its bounded defaults", () => {
+    const env = loadEnv(baseEnv);
+
+    expect(env.DB_POOL_MAX).toBeUndefined();
+    expect(env.DB_POOL_CONNECTION_TIMEOUT_MS).toBeUndefined();
+    expect(env.DB_STATEMENT_TIMEOUT_MS).toBeUndefined();
+    expect(env.DB_IDLE_IN_TRANSACTION_TIMEOUT_MS).toBeUndefined();
+  });
+
+  it.each([
+    ["DB_POOL_CONNECTION_TIMEOUT_MS", "0"],
+    ["DB_STATEMENT_TIMEOUT_MS", "-1"],
+    ["DB_IDLE_IN_TRANSACTION_TIMEOUT_MS", "1.5"],
+    ["DB_POOL_MAX", "0"],
+    ["DB_STATEMENT_TIMEOUT_MS", "soon"]
+  ])("rejects an unbounded or malformed %s=%s", (key, value) => {
+    expect(() => loadEnv({ ...baseEnv, [key]: value })).toThrow(key);
+  });
 });

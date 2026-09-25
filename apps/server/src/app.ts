@@ -3,7 +3,7 @@ import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { createBaseOperations } from "./application/base/composition.js";
 import { loadEnv, type Env } from "./config/env.js";
-import { createDb, type Db, type DbConnection } from "./db/client.js";
+import { createDb, dbPoolOptionsFromEnv, type Db, type DbConnection } from "./db/client.js";
 import { registerAdminRoutes } from "./modules/admin/admin.routes.js";
 import {
   registerContentAdminRoutes
@@ -112,7 +112,7 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
   if (input?.db) {
     db = input.db;
   } else {
-    dbConnection = createDb(config.DATABASE_URL);
+    dbConnection = createDb(config.DATABASE_URL, dbPoolOptionsFromEnv(config));
     db = dbConnection.db;
   }
   const baseOps = createBaseOperations({ db, config });
