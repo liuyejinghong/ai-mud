@@ -4,13 +4,22 @@
 // 供能（每 tick，Δh = Δsim/3600）：
 //   昼间（simTime UTC 小时 ∈ [6,18)）发电 = generationWPeak × ARRAY_DUST_FACTOR，夜间 0。
 //   负载优先级：基础 BASE_LOAD_W < 施工 CONSTRUCTION_LOAD_W（存在 running 或缺电阻塞的
-//   site_clearing/installation 步骤时）< 充电（idle/charging 机器人，每台
+//   site_clearing/installation 步骤时）< 制造 MANUFACTURING_LOAD_W（本基地有待制造工作量时，
+//   需求 = min(1500W×Δh, 剩余工作量Wh)，m13-p-contract §4.2）< 充电（idle/charging 机器人，每台
 //   min(chargeRateW, 容量-电量)）。盈余入储能（效率 1.0、容量封顶），不足放储能。
+//   制造实际拿到的能量经 manufacturingEnergyWh 交给制造结算按 FIFO 折算工作点（1Wh = 1 点），
+//   并计入 lastLoadW——同一电力池、同一储能（2026-09-25 B001：此前制造不扣电）。
 //   基础负荷优先于一切且永不 clamp 进度——进度只受施工负荷是否被满足影响。
 //   储能尽 → running 施工步骤 blocked 'insufficient_power'（workDone 不动，绝不 clamp 完成），
 //   其 working 机器人转 charging 原地等待（保留分配）；恢复供电后步骤回 ready 重新开工。
-// 工作量：working 机器人每 tick 给所属 running 步骤加 workRatePerTick、耗
-//   ROBOT_WORK_DRAIN_WH（tick 开始时电池不足 → 转 idle 本 tick 不出工，下一 tick 充电）。
+// 工作量（2026-09-25 B008：按模拟时长计量，与子 tick 切分/调用频率无关）：
+//   计量单位 = 基地分钟。本次调用覆盖区间 (simTime, simTime+Δsim] 跨过的整基地分钟边界数
+//   workMinutes = floor((t+Δ)/60s) − floor(t/60s)（明示取整规则：按跨过的整分钟边界计，不足一
+//   分钟的余量不丢失，由跨过下一个边界的那次调用记入；区间首尾相接时各次之和严格等于总时长）。
+//   逐个跨过的基地分钟：working 机器人（电量还够一分钟工作电）给所属 running 步骤加
+//   workRatePerTick（"tick" = 1 基地分钟）并耗 ROBOT_WORK_DRAIN_WH；步骤一完成即停，电池不为负。
+//   调用开始时电池不足 ROBOT_WORK_DRAIN_WH → 转 idle 本次不出工，之后充电。下一步开工、
+//   缺电阻塞、充电等其余状态事件在调用（子 tick）边界处结算。
 //   步骤 workDone ≥ workRequired → completed，下一步 pending → ready；步骤链全完成 →
 //   项目 completed（触发 projectCompletions）。验收(commissioning) 是链条末步时由此自然完成。
 //
@@ -28,6 +37,10 @@ export const ARRAY_DUST_FACTOR = 0.9;
 export const BASE_LOAD_W = 1000;
 export const CONSTRUCTION_LOAD_W = 2000;
 export const ROBOT_WORK_DRAIN_WH = 500;
+// 制造负载功率（m13-p-contract §4.2 / §5 fixture：固定 1500W，同一电力池，优先级在施工之后、充电之前）。
+export const MANUFACTURING_LOAD_W = 1500;
+// 工作量计量单位：1 基地分钟（workRatePerTick / ROBOT_WORK_DRAIN_WH 均按“每基地分钟”）。
+export const WORK_MINUTE_MS = 60_000;
 const TRICKLE_CHARGE_W = 2_000;
 // 充电节流：夜间/无光期储能只出涓流充电功率，不为满充买单（防开局储能被掏空）。
 export const POWER_BLOCK_REASON = "insufficient_power";
@@ -114,6 +127,9 @@ export interface ComputeBaseTickInput {
   helperOperatorIds?: ReadonlySet<string>;
   // M15 天气光照系数（clear 1.0 / warning 0.7 / storm 0.25），缺省 1。
   weatherLight?: number;
+  // M13 制造：本基地可推进工单的剩余工作量（Wh，能效 1:1），缺省 0 = 无制造负载。
+  // 本次制造需求 = min(MANUFACTURING_LOAD_W × Δh, manufacturingWorkWh)。
+  manufacturingWorkWh?: number;
   templates: {
     robotByStableId: Map<string, RobotTemplateDto>;
     projectByStableId: Map<string, ProjectTemplateDto>;
@@ -123,6 +139,8 @@ export interface ComputeBaseTickInput {
 export interface BaseTickResult {
   storageWh: number;
   lastLoadW: number;
+  // 电力池本次实际分给制造的能量（Wh；≤ 制造需求）。制造结算按 FIFO 把它折算为工作点。
+  manufacturingEnergyWh: number;
   robotUpdates: BaseTickRobotUpdate[];
   stepUpdates: BaseTickStepUpdate[];
   projectCompletions: BaseTickProjectCompletion[];
@@ -139,6 +157,8 @@ interface RobotState {
   hasWorkTemplate: boolean;
   wasWorkingAtStart: boolean;
   workedThisTick: boolean;
+  // 本次调用中实际出工的基地分钟数（≤ workMinutes，受电池约束）。
+  workMinutes: number;
 }
 
 interface StepState {
@@ -151,6 +171,14 @@ interface StepState {
 
 function stepKey(projectId: string, stepIndex: number): string {
   return `${projectId}#${stepIndex}`;
+}
+
+// 区间 (simTime, simTime+Δsim] 跨过的整基地分钟边界数（B008 明示取整规则）。
+// 首尾相接的区间序列逐次求和 = 总区间的边界数（望远镜求和），与切分方式无关。
+export function countWorkMinutes(simTime: Date, deltaSimMs: number): number {
+  if (!(deltaSimMs > 0)) return 0;
+  const start = simTime.getTime();
+  return Math.floor((start + deltaSimMs) / WORK_MINUTE_MS) - Math.floor(start / WORK_MINUTE_MS);
 }
 
 function clampWh(value: number, capacity: number): number {
@@ -178,6 +206,7 @@ function serveDemand(
 
 export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
   const dh = Math.max(0, input.deltaSimMs) / 3_600_000;
+  const workMinutes = countWorkMinutes(input.simTime, input.deltaSimMs);
   const hour = input.simTime.getUTCHours();
   const isDaylight = hour >= SIM_DAYLIGHT_START_HOUR && hour < SIM_DAYLIGHT_END_HOUR;
   const dustFactor = 1 - Math.min(100, Math.max(0, input.power.dustLevel ?? 30)) / 200;
@@ -227,7 +256,8 @@ export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
       workRate: template?.workRatePerTick ?? 0,
       hasWorkTemplate: template !== null && template.workRatePerTick > 0,
       wasWorkingAtStart: record.status === "working",
-      workedThisTick: false
+      workedThisTick: false,
+      workMinutes: 0
     };
   });
 
@@ -339,6 +369,15 @@ export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
     if (hasWorker) step.status = "running";
   }
 
+  // ---------- 4b) 制造负荷：施工之后、充电之前（m13-p-contract §4.2） ----------
+  let manufacturingEnergyWh = 0;
+  const manufacturingWorkWh = Math.max(0, input.manufacturingWorkWh ?? 0);
+  if (dh > 0 && manufacturingWorkWh > ENERGY_EPS) {
+    const demand = Math.min(MANUFACTURING_LOAD_W * dh, manufacturingWorkWh);
+    manufacturingEnergyWh = serveDemand(demand, energy, storage);
+    servedEnergy += manufacturingEnergyWh;
+  }
+
   // ---------- 5) 充电：idle/charging 机器人（working 不充） ----------
   // 节流：充电预算 = 发电盈余 + 储能涓流；预算耗尽后其余机器人本 tick 不充。
   if (dh > 0) {
@@ -366,18 +405,27 @@ export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
     for (const step of list) {
       if (step.powerBlockedThisTick) continue; // workDone 不动，阻塞在步骤 7 统一落状态
       if (step.status !== "running") continue;
+      const workers = robotStates.filter(
+        (robot) =>
+          robot.workedThisTick &&
+          robot.projectId === step.record.projectId &&
+          robot.stepIndex === step.record.stepIndex &&
+          (robot.record.groupId === step.record.groupId ||
+            (input.helperOperatorIds?.has(robot.record.operatorId) ?? false))
+      );
+      // 逐基地分钟记工（B008）：每个跨过的分钟边界，电量还够一分钟工作电的机器人各记
+      // workRate 并记 1 个工作分钟；步骤一完成即停（不为完工后的分钟空耗电），电池不为负。
       let contribution = 0;
-      for (const robot of robotStates) {
-        if (!robot.workedThisTick) continue;
-        if (robot.projectId !== step.record.projectId) continue;
-        if (robot.stepIndex !== step.record.stepIndex) continue;
-        if (
-          robot.record.groupId !== step.record.groupId &&
-          !(input.helperOperatorIds?.has(robot.record.operatorId) ?? false)
-        ) {
-          continue;
+      for (let minute = 0; minute < workMinutes; minute += 1) {
+        if (step.workDone + contribution >= step.record.workRequired) break;
+        let progressed = false;
+        for (const robot of workers) {
+          if (robot.battery - ROBOT_WORK_DRAIN_WH * (robot.workMinutes + 1) < 0) continue;
+          robot.workMinutes += 1;
+          contribution += robot.workRate;
+          progressed = true;
         }
-        contribution += robot.workRate;
+        if (!progressed) break;
       }
       if (contribution <= 0) continue;
       step.workDone = Math.min(step.record.workRequired, step.workDone + contribution);
@@ -409,9 +457,9 @@ export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
     step.blockedReason = POWER_BLOCK_REASON;
   }
 
-  // ---------- 7) working 机器人耗电 ----------
+  // ---------- 7) working 机器人耗电：按实际出工的基地分钟计（B008） ----------
   for (const robot of robotStates) {
-    if (robot.workedThisTick) robot.battery -= ROBOT_WORK_DRAIN_WH;
+    if (robot.workedThisTick) robot.battery -= ROBOT_WORK_DRAIN_WH * robot.workMinutes;
   }
 
   // ---------- 8) 盈余入储能（封顶）与输出 ----------
@@ -454,6 +502,7 @@ export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
   return {
     storageWh: clampWh(storage.value, capacity),
     lastLoadW: dh > 0 ? Math.round(servedEnergy / dh) : 0,
+    manufacturingEnergyWh,
     robotUpdates,
     stepUpdates,
     projectCompletions

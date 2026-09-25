@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ProjectTemplateDto, RobotTemplateDto } from "@ai-mud/shared";
 import {
   BaseSettlementService,
+  type BaseManufacturingSettlePort,
   type BaseSettlementDeps,
   type SettlementAssetPort,
   type SettlementCatalogPort,
@@ -210,7 +211,35 @@ class FakeRobots implements SettlementRobotPort {
   }
 }
 
-function makeHarness(cooperation?: BaseSettlementDeps["cooperation"]) {
+class FakeManufacturing implements BaseManufacturingSettlePort {
+  demandByBase = new Map<string, { settleableJobs: number; pendingWorkWh: number }>();
+  measured: string[] = [];
+  settled: Array<{
+    baseId: string;
+    simTime: Date;
+    availableEnergyWh: number;
+    powerW: number;
+    deltaSimMs: number;
+  }> = [];
+  async measure(_tx: IndustryTx, baseId: string) {
+    this.measured.push(baseId);
+    return this.demandByBase.get(baseId) ?? { settleableJobs: 0, pendingWorkWh: 0 };
+  }
+  async settle(
+    _tx: IndustryTx,
+    baseId: string,
+    simTime: Date,
+    input: { availableEnergyWh: number; powerW: number; deltaSimMs: number }
+  ) {
+    this.settled.push({ baseId, simTime, ...input });
+    return { unitsProduced: 0, jobsCompleted: 0 };
+  }
+}
+
+function makeHarness(
+  cooperation?: BaseSettlementDeps["cooperation"],
+  manufacturing?: BaseManufacturingSettlePort
+) {
   const clock = new FakeClock();
   const sites = new FakeSites();
   const assets = new FakeAssets();
@@ -223,6 +252,7 @@ function makeHarness(cooperation?: BaseSettlementDeps["cooperation"]) {
     assets,
     catalog,
     ...(cooperation ? { cooperation } : {}),
+    ...(manufacturing ? { manufacturing } : {}),
     openIndustry: () => industry,
     openRobots: () => robots
   });
@@ -602,5 +632,113 @@ describe("BaseSettlementService.settleBases > catch-up steps", () => {
         lastAdvancedAt: new Date(T0.getTime() + TICK_MS)
       }
     ]);
+  });
+});
+
+// ---------- 2026-09-25 B001（ARCH-domain-01）：制造结算按基地隔离 + 计入电力池 ----------
+
+describe("BaseSettlementService.settleBases > B001 制造按基地隔离", () => {
+  it("只对被推进的基地测量/结算制造，端口携带该基地 baseId（暂停基地不在推进集合里即不碰）", async () => {
+    const manufacturing = new FakeManufacturing();
+    manufacturing.demandByBase.set("base-1", { settleableJobs: 1, pendingWorkWh: 1_000 });
+    // base-2 暂停：lockAdvanceableBases 不返回它，但它也有在途工单。
+    manufacturing.demandByBase.set("base-2", { settleableJobs: 1, pendingWorkWh: 1_000 });
+    const harness = makeHarness(undefined, manufacturing);
+    seedStandardBase(harness);
+
+    await harness.service.settleBases({} as IndustryTx, T0);
+
+    expect(manufacturing.measured).toEqual(["base-1"]);
+    expect(manufacturing.settled.map((entry) => entry.baseId)).toEqual(["base-1"]);
+  });
+
+  it("制造负载进入同一电力池：储能扣减、lastLoadW 含 1500W，端口拿到电力池实际分给制造的能量", async () => {
+    const manufacturing = new FakeManufacturing();
+    manufacturing.demandByBase.set("base-1", { settleableJobs: 1, pendingWorkWh: 1_000 });
+    const harness = makeHarness(undefined, manufacturing);
+    seedStandardBase(harness);
+
+    await harness.service.settleBases({} as IndustryTx, T0);
+
+    // 发电 13500W；基础 1000 + 施工 2000 + 制造 1500 = 4500W → 盈余 9000W×(1/60)h = 150Wh。
+    expect(harness.industry.savedPower).toEqual([
+      { baseId: "base-1", storageWh: 100_150, lastLoadW: 4_500 }
+    ]);
+    expect(manufacturing.settled).toHaveLength(1);
+    expect(manufacturing.settled[0]?.availableEnergyWh).toBeCloseTo(25, 6);
+    expect(manufacturing.settled[0]?.deltaSimMs).toBe(TICK_MS);
+  });
+
+  it("本基地无可结算工单时不调用制造结算、无制造负载", async () => {
+    const manufacturing = new FakeManufacturing();
+    const harness = makeHarness(undefined, manufacturing);
+    seedStandardBase(harness);
+
+    await harness.service.settleBases({} as IndustryTx, T0);
+
+    expect(manufacturing.measured).toEqual(["base-1"]);
+    expect(manufacturing.settled).toEqual([]);
+    expect(harness.industry.savedPower).toEqual([
+      { baseId: "base-1", storageWh: 100_175, lastLoadW: 3000 }
+    ]);
+  });
+});
+
+// ---------- 2026-09-25 B008（ARCH-domain-02）：结算结果只依赖模拟时长 ----------
+
+describe("BaseSettlementService.settleBases > B008 调度频率无关", () => {
+  it("同一基地 60 秒一次结算 与 12 次 5 秒结算 的施工工作量、机器人电量一致", async () => {
+    const once = makeHarness();
+    seedStandardBase(once);
+    await once.service.settleBases({} as IndustryTx, T0);
+
+    const frequent = makeHarness();
+    seedStandardBase(frequent);
+    for (let i = 0; i < 12; i += 1) {
+      const simTime = new Date(T0.getTime() + i * 5_000);
+      frequent.clock.bases = [{
+        baseId: "base-1",
+        simTime,
+        speed: 1,
+        deltaSimMs: 5_000,
+        nextLastAdvancedAt: new Date(simTime.getTime() + 5_000),
+        catchUp: false
+      }];
+      await frequent.service.settleBases({} as IndustryTx, simTime);
+    }
+
+    expect(once.industry.steps[0]?.workDone).toBe(11);
+    expect(frequent.industry.steps[0]?.workDone).toBe(11);
+    expect(frequent.robots.operators.get("base-1")?.[0]?.batteryWh).toBe(
+      once.robots.operators.get("base-1")?.[0]?.batteryWh
+    );
+  });
+
+  it("子 tick 首尾相接且合计严格等于 Δsim（不因取整漏记或重记分钟边界）", async () => {
+    const manufacturing = new FakeManufacturing();
+    manufacturing.demandByBase.set("base-1", { settleableJobs: 1, pendingWorkWh: 10_000 });
+    const harness = makeHarness(undefined, manufacturing);
+    seedStandardBase(harness);
+    const deltaSimMs = 100_001; // 2 个子 tick，Δ/2 不是整数毫秒
+    harness.clock.bases = [{
+      baseId: "base-1",
+      simTime: T0,
+      speed: 1,
+      deltaSimMs,
+      nextLastAdvancedAt: new Date(T0.getTime() + deltaSimMs),
+      catchUp: false
+    }];
+
+    await harness.service.settleBases({} as IndustryTx, T0);
+
+    const segments = manufacturing.settled;
+    expect(segments.length).toBeGreaterThan(1);
+    expect(segments[0]?.simTime.getTime()).toBe(T0.getTime());
+    for (let i = 1; i < segments.length; i += 1) {
+      const previous = segments[i - 1]!;
+      expect(segments[i]?.simTime.getTime()).toBe(previous.simTime.getTime() + previous.deltaSimMs);
+    }
+    const total = segments.reduce((sum, entry) => sum + entry.deltaSimMs, 0);
+    expect(total).toBe(deltaSimMs);
   });
 });

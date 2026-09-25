@@ -30,12 +30,16 @@ export interface ContentRobotTemplate {
   description: string;
   batteryCapacityWh: number;
   chargeRateW: number;
+  // 单位：工作点 / 基地分钟（字段名沿用历史的 "PerTick"，这里的 tick = 1 个基地分钟，
+  // 不是结算调用次数）。结算按跨过的整基地分钟边界计工作量，与子 tick 切分、调用频率无关
+  // （2026-09-25 B008）。出工每基地分钟另耗 ROBOT_WORK_DRAIN_WH（运行侧规则常量）。
   workRatePerTick: number;
 }
 
 export interface ContentProjectStepTemplate {
   kind: ContentStepKind;
   groupId: ContentRobotGroupId;
+  // 单位：工作点（与 workRatePerTick 同单位；所需基地分钟 = workRequired / 该组出工合计速率）。
   workRequired: number;
 }
 
@@ -463,6 +467,8 @@ export interface ContentRecipeTemplate {
   name: string;
   description: string;
   inputs: Array<{ itemId: string; quantity: number }>;
+  // 单位：工作点 / 台；制造工作点 = 电力池分给制造的能量 Wh（1:1，制造负载 1500W → 25 点/基地分钟，
+  // 同基地多张工单 FIFO 分摊；m13-p-contract §4）。
   workPerUnit: number;
   output: { templateStableId: string; initialBatteryWh: number };
 }

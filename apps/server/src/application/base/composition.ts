@@ -25,7 +25,10 @@ import { createEconomyUseCases } from "../economy/usecases.js";
 import { OrderRepository } from "../../modules/economy/order.repository.js";
 import { PurchaseRepository } from "../../modules/economy/purchase.repository.js";
 import { WeatherService } from "../../modules/world-runtime/weather.service.js";
-import { settleManufacturing } from "../../modules/industry/manufacturing.settlement.js";
+import {
+  measureManufacturingDemand,
+  settleManufacturing
+} from "../../modules/industry/manufacturing.settlement.js";
 import {
   ContentAdminUseCases
 } from "../content-admin/usecases.js";
@@ -326,9 +329,16 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     openRobots: (tx) => (tx === db ? robotRuntime : new RobotRuntimeService(tx)),
     cooperation,
     economy: economyTick,
+    // 制造按基地结算（B001）：baseId 必须由 settleBase 传入，禁止在此遍历全服工单。
     manufacturing: {
-      settle: (tx, now, input) =>
-        settleManufacturing(tx, now, {
+      measure: (tx, baseId) =>
+        measureManufacturingDemand(tx, baseId, {
+          catalog,
+          openManufacturing: (settleTx) => new ManufacturingRepository(settleTx)
+        }),
+      settle: (tx, baseId, simTime, input) =>
+        settleManufacturing(tx, simTime, {
+          baseId,
           availableEnergyWh: input.availableEnergyWh,
           powerW: input.powerW,
           deltaSimMs: input.deltaSimMs,
