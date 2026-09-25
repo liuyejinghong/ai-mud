@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App.js";
 import { getCurrentSession, logout } from "./features/auth/authApi.js";
@@ -16,6 +16,12 @@ vi.mock("./features/base/BaseApp.js", () => ({
     return (
       <main aria-label="基地工作区">
         <h1>火星先遣基地</h1>
+        <button
+          type="button"
+          onClick={() => void logout().finally(() => props.onLogout?.())}
+        >
+          退出登录
+        </button>
       </main>
     );
   }
@@ -30,9 +36,6 @@ vi.mock("./features/admin/ActivationCodeAdmin.js", () => ({
 vi.mock("./features/admin/AssetLedgerHealthAdmin.js", () => ({
   AssetLedgerHealthAdmin: () => <h2>账本守恒</h2>
 }));
-vi.mock("./features/admin/EconomyAdmin.js", () => ({ EconomyAdmin: () => <h2>经济监控</h2> }));
-vi.mock("./features/admin/NpcAdmin.js", () => ({ NpcAdmin: () => <h2>NPC 运行监控</h2> }));
-vi.mock("./features/admin/NpcMemoryAdmin.js", () => ({ NpcMemoryAdmin: () => <h2>NPC 记忆</h2> }));
 vi.mock("./features/admin/SystemAnnouncementAdmin.js", () => ({
   SystemAnnouncementAdmin: () => <h2>系统公告</h2>
 }));
@@ -77,6 +80,19 @@ describe("App", () => {
     await screen.findByRole("main", { name: "基地工作区" });
     expect(baseAppProps.at(-1)?.initialCsrfToken).toBe("csrf");
     expect(typeof baseAppProps.at(-1)?.onLogout).toBe("function");
+  });
+
+  it("clears the top-level session after the base client sends one logout request", async () => {
+    vi.mocked(getCurrentSession).mockResolvedValue(adminSession);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "退出登录" }));
+
+    await waitFor(() => {
+      expect(logout).toHaveBeenCalledOnce();
+      expect(screen.queryByRole("navigation", { name: "工作区切换" })).toBeNull();
+      expect(baseAppProps.at(-1)?.initialCsrfToken).toBeUndefined();
+    });
   });
 
   it("starts admins in the base workspace without mounting management content", async () => {
@@ -131,6 +147,9 @@ describe("App", () => {
     expect(screen.getByRole("tablist")).toBeTruthy();
     expect(screen.queryByRole("tab", { name: "世界重置" })).toBeNull();
     expect(screen.queryByRole("button", { name: "重置黑松世界" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "经济监控" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "NPC 监控" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "NPC 记忆" })).toBeNull();
     expect(screen.getByRole("tab", { name: "系统公告" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "内容工坊" })).toBeTruthy();
   });

@@ -4,9 +4,6 @@ import { ActivationCodeAdmin } from "../../admin/ActivationCodeAdmin";
 import { AiCallAdmin } from "../../admin/AiCallAdmin";
 import { AiLayerStatusAdmin } from "../../admin/AiLayerStatusAdmin";
 import { AssetLedgerHealthAdmin } from "../../admin/AssetLedgerHealthAdmin";
-import { EconomyAdmin } from "../../admin/EconomyAdmin";
-import { NpcAdmin } from "../../admin/NpcAdmin";
-import { NpcMemoryAdmin } from "../../admin/NpcMemoryAdmin";
 import { ContentAdminPanel } from "../../admin/ContentAdminPanel";
 import { SystemAnnouncementAdmin } from "../../admin/SystemAnnouncementAdmin";
 import { WorldHealthAdmin } from "../../admin/WorldHealthAdmin";
@@ -21,12 +18,9 @@ const adminTabs = [
   { id: "system-announcement", label: "系统公告" },
   { id: "account-ops", label: "账号运营" },
   { id: "activation-code", label: "激活码" },
-  { id: "economy", label: "经济监控" },
   { id: "asset-ledger", label: "账本守恒" },
-  { id: "npc", label: "NPC 监控" },
   { id: "ai-layer", label: "AI 状态" },
   { id: "ai-call", label: "AI 日志" },
-  { id: "npc-memory", label: "NPC 记忆" },
   { id: "content-workshop", label: "内容工坊" }
 ] as const;
 
@@ -42,18 +36,12 @@ function AdminPanel({ activeTab, csrfToken }: { activeTab: AdminTabId; csrfToken
       return <AccountOpsAdmin csrfToken={csrfToken} />;
     case "activation-code":
       return <ActivationCodeAdmin csrfToken={csrfToken} />;
-    case "economy":
-      return <EconomyAdmin />;
     case "asset-ledger":
       return <AssetLedgerHealthAdmin />;
-    case "npc":
-      return <NpcAdmin csrfToken={csrfToken} />;
     case "ai-layer":
       return <AiLayerStatusAdmin />;
     case "ai-call":
       return <AiCallAdmin />;
-    case "npc-memory":
-      return <NpcMemoryAdmin />;
     case "content-workshop":
       return <ContentAdminPanel csrfToken={csrfToken} />;
   }

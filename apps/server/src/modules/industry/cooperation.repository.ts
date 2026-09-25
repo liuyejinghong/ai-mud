@@ -4,7 +4,7 @@
 // 状态迁移一律带条件写（B005）：只有打开（pending/accepted）的请求能被接受/结案，
 // 并发事务先结案的请求不会被后到的写复活。
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import type { CooperationStatus } from "@ai-mud/shared";
+import type { CooperationResolutionReason, CooperationStatus } from "@ai-mud/shared";
 import type { Db } from "../../db/client.js";
 import { baseProjectSteps, baseProjects, cooperationRequests } from "../../db/schema.js";
 
@@ -18,15 +18,6 @@ export type CooperationCloseReason =
   | "project_failed"
   | "step_failed"
   | "content_missing";
-
-// 结案原因 → 持久化状态。现有状态机与 DB CHECK（0031）只有
-// pending/accepted/declined/expired/fulfilled，没有 cancelled，也没有原因列：
-// 非完成结案统一落 expired（“请求已失效”；declined 表示有人婉拒，语义不符）。
-// Directive：新增 cancelled 状态或 resolution_reason 列（迁移 + shared COOPERATION_STATUSES +
-// 前端标签）后只改这里，调用方已按原因调用。
-export function closedStatusFor(_reason: CooperationCloseReason): CooperationStatus {
-  return "expired";
-}
 
 // 协作请求所指步骤的当前事实（base_projects × base_project_steps；stepIndex 为 null 表示步骤行缺失）。
 export interface CooperationStepState {
@@ -45,6 +36,7 @@ export interface CooperationRequestRecord {
   fromGroupId: string;
   helperGroupId: string;
   status: CooperationStatus;
+  resolutionReason: CooperationResolutionReason | null;
   helperOperatorId: string | null;
   decisionId: string | null;
   question: string;
@@ -105,6 +97,7 @@ function toRecord(row: typeof cooperationRequests.$inferSelect): CooperationRequ
     fromGroupId: row.fromGroupId,
     helperGroupId: row.helperGroupId,
     status: row.status as CooperationStatus,
+    resolutionReason: row.resolutionReason as CooperationResolutionReason | null,
     helperOperatorId: row.helperOperatorId,
     decisionId: row.decisionId,
     question: row.question,
@@ -192,7 +185,7 @@ export class CooperationRepository implements CooperationRequestStore {
   async expire(_tx: CooperationTx, requestId: string): Promise<void> {
     await this.db
       .update(cooperationRequests)
-      .set({ status: "expired", resolvedAt: new Date() })
+      .set({ status: "expired", resolutionReason: "ttl_expired", resolvedAt: new Date() })
       .where(and(eq(cooperationRequests.id, requestId), eq(cooperationRequests.status, "pending")));
   }
 
@@ -203,7 +196,7 @@ export class CooperationRepository implements CooperationRequestStore {
   ): Promise<boolean> {
     const updated = await this.db
       .update(cooperationRequests)
-      .set({ status: closedStatusFor(reason), resolvedAt: new Date() })
+      .set({ status: "expired", resolutionReason: reason, resolvedAt: new Date() })
       .where(
         and(eq(cooperationRequests.id, requestId), inArray(cooperationRequests.status, [...OPEN_STATUSES]))
       )
@@ -219,7 +212,7 @@ export class CooperationRepository implements CooperationRequestStore {
   ): Promise<number> {
     const updated = await this.db
       .update(cooperationRequests)
-      .set({ status: closedStatusFor(reason), resolvedAt: new Date() })
+      .set({ status: "expired", resolutionReason: reason, resolvedAt: new Date() })
       .where(
         and(
           eq(cooperationRequests.baseId, baseId),

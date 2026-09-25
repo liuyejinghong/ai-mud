@@ -87,8 +87,11 @@ export interface CooperationResolutionResult {
   requestsCreated: number;
   decisionsRequested: number;
   helpersAccepted: number;
-  // 本次落 expired 的请求数：pending TTL 过期 + B005 非完成结案（两者持久化状态相同）。
+  // 本次 pending 超过 COOPERATION_TTL_MS 的真实超时条数（只计 TTL）。
   expired: number;
+  // 本次 B005 生命周期非完成结案条数，按原因计（无结案时为空对象）。
+  // 与 TTL 超时分开统计；数据库用 resolution_reason 保存具体结案原因。
+  closed: Partial<Record<CooperationCloseReason, number>>;
 }
 
 // ---------- B005 结案/回收规则（纯函数） ----------
@@ -122,7 +125,7 @@ function stepKeyOf(projectId: string, stepIndex: number): string {
 
 interface LifecycleReconciliation {
   closedRequestIds: Set<string>;
-  expired: number;
+  closed: Partial<Record<CooperationCloseReason, number>>;
   operators: CooperationOperatorRecord[];
 }
 
@@ -137,7 +140,7 @@ async function reconcileRequestLifecycle(
   operators: CooperationOperatorRecord[],
   robots: CooperationRobotPort
 ): Promise<LifecycleReconciliation> {
-  const reconciliation: LifecycleReconciliation = { closedRequestIds: new Set(), expired: 0, operators };
+  const reconciliation: LifecycleReconciliation = { closedRequestIds: new Set(), closed: {}, operators };
   const operatorById = new Map(operators.map((operator) => [operator.operatorId, operator]));
   const open = requests.filter(isOpenRequest);
   const helperStillAssigned = requests.filter((request) => {
@@ -184,7 +187,7 @@ async function reconcileRequestLifecycle(
     }
     if (await repo.closeOpen(tx, request.requestId, outcome)) {
       reconciliation.closedRequestIds.add(request.requestId);
-      reconciliation.expired += 1;
+      reconciliation.closed[outcome] = (reconciliation.closed[outcome] ?? 0) + 1;
     }
   }
 
@@ -227,7 +230,8 @@ export async function detectAndResolveCooperation(
     requestsCreated: 0,
     decisionsRequested: 0,
     helpersAccepted: 0,
-    expired: 0
+    expired: 0,
+    closed: {}
   };
   const existing = await repo.listByBase(tx, baseId);
   // B005：先结案所指步骤已不可推进的请求、释放其 helper，再算候选与占用。
@@ -240,7 +244,7 @@ export async function detectAndResolveCooperation(
     deps.robots
   );
   const operators = lifecycle.operators;
-  result.expired += lifecycle.expired;
+  result.closed = lifecycle.closed;
   // 仍打开的已接受 helper 和本次新接受的 helper 都不能再分给其他步骤。
   const reservedHelpers = new Set(
     existing.flatMap((request) =>
@@ -306,6 +310,7 @@ export async function detectAndResolveCooperation(
         fromGroupId: step.groupId,
         helperGroupId,
         status: "pending",
+        resolutionReason: null,
         helperOperatorId: null,
         decisionId: null,
         question,

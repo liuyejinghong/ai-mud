@@ -2,22 +2,18 @@ import { useEffect, useState } from "react";
 import type {
   AiLayerStatusDto,
   AssetLedgerHealthDto,
-  NpcSummaryDto,
   WorldRuntimeStatusDto
 } from "@ai-mud/shared";
 import {
   getAiLayerStatus,
   getAssetLedgerHealth,
-  getNpcSnapshot,
-  getWorldRuntimeStatus,
-  type NpcSnapshotResponse
+  getWorldRuntimeStatus
 } from "./adminApi";
 
 interface WorldHealthSnapshot {
   runtime: WorldRuntimeStatusDto;
   ledger: AssetLedgerHealthDto;
   ai: AiLayerStatusDto;
-  npcs: NpcSummaryDto[];
 }
 
 function runtimeText(runtime: WorldRuntimeStatusDto) {
@@ -35,12 +31,6 @@ function aiBudgetText(ai: AiLayerStatusDto) {
   return `AI 余量 ${ai.budget.remainingTokens24h}`;
 }
 
-function npcHealthText(npcs: NpcSnapshotResponse["npcs"]) {
-  if (npcs.length === 0) return "NPC 未初始化";
-  const starvingCount = npcs.filter((npc) => npc.hunger.current <= 0).length;
-  return starvingCount === 0 ? "NPC 正常" : `NPC 濒危 ${starvingCount}`;
-}
-
 export function WorldHealthAdmin() {
   const [snapshot, setSnapshot] = useState<WorldHealthSnapshot | null>(null);
   const [status, setStatus] = useState("正在读取世界健康状态...");
@@ -51,12 +41,11 @@ export function WorldHealthAdmin() {
     void Promise.all([
       getWorldRuntimeStatus(),
       getAssetLedgerHealth(),
-      getAiLayerStatus(),
-      getNpcSnapshot()
+      getAiLayerStatus()
     ])
-      .then(([runtime, ledger, ai, npcSnapshot]) => {
+      .then(([runtime, ledger, ai]) => {
         if (cancelled) return;
-        setSnapshot({ runtime, ledger, ai, npcs: npcSnapshot.npcs });
+        setSnapshot({ runtime, ledger, ai });
         setStatus("");
       })
       .catch(() => {
@@ -94,10 +83,6 @@ export function WorldHealthAdmin() {
           <div>
             <span>AI 预算</span>
             <strong>{aiBudgetText(snapshot.ai)}</strong>
-          </div>
-          <div>
-            <span>NPC 生存</span>
-            <strong>{npcHealthText(snapshot.npcs)}</strong>
           </div>
         </div>
       ) : null}

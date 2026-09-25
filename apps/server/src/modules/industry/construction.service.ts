@@ -43,6 +43,7 @@ export class BaseOperationError extends Error {
 
 export interface ConstructionLookupPort {
   findBaseIdByAccount(tx: ConstructionTx, accountId: string): Promise<string | null>;
+  getBaseForUpdate(tx: ConstructionTx, baseId: string): Promise<{ id: string } | null>;
 }
 
 export interface ConstructionAssetPort {
@@ -247,6 +248,10 @@ export class ConstructionService {
     input: { projectId: string; commandId: string }
   ): Promise<ConstructionCancelResult> {
     const baseId = await this.requireBaseId(tx, principal);
+    // 与基地 tick 共用 bases 行锁：取消读取的预留、项目状态和协作事实必须来自结算提交后的同一状态。
+    if (!(await this.deps.lookup.getBaseForUpdate(tx, baseId))) {
+      throw new BaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
+    }
     const actorScope = `base:${baseId}`;
     const requestHash = hashRequest({ projectId: input.projectId });
     const receipts = this.deps.receipts(tx);

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import type { DecisionRequestDto, DecisionOutcomeDto } from "@ai-mud/shared";
 import { COOPERATION_TTL_MS } from "@ai-mud/shared";
 import {
-  closedStatusFor,
   type CooperationCloseReason,
   type CooperationRequestRecord,
   type CooperationRequestStore,
@@ -41,6 +40,7 @@ class InMemoryCooperationRepo implements CooperationRequestStore {
       fromGroupId: input.fromGroupId,
       helperGroupId: input.helperGroupId,
       status: "pending",
+      resolutionReason: null,
       helperOperatorId: null,
       decisionId: null,
       question: input.question,
@@ -88,6 +88,7 @@ class InMemoryCooperationRepo implements CooperationRequestStore {
     this.mutate(requestId, (record) => {
       if (record.status !== "pending") return;
       record.status = "expired";
+      record.resolutionReason = "ttl_expired";
       record.resolvedAt = T0;
     });
   }
@@ -95,7 +96,8 @@ class InMemoryCooperationRepo implements CooperationRequestStore {
   async closeOpen(_tx: CooperationTx, requestId: string, reason: CooperationCloseReason) {
     const record = this.records.find((entry) => entry.requestId === requestId);
     if (!record || (record.status !== "pending" && record.status !== "accepted")) return false;
-    record.status = closedStatusFor(reason);
+    record.status = "expired";
+    record.resolutionReason = reason;
     record.resolvedAt = T0;
     this.closeReasons.set(requestId, reason);
     return true;
@@ -239,7 +241,8 @@ describe("detectAndResolveCooperation", () => {
       requestsCreated: 1,
       decisionsRequested: 1,
       helpersAccepted: 1,
-      expired: 0
+      expired: 0,
+      closed: {}
     });
     const request = repo.records[0];
     expect(request).toMatchObject({
@@ -271,6 +274,7 @@ describe("detectAndResolveCooperation", () => {
       decisionId: null,
       question: "旧请求",
       createdAt: new Date(T0.getTime() - 1000),
+      resolutionReason: null,
       resolvedAt: null
     });
 
@@ -290,12 +294,14 @@ describe("detectAndResolveCooperation", () => {
       requestId: "req-accepted", baseId: BASE_ID, projectId: "p1", stepIndex: 0,
       fromGroupId: "engineering", helperGroupId: "transport", status: "accepted",
       helperOperatorId: "op-t1", decisionId: "decision-1", question: "已有支援",
-      createdAt: T0, resolvedAt: null
+      createdAt: T0, resolutionReason: null, resolvedAt: null
     });
 
     const result = await detectAndResolveCooperation(tx, BASE_ID, [STEP], deps);
 
-    expect(result).toEqual({ requestsCreated: 0, decisionsRequested: 0, helpersAccepted: 0, expired: 0 });
+    expect(result).toEqual({
+      requestsCreated: 0, decisionsRequested: 0, helpersAccepted: 0, expired: 0, closed: {}
+    });
     expect(repo.records).toHaveLength(1);
     expect(gateway.requests).toHaveLength(0);
   });
@@ -336,7 +342,8 @@ describe("detectAndResolveCooperation", () => {
       requestsCreated: 1,
       decisionsRequested: 0,
       helpersAccepted: 0,
-      expired: 0
+      expired: 0,
+      closed: {}
     });
     expect(gateway.requests).toHaveLength(0);
     expect(repo.records[0]).toMatchObject({ status: "pending", helperGroupId: "transport" });
@@ -382,12 +389,14 @@ describe("detectAndResolveCooperation", () => {
       decisionId: null,
       question: "过期请求",
       createdAt: new Date(T0.getTime() - COOPERATION_TTL_MS - 1),
+      resolutionReason: null,
       resolvedAt: null
     });
 
     const result = await detectAndResolveCooperation(tx, BASE_ID, [STEP], deps);
 
     expect(result.expired).toBe(1);
+    expect(result.closed).toEqual({}); // TTL 超时不计入生命周期结案
     expect(repo.records.find((record) => record.requestId === "req-old")?.status).toBe("expired");
     expect(repo.records.find((record) => record.requestId === "req-1")?.status).toBe("pending");
   });
@@ -402,7 +411,8 @@ describe("detectAndResolveCooperation", () => {
       requestsCreated: 0,
       decisionsRequested: 0,
       helpersAccepted: 0,
-      expired: 0
+      expired: 0,
+      closed: {}
     });
     expect(repo.records).toHaveLength(0);
   });
@@ -424,6 +434,7 @@ describe("applyAcceptedHelpers", () => {
       decisionId: "decision-1",
       question: "支援请求",
       createdAt: T0,
+      resolutionReason: null,
       resolvedAt: null
     });
 
@@ -455,6 +466,7 @@ describe("applyAcceptedHelpers", () => {
       decisionId: "decision-1",
       question: "支援请求",
       createdAt: T0,
+      resolutionReason: null,
       resolvedAt: null
     });
 
@@ -474,7 +486,7 @@ describe("applyAcceptedHelpers", () => {
       requestId: "req-1", baseId: BASE_ID, projectId: "p1", stepIndex: 0,
       fromGroupId: "engineering", helperGroupId: "transport", status: "accepted",
       helperOperatorId: "op-t1", decisionId: "decision-1", question: "支援请求",
-      createdAt: T0, resolvedAt: null
+      createdAt: T0, resolutionReason: null, resolvedAt: null
     });
 
     expect(await applyAcceptedHelpers(tx, BASE_ID, [], deps)).toBe(0);
@@ -504,6 +516,7 @@ describe("markFulfilledByStep", () => {
         decisionId: "decision-1",
         question: "支援请求",
         createdAt: T0,
+        resolutionReason: null,
         resolvedAt: null
       },
       {
@@ -518,6 +531,7 @@ describe("markFulfilledByStep", () => {
         decisionId: null,
         question: "旧请求",
         createdAt: T0,
+        resolutionReason: null,
         resolvedAt: null
       },
       {
@@ -532,6 +546,7 @@ describe("markFulfilledByStep", () => {
         decisionId: null,
         question: "已过期",
         createdAt: T0,
+        resolutionReason: "ttl_expired",
         resolvedAt: T0
       }
     );
@@ -557,6 +572,7 @@ function openRequest(overrides: Partial<CooperationRequestRecord> = {}): Coopera
     fromGroupId: "engineering",
     helperGroupId: "transport",
     status: "accepted",
+    resolutionReason: null,
     helperOperatorId: "op-t1",
     decisionId: "decision-1",
     question: "支援请求",
@@ -607,11 +623,6 @@ describe("cooperationStepOutcome（B005 结案/回收规则）", () => {
     expect(cooperationStepOutcome(state)).toBeNull();
   });
 
-  it("现有状态机下所有非完成结案都落 expired（请求已失效），原因由调用方显式给出", () => {
-    for (const reason of ["project_cancelled", "project_failed", "step_failed", "content_missing"] as const) {
-      expect(closedStatusFor(reason)).toBe("expired");
-    }
-  });
 });
 
 describe("detectAndResolveCooperation > B005 生命周期回收", () => {
@@ -638,7 +649,8 @@ describe("detectAndResolveCooperation > B005 生命周期回收", () => {
     expect(repo.records.find((r) => r.requestId === "req-p")).toMatchObject({ status: "expired" });
     expect(repo.closeReasons.get("req-a")).toBe("project_cancelled");
     expect(repo.closeReasons.get("req-p")).toBe("project_cancelled");
-    expect(result.expired).toBe(2);
+    expect(result.closed).toEqual({ project_cancelled: 2 });
+    expect(result.expired).toBe(0); // 生命周期结案不算 TTL 超时
     expect(robots.applied).toContainEqual({
       operatorId: "op-t1", batteryWh: 9000, status: "idle", currentProjectId: null, currentStepIndex: null
     });
@@ -661,7 +673,8 @@ describe("detectAndResolveCooperation > B005 生命周期回收", () => {
 
     expect(repo.records[0]).toMatchObject({ status: "expired" });
     expect(repo.closeReasons.get("req-a")).toBe("content_missing");
-    expect(result.expired).toBe(1);
+    expect(result.closed).toEqual({ content_missing: 1 });
+    expect(result.expired).toBe(0);
     expect(robots.operators[0]).toMatchObject({ status: "idle", currentProjectId: null, currentStepIndex: null });
     expect(repo.records.find((r) => r.projectId === "p2")).toMatchObject({
       status: "accepted", helperOperatorId: "op-t1"
@@ -685,7 +698,8 @@ describe("detectAndResolveCooperation > B005 生命周期回收", () => {
     expect(repo.closeReasons.get("req-pf")).toBe("project_failed");
     expect(repo.closeReasons.get("req-sf")).toBe("step_failed");
     expect(repo.records.map((r) => r.status)).toEqual(["expired", "expired"]);
-    expect(result.expired).toBe(2);
+    expect(result.closed).toEqual({ project_failed: 1, step_failed: 1 });
+    expect(result.expired).toBe(0);
   });
 
   it("缺电阻塞（insufficient_power）：accepted 保持，helper 保留原地充电分配（C07 复电返回）", async () => {
@@ -699,6 +713,7 @@ describe("detectAndResolveCooperation > B005 生命周期回收", () => {
 
     expect(repo.records[0]).toMatchObject({ status: "accepted", helperOperatorId: "op-t1" });
     expect(result.expired).toBe(0);
+    expect(result.closed).toEqual({});
     expect(robots.applied).toHaveLength(0);
     expect(robots.operators[0]).toMatchObject({ status: "charging", currentProjectId: "p1", currentStepIndex: 0 });
   });
@@ -719,6 +734,7 @@ describe("detectAndResolveCooperation > B005 生命周期回收", () => {
 
     expect(repo.records.map((r) => r.status)).toEqual(["fulfilled", "fulfilled"]);
     expect(result.expired).toBe(0);
+    expect(result.closed).toEqual({}); // 完成不是非完成结案
   });
 
   it("取消事务已结案、但 helper 仍在该步骤原地充电：下一 tick 释放为 idle，可再被选为候选", async () => {
@@ -731,6 +747,7 @@ describe("detectAndResolveCooperation > B005 生命周期回收", () => {
     const result = await detectAndResolveCooperation(tx, BASE_ID, [OTHER_STEP], deps);
 
     expect(result.expired).toBe(0); // 已结案的历史不重复计数
+    expect(result.closed).toEqual({});
     expect(repo.records[0]).toMatchObject({ status: "expired" });
     expect(robots.applied[0]).toMatchObject({ operatorId: "op-t1", status: "idle", currentProjectId: null });
     expect(repo.records.find((r) => r.projectId === "p2")).toMatchObject({
@@ -748,7 +765,31 @@ describe("detectAndResolveCooperation > B005 生命周期回收", () => {
 
     expect(repo.records[0]).toMatchObject({ status: "accepted" });
     expect(result.expired).toBe(0);
+    expect(result.closed).toEqual({});
     expect(robots.applied).toHaveLength(0);
+  });
+
+  it("同一 tick 里 TTL 超时与生命周期结案分开计数；已取消项目上超时的 pending 只算结案、不重复计", async () => {
+    const { repo, robots, deps, tx } = makeHarness();
+    robots.operators = [];
+    const stale = new Date(T0.getTime() - COOPERATION_TTL_MS - 1);
+    repo.records.push(
+      // 仍在推进的项目上等太久的 pending：真实超时。
+      openRequest({ requestId: "req-ttl", projectId: "pa", status: "pending", helperOperatorId: null, createdAt: stale }),
+      // 已取消项目上同样超时的 pending：先按取消结案，TTL 不再碰它。
+      openRequest({ requestId: "req-cancel", projectId: "pc", status: "pending", helperOperatorId: null, createdAt: stale })
+    );
+    repo.stepStates = [
+      stepState({ projectId: "pa", stepStatus: "ready" }),
+      stepState({ projectId: "pc", projectStatus: "cancelled" })
+    ];
+
+    const result = await detectAndResolveCooperation(tx, BASE_ID, [], deps);
+
+    expect(result.expired).toBe(1);
+    expect(result.closed).toEqual({ project_cancelled: 1 });
+    expect(repo.closeReasons.get("req-cancel")).toBe("project_cancelled");
+    expect(repo.closeReasons.has("req-ttl")).toBe(false);
   });
 
   it("被并发结案的请求不会被 accept 复活：不计 helpersAccepted，helper 不被预留", async () => {

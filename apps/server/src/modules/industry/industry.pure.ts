@@ -204,7 +204,7 @@ function serveDemand(
   return served;
 }
 
-export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
+function computeBaseMinute(input: ComputeBaseTickInput): BaseTickResult {
   const dh = Math.max(0, input.deltaSimMs) / 3_600_000;
   const workMinutes = countWorkMinutes(input.simTime, input.deltaSimMs);
   const hour = input.simTime.getUTCHours();
@@ -268,14 +268,34 @@ export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
 
   // ---------- 2) 施工负荷：running / 缺电阻塞 的 site_clearing|installation 步骤存在时 ----------
   let constructionDemand = false;
+  // ready 工地只有本分钟真能分到机器人时才预留施工电；先按步骤顺序试分配，
+  // 避免同一台机器人先被运输步骤占用、后面的工地却空耗施工电。
+  const available = new Set(robotStates.filter((robot) =>
+    !robot.wasWorkingAtStart && robot.hasWorkTemplate &&
+    (robot.status === "idle" || robot.status === "charging") &&
+    robot.battery >= ROBOT_WORK_DRAIN_WH
+  ).map((robot) => robot.record.operatorId));
   for (const list of stepsByProject.values()) {
     for (const step of list) {
-      if (!CONSTRUCTION_STEP_KINDS.has(step.record.kind)) continue;
-      if (
-        step.status === "running" ||
-        (step.status === "blocked" && step.blockedReason === POWER_BLOCK_REASON)
-      ) {
+      const isConstruction = CONSTRUCTION_STEP_KINDS.has(step.record.kind);
+      if (isConstruction && (step.status === "running" ||
+        (step.status === "blocked" && step.blockedReason === POWER_BLOCK_REASON))) {
         constructionDemand = true;
+      }
+      if (step.status !== "ready" && step.status !== "running") continue;
+      if (isConstruction && step.status === "ready" && robotStates.some((robot) =>
+        robot.status === "working" && robot.projectId === step.record.projectId &&
+        robot.stepIndex === step.record.stepIndex && robot.hasWorkTemplate &&
+        robot.battery >= ROBOT_WORK_DRAIN_WH &&
+        (robot.record.groupId === step.record.groupId ||
+          (input.helperOperatorIds?.has(robot.record.operatorId) ?? false))
+      )) constructionDemand = true;
+      for (const robot of robotStates) {
+        if (!available.has(robot.record.operatorId)) continue;
+        if (robot.record.groupId !== step.record.groupId &&
+          !(input.helperOperatorIds?.has(robot.record.operatorId) ?? false)) continue;
+        available.delete(robot.record.operatorId);
+        if (isConstruction && step.status === "ready") constructionDemand = true;
       }
     }
   }
@@ -505,6 +525,100 @@ export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
     manufacturingEnergyWh,
     robotUpdates,
     stepUpdates,
+    projectCompletions
+  };
+}
+
+// 结算事件固定在绝对基地分钟边界；调用者如何拆 Δsim 不改变状态转移顺序。
+// 生产输入最多 40 分钟（10 分钟墙钟追补上限 × 4 速）；这里只折叠内存状态。
+export function computeBaseTick(input: ComputeBaseTickInput): BaseTickResult {
+  const minutes = countWorkMinutes(input.simTime, input.deltaSimMs);
+  if (minutes === 0) {
+    return {
+      storageWh: input.power.storageWh,
+      lastLoadW: input.power.lastLoadW,
+      manufacturingEnergyWh: 0,
+      robotUpdates: [],
+      stepUpdates: [],
+      projectCompletions: []
+    };
+  }
+
+  const projects = input.projects.map((project) => ({ ...project }));
+  const steps = input.steps.map((step) => ({ ...step }));
+  const robots = input.robots.map((robot) => ({ ...robot }));
+  let power = { ...input.power };
+  let manufacturingWorkWh = Math.max(0, input.manufacturingWorkWh ?? 0);
+  let totalLoadW = 0;
+  let manufacturingEnergyWh = 0;
+  const projectCompletions: BaseTickProjectCompletion[] = [];
+  const startMinute = Math.floor(input.simTime.getTime() / WORK_MINUTE_MS) * WORK_MINUTE_MS;
+
+  for (let minute = 0; minute < minutes; minute += 1) {
+    const result = computeBaseMinute({
+      ...input,
+      simTime: new Date(startMinute + minute * WORK_MINUTE_MS),
+      deltaSimMs: WORK_MINUTE_MS,
+      power,
+      projects,
+      steps,
+      robots,
+      manufacturingWorkWh
+    });
+    power = { ...power, storageWh: result.storageWh, lastLoadW: result.lastLoadW };
+    totalLoadW += result.lastLoadW;
+    manufacturingEnergyWh += result.manufacturingEnergyWh;
+    manufacturingWorkWh = Math.max(0, manufacturingWorkWh - result.manufacturingEnergyWh);
+    for (const update of result.stepUpdates) {
+      const step = steps.find((entry) => entry.projectId === update.projectId && entry.stepIndex === update.stepIndex);
+      if (step) Object.assign(step, update);
+    }
+    for (const update of result.robotUpdates) {
+      const robot = robots.find((entry) => entry.operatorId === update.operatorId);
+      if (robot) {
+        robot.batteryWh = update.batteryWh;
+        robot.status = update.status;
+        robot.currentProjectId = update.currentProjectId;
+        robot.currentStepIndex = update.currentStepIndex;
+      }
+    }
+    for (const completion of result.projectCompletions) {
+      const project = projects.find((entry) => entry.id === completion.projectId);
+      if (project) project.status = "completed";
+      projectCompletions.push(completion);
+    }
+  }
+
+  return {
+    storageWh: power.storageWh,
+    lastLoadW: Math.round(totalLoadW / minutes),
+    manufacturingEnergyWh,
+    robotUpdates: robots.flatMap((robot, index) => {
+      const original = input.robots[index]!;
+      return robot.batteryWh !== original.batteryWh || robot.status !== original.status ||
+        robot.currentProjectId !== original.currentProjectId || robot.currentStepIndex !== original.currentStepIndex
+        ? [{
+            operatorId: robot.operatorId,
+            batteryWh: robot.batteryWh,
+            status: robot.status as RobotStatus,
+            currentProjectId: robot.currentProjectId,
+            currentStepIndex: robot.currentStepIndex
+          }]
+        : [];
+    }),
+    stepUpdates: steps.flatMap((step, index) => {
+      const original = input.steps[index]!;
+      return step.workDone !== original.workDone || step.status !== original.status ||
+        step.blockedReason !== original.blockedReason
+        ? [{
+            projectId: step.projectId,
+            stepIndex: step.stepIndex,
+            workDone: step.workDone,
+            status: step.status as StepStatus,
+            blockedReason: step.blockedReason
+          }]
+        : [];
+    }),
     projectCompletions
   };
 }

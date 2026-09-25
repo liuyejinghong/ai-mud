@@ -48,6 +48,13 @@ export const COOPERATION_STATUSES = [
 ] as const;
 export type CooperationStatus = (typeof COOPERATION_STATUSES)[number];
 
+export type CooperationResolutionReason =
+  | "ttl_expired"
+  | "project_cancelled"
+  | "project_failed"
+  | "step_failed"
+  | "content_missing";
+
 export interface CooperationRequestDto {
   requestId: string;
   projectId: string;
@@ -56,6 +63,7 @@ export interface CooperationRequestDto {
   fromGroupId: string;
   helperGroupId: string;
   status: CooperationStatus;
+  resolutionReason: CooperationResolutionReason | null;
   helperOperatorId: string | null;
   question: string;
   createdAt: string;

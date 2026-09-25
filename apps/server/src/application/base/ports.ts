@@ -147,6 +147,7 @@ export interface PlaytestRegistrationFacade {
 // world：账号 → 初始基地（一账号一基地）
 export interface BaseLookupPort {
   findBaseIdByAccount(tx: BaseTx, accountId: string): Promise<string | null>;
+  getBaseForUpdate(tx: BaseTx, baseId: string): Promise<{ id: string } | null>;
 }
 
 export interface ProvisionUseCase {

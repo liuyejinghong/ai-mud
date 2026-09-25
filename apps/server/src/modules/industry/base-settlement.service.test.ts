@@ -159,13 +159,14 @@ class FakeIndustry implements IndustryReadPort, IndustrySettlementWriter {
   async savePowerState(
     _tx: IndustryTx,
     baseId: string,
-    patch: { storageWh: number; lastLoadW: number }
+    patch: { storageWh: number; lastLoadW: number; dustLevel?: number }
   ) {
     this.savedPower.push({ baseId, storageWh: patch.storageWh, lastLoadW: patch.lastLoadW });
     const stored = this.power.get(baseId);
     if (stored) {
       stored.storageWh = patch.storageWh;
       stored.lastLoadW = patch.lastLoadW;
+      if (patch.dustLevel !== undefined) stored.dustLevel = patch.dustLevel;
     }
   }
   async saveStepUpdates(_tx: IndustryTx, updates: BaseTickStepUpdate[]) {
@@ -238,7 +239,8 @@ class FakeManufacturing implements BaseManufacturingSettlePort {
 
 function makeHarness(
   cooperation?: BaseSettlementDeps["cooperation"],
-  manufacturing?: BaseManufacturingSettlePort
+  manufacturing?: BaseManufacturingSettlePort,
+  weather?: BaseSettlementDeps["weather"]
 ) {
   const clock = new FakeClock();
   const sites = new FakeSites();
@@ -253,6 +255,7 @@ function makeHarness(
     catalog,
     ...(cooperation ? { cooperation } : {}),
     ...(manufacturing ? { manufacturing } : {}),
+    ...(weather ? { weather } : {}),
     openIndustry: () => industry,
     openRobots: () => robots
   });
@@ -714,12 +717,47 @@ describe("BaseSettlementService.settleBases > B008 调度频率无关", () => {
     );
   });
 
-  it("子 tick 首尾相接且合计严格等于 Δsim（不因取整漏记或重记分钟边界）", async () => {
+  it("天气切换和小数积尘按同一基地分钟采样，长调用与逐分钟调用一致", async () => {
+    const scenario = () => {
+      const sampled: number[] = [];
+      const harness = makeHarness(undefined, undefined, {
+        current: async (_baseId, simTime) => {
+          sampled.push(simTime.getTime());
+          return { lightFactor: simTime.getTime() < T0.getTime() + 2 * TICK_MS ? 1 : 0.25 };
+        }
+      });
+      seedStandardBase(harness);
+      return { harness, sampled };
+    };
+    const once = scenario();
+    once.harness.clock.bases[0]!.deltaSimMs = 4 * TICK_MS;
+    await once.harness.service.settleBases({} as IndustryTx, T0);
+
+    const sliced = scenario();
+    for (let minute = 0; minute < 4; minute += 1) {
+      sliced.harness.clock.bases[0] = {
+        baseId: "base-1",
+        simTime: new Date(T0.getTime() + minute * TICK_MS),
+        speed: 1,
+        deltaSimMs: TICK_MS,
+        nextLastAdvancedAt: new Date(T0.getTime() + (minute + 1) * TICK_MS),
+        catchUp: false
+      };
+      await sliced.harness.service.settleBases({} as IndustryTx, T0);
+    }
+
+    expect(once.sampled).toEqual(sliced.sampled);
+    expect(once.harness.industry.power.get("base-1")?.storageWh).toBe(sliced.harness.industry.power.get("base-1")?.storageWh);
+    expect(once.harness.industry.power.get("base-1")?.dustLevel).toBeCloseTo(8 / 60 * 2, 6);
+    expect(once.harness.industry.power.get("base-1")?.dustLevel).toBeCloseTo(sliced.harness.industry.power.get("base-1")?.dustLevel ?? 0, 6);
+  });
+
+  it("不足整分钟的余量留在时钟，下一次跨界时只结算那个完整基地分钟", async () => {
     const manufacturing = new FakeManufacturing();
     manufacturing.demandByBase.set("base-1", { settleableJobs: 1, pendingWorkWh: 10_000 });
     const harness = makeHarness(undefined, manufacturing);
     seedStandardBase(harness);
-    const deltaSimMs = 100_001; // 2 个子 tick，Δ/2 不是整数毫秒
+    const deltaSimMs = 100_001;
     harness.clock.bases = [{
       baseId: "base-1",
       simTime: T0,
@@ -731,14 +769,23 @@ describe("BaseSettlementService.settleBases > B008 调度频率无关", () => {
 
     await harness.service.settleBases({} as IndustryTx, T0);
 
-    const segments = manufacturing.settled;
-    expect(segments.length).toBeGreaterThan(1);
-    expect(segments[0]?.simTime.getTime()).toBe(T0.getTime());
-    for (let i = 1; i < segments.length; i += 1) {
-      const previous = segments[i - 1]!;
-      expect(segments[i]?.simTime.getTime()).toBe(previous.simTime.getTime() + previous.deltaSimMs);
-    }
-    const total = segments.reduce((sum, entry) => sum + entry.deltaSimMs, 0);
-    expect(total).toBe(deltaSimMs);
+    expect(manufacturing.settled.map((entry) => [entry.simTime.getTime(), entry.deltaSimMs])).toEqual([
+      [T0.getTime(), 60_000]
+    ]);
+    expect(harness.clock.saved[0]?.simTime.getTime()).toBe(T0.getTime() + 100_001);
+
+    harness.clock.bases = [{
+      baseId: "base-1",
+      simTime: new Date(T0.getTime() + 100_001),
+      speed: 1,
+      deltaSimMs: 19_999,
+      nextLastAdvancedAt: new Date(T0.getTime() + 120_000),
+      catchUp: false
+    }];
+    await harness.service.settleBases({} as IndustryTx, T0);
+    expect(manufacturing.settled.map((entry) => [entry.simTime.getTime(), entry.deltaSimMs])).toEqual([
+      [T0.getTime(), 60_000],
+      [T0.getTime() + 60_000, 60_000]
+    ]);
   });
 });

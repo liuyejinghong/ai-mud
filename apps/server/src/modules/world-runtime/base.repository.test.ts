@@ -298,7 +298,7 @@ describe("BaseRepository.lockAdvanceableBases", () => {
 
     // pause 不返回、无租约不返回、租约过期不返回。
     expect(advanceable.map((base) => base.baseId)).toEqual(["b-normal", "b-capped"]);
-    expect(client.queries[0]?.text).toContain("for update");
+    expect(client.queries[0]?.text).toContain("for no key update");
     expect(client.queries[0]?.text).toContain('"time_mode"');
     expect(client.queries[0]?.params[0]).toBe("running");
 
@@ -357,7 +357,7 @@ describe("BaseRepository per-base tick isolation (车道 C4)", () => {
 
     const lockQuery = client.queries[0]?.text ?? "";
     expect(lockQuery).toContain('order by "bases"."id"');
-    expect(lockQuery).toContain("for update skip locked");
+    expect(lockQuery).toContain("for no key update skip locked");
   });
 
   it("only locks and returns the base a tick transaction is scoped to", async () => {
@@ -370,7 +370,7 @@ describe("BaseRepository per-base tick isolation (车道 C4)", () => {
 
     expect(advanceable.map((base) => base.baseId)).toEqual(["b-2"]);
     expect(client.queries[0]?.params).toEqual(["running", "b-2"]);
-    expect(client.queries[0]?.text).toContain("for update skip locked");
+    expect(client.queries[0]?.text).toContain("for no key update skip locked");
   });
 
   it("does not leak a tick scope into other transaction handles", async () => {
@@ -575,13 +575,13 @@ describe("BaseRepository base and site rows", () => {
     });
   });
 
-  it("locks a base row for update by id", async () => {
+  it("locks a base row without blocking foreign-key checks", async () => {
     const { client, repo, tx } = createRepository();
     client.bases.push(seedBase({ id: "b-1" }));
 
     const base = await repo.getBaseForUpdate(tx, "b-1");
     expect(base?.id).toBe("b-1");
-    const lockQuery = client.queries.find((query) => query.text.includes("for update"));
+    const lockQuery = client.queries.find((query) => query.text.includes("for no key update"));
     expect(lockQuery?.text).toContain('from "bases"');
   });
 

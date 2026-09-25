@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
 import pg from "pg";
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -261,6 +262,15 @@ function makeConstruction(db: Db, receipts: MemoryReceipts) {
           .where(eq(schema.bases.accountId, accountId))
           .limit(1);
         return row?.id ?? null;
+      },
+      getBaseForUpdate: async (tx: ConstructionTx, baseId: string) => {
+        const [row] = await tx
+          .select({ id: schema.bases.id })
+          .from(schema.bases)
+          .where(eq(schema.bases.id, baseId))
+          .limit(1)
+          .for("update");
+        return row ?? null;
       }
     },
     assets: {
@@ -431,6 +441,68 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
     expect(active.map((row) => row.id)).toEqual([acceptedB]);
   });
 
+  it("取消项目等待同基地 tick 提交，不能把已取消项目结算回 active", async () => {
+    const db: Db = drizzle(migPool, { schema });
+    const { accountId, baseId } = await seedBase(db);
+    const project = await seedProject(db, baseId, [
+      { kind: "installation", groupId: "engineering", status: "running", workRequired: 80, workDone: 10 }
+    ]);
+    await seedRobot(db, baseId, {
+      deviceDefId: "yd-e1", groupId: "engineering", batteryWh: 30_000,
+      batteryCapacityWh: 30_000, status: "working", currentProjectId: project.projectId, currentStepIndex: 0
+    });
+
+    let releaseTick!: () => void;
+    let tickLocked!: () => void;
+    const tickMayContinue = new Promise<void>((resolve) => { releaseTick = resolve; });
+    const locked = new Promise<void>((resolve) => { tickLocked = resolve; });
+    const tick = db.transaction(async (tx) => {
+      const [base] = await tx.select({ id: schema.bases.id }).from(schema.bases)
+        .where(eq(schema.bases.id, baseId)).for("update");
+      expect(base).not.toBeUndefined();
+      tickLocked();
+      await tickMayContinue;
+      return makeSettlement(db, baseId, SIM_NOON).settleBases(tx, new Date());
+    });
+    await Promise.race([
+      locked,
+      tick.then(() => { throw new Error("tick finished before the lock barrier"); }),
+      delay(5_000).then(() => { throw new Error("tick did not acquire the base lock"); })
+    ]);
+
+    const cancel = db.transaction((tx) =>
+      makeConstruction(db, new MemoryReceipts()).cancel(tx, { accountId }, {
+        projectId: project.projectId, commandId: randomUUID()
+      })
+    );
+    let waitedForLock = false;
+    try {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const { rows } = await migPool.query(
+          `SELECT COUNT(*)::int AS n FROM pg_stat_activity
+           WHERE datname = $1 AND wait_event_type = 'Lock' AND query ILIKE '%bases%'`,
+          [dbName]
+        );
+        if (rows[0].n > 0) {
+          waitedForLock = true;
+          break;
+        }
+        await delay(20);
+      }
+    } finally {
+      releaseTick();
+    }
+    expect(waitedForLock).toBe(true);
+    expect(await tick).toBe(1);
+    expect(await cancel).toMatchObject({ cancelled: true, duplicate: false });
+    const [savedProject] = await db.select().from(schema.baseProjects)
+      .where(eq(schema.baseProjects.id, project.projectId));
+    const [savedStep] = await db.select().from(schema.baseProjectSteps)
+      .where(eq(schema.baseProjectSteps.projectId, project.projectId));
+    expect(savedProject?.status).toBe("cancelled");
+    expect(savedStep?.workDone).toBe(11);
+  }, 60_000);
+
   it("取消后下一 tick：working helper 被释放，并被新项目的缺工步骤再次选中", async () => {
     const db: Db = drizzle(migPool, { schema });
     const { accountId, baseId } = await seedBase(db);
@@ -565,7 +637,9 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
       .where(inArray(schema.cooperationRequests.id, [expired, pending, accepted, foreign]));
     const byId = new Map(rows.map((row) => [row.id, row]));
     expect(byId.get(pending)?.status).toBe("expired");
+    expect(byId.get(pending)?.resolutionReason).toBe("project_cancelled");
     expect(byId.get(accepted)?.status).toBe("expired");
+    expect(byId.get(accepted)?.resolutionReason).toBe("project_cancelled");
     expect(byId.get(accepted)?.resolvedAt).not.toBeNull();
     expect(byId.get(expired)?.resolvedAt?.toISOString()).toBe(SIM_NOON.toISOString()); // 已结案不重写
     expect(byId.get(foreign)?.status).toBe("accepted");

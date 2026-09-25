@@ -46,9 +46,14 @@ const CREATE_INPUT = {
 };
 
 class FakeLookup implements ConstructionLookupPort {
+  locked: string[] = [];
   constructor(private readonly baseByAccount: Map<string, string>) {}
   async findBaseIdByAccount(_tx: ConstructionTx, accountId: string): Promise<string | null> {
     return this.baseByAccount.get(accountId) ?? null;
+  }
+  async getBaseForUpdate(_tx: ConstructionTx, baseId: string): Promise<{ id: string } | null> {
+    this.locked.push(baseId);
+    return [...this.baseByAccount.values()].includes(baseId) ? { id: baseId } : null;
   }
 }
 
@@ -264,7 +269,7 @@ function makeService(overrides: {
       return cooperation;
     }
   };
-  return { service: new ConstructionService(deps), assets, sites, catalog, store, receipts, cooperation };
+  return { service: new ConstructionService(deps), lookup, assets, sites, catalog, store, receipts, cooperation };
 }
 
 const tx = {} as ConstructionTx;
@@ -374,7 +379,7 @@ describe("ConstructionService.create", () => {
 
 describe("ConstructionService.cancel", () => {
   it("取消：释放全部未消耗预留 → cancelled → 释放站点 → 回执落结果", async () => {
-    const { service, assets, sites, store } = makeService();
+    const { service, lookup, assets, sites, store } = makeService();
     await createFirstProject(service);
 
     const result = await service.cancel(tx, principal, {
@@ -396,6 +401,7 @@ describe("ConstructionService.cancel", () => {
       { itemId: "anchor", quantity: 8 }
     ]);
     expect(store.statusCalls).toEqual([{ projectId: "project-1", status: "cancelled" }]);
+    expect(lookup.locked).toEqual(["base-1"]);
     expect(sites.releasedCalls).toEqual(["site-1"]);
   });
 

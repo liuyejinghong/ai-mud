@@ -37,6 +37,7 @@ export type { ManufacturingTx };
 
 export interface ManufacturingLookupPort {
   findBaseIdByAccount(tx: ManufacturingTx, accountId: string): Promise<string | null>;
+  getBaseForUpdate(tx: ManufacturingTx, baseId: string): Promise<{ id: string } | null>;
 }
 
 export interface ManufacturingAssetPort {
@@ -211,6 +212,10 @@ export class ManufacturingService {
     input: { jobId: string; commandId: string }
   ): Promise<CancelManufacturingJobResultDto> {
     const baseId = await this.requireBaseId(tx, principal);
+    // 与基地 tick 共用 bases 行锁，避免取消按旧预留释放后被制造结算写回 active。
+    if (!(await this.deps.lookup.getBaseForUpdate(tx, baseId))) {
+      throw new BaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
+    }
     const actorScope = `base:${baseId}`;
     const requestHash = hashRequest({ jobId: input.jobId });
     const receipts = this.deps.receipts(tx);

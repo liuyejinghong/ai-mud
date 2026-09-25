@@ -26,6 +26,7 @@ function makeRequest(overrides: Partial<CooperationRequestDto> = {}): Cooperatio
     fromGroupId: "engineering",
     helperGroupId: "transport",
     status: "pending",
+    resolutionReason: null,
     helperOperatorId: null,
     question: "资源运输组能派一台车把电缆运到建设位 A 吗？",
     createdAt: "2026-09-19T08:00:00.000Z",
@@ -95,6 +96,14 @@ describe("CooperationPanel", () => {
     expect(history?.querySelector("summary")?.textContent).toContain("协作历史 3 条 · 已婉拒 1 条 · 已超时 1 条");
     expect(history?.querySelectorAll("li.base-cooperation-item")).toHaveLength(3);
     expect(screen.getByText("目前没有进行中的支援请求。")).toBeTruthy();
+  });
+
+  it("项目取消的协作历史显示真实结案原因，不误报为超时", () => {
+    render(<CooperationPanel requests={[makeRequest({ status: "expired", resolutionReason: "project_cancelled" })]} devices={devices} />);
+
+    expect(screen.getByText("工程已取消")).toBeTruthy();
+    expect(screen.getByText(/协作历史 1 条 · 已结案 1 条/)).toBeTruthy();
+    expect(screen.queryByText(/已超时 1 条/)).toBeNull();
   });
 
   it("53 条同文案历史保留不同请求身份，两个活动工程不被折叠", () => {

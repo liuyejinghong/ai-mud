@@ -1366,6 +1366,7 @@ describe("registerAdminRoutes with the legacy world disabled", () => {
   it.each([
     ["GET", "/admin/economy"],
     ["GET", "/admin/npc-memory"],
+    ["GET", "/admin/npcs"],
     ["POST", "/admin/npcs/settle"],
     ["POST", "/admin/npcs/simulate"]
   ] as const)("does not register legacy world admin endpoint %s %s", async (method, url) => {
@@ -1380,6 +1381,10 @@ describe("registerAdminRoutes with the legacy world disabled", () => {
         listNpcMemory: async () => {
           legacyCalls += 1;
           return { entries: [], fragments: [] };
+        },
+        getNpcSnapshot: async () => {
+          legacyCalls += 1;
+          throw new Error("legacy NPC read seeds the old world");
         },
         settleNpcWorld: async () => {
           legacyCalls += 1;
@@ -1397,40 +1402,6 @@ describe("registerAdminRoutes with the legacy world disabled", () => {
 
     expect(response.statusCode).toBe(404);
     expect(legacyCalls).toBe(0);
-  });
-
-  it("keeps the NPC summary readable for the world health page without touching (and seeding) the legacy NPC world", async () => {
-    let legacySnapshotCalls = 0;
-    const app = buildAdminRouteTestApp(
-      {
-        ...admin,
-        getNpcSnapshot: async () => {
-          legacySnapshotCalls += 1;
-          throw new Error("legacy NPC read seeds the old world");
-        },
-        now: () => new Date("2026-09-25T08:00:00.000Z")
-      },
-      { legacyWorldEnabled: false }
-    );
-
-    const response = await app.inject({ method: "GET", url: "/admin/npcs" });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      generatedAt: "2026-09-25T08:00:00.000Z",
-      settlementId: "blackpine_outpost",
-      treasury: { gold: 0, silver: 0, copper: 0, totalCopper: 0 },
-      npcs: []
-    });
-    expect(legacySnapshotCalls).toBe(0);
-  });
-
-  it("still guards the NPC summary behind an admin session", async () => {
-    const app = buildAdminRouteTestApp({ getCurrentAdmin: async () => null }, { legacyWorldEnabled: false });
-
-    const response = await app.inject({ method: "GET", url: "/admin/npcs" });
-
-    expect(response.statusCode).toBe(401);
   });
 
   it.each([

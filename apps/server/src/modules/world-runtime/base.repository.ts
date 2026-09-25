@@ -221,7 +221,7 @@ export class BaseRepository {
     return row ? mapBaseRow(row) : null;
   }
 
-  // 行锁即时钟命令互斥；时钟命令前必须先经此读取。
+  // 非主键更新锁与 tick/取消互斥，同时不挡住新项目/工单的外键检查。
   async getBaseForUpdate(tx: BaseRepoTx, baseId: string): Promise<BaseRecord | null> {
     const [row] = await tx
       .select({
@@ -240,7 +240,7 @@ export class BaseRepository {
       .from(bases)
       .where(eq(bases.id, baseId))
       .limit(1)
-      .for("update");
+      .for("no key update");
     return row ? mapBaseRow(row) : null;
   }
 
@@ -335,7 +335,7 @@ export class BaseRepository {
 
   // ---------- BaseClockStorePort：结算推进政策封装（running + 租约 + 追补上限） ----------
 
-  // SELECT … FOR UPDATE SKIP LOCKED 锁住 running 基地行（按 id 排序，锁序确定），逐行联
+  // SELECT … FOR NO KEY UPDATE SKIP LOCKED 锁住 running 基地行（按 id 排序，锁序确定），逐行联
   // base_control_leases 校验 leaseUntil > now；无租约/租约过期/暂停的基地不返回（天然无补算）。
   // 被别的事务（玩家命令/心跳）持锁的基地本次跳过而不排队：lastAdvancedAt 不动，下个 tick
   // 按真实流逝补上（受 BASE_MAX_CATCHUP_MS 封顶），不丢时长。
@@ -358,7 +358,7 @@ export class BaseRepository {
           : and(eq(bases.timeMode, "running"), eq(bases.id, scopedBaseId))
       )
       .orderBy(asc(bases.id))
-      .for("update", { skipLocked: true });
+      .for("no key update", { skipLocked: true });
 
     const advanceable: AdvanceableBaseRecord[] = [];
     for (const row of rows) {

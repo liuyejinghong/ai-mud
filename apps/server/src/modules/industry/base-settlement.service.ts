@@ -8,8 +8,8 @@
 // 内容修订不一致：该项目步骤全 blocked 'content_missing'（不抛，时钟照常推进）。
 // 制造（2026-09-25 B001）：只对当前被推进的基地测量需求→同一电力池供能→按基地结算，
 // 暂停/租约失效的基地不在推进集合里，其工单永不被别的基地推进。
-// 子 tick（2026-09-25 B008）：首尾相接、合计严格等于 Δsim；工作量按跨过的整基地分钟计（pure），
-// 子 tick 数只决定状态事件（完工/缺电）的结算粒度，不改变稳态产出。
+// 第 0 阶段 B008：供电、施工、制造、充电与天气都按绝对基地分钟边界结算；
+// 不足一分钟的余量留在 simTime，下次跨界时再结算，调用频率不改变产出。
 import type { ProjectStatus, ProjectTemplateDto, RobotTemplateDto } from "@ai-mud/shared";
 import { definitionRefKey } from "@ai-mud/shared";
 import {
@@ -17,6 +17,7 @@ import {
   computeBaseTick,
   MANUFACTURING_LOAD_W,
   ROBOT_WORK_DRAIN_WH,
+  WORK_MINUTE_MS,
   type BaseProjectRecord,
   type BaseRobotRecord,
   type BaseStepRecord,
@@ -127,9 +128,6 @@ export interface BaseSettlementDeps {
   };
 }
 
-// 基地结算的最小模拟步长（与 world tick 同粒度）。
-const BASE_SUB_TICK_MS = 60_000;
-
 // 制造结算端口：一律按基地（B001）。先 measure 给电力池报需求，再用电力池实际分给制造的能量 settle。
 export interface BaseManufacturingSettlePort {
   measure(
@@ -157,17 +155,19 @@ export class BaseSettlementService {
         await this.deps.clock.saveSimAdvance(tx, base.baseId, nextSimTime, base.nextLastAdvancedAt);
         continue;
       }
-      // 按模拟时长拆子 tick：工作量/能耗与 simTime 同比例推进（×4 速度 = 4 倍产出与能耗）。
-      // 子 tick 边界按整数毫秒取 floor(Δ×i/n)：首尾相接、最后一段恰好止于 nextSimTime，
-      // 否则 pure 按分钟边界计工作量时会在取整缝隙漏记或重记（B008）。
-      const subTicks = Math.max(1, Math.min(10, Math.round(base.deltaSimMs / BASE_SUB_TICK_MS)));
       const startMs = base.simTime.getTime();
-      for (let i = 0; i < subTicks; i += 1) {
-        const fromMs = startMs + Math.floor((base.deltaSimMs * i) / subTicks);
-        const toMs = i === subTicks - 1
-          ? nextSimTime.getTime()
-          : startMs + Math.floor((base.deltaSimMs * (i + 1)) / subTicks);
-        await this.settleBase(tx, base.baseId, new Date(fromMs), toMs - fromMs, new Date(toMs));
+      for (
+        let boundary = (Math.floor(startMs / WORK_MINUTE_MS) + 1) * WORK_MINUTE_MS;
+        boundary <= nextSimTime.getTime();
+        boundary += WORK_MINUTE_MS
+      ) {
+        await this.settleBase(
+          tx,
+          base.baseId,
+          new Date(boundary - WORK_MINUTE_MS),
+          WORK_MINUTE_MS,
+          new Date(boundary)
+        );
       }
       await this.deps.clock.saveSimAdvance(tx, base.baseId, nextSimTime, base.nextLastAdvancedAt);
     }
@@ -257,9 +257,8 @@ export class BaseSettlementService {
     });
 
     // ---------- 落盘：电力（含 M15 积尘演化：尘暴 +8/h，晴 -1/h，工程清洁归零） ----------
-    const dustDelta = Math.round(
-      (weatherLight <= 0.3 ? 8 : weatherLight <= 0.8 ? 2 : -1) * (deltaSimMs / 3_600_000)
-    );
+    const dustDelta =
+      (weatherLight <= 0.3 ? 8 : weatherLight <= 0.8 ? 2 : -1) * (deltaSimMs / 3_600_000);
     const dustLevel = Math.min(
       100,
       Math.max(0, (power.dustLevel ?? 30) + dustDelta)

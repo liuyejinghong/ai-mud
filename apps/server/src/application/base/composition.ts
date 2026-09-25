@@ -107,6 +107,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
           fromGroupId: row.fromGroupId,
           helperGroupId: row.helperGroupId,
           status: row.status,
+          resolutionReason: row.resolutionReason,
           helperOperatorId: row.helperOperatorId,
           question: row.question,
           createdAt: row.createdAt

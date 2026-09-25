@@ -47,9 +47,14 @@ const TOTAL_INPUTS = [
 ];
 
 class FakeLookup implements ManufacturingLookupPort {
+  locked: string[] = [];
   constructor(private readonly baseByAccount: Map<string, string>) {}
   async findBaseIdByAccount(_tx: ManufacturingTx, accountId: string): Promise<string | null> {
     return this.baseByAccount.get(accountId) ?? null;
+  }
+  async getBaseForUpdate(_tx: ManufacturingTx, baseId: string): Promise<{ id: string } | null> {
+    this.locked.push(baseId);
+    return [...this.baseByAccount.values()].includes(baseId) ? { id: baseId } : null;
   }
 }
 
@@ -206,7 +211,7 @@ function makeService(overrides: {
     store,
     receipts: () => receipts
   };
-  return { service: new ManufacturingService(deps), assets, catalog, store, receipts };
+  return { service: new ManufacturingService(deps), lookup, assets, catalog, store, receipts };
 }
 
 const tx = {} as ManufacturingTx;
@@ -300,7 +305,7 @@ describe("ManufacturingService.create", () => {
 
 describe("ManufacturingService.cancel", () => {
   it("取消：释放全部剩余预留 → cancelled → 回执落结果", async () => {
-    const { service, assets, store } = makeService();
+    const { service, lookup, assets, store } = makeService();
     await createFirstJob(service);
 
     const result = await service.cancel(tx, principal, {
@@ -315,6 +320,7 @@ describe("ManufacturingService.cancel", () => {
     });
     expect(assets.released).toEqual(TOTAL_INPUTS);
     expect(store.statusCalls).toEqual([{ jobId: "job-1", status: "cancelled" }]);
+    expect(lookup.locked).toEqual(["base-1"]);
   });
 
   it("取消只释放剩余预留（结算逐台消耗后 reserved_inputs 已递减）", async () => {

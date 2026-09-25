@@ -49,17 +49,18 @@
 ## 3. 每条车道的工作方式与交付
 
 1. 在自己的工作树里工作，只改所有权内的文件；先写失败测试并确认失败，再实现。
-2. 本地验证：`CI=true pnpm -r typecheck`；相关包测试；需要真 PG 的测试用 `DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55433/ai_mud_ci`（测试框架会建随机临时库）；`git diff --check`。
+2. 本地验证：`CI=true pnpm -r typecheck`；相关包测试；需要真 PG 的测试用 `DATABASE_URL="$AI_MUD_TEST_DATABASE_URL"`（变量指向隔离 PG 的测试库，测试框架会建随机临时库）；`git diff --check`。
 3. 提交到本车道分支，提交信息为中文 conventional commit，逻辑改动附 `Constraint:`/`Rejected:`/`Directive:`/`Confidence:`/`Scope-risk:` 结构化尾注，末尾附 `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`。不推送。
 4. 交付说明：改了什么、测试如何证明、未解决/越权需求、需登记的新文件、建议的版本号递增（ruleset/engine/api 等，由集成步骤执行）。
 
 ## 4. 集成与验收
 
-- 集成者按 A→C→B→D 顺序合并到 `fix/phase0-integrity`，解决冲突，登记新文件到架构台账，递增 `WORLD_COMPATIBILITY` 中受影响的子版本（结算语义变化→`rulesetVersion`；tick 编排变化→`engineVersion`；路由注册变化→`apiVersion`；不改 `PRODUCT_VERSION`，实际发布时再定），更新版本测试。
+- 集成者以已按 A→C→B→D 顺序提交的本地基线为起点，在公开 PR 分支 `codex/phase0-integrity` 上加入净化与集成修复提交；不直接发布原 `fix/phase0-integrity` 分支。登记新文件到架构台账，递增 `WORLD_COMPATIBILITY` 中受影响的子版本（`0036_phase0_integrity.sql` 增加协作结案原因、将积尘列改为 `double precision`→`schemaVersion`；结算语义变化→`rulesetVersion`；tick 编排变化→`engineVersion`；路由注册变化→`apiVersion`；不改 `PRODUCT_VERSION`，实际发布时再定），更新版本测试。
+- E 的原本地提交含公网 IP；公开分支只纳入脱敏的最终文件，不带该提交的旧历史。
 - 全量验证：`CI=true pnpm -r typecheck`、`CI=true pnpm -r test`（带 `DATABASE_URL`）、`pnpm -r lint`、`pnpm -r build`、`pnpm arch:check`、`pnpm arch:test`、`pnpm db:migrate && CI=true pnpm test:postgres`、`pnpm verify:npc-simulation`（开关开启）、`git diff --check`。
 - 独立验证者（不参与实现）重跑验证并逐条核对本合同通过条件。
-- 通过后推送、开 PR 到 `main`，CI 绿后合并。**不部署**：线上部署另行授权；修复上线后需要作者决定是否标注或重置试玩期间受 B001 影响的制造数据。
+- 通过后推送 `codex/phase0-integrity`、开 PR 到 `main`；CI 绿后仍需按 `AGENTS.md` 获得合并授权。**不部署**：线上部署另行授权。此前会话的上线手册已记录内测基地数据重置的选择（原始授权待上线前核对）；本轮开发不执行重置，具体范围见 `docs/deployment/phase0-deploy-and-reset.md`。
 
 ## 5. 回退
 
-各车道独立提交，可按 D→B→C→A 逆序回退。C 的开关默认关闭旧世界；如需恢复，设置开关即可，无需回退代码。
+原 A—D 车道提交可供定位，但公开分支还含净化与集成修复，不能假设可按 D→B→C→A 机械逆序回退；应按最终 PR 差异与依赖确定回退。`0036_phase0_integrity.sql` 已应用时，仅回退代码不会还原 schema，须按上线手册 §8 处理。C 的开关默认关闭旧世界；若只需恢复旧世界 tick，可设置开关，无需回退代码。

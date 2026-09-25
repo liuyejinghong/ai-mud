@@ -10,12 +10,14 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { setTimeout as delay } from "node:timers/promises";
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createBaseOperations } from "../../../application/base/composition.js";
 import { loadEnv } from "../../../config/env.js";
 import * as schema from "../../../db/schema.js";
+import { BaseRepository } from "../../../modules/world-runtime/base.repository.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const d = DATABASE_URL ? describe : describe.skip;
@@ -71,6 +73,7 @@ interface SeedBaseOptions {
 }
 
 interface SeededBase {
+  accountId: string;
   baseId: string;
   jobIds: string[];
 }
@@ -192,7 +195,7 @@ async function seedBase(options: SeedBaseOptions): Promise<SeededBase> {
       });
     }
   });
-  return { baseId, jobIds };
+  return { accountId, baseId, jobIds };
 }
 
 // 基地的全部结算相关行（逐字段），用于“字节级不变”断言。
@@ -457,4 +460,99 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
     );
     expect(projects[0].n).toBe(1);
   }, 60_000);
+
+  it("取消制造工单等待同基地 tick 提交，再按最新剩余预留释放", async () => {
+    const now = new Date();
+    const base = await seedBase({
+      label: "cancel-race",
+      timeMode: "running",
+      leaseUntil: new Date(now.getTime() + 300_000),
+      lastAdvancedAt: new Date(now.getTime() - MINUTE_MS),
+      jobs: [{ recipe: "manufacture-yd-h1", outputsPlanned: 2, currentUnitWorkDone: 20 }]
+    });
+    let releaseTick!: () => void;
+    let tickLocked!: () => void;
+    const tickMayContinue = new Promise<void>((resolve) => { releaseTick = resolve; });
+    const locked = new Promise<void>((resolve) => { tickLocked = resolve; });
+    const tick = db.transaction(async (tx) => {
+      expect(await new BaseRepository(db).getBaseForUpdate(tx, base.baseId)).not.toBeNull();
+      tickLocked();
+      await tickMayContinue;
+      return ops.settlement.settleBases(tx, now);
+    });
+    await Promise.race([
+      locked,
+      tick.then(() => { throw new Error("tick finished before the lock barrier"); }),
+      delay(5_000).then(() => { throw new Error("tick did not acquire the base lock"); })
+    ]);
+
+    const cancel = ops.manufacturingJobs.cancel.execute(
+      { accountId: base.accountId },
+      { jobId: base.jobIds[0]!, commandId: randomUUID() }
+    );
+    let waitedForLock = false;
+    try {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const { rows } = await client.query(
+          `SELECT COUNT(*)::int AS n FROM pg_stat_activity
+           WHERE datname = $1 AND wait_event_type = 'Lock' AND query ILIKE '%bases%'`,
+          [dbName]
+        );
+        if (rows[0].n > 0) {
+          waitedForLock = true;
+          break;
+        }
+        await delay(20);
+      }
+    } finally {
+      releaseTick();
+    }
+    expect(waitedForLock).toBe(true);
+    expect(await tick).toBe(1);
+    expect(await cancel).toMatchObject({ cancelled: true, duplicate: false });
+
+    const job = await readJob(base.jobIds[0]!);
+    expect(job).toMatchObject({ status: "cancelled", outputs_done: 1 });
+    expect(await countDevices(base.baseId)).toBe(1);
+    const { rows: inventory } = await client.query(
+      `SELECT item_id, quantity, reserved_quantity FROM base_inventory WHERE base_id = $1 ORDER BY item_id`,
+      [base.baseId]
+    );
+    expect(inventory).toEqual([
+      { item_id: "power_box", quantity: 1, reserved_quantity: 0 },
+      { item_id: "spare_parts", quantity: 6, reserved_quantity: 0 },
+      { item_id: "support_frame", quantity: 4, reserved_quantity: 0 }
+    ]);
+  }, 60_000);
+
+  it("基地互斥锁不阻塞新工单的外键检查", async () => {
+    const base = await seedBase({
+      label: "fk-lock",
+      timeMode: "paused",
+      leaseUntil: null,
+      lastAdvancedAt: new Date(),
+      jobs: []
+    });
+    const holder = await migPool.connect();
+    await holder.query("BEGIN");
+    try {
+      const scoped = drizzle(holder, { schema });
+      expect(await new BaseRepository(scoped).getBaseForUpdate(scoped, base.baseId)).not.toBeNull();
+      const insert = db.insert(schema.baseManufacturingJobs).values({
+        baseId: base.baseId,
+        recipeDefId: "manufacture-yd-h1",
+        recipeRevision: 1,
+        outputsPlanned: 1,
+        reservedInputs: []
+      }).returning({ id: schema.baseManufacturingJobs.id });
+      const rows = await Promise.race([
+        insert,
+        delay(2_000).then(() => { throw new Error("base lock blocked the job foreign-key check"); })
+      ]);
+      expect(rows).toHaveLength(1);
+    } finally {
+      await holder.query("ROLLBACK");
+      holder.release();
+    }
+  }, 10_000);
 });

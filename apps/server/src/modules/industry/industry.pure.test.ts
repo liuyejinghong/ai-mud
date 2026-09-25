@@ -514,9 +514,101 @@ describe("computeBaseTick > B008 按模拟时长计量", () => {
       })
     );
 
-    // 1200Wh 只够 2 个工作分钟（每分钟 500Wh）。
+    // 1200Wh 只够前 2 个工作分钟；后 2 分钟转 idle 并各充 100Wh。
     expect(result.stepUpdates[0]?.workDone).toBe(12);
-    expect(result.robotUpdates[0]?.batteryWh).toBe(200);
+    expect(result.robotUpdates[0]).toMatchObject({ batteryWh: 400, status: "idle" });
+  });
+
+  it("低电机器人耗尽、充电、复工不随 10 分钟的调用切分改变", () => {
+    const input = makeInput({
+      simTime: new Date("2026-06-01T10:00:17.250Z"),
+      projects: [makeProject()],
+      steps: [makeStep()],
+      robots: [makeRobot({ batteryWh: 500 })]
+    });
+    const once = runSlices(input, [10 * TICK_MS]);
+    const four = runSlices(input, [150_000, 150_000, 150_000, 150_000]);
+    const ten = runSlices(input, Array.from({ length: 10 }, () => TICK_MS));
+
+    expect(four.steps).toEqual(once.steps);
+    expect(ten.steps).toEqual(once.steps);
+    expect(four.robots).toEqual(once.robots);
+    expect(ten.robots).toEqual(once.robots);
+    expect(four.power.storageWh).toBe(once.power.storageWh);
+    expect(ten.power.storageWh).toBe(once.power.storageWh);
+  });
+
+  it("夜间储能只够首分钟施工时，长调用与逐分钟结算得到相同阻塞和工作量", () => {
+    const input = makeInput({
+      simTime: NIGHT,
+      power: makePower({ storageWh: 60 }),
+      projects: [makeProject()],
+      steps: [makeStep()],
+      robots: [makeRobot()]
+    });
+    const once = runSlices(input, [4 * TICK_MS]);
+    const minuteByMinute = runSlices(input, Array.from({ length: 4 }, () => TICK_MS));
+
+    expect(once.steps[0]).toMatchObject({ workDone: 11, status: "blocked", blockedReason: POWER_BLOCK_REASON });
+    expect(once.steps).toEqual(minuteByMinute.steps);
+    expect(once.robots).toEqual(minuteByMinute.robots);
+    expect(once.power.storageWh).toBe(minuteByMinute.power.storageWh);
+  });
+
+  it("ready 工地首分钟没有施工电时不能免费开工", () => {
+    const result = computeBaseTick(makeInput({
+      simTime: NIGHT,
+      power: makePower({ storageWh: 0 }),
+      projects: [makeProject()],
+      steps: [makeStep({ status: "ready" })],
+      robots: [makeRobot({ status: "idle", currentProjectId: null, currentStepIndex: null })]
+    }));
+
+    expect(result.stepUpdates).toEqual([]);
+    expect(result.robotUpdates).toEqual([]);
+    expect(result.lastLoadW).toBe(0);
+  });
+
+  it("同一机器人先被运输步骤占用时，不给后面的 ready 工地空耗施工电", () => {
+    const result = computeBaseTick(makeInput({
+      projects: [makeProject(), makeProject({ id: "p2", siteId: "site-2" })],
+      steps: [
+        makeStep({ kind: "transport", status: "ready" }),
+        makeStep({ projectId: "p2", kind: "installation", status: "ready" })
+      ],
+      robots: [makeRobot({ status: "idle", currentProjectId: null, currentStepIndex: null })]
+    }));
+
+    expect(result.lastLoadW).toBe(1000);
+    expect(result.stepUpdates).toEqual([
+      { projectId: "p1", stepIndex: 0, workDone: 11, status: "running", blockedReason: null }
+    ]);
+  });
+
+  it("5 秒高频调用与 60 秒调用在低电充电边界一致", () => {
+    const input = makeInput({
+      projects: [makeProject()],
+      steps: [makeStep({ status: "ready" })],
+      robots: [makeRobot({ status: "idle", batteryWh: 400, currentProjectId: null, currentStepIndex: null })]
+    });
+    const once = runSlices(input, [TICK_MS]);
+    const frequent = runSlices(input, Array.from({ length: 12 }, () => 5_000));
+
+    expect(once.steps).toEqual(frequent.steps);
+    expect(once.robots).toEqual(frequent.robots);
+    expect(once.power.storageWh).toBe(frequent.power.storageWh);
+  });
+
+  it("跨 18:00 昼夜边界时逐分钟切分与长调用供电一致", () => {
+    const input = makeInput({
+      simTime: new Date("2026-06-01T17:59:30.000Z"),
+      power: makePower({ storageWh: 0 })
+    });
+    const once = runSlices(input, [2 * TICK_MS]);
+    const sliced = runSlices(input, [TICK_MS, TICK_MS]);
+
+    expect(once.power.storageWh).toBe(sliced.power.storageWh);
+    expect(once.power.storageWh).toBeGreaterThan(0);
   });
 });
 
@@ -532,7 +624,7 @@ describe("computeBaseTick > B008 多分钟子 tick 的完工边界", () => {
     );
 
     expect(result.stepUpdates[0]).toMatchObject({ workDone: 11, status: "completed" });
-    expect(result.robotUpdates[0]).toMatchObject({ batteryWh: 29_500, status: "idle" });
+    expect(result.robotUpdates[0]).toMatchObject({ batteryWh: 29_800, status: "idle" });
   });
 
   it("与逐分钟切分等价：3 台完成最后 5 点——一次 4 分钟调用与 4 次 1 分钟调用的工作量、耗电一致", () => {
@@ -548,9 +640,7 @@ describe("computeBaseTick > B008 多分钟子 tick 的完工边界", () => {
     // 第 1 分钟 +3（13），第 2 分钟 +3 封顶 15 完工：每台 2 个工作分钟 = 1000Wh。
     expect(once.stepUpdates[0]).toMatchObject({ workDone: 15, status: "completed" });
     expect(sliced.steps[0]).toMatchObject({ workDone: 15, status: "completed" });
-    expect(once.robotUpdates.map((robot) => robot.batteryWh)).toEqual([29_000, 29_000, 29_000]);
-    // 逐分钟切分时完工后机器人转 idle 并在余下分钟充电，故只比较工作耗电前的下界。
-    expect(sliced.robots.every((robot) => robot.batteryWh >= 29_000)).toBe(true);
+    expect(once.robotUpdates.map((robot) => robot.batteryWh)).toEqual(sliced.robots.map((robot) => robot.batteryWh));
   });
 });
 

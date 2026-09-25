@@ -81,6 +81,7 @@ describe("buildApp legacy world switch", () => {
     ["POST", "/admin/world-reset"],
     ["GET", "/admin/economy"],
     ["GET", "/admin/npc-memory"],
+    ["GET", "/admin/npcs"],
     ["POST", "/admin/npcs/settle"],
     ["POST", "/admin/npcs/simulate"]
   ] as const;
@@ -92,7 +93,6 @@ describe("buildApp legacy world switch", () => {
     ["GET", "/admin/activation-codes"],
     ["GET", "/admin/accounts"],
     ["GET", "/admin/world-runtime"],
-    ["GET", "/admin/npcs"],
     ["GET", "/admin/asset-ledger/health"],
     ["GET", "/admin/ai-layer/status"]
   ] as const;

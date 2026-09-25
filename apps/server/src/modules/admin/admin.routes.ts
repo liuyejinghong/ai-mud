@@ -488,18 +488,9 @@ function createDefaultDependencies(app: FastifyInstance): AdminRouteDependencies
 }
 
 export interface AdminRouteOptions {
-  // 第 0 阶段车道 C2/C3（评审 ARCH-boundaries-01/02）：旧黑松世界的管理面——世界重置、NPC 结算/仿真、
+  // 第 0 阶段车道 C2/C3（评审 ARCH-boundaries-01/02）：旧黑松世界的管理面——世界重置、NPC 查询/结算/仿真、
   // 经济监控、NPC 记忆——只在 LEGACY_WORLD_ENABLED=true 时注册。缺省即关闭（fail-closed）。
   legacyWorldEnabled: boolean;
-}
-
-function emptyNpcSnapshot(now: Date): NpcSnapshotResponse {
-  return {
-    generatedAt: now.toISOString(),
-    settlementId: BLACKPINE_MARKET_ID,
-    treasury: formatMoney(0),
-    npcs: []
-  };
 }
 
 export async function registerAdminRoutes(
@@ -549,14 +540,12 @@ export async function registerAdminRoutes(
     return deps.getAssetLedgerHealth();
   });
 
-  app.get("/admin/npcs", async (request, reply) => {
+  legacyWorld?.get("/admin/npcs", async (request, reply) => {
     const admin = await deps.getCurrentAdmin(request);
     if (!admin) {
       return sendError(reply, 401, "UNAUTHENTICATED", "Admin session required");
     }
 
-    // 旧世界关闭时仍注册（管理台首页“世界健康”依赖它），但不碰旧 NPC 服务：它的读路径会 seed 旧世界。
-    if (!options.legacyWorldEnabled) return emptyNpcSnapshot(deps.now());
     return deps.getNpcSnapshot();
   });
 
