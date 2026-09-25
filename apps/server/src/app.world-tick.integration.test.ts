@@ -10,6 +10,7 @@ import { createDb, type Db } from "./db/client.js";
 import { DrizzleAuditWriter } from "./modules/audit/audit.repository.js";
 import { BaseRepository } from "./modules/world-runtime/base.repository.js";
 import { systemWorldClock } from "./modules/world-runtime/world-clock.js";
+import { WorldPostTickService } from "./modules/world-runtime/world-post-tick.service.js";
 import { floorToTick, WORLD_RUNTIME_TICK_MS } from "./modules/world-runtime/world-runtime.service.js";
 import { WorldResetRepository } from "./modules/world-reset/world-reset.repository.js";
 import {
@@ -135,6 +136,13 @@ describe("world tick orchestration (buildApp + temporary PostgreSQL)", () => {
     return { simTime: row.sim_time.getTime(), lastAdvancedAt: row.last_advanced_at.getTime() };
   }
 
+  // 单个 pg.Client 上逐条查询（并发 client.query 在 pg@8 已弃用、pg@9 移除）。
+  async function readAllClocks(): Promise<BaseClockRow[]> {
+    const clocks: BaseClockRow[] = [];
+    for (const player of players) clocks.push(await readClock(player.baseId));
+    return clocks;
+  }
+
   async function readWorldClock(): Promise<number> {
     const { rows } = await client.query<{ last_settled_at: Date }>(
       `SELECT last_settled_at FROM world_runtime_state WHERE key = 'npc_world'`
@@ -226,13 +234,21 @@ describe("world tick orchestration (buildApp + temporary PostgreSQL)", () => {
     if (!databaseUrl) return;
     const now = new Date();
     await primeOneDueTick(now);
-    const before = await Promise.all(players.map((player) => readClock(player.baseId)));
+    const before = await readAllClocks();
+    // 旧 post-tick 的入口。空库里旧世界从未 seed，旧 post-tick 即使运行也写不出任务/传闻，
+    // 行数断言证明不了门控；直接监视入口是否被调用（门控回归时此断言失败）。
+    const postTickRun = vi.spyOn(WorldPostTickService.prototype, "run");
+    try {
+      const result = await app.di.worldRuntime.settleDue(now);
+      await app.di.worldRuntime.idle();
 
-    const result = await app.di.worldRuntime.settleDue(now);
-    await app.di.worldRuntime.idle();
+      expect(result).toEqual({ settledSteps: 1, skipped: false });
+      expect(postTickRun).not.toHaveBeenCalled();
+    } finally {
+      postTickRun.mockRestore();
+    }
 
-    expect(result).toEqual({ settledSteps: 1, skipped: false });
-    const after = await Promise.all(players.map((player) => readClock(player.baseId)));
+    const after = await readAllClocks();
     after.forEach((clock, index) => {
       expect(clock.simTime).toBeGreaterThan(before[index]!.simTime);
     });
@@ -315,15 +331,23 @@ describe("world tick orchestration (buildApp + temporary PostgreSQL)", () => {
     try {
       const now = new Date();
       await primeOneDueTick(now);
-      const before = await Promise.all(players.map((player) => readClock(player.baseId)));
+      const before = await readAllClocks();
+      const postTickRun = vi.spyOn(WorldPostTickService.prototype, "run");
+      try {
+        const result = await legacyApp.di.worldRuntime.settleDue(now);
+        await legacyApp.di.worldRuntime.idle();
 
-      const result = await legacyApp.di.worldRuntime.settleDue(now);
-      await legacyApp.di.worldRuntime.idle();
+        expect(result).toEqual({ settledSteps: 1, skipped: false });
+        // 开关开启：旧 post-tick（NPC 任务/传闻）随世界步恢复运行。
+        expect(postTickRun).toHaveBeenCalledTimes(1);
+        expect(postTickRun).toHaveBeenCalledWith(now);
+      } finally {
+        postTickRun.mockRestore();
+      }
 
-      expect(result).toEqual({ settledSteps: 1, skipped: false });
       expect(await countRows("municipal_treasury")).toBeGreaterThan(0);
       expect(await countRows("world_resource_nodes")).toBeGreaterThan(0);
-      const after = await Promise.all(players.map((player) => readClock(player.baseId)));
+      const after = await readAllClocks();
       after.forEach((clock, index) => {
         expect(clock.simTime).toBeGreaterThan(before[index]!.simTime);
       });

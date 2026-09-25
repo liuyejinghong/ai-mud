@@ -1308,7 +1308,6 @@ describe("registerAdminRoutes", () => {
       { days: 1, startAt: new Date("2026-07-01T00:00:00.000Z") }
     ]);
   });
-
 });
 
 // 车道 C2/C3（ARCH-boundaries-01/02）：LEGACY_WORLD_ENABLED 关闭（默认）时，旧黑松世界的管理面不注册。
