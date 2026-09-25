@@ -8,6 +8,12 @@
 | A02/A03 | 点建设位后条件与开工在当前详情；720×450 自动聚焦详情。暂停项目就地说明不会推进并提供恢复，返回地图焦点回到地图容器。 | [选中建设位](Q02-site-detail-720x450.png)、[暂停项目](Q03-paused-project-720x450.png) |
 | A05 | 53 条历史默认折叠，2 条活动请求与 1 条异常摘要可见；每条仍按 requestId 可追溯。0 条有空态。 | [协作 53 条](Q04-cooperation-53.png) |
 | A07/A09 | 采购/制造输入在切工作区及 5 秒轮询后保留。活动工单可取消，完成/取消工单保留结果而无取消入口。 | [工单终态](Q05-manufacturing-terminal.png) |
-| A06 | 总量 8、占用 8、可支配 0、工程来源和在途 3 分开；望山配方需锚固件 3，失败后缺口与服务端错误同时留在制造工作区。 | [库存来源](Q07-resource-reservation-mock.png)、[制造失败](Q08-manufacturing-shortfall-mock.png) |
+| A06 | 集成者先在物资详情与制造失败现场核对总 8/占 8/可支配 0；独立 Q-M 随后发现工程、制造、订单现场没有直接显示占用来源，初版判 FAIL。修复后 Q-M 以同样起点复验三处来源与失败接续，通过 mock。 | [初版物资详情](Q07-resource-reservation-mock.png)、[初版制造失败](Q08-manufacturing-shortfall-mock.png)、[失败与复验对照](#a06-同条件复验) |
 
 Q 的隔离 mock 还检查了新手弹窗 Tab/Escape、键盘 Enter 选中/返回、720×450 下采购与制造草稿保留；未发现新的确定 U/C/T 任务接续阻断。A08 的文案/入口与 mock 一致，但真实首工程前后能力未测。真实 200% 缩放、读屏、真人、真实 PG 资产/幂等、真实 Jev、部署身份均不由本报告验收；对应项保持 `NOT_RUN`，不得写成游戏或发布通过。
+
+## A06 同条件复验
+
+独立 Q-M 在 `fea683400dff53a8a1f2fbb9e4d55498d594da31` 判 **FAIL**：总量、占用、可支配和缺口正确，但要离开建设/制造/订单去物资详情才能查到工程占 5、制造工单占 3；制造与订单也缺显式总量。保留[建设原图](Q09-m-site-before.png)、[制造原图](Q10-m-manufacturing-before.png)、[订单原图](Q11-m-order-before.png)与[物资详情对照](Q12-m-resource-before.png)。
+
+修复后，独立 Q-M 在 `fe81bf0e99ab2a99efaadd0b489b1a799153a73e` 用同一隔离快照复验 **PASS（mock）**：三处任务现场均直接显示总 8/占 8/可支配 0、工程和制造工单各自的占用量；模拟 409 后错误与来源仍在原工作区，制造数量 2 留存。[建设](Q13-m-site-after.png)、[制造](Q14-m-manufacturing-after.png)、[订单](Q15-m-order-after.png)、[失败现场](Q16-m-failure-after.png)、[720×450 建设](Q17-m-site-after-720x450.png)。上轮已通过的 0/2/8 变体和竞态未重复跑；真实 PG、资产幂等、基地隔离与部署不由此复验关闭。

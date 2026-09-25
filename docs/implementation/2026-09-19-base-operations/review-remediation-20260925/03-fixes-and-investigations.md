@@ -1,6 +1,6 @@
 # 局部修复与调查工作包
 
-状态：DRAFT，供后续获授权批次的 P 冻结。问题状态以 [01-findings.md](01-findings.md) 为准；本文件不把调查项变成已确认缺陷。U 的容器和共享样式先确定，避免各板块各自发明导航。
+状态：原工作包草案；C/M/T 本批已按[05 合同](05-active-batch-contract.md)实施，E 仍待后续授权。问题现状以 [01-findings.md](01-findings.md) 和[06 结果](06-implementation-results.md)为准；本文件不把其余调查项变成已确认缺陷。U 的容器和共享样式由单一写者集成。
 
 ## C：协作记录可读性（F03、C07）
 
