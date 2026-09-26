@@ -108,7 +108,7 @@ export function BaseShell({
   const detailRef = useRef<HTMLDivElement>(null);
   const isPaused = snapshot.timeMode === "paused";
   const canControl = hasControl && snapshot.controlLease.heldByThisSession;
-  const controlActive = (snapshot.controlLease as typeof snapshot.controlLease & { controlActive?: boolean }).controlActive ?? false;
+  const controlActive = snapshot.controlLease.controlActive;
   const hasSelection = selectedSiteId !== null || selectedProjectId !== null ||
     selectedDeviceId !== null || selectedResourceId !== null;
   const activeProject = snapshot.projects.find((project) =>
@@ -120,7 +120,9 @@ export function BaseShell({
   const activeRequests = snapshot.cooperationRequests.filter((request) =>
     request.status === "pending" || request.status === "accepted"
   ).length;
-  const pendingRequest = snapshot.cooperationRequests.find((request) => request.status === "pending");
+  const pendingRequest = snapshot.cooperationRequests.find((request) =>
+    request.status === "pending" && request.playerDecisionAllowed
+  );
   const completedProjects = snapshot.projects.filter((project) => project.status === "completed");
   const currentStep = activeProject?.steps.find((step) => step.status !== "completed") ?? null;
   const missingInputs = nextProject?.inputs?.filter((input) => {

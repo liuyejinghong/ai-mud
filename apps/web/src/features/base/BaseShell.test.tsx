@@ -141,13 +141,20 @@ describe("BaseShell", () => {
         question: "运输组缺工", createdAt: "2126-01-01T08:00:00.000Z"
       }]
     });
-    const { container } = renderShell(snapshot);
+    const { container, rerender } = renderShell(snapshot);
 
     expect(container.querySelector("main.base-shell")?.firstElementChild?.getAttribute("aria-label"))
       .toBe("当前目标");
     expect(screen.getByText(/当前步骤.*物资运输.*30\/60/)).toBeTruthy();
     expect(screen.getByRole("button", { name: /处理协作/ })).toBeTruthy();
     expect((screen.getByRole("button", { name: "暂停计时" }) as HTMLButtonElement).disabled).toBe(true);
+    rerender(<BaseShell {...shellProps({
+      ...snapshot,
+      cooperationRequests: snapshot.cooperationRequests.map((request) => ({
+        ...request, playerDecisionAllowed: false
+      }))
+    })} />);
+    expect(screen.queryByRole("button", { name: /处理协作/ })).toBeNull();
   });
 
   it("首工程完成后从订单与在途事实推导补给目标", () => {
