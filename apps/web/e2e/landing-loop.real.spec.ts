@@ -102,18 +102,16 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await installAt("充电区安装位", "安装充电区", "提高充电上限");
   await goalSays(page, "勘探");
 
-  // 圈1b：勘探铁→采矿 4 批。
-  await page.locator(GOAL).getByRole("button", { name: "前往处理" }).click();
+  // 圈1b：勘探铁矿（goal 前往处理按字母序落在铜矿；能源路线需要铁，显式点铁矿区）。
+  await page.locator(MAP).getByRole("button", { name: /北坡磁异常/ }).click();
   await waitForText(page, page.locator(PANEL), "勘探", 60_000);
   await ensureControl(page);
   await page.getByLabel("望山").selectOption({ index: 1 });
   await page.getByRole("button", { name: "开始勘探" }).click();
+  await waitForText(page, page.locator(PANEL), "采矿运输", 300_000); // 本节点勘探完成
   await goalSays(page, "安排采矿运输");
   await page.screenshot({ path: testInfo.outputPath("02-surveyed.png"), fullPage: true });
 
-  // 明确点铁矿区（goal 的 targetId 按字母序指向 copper；能源路线需要铁）。
-  await page.locator(MAP).getByRole("button", { name: /北坡磁异常/ }).click();
-  await waitForText(page, page.locator(PANEL), "采矿运输", 300_000);
   const checkboxes = page.getByRole("checkbox");
   await checkboxes.nth(0).check();
   await checkboxes.nth(1).check();
