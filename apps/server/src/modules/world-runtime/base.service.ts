@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   BaseClockCommandInputDto,
   BaseDeviceDto,
@@ -121,7 +122,7 @@ export interface OrderTemplateSpec {
 export interface ContentCatalogPort {
   getProvisionSeed(): ProvisionSeedSpec;
   getItemInfo(): Record<string, { name: string; description: string }>;
-  getRecipeTemplate(stableId: string): RecipeTemplateSpec | null;
+  getRecipeTemplate(stableId: string, revision?: number): RecipeTemplateSpec | null;
   listRecipes(): RecipeTemplateSpec[];
   getOrderTemplate(stableId: string): OrderTemplateSpec | null;
   listOrderTemplates(): OrderTemplateSpec[];
@@ -190,10 +191,15 @@ export interface BaseServiceDeps {
   db: BaseDb;
   clock: { now(): Date };
   repo: BaseRepository;
+  settleConfirmedThrough(tx: BaseRepoTx, baseId: string, at: Date): Promise<void>;
   assets: BaseAssetPort;
   robots: RobotFactoryPort;
   industryInit: BaseIndustryInitPort;
   catalog: ContentCatalogPort;
+  catalogResolver?: {
+    forProvision(): ContentCatalogPort;
+    forBase(tx: BaseRepoTx, baseId: string): Promise<ContentCatalogPort>;
+  };
   industryRead: BaseIndustryReadPort;
   robotRead: BaseRobotReadPort;
   economyRead: {
@@ -237,6 +243,12 @@ export interface BaseServiceDeps {
         createdAt: Date | null;
       }>
     >;
+    previewPending?(tx: BaseRepoTx, baseId: string, requestId: string): Promise<{
+      operatorId: string;
+      groupId: string;
+      batteryWh: number;
+      batteryCapacityWh: number;
+    } | null>;
   };
   weather?: {
     current(baseId: string, simTime: Date): Promise<{
@@ -361,7 +373,9 @@ export class BaseService {
       }
 
       const now = this.deps.clock.now();
-      const seed = this.deps.catalog.getProvisionSeed();
+      const catalog = this.deps.catalogResolver?.forProvision() ?? this.deps.catalog;
+      const seed = catalog.getProvisionSeed();
+      const simTime = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 8));
 
       const baseId = await repo.insertBase(tx, {
         accountId: principal.accountId,
@@ -369,7 +383,7 @@ export class BaseService {
         contentRelease: seed.releaseId,
         timeMode: "paused",
         speed: 1,
-        simTime: now,
+        simTime,
         lastAdvancedAt: now
       });
 
@@ -389,7 +403,7 @@ export class BaseService {
       }
 
       for (const device of seed.devices) {
-        const template = this.deps.catalog.getRobotTemplate(device.templateStableId);
+        const template = catalog.getRobotTemplate(device.templateStableId);
         if (!template) {
           throw new BaseOperationError(
             "CONTENT_INCOMPATIBLE",
@@ -428,7 +442,7 @@ export class BaseService {
 
   // ---------- snapshot：观察投影（纯读） ----------
 
-  async snapshot(principal: { accountId: string }): Promise<BaseSnapshotDto> {
+  async snapshot(principal: { accountId: string }, controlToken?: string): Promise<BaseSnapshotDto> {
     return this.transact(async (tx, repo) => {
       const now = this.deps.clock.now();
       const base = await repo.getBaseByAccount(tx, principal.accountId);
@@ -436,6 +450,9 @@ export class BaseService {
         throw new BaseOperationError("BASE_SCOPE_INVALID", "账号没有可访问的基地。");
       }
       const baseId = base.id;
+      const catalog = this.deps.catalogResolver
+        ? await this.deps.catalogResolver.forBase(tx, baseId)
+        : this.deps.catalog;
 
       const sites = await repo.listSites(tx, baseId);
       const inventory = await this.deps.assets.listBaseInventory(tx, baseId);
@@ -449,14 +466,14 @@ export class BaseService {
       const operators = await this.deps.robotRead.listOperators(baseId);
       const jobRecords = await this.deps.manufacturingRead.listJobsForBase(baseId);
 
-      const seed = this.deps.catalog.getProvisionSeed();
+      const seed = catalog.getProvisionSeed();
       const siteNames = new Map(seed.sites.map((site) => [site.siteKey, site.name]));
-      const itemInfo = this.deps.catalog.getItemInfo();
+      const itemInfo = catalog.getItemInfo();
 
       const siteDtos: BaseSiteDto[] = sites.map((site: BaseSiteRecord) => {
         const facility =
           site.state === "built" && site.builtFacilityRef
-            ? this.deps.catalog.getFacilityInfo(site.builtFacilityRef.split(":")[1]?.split("@")[0] ?? "")
+            ? catalog.getFacilityInfo(site.builtFacilityRef.split(":")[1]?.split("@")[0] ?? "")
             : null;
         return {
           siteId: site.id,
@@ -480,14 +497,14 @@ export class BaseService {
       };
       for (const project of projectRecords) {
         if (RESERVATION_TERMINAL_PROJECT_STATUSES.has(project.status)) continue;
-        const name = this.deps.catalog.getProjectTemplate(project.projectDefId)?.name ?? project.projectDefId;
+        const name = catalog.getProjectTemplate(project.projectDefId)?.name ?? project.projectDefId;
         for (const item of project.reservedInputs) {
           collectSources(item.itemId, { kind: "project", id: project.id, name, quantity: item.quantity });
         }
       }
       for (const job of jobRecords) {
         if (RESERVATION_TERMINAL_JOB_STATUSES.has(job.status)) continue;
-        const name = this.deps.catalog.getRecipeTemplate(job.recipeDefId)?.name ?? job.recipeDefId;
+        const name = catalog.getRecipeTemplate(job.recipeDefId, job.recipeRevision)?.name ?? job.recipeDefId;
         for (const item of job.reservedInputs) {
           collectSources(item.itemId, { kind: "manufacturing", id: job.id, name, quantity: item.quantity });
         }
@@ -503,7 +520,7 @@ export class BaseService {
       }));
 
       const devices: BaseDeviceDto[] = operators.map((operator) => {
-        const template = this.deps.catalog.getRobotTemplate(operator.deviceDefId);
+        const template = catalog.getRobotTemplate(operator.deviceDefId);
         return {
           deviceId: operator.deviceId,
           operatorId: operator.operatorId,
@@ -527,7 +544,7 @@ export class BaseService {
           stableId: project.projectDefId,
           revision: project.templateRevision
         },
-        name: this.deps.catalog.getProjectTemplate(project.projectDefId)?.name ?? project.projectDefId,
+        name: catalog.getProjectTemplate(project.projectDefId)?.name ?? project.projectDefId,
         status: project.status as ProjectStatus,
         siteId: project.siteId,
         steps: stepRecords
@@ -543,6 +560,25 @@ export class BaseService {
             blockedReason: step.blockedReason
           }))
       }));
+
+      const cooperationRequests = await Promise.all(
+        (await this.deps.cooperationRead.listByBase(baseId)).map(async (request) => ({
+          requestId: request.id,
+          projectId: request.projectId,
+          projectName: projects.find((project) => project.projectId === request.projectId)?.name ?? "",
+          stepIndex: request.stepIndex,
+          fromGroupId: request.fromGroupId,
+          helperGroupId: request.helperGroupId,
+          status: request.status as CooperationStatus,
+          resolutionReason: request.resolutionReason,
+          helperOperatorId: request.helperOperatorId,
+          proposedHelper: request.status === "pending" && this.deps.cooperationRead.previewPending
+            ? await this.deps.cooperationRead.previewPending(tx, baseId, request.id)
+            : null,
+          question: request.question,
+          createdAt: request.createdAt?.toISOString() ?? ""
+        }))
+      );
 
       return {
         name: base.name,
@@ -565,13 +601,13 @@ export class BaseService {
         sites: siteDtos,
         devices,
         projects,
-        buildableProjects: this.deps.catalog.listTemplates().projects.map((project) => ({
+        buildableProjects: catalog.listTemplates().projects.map((project) => ({
           definitionRef: project.ref,
           name: project.name,
           description: project.description,
           inputs: project.inputs.map((input) => ({ itemId: input.itemId, quantity: input.quantity }))
         })),
-        availableRecipes: this.deps.catalog.listRecipes().map((recipe) => ({
+        availableRecipes: catalog.listRecipes().map((recipe) => ({
           ref: recipe.ref,
           name: recipe.name,
           description: recipe.description,
@@ -597,7 +633,7 @@ export class BaseService {
         orders: (
           await this.deps.economyRead.listOrdersForBase(baseId)
         ).map((order) => {
-          const template = this.deps.catalog.getOrderTemplate(order.orderDefId);
+          const template = catalog.getOrderTemplate(order.orderDefId);
           return {
             orderId: order.id,
             orderRef: { kind: "order" as const, stableId: order.orderDefId, revision: order.orderRevision },
@@ -605,7 +641,7 @@ export class BaseService {
             status: order.status as OrderStatus,
             requiredItemId: order.requiredItemId,
             requiredItemName:
-              this.deps.catalog.getItemInfo()[order.requiredItemId]?.name ?? order.requiredItemId,
+              catalog.getItemInfo()[order.requiredItemId]?.name ?? order.requiredItemId,
             quantity: order.quantity,
             rewardCredits: order.rewardCredits,
             deadlineSim: order.deadlineSim?.toISOString() ?? null,
@@ -615,28 +651,13 @@ export class BaseService {
         purchases: (await this.deps.economyRead.listPurchasesForBase(baseId)).map((purchase) => ({
           purchaseId: purchase.id,
           itemId: purchase.itemId,
-          itemName: this.deps.catalog.getItemInfo()[purchase.itemId]?.name ?? purchase.itemId,
+          itemName: catalog.getItemInfo()[purchase.itemId]?.name ?? purchase.itemId,
           quantity: purchase.quantity,
           costCredits: purchase.costCredits,
           status: purchase.status as "in_transit" | "delivered",
           arrivesAtSim: purchase.arrivesAtSim.toISOString()
         })),
-        cooperationRequests: (await this.deps.cooperationRead.listByBase(baseId)).map(
-          (request) => ({
-            requestId: request.id,
-            projectId: request.projectId,
-            projectName:
-              projects.find((project) => project.projectId === request.projectId)?.name ?? "",
-            stepIndex: request.stepIndex,
-            fromGroupId: request.fromGroupId,
-            helperGroupId: request.helperGroupId,
-            status: request.status as CooperationStatus,
-            resolutionReason: request.resolutionReason,
-            helperOperatorId: request.helperOperatorId,
-            question: request.question,
-            createdAt: request.createdAt?.toISOString() ?? ""
-          })
-        ),
+        cooperationRequests,
         manufacturingJobs: jobRecords.map(
           (job) => ({
             jobId: job.id,
@@ -646,7 +667,7 @@ export class BaseService {
               revision: job.recipeRevision
             },
             recipeName:
-              this.deps.catalog.getRecipeTemplate(job.recipeDefId)?.name ?? job.recipeDefId,
+              catalog.getRecipeTemplate(job.recipeDefId, job.recipeRevision)?.name ?? job.recipeDefId,
             status: job.status as ManufacturingJobStatus,
             outputsPlanned: job.outputsPlanned,
             outputsDone: job.outputsDone,
@@ -655,80 +676,139 @@ export class BaseService {
           })
         ),
         controlLease: {
-          heldByThisSession: lease ? lease.leaseUntil.getTime() > now.getTime() : false,
+          heldByThisSession: !!lease && lease.leaseUntil.getTime() > now.getTime() && lease.leaseToken === controlToken,
+          controlActive: !!lease && lease.leaseUntil.getTime() > now.getTime(),
           leaseUntil: lease ? lease.leaseUntil.toISOString() : null
         }
       };
     });
   }
 
-  // ---------- clock：控制租约心跳与暂停/恢复/倍速 ----------
+  // ---------- clock：服务端确认的前台控制段 ----------
 
-  async heartbeat(principal: { accountId: string }): Promise<{ leaseUntil: string; timeMode: BaseTimeMode }> {
+  async heartbeat(
+    principal: { accountId: string },
+    input: { action: "acquire" | "renew" | "release"; controlToken?: string | null }
+  ): Promise<{ controlToken: string | null; leaseUntil: string | null; timeMode: BaseTimeMode }> {
     return this.transact(async (tx, repo) => {
       const now = this.deps.clock.now();
-      const baseRecord = await this.requireBaseRecord(tx, repo, principal.accountId);
+      const base = await this.requireBaseRecord(tx, repo, principal.accountId);
 
-      const leaseUntil = new Date(now.getTime() + BASE_LEASE_TTL_MS);
+      if (input.action === "acquire") {
+        // 旧标签只结清最后一次确认前的时间；断档从本次取得控制权开始。
+        await this.deps.settleConfirmedThrough(tx, base.id, now);
+        const current = await this.alignClock(tx, repo, base.id, now);
+        const controlToken = randomUUID();
+        const leaseUntil = new Date(now.getTime() + BASE_LEASE_TTL_MS);
+        await repo.upsertControlLease(tx, { baseId: base.id, leaseToken: controlToken, leaseUntil, updatedAt: now });
+        return { controlToken, leaseUntil: leaseUntil.toISOString(), timeMode: current.timeMode };
+      }
+
+      const lease = await this.requireActiveControl(tx, repo, base.id, input.controlToken, now);
+      if (input.action === "renew") {
+        const leaseUntil = new Date(now.getTime() + BASE_LEASE_TTL_MS);
+        await repo.upsertControlLease(tx, {
+          baseId: base.id,
+          leaseToken: lease.leaseToken,
+          leaseUntil,
+          updatedAt: new Date(Math.max(now.getTime(), lease.updatedAt.getTime()))
+        });
+        return { controlToken: lease.leaseToken, leaseUntil: leaseUntil.toISOString(), timeMode: base.timeMode };
+      }
+      if (input.action !== "release") throw new BaseOperationError("VALIDATION_ERROR", "未知的控制命令。");
+
+      // 正常离开可确认到服务端收到 release 的时点；丢包时仍止于最后一次 renew。
       await repo.upsertControlLease(tx, {
-        baseId: baseRecord.id,
-        leaseToken: `account:${principal.accountId}`,
-        leaseUntil,
+        baseId: base.id,
+        leaseToken: lease.leaseToken,
+        leaseUntil: new Date(now.getTime() + BASE_LEASE_TTL_MS),
         updatedAt: now
       });
-
-      return { leaseUntil: leaseUntil.toISOString(), timeMode: baseRecord.timeMode };
+      await this.deps.settleConfirmedThrough(tx, base.id, now);
+      const current = await this.alignClock(tx, repo, base.id, now);
+      await repo.clearControlLease(tx, base.id, lease.leaseToken);
+      return { controlToken: null, leaseUntil: null, timeMode: current.timeMode };
     });
   }
 
   async applyCommand(
     principal: { accountId: string },
-    input: BaseClockCommandInputDto
+    input: BaseClockCommandInputDto,
+    controlToken?: string
   ): Promise<{ timeMode: BaseTimeMode; speed: number; simTime: string }> {
     return this.transact(async (tx, repo) => {
       const now = this.deps.clock.now();
       const base = await this.requireBaseRecord(tx, repo, principal.accountId);
+      if (input.command === "set_speed" &&
+          (input.speed === undefined || !(BASE_SPEEDS as readonly number[]).includes(input.speed))) {
+        throw new BaseOperationError("VALIDATION_ERROR", "不支持的倍速，允许值：1、2、4。");
+      }
+      if (input.command !== "pause" && input.command !== "resume" && input.command !== "set_speed") {
+        throw new BaseOperationError("VALIDATION_ERROR", "未知的时钟命令。");
+      }
+      const lease = await this.requireActiveControl(tx, repo, base.id, controlToken, now);
+      await repo.upsertControlLease(tx, {
+        baseId: base.id,
+        leaseToken: lease.leaseToken,
+        leaseUntil: new Date(now.getTime() + BASE_LEASE_TTL_MS),
+        updatedAt: now
+      });
+      if (base.timeMode === "running") await this.deps.settleConfirmedThrough(tx, base.id, now);
+      const current = await repo.getBaseForUpdate(tx, base.id);
+      if (!current) throw new BaseOperationError("BASE_SCOPE_INVALID", "账号没有可访问的基地。");
 
-      let timeMode = base.timeMode;
-      let speed = base.speed;
-      let lastAdvancedAt = base.lastAdvancedAt;
+      let timeMode = current.timeMode;
+      let speed = current.speed;
 
       if (input.command === "pause") {
-        // pause 只改 timeMode，不清租约、不动 lastAdvancedAt（合同 §3.7）。
         timeMode = "paused";
       } else if (input.command === "resume") {
-        // resume 重置 lastAdvancedAt=now：暂停期不补算；租约一并续上。
         timeMode = "running";
-        lastAdvancedAt = now;
-        await repo.upsertControlLease(tx, {
-          baseId: base.id,
-          leaseToken: `account:${principal.accountId}`,
-          leaseUntil: new Date(now.getTime() + BASE_LEASE_TTL_MS),
-          updatedAt: now
-        });
       } else if (input.command === "set_speed") {
-        if (input.speed === undefined || !(BASE_SPEEDS as readonly number[]).includes(input.speed)) {
-          throw new BaseOperationError("VALIDATION_ERROR", "不支持的倍速，允许值：1、2、4。");
-        }
-        speed = input.speed;
-      } else {
-        throw new BaseOperationError("VALIDATION_ERROR", "未知的时钟命令。");
+        speed = input.speed!;
       }
 
       const advanced = await repo.updateBaseClock(tx, {
         baseId: base.id,
-        expectedBaseRevision: base.baseRevision,
+        expectedBaseRevision: current.baseRevision,
         timeMode,
         speed,
-        lastAdvancedAt
+        lastAdvancedAt: new Date(Math.max(now.getTime(), current.lastAdvancedAt.getTime()))
       });
       if (!advanced) {
         throw new BaseOperationError("REVISION_EXPIRED", "基地状态已变化，请刷新后重试。");
       }
 
-      // 时钟命令不推进 simTime，沿用锁定行读到的值。
-      return { timeMode, speed, simTime: base.simTime.toISOString() };
+      return { timeMode, speed, simTime: current.simTime.toISOString() };
     });
+  }
+
+  private async requireActiveControl(
+    tx: BaseRepoTx,
+    repo: BaseRepository,
+    baseId: string,
+    controlToken: string | null | undefined,
+    now: Date
+  ) {
+    const lease = await repo.getControlLease(tx, baseId);
+    if (!controlToken || !lease || lease.leaseToken !== controlToken || lease.leaseUntil.getTime() <= now.getTime()) {
+      throw new BaseOperationError("CONTROL_EXPIRED" as ErrorCode, "当前标签已失去基地控制权，请刷新后重试。");
+    }
+    return lease;
+  }
+
+  private async alignClock(tx: BaseRepoTx, repo: BaseRepository, baseId: string, now: Date): Promise<BaseRecord> {
+    const current = await repo.getBaseForUpdate(tx, baseId);
+    if (!current) throw new BaseOperationError("BASE_SCOPE_INVALID", "账号没有可访问的基地。");
+    const aligned = await repo.updateBaseClock(tx, {
+      baseId,
+      expectedBaseRevision: current.baseRevision,
+      timeMode: current.timeMode,
+      speed: current.speed,
+      lastAdvancedAt: new Date(Math.max(now.getTime(), current.lastAdvancedAt.getTime()))
+    });
+    if (!aligned) throw new BaseOperationError("REVISION_EXPIRED", "基地状态已变化，请刷新后重试。");
+    return current;
   }
 
   private async requireBaseRecord(

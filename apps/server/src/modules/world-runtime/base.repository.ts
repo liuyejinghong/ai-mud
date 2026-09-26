@@ -42,6 +42,7 @@ export interface ControlLeaseRecord {
   baseId: string;
   leaseToken: string;
   leaseUntil: Date;
+  updatedAt: Date;
 }
 
 // 与 ports.ts AdvanceableBaseDto 同形状。
@@ -51,7 +52,6 @@ export interface AdvanceableBaseRecord {
   speed: number;
   deltaSimMs: number;
   nextLastAdvancedAt: Date;
-  catchUp: boolean;
 }
 
 export interface BaseCommandReceipt {
@@ -106,7 +106,7 @@ export class BaseRepository {
 
   // 事务内构造 tx 绑定实例（透传模式）。
   forTransaction(tx: BaseRepoTx): BaseRepository {
-    return new BaseRepository(tx);
+    return new BaseRepository(tx, this.wallClock);
   }
 
   // ---------- 命令回执（账号作用域，A0-04 附注 i） ----------
@@ -221,6 +221,15 @@ export class BaseRepository {
     return row ? mapBaseRow(row) : null;
   }
 
+  async getContentRelease(tx: BaseRepoTx, baseId: string): Promise<string | null> {
+    const [row] = await tx
+      .select({ contentRelease: bases.contentRelease })
+      .from(bases)
+      .where(eq(bases.id, baseId))
+      .limit(1);
+    return row?.contentRelease ?? null;
+  }
+
   // 非主键更新锁与 tick/取消互斥，同时不挡住新项目/工单的外键检查。
   async getBaseForUpdate(tx: BaseRepoTx, baseId: string): Promise<BaseRecord | null> {
     const [row] = await tx
@@ -325,7 +334,8 @@ export class BaseRepository {
       .select({
         baseId: baseControlLeases.baseId,
         leaseToken: baseControlLeases.leaseToken,
-        leaseUntil: baseControlLeases.leaseUntil
+        leaseUntil: baseControlLeases.leaseUntil,
+        updatedAt: baseControlLeases.updatedAt
       })
       .from(baseControlLeases)
       .where(eq(baseControlLeases.baseId, baseId))
@@ -333,14 +343,21 @@ export class BaseRepository {
     return row ?? null;
   }
 
-  // ---------- BaseClockStorePort：结算推进政策封装（running + 租约 + 追补上限） ----------
+  async clearControlLease(tx: BaseRepoTx, baseId: string, leaseToken: string): Promise<void> {
+    await tx.delete(baseControlLeases).where(and(
+      eq(baseControlLeases.baseId, baseId),
+      eq(baseControlLeases.leaseToken, leaseToken)
+    ));
+  }
+
+  // ---------- BaseClockStorePort：只结算已确认的前台时段 ----------
 
   // SELECT … FOR NO KEY UPDATE SKIP LOCKED 锁住 running 基地行（按 id 排序，锁序确定），逐行联
-  // base_control_leases 校验 leaseUntil > now；无租约/租约过期/暂停的基地不返回（天然无补算）。
+  // base_control_leases.updatedAt 是最后确认点；租约过期仍结清此前已确认的时段。
   // 被别的事务（玩家命令/心跳）持锁的基地本次跳过而不排队：lastAdvancedAt 不动，下个 tick
-  // 按真实流逝补上（受 BASE_MAX_CATCHUP_MS 封顶），不丢时长。
+  // 按已确认时段补上；单次上限只推进游标到本次结算终点，不丢剩余时长。
   // 事务句柄经 scopeTickTransactionToBase 绑定过基地时，只锁定/返回那一个基地。
-  // deltaSimMs = clamp(now - lastAdvancedAt, 0, BASE_MAX_CATCHUP_MS) × speed。
+  // deltaSimMs = clamp(min(tickAt, updatedAt, wallNow) - lastAdvancedAt, 0, 上限) × speed。
   async lockAdvanceableBases(tx: BaseRepoTx, now: Date): Promise<AdvanceableBaseRecord[]> {
     const wallNow = this.wallClock.now();
     const scopedBaseId = tickScopeByTransaction.get(tx);
@@ -363,11 +380,11 @@ export class BaseRepository {
     const advanceable: AdvanceableBaseRecord[] = [];
     for (const row of rows) {
       const lease = await this.getControlLease(tx, row.id);
-      if (!lease || lease.leaseUntil.getTime() <= wallNow.getTime()) continue;
+      if (!lease) continue;
 
-      // delta 只看真实墙钟：世界 tick 追补多步时，只有第一步携带真实流逝时间，其余步 0 被跳过。
+      const confirmedEndMs = Math.min(now.getTime(), lease.updatedAt.getTime(), wallNow.getTime());
       const deltaWallMs = Math.min(
-        Math.max(wallNow.getTime() - row.lastAdvancedAt.getTime(), 0),
+        Math.max(confirmedEndMs - row.lastAdvancedAt.getTime(), 0),
         BASE_MAX_CATCHUP_MS
       );
       if (deltaWallMs <= 0) continue;
@@ -376,24 +393,20 @@ export class BaseRepository {
         simTime: row.simTime,
         speed: row.speed,
         deltaSimMs: deltaWallMs * row.speed,
-        nextLastAdvancedAt: wallNow,
-        // 世界 tick 落后墙钟期间的追补步：只推时钟，不生产（不把停服时间当生产时间）。
-        // 正常运行时结算执行点天然落后墙钟至多一个 tick 间隔（60s），阈值取 1.5 个间隔。
-        catchUp: now.getTime() < wallNow.getTime() - 90_000
+        nextLastAdvancedAt: new Date(row.lastAdvancedAt.getTime() + deltaWallMs)
       });
     }
     return advanceable;
   }
 
-  // 逐基地 tick 的到期清单（车道 C4）：running 且租约有效（SQL 内联表过滤，无 N+1），按 id 排序，
-  // 不加锁——每个基地随后在自己的事务里经 lockAdvanceableBases 重新锁定并复核租约与 delta。
+  // 逐基地 tick 的到期清单：running 且有尚未结清的确认时段；过期租约也可能到期。
+  // 不加锁——每个基地随后在自己的事务里重新锁定并复核时间游标。
   async listAdvanceableBaseIds(tx: BaseRepoTx): Promise<string[]> {
-    const wallNow = this.wallClock.now();
     const rows = await tx
       .select({ id: bases.id })
       .from(bases)
       .innerJoin(baseControlLeases, eq(baseControlLeases.baseId, bases.id))
-      .where(and(eq(bases.timeMode, "running"), gt(baseControlLeases.leaseUntil, wallNow)))
+      .where(and(eq(bases.timeMode, "running"), gt(baseControlLeases.updatedAt, bases.lastAdvancedAt)))
       .orderBy(asc(bases.id));
     return rows.map((row) => row.id);
   }

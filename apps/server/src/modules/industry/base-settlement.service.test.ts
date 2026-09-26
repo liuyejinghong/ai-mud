@@ -92,7 +92,7 @@ function makeProject(overrides: Partial<BaseProjectRecord> = {}): BaseProjectRec
 }
 
 class FakeClock implements SettlementClockPort {
-  bases: Array<{ baseId: string; simTime: Date; speed: number; deltaSimMs: number; nextLastAdvancedAt: Date; catchUp: boolean }> = [];
+  bases: Array<{ baseId: string; simTime: Date; speed: number; deltaSimMs: number; nextLastAdvancedAt: Date }> = [];
   saved: Array<{ baseId: string; simTime: Date; lastAdvancedAt: Date }> = [];
 
   async lockAdvanceableBases(_tx: IndustryTx, _now: Date) {
@@ -389,7 +389,7 @@ interface ScenarioOptions {
 }
 
 function seedStandardBase(harness: ReturnType<typeof makeHarness>, options: ScenarioOptions = {}) {
-  harness.clock.bases.push({ baseId: "base-1", simTime: T0, speed: 1, deltaSimMs: TICK_MS, nextLastAdvancedAt: new Date(T0.getTime() + TICK_MS), catchUp: false });
+  harness.clock.bases.push({ baseId: "base-1", simTime: T0, speed: 1, deltaSimMs: TICK_MS, nextLastAdvancedAt: new Date(T0.getTime() + TICK_MS) });
   harness.industry.power.set("base-1", makePower());
   harness.industry.projects.set("base-1", [
     makeProject({ templateRevision: options.templateRevision ?? 1 })
@@ -574,7 +574,6 @@ describe("BaseSettlementService.settleBases > sub-tick scaling", () => {
       speed: 4,
       deltaSimMs: TICK_MS * 4,
       nextLastAdvancedAt: new Date(T0.getTime() + TICK_MS),
-      catchUp: false
     });
 
     const tx = {} as IndustryTx;
@@ -585,8 +584,8 @@ describe("BaseSettlementService.settleBases > sub-tick scaling", () => {
   });
 });
 
-describe("BaseSettlementService.settleBases > catch-up steps", () => {
-  it("追补步只推时钟：不产工作量、不落盘生产状态，仅 saveSimAdvance", async () => {
+describe("BaseSettlementService.settleBases > confirmed foreground catch-up", () => {
+  it("已确认时段即使由历史 tick 结清，也正常结算电力和施工", async () => {
     const harness = makeHarness();
     harness.industry.power.set("base-1", makePower());
     harness.industry.projects.set("base-1", [makeProject({ status: "active", currentStepIndex: 0 })]);
@@ -620,14 +619,15 @@ describe("BaseSettlementService.settleBases > catch-up steps", () => {
       simTime: T0,
       speed: 1,
       deltaSimMs: TICK_MS,
-      nextLastAdvancedAt: new Date(T0.getTime() + TICK_MS),
-      catchUp: true
+      nextLastAdvancedAt: new Date(T0.getTime() + TICK_MS)
     });
 
     const tx = {} as IndustryTx;
     const settled = await harness.service.settleBases(tx, new Date(T0.getTime() + TICK_MS));
 
     expect(settled).toBe(1);
+    expect(harness.industry.savedPower).toHaveLength(1);
+    expect(harness.industry.savedSteps.length).toBeGreaterThan(0);
     expect(harness.clock.saved).toEqual([
       {
         baseId: "base-1",
@@ -705,7 +705,6 @@ describe("BaseSettlementService.settleBases > B008 调度频率无关", () => {
         speed: 1,
         deltaSimMs: 5_000,
         nextLastAdvancedAt: new Date(simTime.getTime() + 5_000),
-        catchUp: false
       }];
       await frequent.service.settleBases({} as IndustryTx, simTime);
     }
@@ -741,7 +740,6 @@ describe("BaseSettlementService.settleBases > B008 调度频率无关", () => {
         speed: 1,
         deltaSimMs: TICK_MS,
         nextLastAdvancedAt: new Date(T0.getTime() + (minute + 1) * TICK_MS),
-        catchUp: false
       };
       await sliced.harness.service.settleBases({} as IndustryTx, T0);
     }
@@ -764,7 +762,6 @@ describe("BaseSettlementService.settleBases > B008 调度频率无关", () => {
       speed: 1,
       deltaSimMs,
       nextLastAdvancedAt: new Date(T0.getTime() + deltaSimMs),
-      catchUp: false
     }];
 
     await harness.service.settleBases({} as IndustryTx, T0);
@@ -780,7 +777,6 @@ describe("BaseSettlementService.settleBases > B008 调度频率无关", () => {
       speed: 1,
       deltaSimMs: 19_999,
       nextLastAdvancedAt: new Date(T0.getTime() + 120_000),
-      catchUp: false
     }];
     await harness.service.settleBases({} as IndustryTx, T0);
     expect(manufacturing.settled.map((entry) => [entry.simTime.getTime(), entry.deltaSimMs])).toEqual([

@@ -55,7 +55,7 @@ class FakeBaseRepository {
     state: "free" | "reserved" | "built";
     builtFacilityRef: string | null;
   }> = [];
-  leases = new Map<string, { leaseToken: string; leaseUntil: Date }>();
+  leases = new Map<string, { leaseToken: string; leaseUntil: Date; updatedAt: Date }>();
   receipts = new Map<string, { requestHash: string; result: unknown }>();
   savedResults: unknown[] = [];
   private counter = 0;
@@ -173,12 +173,20 @@ class FakeBaseRepository {
     leaseUntil: Date;
     updatedAt: Date;
   }): Promise<void> {
-    this.leases.set(input.baseId, { leaseToken: input.leaseToken, leaseUntil: input.leaseUntil });
+    this.leases.set(input.baseId, {
+      leaseToken: input.leaseToken,
+      leaseUntil: input.leaseUntil,
+      updatedAt: input.updatedAt
+    });
   }
 
   async getControlLease(_tx: BaseRepoTx, baseId: string) {
     const lease = this.leases.get(baseId);
-    return lease ? { baseId, leaseToken: lease.leaseToken, leaseUntil: lease.leaseUntil } : null;
+    return lease ? { baseId, ...lease } : null;
+  }
+
+  async clearControlLease(_tx: BaseRepoTx, baseId: string, leaseToken: string): Promise<void> {
+    if (this.leases.get(baseId)?.leaseToken === leaseToken) this.leases.delete(baseId);
   }
 
   async insertSite(_tx: BaseRepoTx, input: {
@@ -364,10 +372,12 @@ interface Fixture {
   industryRead: FakeIndustryRead;
   robotRead: FakeRobotRead;
   manufacturingJobs: ManufacturingJobReadRecord[];
+  settlementCalls: Date[];
 }
 
 function createFixture(options: {
   now?: Date;
+  clock?: { now(): Date };
   seed?: ProvisionSeedSpec;
 } = {}): Fixture {
   const repo = new FakeBaseRepository();
@@ -399,11 +409,23 @@ function createFixture(options: {
   const robotRead = new FakeRobotRead();
   const manufacturingJobs: ManufacturingJobReadRecord[] = [];
   const fakeDb = {} as unknown as BaseDb; // 无 transaction：直用当前 repo（透传模式的替身路径）
+  const settlementCalls: Date[] = [];
 
   const service = new BaseService({
     db: fakeDb,
-    clock: clockAt(options.now ?? T1),
+    clock: options.clock ?? clockAt(options.now ?? T1),
     repo: repo as unknown as BaseRepository,
+    settleConfirmedThrough: async (_tx, baseId, at) => {
+      settlementCalls.push(at);
+      const base = repo.bases.find((candidate) => candidate.id === baseId);
+      const lease = repo.leases.get(baseId);
+      if (!base || !lease || base.timeMode !== "running") return;
+      const end = Math.min(at.getTime(), lease.updatedAt.getTime());
+      if (end <= base.lastAdvancedAt.getTime()) return;
+      base.simTime = new Date(base.simTime.getTime() + (end - base.lastAdvancedAt.getTime()) * base.speed);
+      base.lastAdvancedAt = new Date(end);
+      base.baseRevision += 1;
+    },
     assets,
     robots,
     industryInit,
@@ -418,7 +440,7 @@ function createFixture(options: {
       listPurchasesForBase: async () => []
     }
   });
-  return { service, repo, assets, robots, industryInit, catalog, industryRead, robotRead, manufacturingJobs };
+  return { service, repo, assets, robots, industryInit, catalog, industryRead, robotRead, manufacturingJobs, settlementCalls };
 }
 
 describe("BaseService.provision", () => {
@@ -436,7 +458,7 @@ describe("BaseService.provision", () => {
     expect(base.contentRelease).toBe("release-yudian-0.12");
     expect(base.timeMode).toBe("paused");
     expect(base.speed).toBe(1);
-    expect(base.simTime).toEqual(T1);
+    expect(base.simTime).toEqual(T0);
     expect(base.lastAdvancedAt).toEqual(T1);
     const baseId = base.id;
 
@@ -582,69 +604,104 @@ describe("BaseService.provision", () => {
   });
 });
 
-describe("BaseService.clock", () => {
-  it("resume switches paused to running, resets lastAdvancedAt to now, and renews the lease", async () => {
-    const fx = createFixture({ now: T1 });
-    const base = makeBase({ timeMode: "paused", baseRevision: 3 });
+describe("BaseService foreground control", () => {
+  it("renew records a checkpoint without moving the settlement cursor", async () => {
+    const time = { current: T0, now() { return this.current; } };
+    const fx = createFixture({ clock: time });
+    const base = makeBase({ timeMode: "running" });
     fx.repo.bases.push(base);
-
-    const result = await fx.service.applyCommand({ accountId: ACCOUNT_ID }, { command: "resume" });
-
-    expect(result).toEqual({ timeMode: "running", speed: 1, simTime: S0.toISOString() });
-    expect(base.timeMode).toBe("running");
-    expect(base.lastAdvancedAt).toEqual(T1); // 暂停期不补算
-    expect(base.baseRevision).toBe(4);
-    expect(fx.repo.leases.get(base.id)?.leaseUntil).toEqual(new Date(T1.getTime() + BASE_LEASE_TTL_MS));
-  });
-
-  it("pause only flips timeMode and keeps lastAdvancedAt and the lease untouched", async () => {
-    const fx = createFixture({ now: T1 });
-    const base = makeBase({ timeMode: "running", speed: 2, baseRevision: 2 });
-    fx.repo.bases.push(base);
-
-    const result = await fx.service.applyCommand({ accountId: ACCOUNT_ID }, { command: "pause" });
-
-    expect(result).toEqual({ timeMode: "paused", speed: 2, simTime: S0.toISOString() });
-    expect(base.timeMode).toBe("paused");
+    const acquired = await fx.service.heartbeat({ accountId: ACCOUNT_ID }, { action: "acquire" });
+    time.current = new Date(T0.getTime() + 30_000);
+    const renewed = await fx.service.heartbeat({ accountId: ACCOUNT_ID }, {
+      action: "renew", controlToken: acquired.controlToken
+    });
+    expect(renewed.controlToken).toBe(acquired.controlToken);
+    expect(renewed.leaseUntil).toBe(new Date(time.current.getTime() + BASE_LEASE_TTL_MS).toISOString());
+    expect(fx.repo.leases.get(base.id)?.updatedAt).toEqual(time.current);
     expect(base.lastAdvancedAt).toEqual(T0);
-    expect(base.baseRevision).toBe(3);
-    expect(fx.repo.leases.size).toBe(0); // pause 不清租约也不续租
   });
 
-  it("set_speed validates against BASE_SPEEDS and updates speed without touching time mode", async () => {
+  it("settles the previous confirmed span before a new tab takes control and rejects stale tokens", async () => {
+    const time = { current: T1, now() { return this.current; } };
+    const fx = createFixture({ clock: time });
+    const base = makeBase({ timeMode: "running" });
+    fx.repo.bases.push(base);
+    fx.repo.leases.set(base.id, {
+      leaseToken: "old-tab",
+      leaseUntil: new Date(T1.getTime() - 60_000),
+      updatedAt: new Date(T0.getTime() + 2 * 60_000)
+    });
+
+    const acquired = await fx.service.heartbeat({ accountId: ACCOUNT_ID }, { action: "acquire" });
+    expect(acquired.controlToken).toEqual(expect.any(String));
+    expect(acquired.controlToken).not.toBe("old-tab");
+    expect(base.simTime).toEqual(new Date(S0.getTime() + 2 * 60_000));
+    expect(base.lastAdvancedAt).toEqual(T1);
+    expect(fx.repo.leases.get(base.id)?.updatedAt).toEqual(T1);
+    await expect(fx.service.heartbeat(
+      { accountId: ACCOUNT_ID },
+      { action: "renew", controlToken: "old-tab" }
+    )).rejects.toMatchObject({ code: "CONTROL_EXPIRED" });
+  });
+
+  it("settles using the old speed before speed change or pause, then resumes without offline time", async () => {
+    const time = { current: T0, now() { return this.current; } };
+    const fx = createFixture({ clock: time });
+    const base = makeBase({ timeMode: "running" });
+    fx.repo.bases.push(base);
+    const acquired = await fx.service.heartbeat({ accountId: ACCOUNT_ID }, { action: "acquire" });
+    const token = acquired.controlToken!;
+
+    time.current = new Date(T0.getTime() + 60_000);
+    await fx.service.applyCommand({ accountId: ACCOUNT_ID }, { command: "set_speed", speed: 4 }, token);
+    expect(base.simTime).toEqual(new Date(S0.getTime() + 60_000));
+    expect(base.speed).toBe(4);
+
+    time.current = new Date(T0.getTime() + 2 * 60_000);
+    await fx.service.applyCommand({ accountId: ACCOUNT_ID }, { command: "pause" }, token);
+    expect(base.simTime).toEqual(new Date(S0.getTime() + 5 * 60_000));
+    time.current = new Date(T0.getTime() + 12 * 60_000);
+    const resumedControl = await fx.service.heartbeat({ accountId: ACCOUNT_ID }, { action: "acquire" });
+    await fx.service.applyCommand({ accountId: ACCOUNT_ID }, { command: "resume" }, resumedControl.controlToken!);
+    expect(base.simTime).toEqual(new Date(S0.getTime() + 5 * 60_000));
+    expect(base.lastAdvancedAt).toEqual(time.current);
+  });
+
+  it("release confirms departure and closes the lease", async () => {
+    const time = { current: T0, now() { return this.current; } };
+    const fx = createFixture({ clock: time });
+    const base = makeBase({ timeMode: "running" });
+    fx.repo.bases.push(base);
+    const acquired = await fx.service.heartbeat({ accountId: ACCOUNT_ID }, { action: "acquire" });
+    time.current = new Date(T0.getTime() + 60_000);
+    const released = await fx.service.heartbeat({ accountId: ACCOUNT_ID }, {
+      action: "release", controlToken: acquired.controlToken
+    });
+    expect(released.controlToken).toBeNull();
+    expect(base.simTime).toEqual(new Date(S0.getTime() + 60_000));
+    expect(fx.repo.leases.has(base.id)).toBe(false);
+  });
+});
+
+describe("BaseService.clock", () => {
+  it("validates speed before mutating the lease or settlement", async () => {
     const fx = createFixture({ now: T1 });
     fx.repo.bases.push(makeBase({ timeMode: "running" }));
 
     await expect(
-      fx.service.applyCommand({ accountId: ACCOUNT_ID }, { command: "set_speed", speed: 3 })
+      fx.service.applyCommand({ accountId: ACCOUNT_ID }, { command: "set_speed", speed: 3 }, "stale")
     ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
-
-    const result = await fx.service.applyCommand(
-      { accountId: ACCOUNT_ID },
-      { command: "set_speed", speed: 4 }
-    );
-    expect(result).toEqual({ timeMode: "running", speed: 4, simTime: S0.toISOString() });
-    expect(fx.repo.bases[0]!.speed).toBe(4);
-    expect(fx.repo.bases[0]!.lastAdvancedAt).toEqual(T0);
-  });
-
-  it("heartbeat renews the control lease to now + BASE_LEASE_TTL_MS and reports the time mode", async () => {
-    const fx = createFixture({ now: T1 });
-    fx.repo.bases.push(makeBase({ timeMode: "paused" }));
-
-    const result = await fx.service.heartbeat({ accountId: ACCOUNT_ID });
-
-    expect(result).toEqual({ leaseUntil: new Date(T1.getTime() + BASE_LEASE_TTL_MS).toISOString(), timeMode: "paused" });
-    expect(fx.repo.leases.get("base-1")?.leaseToken).toBe(`account:${ACCOUNT_ID}`);
+    expect(fx.repo.leases.size).toBe(0);
+    expect(fx.settlementCalls).toEqual([]);
   });
 
   it("raises BASE_SCOPE_INVALID for accounts without a base (clock and heartbeat alike)", async () => {
     const fx = createFixture({ now: T1 });
 
     await expect(
-      fx.service.applyCommand({ accountId: "nobody" }, { command: "resume" })
+      fx.service.applyCommand({ accountId: "nobody" }, { command: "resume" }, "token")
     ).rejects.toMatchObject({ code: "BASE_SCOPE_INVALID" });
-    await expect(fx.service.heartbeat({ accountId: "nobody" })).rejects.toMatchObject({
+    await expect(fx.service.heartbeat({ accountId: "nobody" }, { action: "acquire" })).rejects.toMatchObject({
       code: "BASE_SCOPE_INVALID"
     });
   });
@@ -667,7 +724,8 @@ describe("BaseService.snapshot", () => {
     );
     fx.repo.leases.set("base-1", {
       leaseToken: `account:${ACCOUNT_ID}`,
-      leaseUntil: new Date(T1.getTime() + 60_000)
+      leaseUntil: new Date(T1.getTime() + 60_000),
+      updatedAt: T1
     });
     fx.assets.inventory = [
       { itemId: "anchor", quantity: 8, reservedQuantity: 8 },
@@ -757,7 +815,7 @@ describe("BaseService.snapshot", () => {
       blockedReason: null
     });
 
-    const snapshot: BaseSnapshotDto = await fx.service.snapshot({ accountId: ACCOUNT_ID });
+    const snapshot: BaseSnapshotDto = await fx.service.snapshot({ accountId: ACCOUNT_ID }, `account:${ACCOUNT_ID}`);
 
     expect(snapshot).toEqual({
       name: "余电前哨",
@@ -902,6 +960,7 @@ describe("BaseService.snapshot", () => {
       },
       controlLease: {
         heldByThisSession: true,
+        controlActive: true,
         leaseUntil: new Date(T1.getTime() + 60_000).toISOString()
       }
     });
@@ -997,13 +1056,15 @@ describe("BaseService.snapshot", () => {
     fx.repo.bases.push(makeBase());
     fx.repo.leases.set("base-1", {
       leaseToken: `account:${ACCOUNT_ID}`,
-      leaseUntil: new Date(T0.getTime())
+      leaseUntil: new Date(T0.getTime()),
+      updatedAt: T0
     });
 
     const snapshot = await fx.service.snapshot({ accountId: ACCOUNT_ID });
 
     expect(snapshot.controlLease).toEqual({
       heldByThisSession: false,
+      controlActive: false,
       leaseUntil: T0.toISOString()
     });
   });

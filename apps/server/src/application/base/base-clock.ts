@@ -1,27 +1,27 @@
 import type { BaseClockCommandInputDto } from "@ai-mud/shared";
 import type {
   BasePrincipal,
-  ClockCommandResultDto,
-  ClockHeartbeatResultDto,
-  ClockUseCase
+  ClockCommandResultDto
 } from "./ports.js";
 import type { BaseService } from "../../modules/world-runtime/base.service.js";
 
-// M12-A：时钟用例薄壳（heartbeat 续租 / pause|resume|set_speed 命令）。
-// 推进政策（running + 租约 + 追补上限）封装在 world BaseRepository.lockAdvanceableBases
-// 内，由结算线（M12-B）经 BaseClockStorePort 消费；本用例只管命令面。
+// 事务边界在 BaseService；应用层经 composition 注入 industry 已确认时段结算参与者。
 
-export class BaseClockUseCase implements ClockUseCase {
+export class BaseClockUseCase {
   constructor(private readonly service: BaseService) {}
 
-  heartbeat(principal: BasePrincipal): Promise<ClockHeartbeatResultDto> {
-    return this.service.heartbeat(principal);
+  heartbeat(
+    principal: BasePrincipal,
+    input: { action: "acquire" | "renew" | "release"; controlToken?: string | null }
+  ) {
+    return this.service.heartbeat(principal, input);
   }
 
   applyCommand(
     principal: BasePrincipal,
-    input: BaseClockCommandInputDto
+    input: BaseClockCommandInputDto,
+    controlToken?: string
   ): Promise<ClockCommandResultDto> {
-    return this.service.applyCommand(principal, input);
+    return this.service.applyCommand(principal, input, controlToken);
   }
 }

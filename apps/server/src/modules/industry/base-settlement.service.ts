@@ -1,13 +1,13 @@
 // M12-B 基地 tick 参与者（m12-p-contract.md §3.1—§3.4）。
 // 由 I 注册进 world 每分钟 tick 参与者数组：settleBases(tx, now) 在 world tick 事务内执行，
 // 本服务永不自开/提交事务。流程（逐基地）：
-//   clock.lockAdvanceableBases（running+租约+追补上限政策在 world 实现内）→ 读电力/项目/步骤/
+//   clock.lockAdvanceableBases（只取已确认前台时段，单次 10 分钟上限）→ 读电力/项目/步骤/
 //   作业者与内容模板 → industry.pure.computeBaseTick → 落盘 power/step/project 更新 →
 //   robotRuntime.applyRobotUpdates → 完成项目：消耗全部预留物料 + 站点 built（facilityRef =
-//   kind:stableId@revision）+ completedAt → clock.saveSimAdvance(simTime+Δsim, now)。
+//   kind:stableId@revision）+ completedAt → clock.saveSimAdvance(simTime+Δsim, confirmedEnd)。
 // 内容修订不一致：该项目步骤全 blocked 'content_missing'（不抛，时钟照常推进）。
 // 制造（2026-09-25 B001）：只对当前被推进的基地测量需求→同一电力池供能→按基地结算，
-// 暂停/租约失效的基地不在推进集合里，其工单永不被别的基地推进。
+// 暂停基地不在推进集合里；租约失效前已确认的时段仍须结清。
 // 第 0 阶段 B008：供电、施工、制造、充电与天气都按绝对基地分钟边界结算；
 // 不足一分钟的余量留在 simTime，下次跨界时再结算，调用频率不改变产出。
 import type { ProjectStatus, ProjectTemplateDto, RobotTemplateDto } from "@ai-mud/shared";
@@ -44,7 +44,6 @@ export interface SettlementClockPort {
       speed: number;
       deltaSimMs: number;
       nextLastAdvancedAt: Date;
-      catchUp: boolean;
     }>
   >;
   saveSimAdvance(tx: IndustryTx, baseId: string, simTime: Date, lastAdvancedAt: Date): Promise<void>;
@@ -76,6 +75,7 @@ export interface SettlementRobotPort {
 
 export interface BaseSettlementDeps {
   clock: SettlementClockPort;
+  catalogResolver?: { forBase(tx: IndustryTx, baseId: string): Promise<SettlementCatalogPort> };
   // M13-C 制造结算（可选：未绑定时跳过，v0.12 行为不变）。
   manufacturing?: BaseManufacturingSettlePort;
   // M16 订单/采购 tick（可选：未绑定时跳过）。
@@ -150,11 +150,9 @@ export class BaseSettlementService {
     const bases = await this.deps.clock.lockAdvanceableBases(tx, now);
     for (const base of bases) {
       const nextSimTime = new Date(base.simTime.getTime() + base.deltaSimMs);
-      if (base.catchUp) {
-        // 世界 tick 追补步：只推基地时钟，不生产/不耗能（不把停服时间当生产时间）。
-        await this.deps.clock.saveSimAdvance(tx, base.baseId, nextSimTime, base.nextLastAdvancedAt);
-        continue;
-      }
+      const catalog = this.deps.catalogResolver
+        ? await this.deps.catalogResolver.forBase(tx, base.baseId)
+        : this.deps.catalog;
       const startMs = base.simTime.getTime();
       for (
         let boundary = (Math.floor(startMs / WORK_MINUTE_MS) + 1) * WORK_MINUTE_MS;
@@ -166,7 +164,8 @@ export class BaseSettlementService {
           base.baseId,
           new Date(boundary - WORK_MINUTE_MS),
           WORK_MINUTE_MS,
-          new Date(boundary)
+          new Date(boundary),
+          catalog
         );
       }
       await this.deps.clock.saveSimAdvance(tx, base.baseId, nextSimTime, base.nextLastAdvancedAt);
@@ -179,7 +178,8 @@ export class BaseSettlementService {
     baseId: string,
     simTime: Date,
     deltaSimMs: number,
-    nextSimTime: Date
+    nextSimTime: Date,
+    catalog: SettlementCatalogPort
   ): Promise<void> {
     // ---------- M16 经济 tick：过期订单→failed、补单、采购到货入库 ----------
     if (this.deps.economy) {
@@ -201,7 +201,7 @@ export class BaseSettlementService {
     const missingProjects: BaseProjectRecord[] = [];
     const projectByStableId = new Map<string, ProjectTemplateDto>();
     for (const project of activeProjects) {
-      const template = this.deps.catalog.getProjectTemplate(project.projectDefId);
+      const template = catalog.getProjectTemplate(project.projectDefId);
       if (!template || template.ref.revision !== project.templateRevision) {
         missingProjects.push(project);
         continue;
@@ -215,7 +215,7 @@ export class BaseSettlementService {
     const robotByStableId = new Map<string, RobotTemplateDto>();
     for (const robot of robotRecords) {
       if (robotByStableId.has(robot.deviceDefId)) continue;
-      const template = this.deps.catalog.getRobotTemplate(robot.deviceDefId);
+      const template = catalog.getRobotTemplate(robot.deviceDefId);
       if (template) robotByStableId.set(robot.deviceDefId, template);
     }
 
