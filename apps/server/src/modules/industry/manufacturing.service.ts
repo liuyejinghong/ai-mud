@@ -68,6 +68,7 @@ export interface ManufacturingServiceDeps {
   lookup: ManufacturingLookupPort;
   assets: ManufacturingAssetPort;
   catalog: ManufacturingCatalogPort;
+  catalogResolver?: { forBase(tx: ManufacturingTx, baseId: string): Promise<ManufacturingCatalogPort> };
   store: ManufacturingJobStore;
   // 生产绑定：(tx) => new AssetMutationService(tx)。测试注入内存替身。
   receipts: (tx: ManufacturingTx) => ManufacturingReceiptsPort;
@@ -131,6 +132,9 @@ export class ManufacturingService {
     }
 
     const baseId = await this.requireBaseId(tx, principal);
+    if (!(await this.deps.lookup.getBaseForUpdate(tx, baseId))) {
+      throw new BaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
+    }
     const actorScope = `base:${baseId}`;
     const requestHash = hashRequest({
       recipeRef: {
@@ -165,7 +169,8 @@ export class ManufacturingService {
       throw new BaseOperationError(409, "CONFLICT", "命令幂等登记冲突，请重试。");
     }
 
-    const recipe = this.deps.catalog.getRecipeTemplate(input.recipeRef.stableId);
+    const catalog = await this.catalogForBase(tx, baseId);
+    const recipe = catalog.getRecipeTemplate(input.recipeRef.stableId);
     if (!recipe || recipe.ref.revision !== input.recipeRef.revision) {
       // 旧 revision 不 fallback latest（同项目 S4 语义）
       throw new BaseOperationError(409, "CONTENT_INCOMPATIBLE", "配方不存在或修订不匹配。");
@@ -277,6 +282,10 @@ export class ManufacturingService {
   }
 
   // ---------- 内部 ----------
+
+  private catalogForBase(tx: ManufacturingTx, baseId: string): Promise<ManufacturingCatalogPort> {
+    return this.deps.catalogResolver?.forBase(tx, baseId) ?? Promise.resolve(this.deps.catalog);
+  }
 
   private async requireBaseId(
     tx: ManufacturingTx,

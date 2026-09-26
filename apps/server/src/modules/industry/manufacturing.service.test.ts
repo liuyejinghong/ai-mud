@@ -197,6 +197,7 @@ class FakeReceipts implements ManufacturingReceiptsPort {
 function makeService(overrides: {
   baseByAccount?: Map<string, string>;
   failItems?: Set<string>;
+  catalogResolver?: ManufacturingServiceDeps["catalogResolver"];
 } = {}) {
   const lookup = new FakeLookup(overrides.baseByAccount ?? new Map([["account-1", "base-1"]]));
   const assets = new FakeAssets();
@@ -208,6 +209,7 @@ function makeService(overrides: {
     lookup,
     assets,
     catalog,
+    ...(overrides.catalogResolver ? { catalogResolver: overrides.catalogResolver } : {}),
     store,
     receipts: () => receipts
   };
@@ -222,6 +224,18 @@ async function createFirstJob(service: ManufacturingService) {
 }
 
 describe("ManufacturingService.create", () => {
+  it("按基地当前目录创建 @2 工单，不从旧默认目录误取 @1", async () => {
+    const recipe = { ...RECIPE, ref: { ...RECIPE.ref, revision: 2 }, output: { ...RECIPE.output, initialBatteryWh: 1000 } };
+    const { service, store } = makeService({
+      catalogResolver: { forBase: async () => ({ getRecipeTemplate: () => recipe }) }
+    });
+    const result = await service.create(tx, principal, {
+      ...CREATE_INPUT,
+      recipeRef: { kind: "recipe", stableId: "manufacture-yd-h1", revision: 2 }
+    });
+    expect(store.jobs.get(result.jobId)?.recipeRevision).toBe(2);
+  });
+
   it("happy path：inputs×台数全额预留 → 插 active 工单（reserved_inputs=totalInputs）→ 回执落结果", async () => {
     const { service, assets, store, receipts } = makeService();
 
@@ -320,7 +334,7 @@ describe("ManufacturingService.cancel", () => {
     });
     expect(assets.released).toEqual(TOTAL_INPUTS);
     expect(store.statusCalls).toEqual([{ jobId: "job-1", status: "cancelled" }]);
-    expect(lookup.locked).toEqual(["base-1"]);
+    expect(lookup.locked).toEqual(["base-1", "base-1"]);
   });
 
   it("取消只释放剩余预留（结算逐台消耗后 reserved_inputs 已递减）", async () => {

@@ -196,7 +196,7 @@ export const BASE_FACILITY_INFO: Record<string, ContentFacilityInfo> = {
   "yudian-array": {
     name: "太阳能阵列",
     note: "昼间为基地供电",
-    description: "首批货运部署的太阳电池阵，白天为基地供电。表面积尘会降低出力，需要定期安排巡检清理。",
+    description: "首批货运部署的太阳电池阵，白天为基地供电。表面积尘会降低出力。",
     attributes: [
       { label: "峰值发电", value: "15.0 kW" },
       { label: "供电时段", value: "昼间（基地时间 06:00–18:00）" },
@@ -220,8 +220,8 @@ export const BASE_FACILITY_INFO: Record<string, ContentFacilityInfo> = {
   },
   "yudian-maintenance": {
     name: "维护工位",
-    note: "检修与清尘设备",
-    description: "基础维护是前哨的公共职责：检查、清尘、更换关节和电池都在这里进行，消耗通用备件。",
+    note: "检修设备",
+    description: "基础维护是前哨的公共职责：检查、更换关节和电池都在这里进行，消耗通用备件。",
     attributes: [
       { label: "同时维修", value: "2 台设备" },
       { label: "消耗", value: "通用备件" }
