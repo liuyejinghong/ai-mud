@@ -191,11 +191,19 @@ describe("world tick orchestration (buildApp + temporary PostgreSQL)", () => {
       const body = registered.json();
       const rawCookie = registered.headers["set-cookie"];
       const cookie = String(Array.isArray(rawCookie) ? rawCookie[0] : rawCookie).split(";")[0]!;
+      const acquired = await app.inject({
+        method: "POST",
+        url: "/base/heartbeat",
+        payload: { action: "acquire" },
+        headers: { cookie, "x-csrf-token": body.csrfToken }
+      });
+      expect(acquired.statusCode).toBe(200);
+      const controlToken = acquired.json().controlToken as string;
       const resumed = await app.inject({
         method: "POST",
         url: "/base/clock",
         payload: { command: "resume" },
-        headers: { cookie, "x-csrf-token": body.csrfToken }
+        headers: { cookie, "x-csrf-token": body.csrfToken, "x-base-control-token": controlToken }
       });
       expect(resumed.statusCode).toBe(200);
       players.push({ accountId: body.user.accountId, baseId: body.baseId });

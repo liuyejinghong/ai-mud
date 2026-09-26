@@ -326,12 +326,17 @@ describe("base construction full chain (real PostgreSQL, controlled clock)", () 
     return { accountId, baseId: provisioned.baseId, siteAId };
   }
 
-  async function createProject(accountId: string, siteId: string, commandId = randomUUID()) {
+  async function createProject(
+    accountId: string,
+    siteId: string,
+    commandId = randomUUID(),
+    stableId: string = CREATE_INPUT.definitionRef.stableId
+  ) {
     return harness.db.transaction((tx) =>
       ops.construction.create(
         tx,
         { accountId },
-        { definitionRef: { ...CREATE_INPUT.definitionRef }, siteId, commandId }
+        { definitionRef: { ...CREATE_INPUT.definitionRef, stableId }, siteId, commandId }
       )
     );
   }
@@ -407,7 +412,8 @@ describe("base construction full chain (real PostgreSQL, controlled clock)", () 
     await createProject(accountId, siteAId);
 
     const inventoryBefore = await readInventory(harness.client, baseId);
-    await expect(createProject(accountId, siteAId)).rejects.toMatchObject({ code: "SITE_OCCUPIED" });
+    await expect(createProject(accountId, siteAId, randomUUID(), "install-second-array"))
+      .rejects.toMatchObject({ code: "SITE_OCCUPIED" });
 
     expect(await countProjects(harness.client, baseId)).toBe(1);
     expect(await readInventory(harness.client, baseId)).toEqual(inventoryBefore);

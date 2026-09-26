@@ -312,7 +312,7 @@ async function seedBase(db: Db) {
     id: accountId, email: `b005-${accountId}@example.invalid`, passwordHash: "x"
   });
   await db.insert(schema.bases).values({
-    id: baseId, accountId, name: "B005 基地", contentRelease: "test",
+    id: baseId, accountId, name: "B005 基地", contentRelease: "yudian-base-0",
     timeMode: "running", simTime: SIM_NOON
   });
   await db.insert(schema.basePowerState).values({
