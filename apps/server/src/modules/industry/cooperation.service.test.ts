@@ -13,7 +13,9 @@ import {
 import {
   applyAcceptedHelpers,
   cooperationStepOutcome,
+  decideFirstRequest,
   detectAndResolveCooperation,
+  previewPending,
   type CooperationDetectionStep,
   type CooperationDeps,
   type CooperationOperatorRecord,
@@ -75,12 +77,26 @@ class InMemoryCooperationRepo implements CooperationRequestStore {
   }
 
   // 与真库同语义：只有仍 pending 的请求能被接受（并发结案的请求不复活）。
-  async accept(_tx: CooperationTx, requestId: string, helperOperatorId: string, decisionId: string) {
+  async findByIdForUpdate(_tx: CooperationTx, baseId: string, requestId: string) {
+    return this.records.find((entry) => entry.baseId === baseId && entry.requestId === requestId) ?? null;
+  }
+
+  async accept(_tx: CooperationTx, requestId: string, helperOperatorId: string, helperGroupId: string, decisionId: string) {
     const record = this.records.find((entry) => entry.requestId === requestId);
     if (!record || record.status !== "pending") return false;
     record.status = "accepted";
     record.helperOperatorId = helperOperatorId;
+    record.helperGroupId = helperGroupId;
     record.decisionId = decisionId;
+    return true;
+  }
+
+  async decline(_tx: CooperationTx, requestId: string, decisionId: string, resolvedAt: Date) {
+    const record = this.records.find((entry) => entry.requestId === requestId);
+    if (!record || record.status !== "pending") return false;
+    record.status = "declined";
+    record.decisionId = decisionId;
+    record.resolvedAt = resolvedAt;
     return true;
   }
 
@@ -172,6 +188,18 @@ class FakeRobots {
       operator.currentStepIndex = update.currentStepIndex;
     }
   }
+
+  async claimIdleOperator(
+    _tx: CooperationTx, baseId: string, operatorId: string, projectId: string,
+    stepIndex: number, minBatteryWh: number
+  ) {
+    const operator = this.operators.find((entry) => entry.operatorId === operatorId);
+    if (!operator || baseId !== BASE_ID || operator.status !== "idle" || operator.batteryWh < minBatteryWh) return false;
+    operator.status = "working";
+    operator.currentProjectId = projectId;
+    operator.currentStepIndex = stepIndex;
+    return true;
+  }
 }
 
 class FakeGateway {
@@ -225,12 +253,13 @@ function makeHarness() {
     epoch: 1,
     openCooperation: () => repo
   };
+  const decisionDeps = { robots, openCooperation: deps.openCooperation };
   const tx = {} as CooperationTx;
-  return { repo, robots, gateway, deps, tx };
+  return { repo, robots, gateway, deps, decisionDeps, tx };
 }
 
 describe("detectAndResolveCooperation", () => {
-  it("缺工步骤创建 pending 请求并决策接受：绑定 helper_operator_id 与 decision_id", async () => {
+  it("首次真实缺工停在 pending，留给玩家选择", async () => {
     const { repo, robots, gateway, deps, tx } = makeHarness();
     robots.operators = [makeRobot()];
     gateway.selectedCandidateId = "op-t1";
@@ -239,8 +268,8 @@ describe("detectAndResolveCooperation", () => {
 
     expect(result).toEqual({
       requestsCreated: 1,
-      decisionsRequested: 1,
-      helpersAccepted: 1,
+      decisionsRequested: 0,
+      helpersAccepted: 0,
       expired: 0,
       closed: {}
     });
@@ -251,14 +280,15 @@ describe("detectAndResolveCooperation", () => {
       stepIndex: 0,
       fromGroupId: "engineering",
       helperGroupId: "transport",
-      status: "accepted",
-      helperOperatorId: "op-t1"
+      status: "pending",
+      helperOperatorId: null
     });
     expect(request?.question).toBe("架设光伏阵列第 1 步缺少可出工的工程维护组机器人，请求跨组支援。");
-    expect(request?.decisionId).toBe(gateway.requests[0]?.decisionId);
+    expect(request?.decisionId).toBeNull();
+    expect(gateway.requests).toHaveLength(0);
   });
 
-  it("同步骤已有 pending：不重复创建，仅对既有请求再决策", async () => {
+  it("同步骤已有首条 pending：不重复创建，也不让 RULE 决策", async () => {
     const { repo, robots, gateway, deps, tx } = makeHarness();
     robots.operators = [makeRobot()];
     gateway.selectedCandidateId = "op-t1";
@@ -281,10 +311,10 @@ describe("detectAndResolveCooperation", () => {
     const result = await detectAndResolveCooperation(tx, BASE_ID, [STEP], deps);
 
     expect(result.requestsCreated).toBe(0);
-    expect(result.decisionsRequested).toBe(1);
+    expect(result.decisionsRequested).toBe(0);
     expect(repo.records).toHaveLength(1);
     expect(repo.records[0]?.requestId).toBe("req-existing");
-    expect(repo.records[0]?.status).toBe("accepted");
+    expect(repo.records[0]?.status).toBe("pending");
   });
 
   it("同步骤已有 accepted：不重复创建或再次决策", async () => {
@@ -313,12 +343,19 @@ describe("detectAndResolveCooperation", () => {
 
     await detectAndResolveCooperation(tx, BASE_ID, [STEP, { ...STEP, stepIndex: 1, groupId: "survey" }], deps);
 
-    expect(repo.records.map((request) => request.status)).toEqual(["accepted", "pending"]);
+    expect(repo.records.map((request) => request.status)).toEqual(["pending", "accepted"]);
+    expect(gateway.requests).toHaveLength(1);
+    await detectAndResolveCooperation(tx, BASE_ID, [STEP, { ...STEP, stepIndex: 1, groupId: "survey" }], deps);
+    expect(repo.records.map((request) => request.status)).toEqual(["pending", "accepted"]);
     expect(gateway.requests).toHaveLength(1);
   });
 
   it("决策弃权：请求保持 pending，不绑定 helper", async () => {
     const { repo, robots, gateway, deps, tx } = makeHarness();
+    repo.records.push(openRequest({
+      requestId: "req-history", projectId: "old", status: "declined",
+      helperOperatorId: null, decisionId: "old", createdAt: new Date(T0.getTime() - 1000), resolvedAt: T0
+    }));
     robots.operators = [makeRobot()];
     gateway.selectedCandidateId = null;
 
@@ -326,7 +363,7 @@ describe("detectAndResolveCooperation", () => {
 
     expect(result.helpersAccepted).toBe(0);
     expect(result.decisionsRequested).toBe(1);
-    expect(repo.records[0]).toMatchObject({ status: "pending", helperOperatorId: null });
+    expect(repo.records.find((entry) => entry.projectId === "p1")).toMatchObject({ status: "pending", helperOperatorId: null });
   });
 
   it("无候选（无其他组空闲机器人）：不抛、创建 pending 但不请求决策，等待下次 tick", async () => {
@@ -350,7 +387,11 @@ describe("detectAndResolveCooperation", () => {
   });
 
   it("候选过滤：同组、低电量、非 idle 的机器人都不进候选；score 为电量比例", async () => {
-    const { robots, gateway, deps, tx } = makeHarness();
+    const { repo, robots, gateway, deps, tx } = makeHarness();
+    repo.records.push(openRequest({
+      requestId: "req-history", projectId: "old", status: "declined",
+      helperOperatorId: null, decisionId: "old", createdAt: new Date(T0.getTime() - 1000), resolvedAt: T0
+    }));
     robots.operators = [
       makeRobot({ operatorId: "op-low", batteryWh: 400 }), // < ROBOT_WORK_DRAIN_WH
       makeRobot({ operatorId: "op-busy", status: "charging" }),
@@ -415,6 +456,91 @@ describe("detectAndResolveCooperation", () => {
       closed: {}
     });
     expect(repo.records).toHaveLength(0);
+  });
+});
+
+describe("教程首次协作选择", () => {
+  async function firstPending() {
+    const harness = makeHarness();
+    harness.robots.operators = [makeRobot()];
+    await detectAndResolveCooperation(harness.tx, BASE_ID, [STEP], harness.deps);
+    harness.repo.stepStates = [stepState({ stepStatus: "ready" })];
+    return { ...harness, requestId: harness.repo.records[0]!.requestId };
+  }
+
+  it("同一请求跨 tick 仍 pending，预览与支援共用候选规则，成功后分配机器人", async () => {
+    const { repo, robots, deps, decisionDeps, tx, requestId, gateway } = await firstPending();
+    await detectAndResolveCooperation(tx, BASE_ID, [STEP], deps);
+    expect(repo.records).toHaveLength(1);
+    expect(repo.records[0]?.status).toBe("pending");
+    expect(gateway.requests).toHaveLength(0);
+    expect(await previewPending(tx, BASE_ID, requestId, deps)).toEqual({
+      operatorId: "op-t1", groupId: "transport", batteryWh: 9000, batteryCapacityWh: 10000
+    });
+
+    const result = await decideFirstRequest(tx, BASE_ID, {
+      requestId, action: "support", expectedHelperOperatorId: "op-t1",
+      decisionId: "cmd-1", nowSimTime: T0
+    }, decisionDeps);
+
+    expect(result).toEqual({ requestId, status: "accepted", helperOperatorId: "op-t1" });
+    expect(repo.records[0]).toMatchObject({ status: "accepted", helperOperatorId: "op-t1", decisionId: "cmd-1" });
+    expect(robots.operators[0]).toMatchObject({ status: "working", currentProjectId: "p1", currentStepIndex: 0 });
+  });
+
+  it("等待记 declined，后续 tick 不重新开同一步请求", async () => {
+    const { repo, deps, decisionDeps, tx, requestId, gateway } = await firstPending();
+    repo.stepStates = [stepState({ stepStatus: "ready" })];
+    const result = await decideFirstRequest(tx, BASE_ID, {
+      requestId, action: "wait", decisionId: "cmd-wait", nowSimTime: T0
+    }, decisionDeps);
+    expect(result).toEqual({ requestId, status: "declined" });
+    expect(repo.records[0]).toMatchObject({ status: "declined", decisionId: "cmd-wait", resolvedAt: T0 });
+    await detectAndResolveCooperation(tx, BASE_ID, [STEP], deps);
+    expect(repo.records).toHaveLength(1);
+    expect(gateway.requests).toHaveLength(0);
+  });
+
+  it("候选或缺工事实变化时拒绝旧选择，不能改请求和机器人", async () => {
+    const { repo, robots, decisionDeps, tx, requestId } = await firstPending();
+    repo.stepStates = [stepState({ stepStatus: "ready" })];
+    robots.operators[0]!.batteryWh = 400;
+    await expect(decideFirstRequest(tx, BASE_ID, {
+      requestId, action: "support", expectedHelperOperatorId: "op-t1", decisionId: "cmd-stale", nowSimTime: T0
+    }, decisionDeps)).rejects.toMatchObject({ code: "REVISION_EXPIRED" });
+    expect(repo.records[0]?.status).toBe("pending");
+    expect(robots.operators[0]?.status).toBe("idle");
+    robots.operators.push(makeRobot({ operatorId: "op-own", groupId: "engineering", batteryWh: 900 }));
+    await expect(decideFirstRequest(tx, BASE_ID, {
+      requestId, action: "wait", decisionId: "cmd-stale-2", nowSimTime: T0
+    }, decisionDeps)).rejects.toMatchObject({ code: "REVISION_EXPIRED" });
+  });
+
+  it("本组恢复后 pending 结案，电量再次下降也不重开终态请求", async () => {
+    const { repo, robots, deps, tx } = await firstPending();
+    repo.stepStates = [stepState({ stepStatus: "ready" })];
+    const own = makeRobot({ operatorId: "op-own", groupId: "engineering", batteryWh: 600 });
+    robots.operators.push(own);
+    const closed = await detectAndResolveCooperation(tx, BASE_ID, [], deps);
+    expect(closed.closed).toEqual({ no_longer_needed: 1 });
+    expect(repo.records[0]).toMatchObject({ status: "expired", resolutionReason: "no_longer_needed" });
+    own.batteryWh = 400;
+    await detectAndResolveCooperation(tx, BASE_ID, [STEP], deps);
+    expect(repo.records).toHaveLength(1);
+  });
+
+  it("第一条请求结案后，另一缺工步骤仍走 RULE", async () => {
+    const { repo, robots, gateway, deps, decisionDeps, tx, requestId } = await firstPending();
+    repo.stepStates = [stepState({ stepStatus: "ready" })];
+    await decideFirstRequest(tx, BASE_ID, {
+      requestId, action: "wait", decisionId: "cmd-wait", nowSimTime: T0
+    }, decisionDeps);
+    gateway.selectedCandidateId = "op-t1";
+    const result = await detectAndResolveCooperation(tx, BASE_ID, [OTHER_STEP], deps);
+    expect(result).toMatchObject({ requestsCreated: 1, decisionsRequested: 1, helpersAccepted: 1 });
+    expect(repo.records.find((entry) => entry.projectId === "p2")).toMatchObject({
+      status: "accepted", helperOperatorId: "op-t1"
+    });
   });
 });
 
