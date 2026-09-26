@@ -251,6 +251,7 @@ async function main() {
       ADMIN_BOOTSTRAP_EMAIL: adminEmail,
       ADMIN_BOOTSTRAP_PASSWORD: adminPassword,
       WORLD_TICK_ENABLED: "false",
+      PLAYTEST_REGISTRATION_ENABLED: "true",
       AI_NPC_DIALOGUE_ENABLED: "false",
       TEST_GATHERING_CYCLE_MS: "200",
       VITE_API_BASE: apiBase,
@@ -287,7 +288,7 @@ async function main() {
     await waitForHealth(apiBase, server);
     await runCommand(
       pnpmCommand(),
-      ["exec", "playwright", "test", "-c", "playwright.config.ts", "--project=real-postgres", "--workers=1"],
+      ["exec", "playwright", "test", "-c", "playwright.config.ts", `--project=${process.env.REAL_E2E_PROJECT ?? "real-postgres"}`, "--workers=1"],
       { cwd: webRoot, env: runtimeEnv }
     );
   } finally {
