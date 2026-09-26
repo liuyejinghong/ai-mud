@@ -151,10 +151,14 @@ describe("BaseShell", () => {
     rerender(<BaseShell {...shellProps({
       ...snapshot,
       cooperationRequests: snapshot.cooperationRequests.map((request) => ({
-        ...request, playerDecisionAllowed: false
+        ...request, status: "expired" as const, resolutionReason: "no_longer_needed" as const,
+        playerDecisionAllowed: false
       }))
     })} />);
     expect(screen.queryByRole("button", { name: /处理协作/ })).toBeNull();
+    expect(screen.getByRole("heading", { name: /第 3\/6 段/ })).toBeTruthy();
+    expect(screen.getByText(/本组已恢复，支援请求已结案，无需再选择/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "查看当前工程" })).toBeTruthy();
   });
 
   it("首工程完成后从订单与在途事实推导补给目标", () => {

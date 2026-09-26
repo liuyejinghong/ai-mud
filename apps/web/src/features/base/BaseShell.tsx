@@ -144,14 +144,18 @@ export function BaseShell({
   const deliveredOrder = snapshot.orders.find((order) => order.status === "delivered");
   const lastCompleted = completedProjects.at(-1);
   const arrivedPurchase = snapshot.purchases.find((purchase) => purchase.status === "delivered");
+  const restoredRequest = snapshot.cooperationRequests.find((request) =>
+    request.projectId === activeProject?.projectId && request.resolutionReason === "no_longer_needed"
+  );
   const stage = pendingRequest ? 3 : activeProject
-    ? completedProjects.length > 0 ? 6 : 2
+    ? completedProjects.length > 0 ? 6 : currentStep !== null && currentStep.index > 0 ? 3 : 2
     : completedProjects.length === 0 ? isPaused ? 1 : 2
     : !deliveredOrder ? 4 : missingInputs.length > 0 ? 5 : 6;
   const facts = [
     lastCompleted ? `${lastCompleted.name}已完工` : null,
     deliveredOrder ? `${deliveredOrder.name}已交付，取得 ${deliveredOrder.rewardCredits} credits` : null,
-    arrivedPurchase ? `${arrivedPurchase.itemName}已到货` : null
+    arrivedPurchase ? `${arrivedPurchase.itemName}已到货` : null,
+    restoredRequest ? "本组已恢复，支援请求已结案，无需再选择" : null
   ].filter((fact): fact is string => fact !== null);
 
   useEffect(() => {
