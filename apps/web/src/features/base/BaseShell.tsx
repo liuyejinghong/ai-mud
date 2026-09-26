@@ -239,11 +239,11 @@ export function BaseShell({
             <button type="button" className="base-primary-button" disabled={isBusy}
               onClick={() => onSetSpeed(4)}>速度 ×4</button>
           ) : null}
-          {(tutorialFinished || allFinished) && secondProject ? (
+          {pendingRequest ? (
+            <button type="button" className="base-primary-button" onClick={() => setWorkspace("cooperation")}>处理协作</button>
+          ) : (tutorialFinished || allFinished) && secondProject ? (
             <button type="button" className="base-primary-button"
               onClick={() => selectAndShow(() => onSelectProject(secondProject.projectId))}>查看第二阵列</button>
-          ) : pendingRequest ? (
-            <button type="button" className="base-primary-button" onClick={() => setWorkspace("cooperation")}>处理协作</button>
           ) : activeProject ? (
             <button type="button" className="base-primary-button"
               onClick={() => selectAndShow(() => onSelectProject(activeProject.projectId))}>查看当前工程</button>

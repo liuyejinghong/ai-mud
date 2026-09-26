@@ -255,6 +255,27 @@ describe("BaseShell", () => {
     expect(screen.queryByText(/更多工程类型将随基地发展解锁/)).toBeNull();
   });
 
+  it("教程已收束但有待决协作时，首屏优先引导处理协作", () => {
+    const first = { ...buildSnapshot().projects[0]!, status: "completed" as const,
+      definitionRef: { kind: "project" as const, stableId: "install-solar-array", revision: 1 } };
+    const second = { ...first, projectId: "project-2", status: "active" as const,
+      definitionRef: { kind: "project" as const, stableId: "install-second-array", revision: 1 },
+      steps: [{ ...first.steps[0]!, status: "running" as const, workDone: 1 }] };
+    const snapshot = buildSnapshot({ projects: [first, second], cooperationRequests: [{
+      requestId: "request-2", projectId: "project-2", projectName: "第二阵列", stepIndex: 0,
+      fromGroupId: "engineering", helperGroupId: "transport", status: "pending",
+      resolutionReason: null, helperOperatorId: null, playerDecisionAllowed: true,
+      proposedHelper: null, question: "需要跨组支援吗？", createdAt: "2126-01-01T08:00:00.000Z"
+    }] });
+    const { container } = renderShell(snapshot);
+
+    expect(screen.getByRole("heading", { name: "本轮教程已完成" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "处理协作" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "查看第二阵列" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "处理协作" }));
+    expect(container.querySelector('[aria-label="协作工作区"]')?.hasAttribute("hidden")).toBe(false);
+  });
+
   it("计时时显示速度并提供暂停按钮", () => {
     const onClockCommand = vi.fn();
     render(
