@@ -708,6 +708,46 @@ describe("BaseService.clock", () => {
 });
 
 describe("BaseService.snapshot", () => {
+  it("offers the second array after the first is complete, while a failed project remains retryable", async () => {
+    const fx = createFixture();
+    fx.repo.bases.push(makeBase());
+    const template = fx.catalog.projects.get("install_solar_array")!;
+    fx.catalog.projects.clear();
+    fx.catalog.projects.set("install-solar-array", {
+      ...template,
+      ref: { kind: "project", stableId: "install-solar-array", revision: 1 }
+    });
+    fx.catalog.projects.set("install-second-array", {
+      ...template,
+      ref: { kind: "project", stableId: "install-second-array", revision: 1 }
+    });
+    fx.industryRead.projects = [
+      {
+        id: "first",
+        projectDefId: "install-solar-array",
+        templateRevision: 1,
+        status: "completed",
+        currentStepIndex: 3,
+        siteId: "site-a",
+        reservedInputs: []
+      },
+      {
+        id: "retryable",
+        projectDefId: "install-second-array",
+        templateRevision: 1,
+        status: "failed",
+        currentStepIndex: 0,
+        siteId: "site-b",
+        reservedInputs: []
+      }
+    ];
+
+    const snapshot = await fx.service.snapshot({ accountId: ACCOUNT_ID });
+    expect(snapshot.buildableProjects.map((project) => project.definitionRef.stableId)).toEqual([
+      "install-second-array"
+    ]);
+  });
+
   it("assembles the complete BaseSnapshotDto from world rows plus read ports", async () => {
     const fx = createFixture({ now: T1 });
     fx.repo.bases.push(
@@ -926,14 +966,7 @@ describe("BaseService.snapshot", () => {
           ]
         }
       ],
-      buildableProjects: [
-        {
-          definitionRef: { kind: "project", stableId: "install_solar_array", revision: 1 },
-          name: "安装太阳电池阵",
-          description: "把运抵的太阳电池阵安装到建设位并并网。",
-          inputs: [{ itemId: "solar_panel_set", quantity: 6 }]
-        }
-      ],
+      buildableProjects: [],
       availableRecipes: [],
       manufacturingJobs: [
         {

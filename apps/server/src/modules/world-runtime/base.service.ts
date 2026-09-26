@@ -579,6 +579,11 @@ export class BaseService {
           createdAt: request.createdAt?.toISOString() ?? ""
         }))
       );
+      const unavailableProjects = new Set(
+        projectRecords
+          .filter((project) => project.status !== "cancelled" && project.status !== "failed")
+          .map((project) => project.projectDefId)
+      );
 
       return {
         name: base.name,
@@ -601,12 +606,14 @@ export class BaseService {
         sites: siteDtos,
         devices,
         projects,
-        buildableProjects: catalog.listTemplates().projects.map((project) => ({
-          definitionRef: project.ref,
-          name: project.name,
-          description: project.description,
-          inputs: project.inputs.map((input) => ({ itemId: input.itemId, quantity: input.quantity }))
-        })),
+        buildableProjects: catalog.listTemplates().projects
+          .filter((project) => !unavailableProjects.has(project.ref.stableId))
+          .map((project) => ({
+            definitionRef: project.ref,
+            name: project.name,
+            description: project.description,
+            inputs: project.inputs.map((input) => ({ itemId: input.itemId, quantity: input.quantity }))
+          })),
         availableRecipes: catalog.listRecipes().map((recipe) => ({
           ref: recipe.ref,
           name: recipe.name,
