@@ -1,31 +1,34 @@
-# R1 着陆重建 · 实施状态（集成线 GLM-5.3）
+# R1 着陆重建 · 实施状态（返工轮 1/3 后）
 
-工作树：`/private/tmp/yudian-landing-r1-glm53`，分支 `codex/landing-r1-glm53`（基于 2783edb = main ac61a17 + 两份文档提交）。
-**候选 HEAD：`4b955526e8dd91220e129f72b014c0289717c9d3`**（该 SHA 上 build/typecheck/arch:check/全仓单测 全绿；真 PG 与真浏览器在同一代码树运行通过）。
+工作树：`/private/tmp/yudian-landing-r1-glm53`，分支 `codex/landing-r1-glm53`。
+首轮候选 4b95552；验收结论 FIX_FIRST（docs/.../acceptance-review-1.md），本轮逐条修复。
+**本轮候选 HEAD：见交付报告。**
 
-## 阶段状态
+## 验收报告 9 项修复映射
 
-| 阶段 | 状态 | 说明 |
-| --- | --- | --- |
-| P 合同/探针 | VERIFIED | DTO/schema/迁移 0038/端口冻结；数值探针 P01–P05 纯计算 12/12 过（landing-rules.probe.test.ts） |
-| C 内容 | VERIFIED | yudian-landing-1 全包 + 黄金数值/来源可达性测试；旧 release 数值未动（default/tutorial 测试回读原值） |
-| A 设施/能源/施工 | VERIFIED | landing-rules 纯规则 + facility-effects typed 效果 + 200W 现场负载 + 储能扩容不发电 + 500Wh 门槛不套小电池 |
-| B 采矿/加工 | VERIFIED | 勘探/采矿/暂停/恢复/取消命令 + 相位串行（不提前进下一工序）+ 送达才入仓 + ordinal 唯一 + 槽位维护 + 手工恢复配方 |
-| D 客户端 | VERIFIED | LandingShell 固定工作区（含 legacy BaseShell 分支保留）；web 218+5 测试过 |
-| I 集成 | VERIFIED | settlement 按 rulesProfile 分流；economy 能力门（新档后端拒旧订单/采购）；版本 1.0.2（schema34/api51/rules21/content17/economy7）；module-boundaries 全部新文件登记 |
-| Q 验收 | 部分 VERIFIED | 真 PG 集成 9/9（G01/02/04/05/07/08/09/11/12）；真浏览器 e2e landing-postgres 1/1（U01/U02/U03+刷新）+ tutorial legacy 1/1；真人 PLAYTEST 未执行（需主控/用户） |
+| # | 问题 | 修复 | 证据 |
+| --- | --- | --- | --- |
+| 1 | 教程按库存余额反推历史 | deriveGoal 改单调事实派生：已送矿采矿单/已完成扩建为历史不倒退；就绪=某具体扩建模板全部输入足额；维护停机优先于备料目标 | LandingShell.acceptance-review.test.tsx 2 项过 |
+| 2 | 两台筑垒不能取消/换人 | 勾选上限只禁未选项；暂停单面板提供替换设备恢复表单（onExtractionAction 带 payload） | 同上 1 项过 + NodePanel 实现 |
+| 3 | 来源链是文字非闭环 | seed 物品（备件）也走配方链；步骤可点击进加工/采矿；「返回原工程」上下文条 | 同上 1 项过（备件→制造备件）|
+| 4 | 非法位置建造破坏教程 | 内容 allowedSiteKeys（9 模板）→ 服务端 REQUIREMENTS_NOT_MET → UI 只列合法项 | landing-fix #4 真 PG 过（双方向非法拒绝+正确位置完成） |
+| 5 | 缺租约；revision 先于幂等 | 路由收 X-Base-Control-Token + 组合根 requireLandingControl（过期/错/缺→CONTROL_EXPIRED）；全部新命令回执重放先于 revision 校验 | landing-fix #5 两项真 PG 过（缺/错 token 拒绝；跨 tick 重放原结果不重复预留） |
+| 6 | 策略切换未结清旧时段 | PowerPolicyService.settleConfirmedThrough（复用 tick 结算参与，只结已确认边界） | landing-fix #6 真 PG 过（旧策略时段产出不回滚） |
+| 7 | FIFO 被移除 | 创建只验能力入队（productionSiteId null）；结算逐分钟 FIFO 绑槽并持久化；暂停释放槽让后单运行；恢复重新排队 | landing-fix FIFO/双槽两项真 PG 过（A 绑 B 排队→暂停 B 运行→恢复 A 重排队；双槽各绑一单） |
+| 8 | 峰值冒充实际发电 | projectLandingSupplyW（结算同源公式）→ 快照 actualGenerationW/actualSolarW → 顶栏分列 太阳能/应急/峰值 | landing-rules.probe P05b 2 项过（夜间 0+应急 1kW；积尘衰减） |
+| 9 | peer persistence 类型依赖 | ExtractionService 内联 ExtractionNodeView 结构类型 | arch:check PASS（0 uncovered） |
 
-## 验证命令与结果（候选 SHA 见最终提交）
+## 验证状态（本轮候选树）
 
-- `CI=true pnpm -r build` / `pnpm -r typecheck` / `pnpm -r test`（单测，无 DB 时 PG 用例按既有行为跳过）
-- `pnpm arch:check`（PASS，0 uncovered）+ `pnpm arch:test`（12/12）
-- 真 PG（显式 `DATABASE_URL=postgres://postgres:***@127.0.0.1:55434/postgres`，一次性容器）：
-  - `apps/server` `test:integration:postgres` 17/17
-  - `vitest run src/tests/base-operations`（landing 9 + 旧链 47，教程文件需 `ai_mud_ci` 库名 URL）56 用例
-- 真浏览器：`REAL_E2E_PROJECT=landing-postgres node --import tsx scripts/run-real-player-e2e.ts` → 1 passed（截图在 test-results）；`REAL_E2E_PROJECT=tutorial-postgres` → 1 passed
+- `CI=true pnpm -r build/typecheck/test`：全绿（server 724、web 222 含主控 4 项独立检查、content 54、game-rules 61、shared 22、ai-prompts 41）。
+- `pnpm arch:check` PASS + `arch:test` 12/12。
+- 真 PG（隔离容器 55434）：landing 主集成 9/9、返工回归 10/10（#4/#5×2/#6/#7×2/stopping×2/
+  双基地隔离/手工软锁恢复）、G13 升级 2/2、旧链 m12/p0/教程 58 用例。
+- 真浏览器：landing-real（U01–U03）1/1；landing-loop 全循环（U04/U05/U07/U09）见交付报告；
+  tutorial-postgres legacy 1/1。
 
-## 遗留与风险
+## 已知缺口（如实）
 
-- 真人 30–45 分钟 PLAYTEST 未执行（主控独立验收）；G10（旧档真库副本升级演练）、G13（空库+副本整套迁移）只覆盖空库路径（临时库从 0000 全量回放），未做"生产副本"演练（无生产数据授权）。
-- 浏览器自动化覆盖 U01/U02/U03 与刷新保留；U04/U05（完整生产圈、三圈再投资）的时长路径由真 PG 集成等价覆盖，真人节奏未验证。
-- 旧 tutorial e2e 改为预置 legacy 基地登录回归（默认注册已是 landing-1）。
+- 真人 PLAYTEST 仍未执行（主控/用户职责）。
+- 缺/错 token 的 HTTP 层字面负例未单列（组合根守卫等价覆盖；e2e 走真 HTTP 含合法 token）。
+- U06 替代路线（先加工间）浏览器自动化未单列；PG 侧两路线账本已验（主集成 G07/G08b）。

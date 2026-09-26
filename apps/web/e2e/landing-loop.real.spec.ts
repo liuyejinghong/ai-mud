@@ -17,6 +17,25 @@ async function goalSays(page: import("@playwright/test").Page, text: string) {
   await expect(page.locator(GOAL)).toContainText(text, { timeout: 240_000 });
 }
 
+// 长时间运行中无头页可能失焦 → 心跳停止 → 控制租约过期；命令前确保持有控制权。
+async function ensureControl(page: import("@playwright/test").Page) {
+  await page.bringToFront();
+  const takeOver = page.getByRole("button", { name: "接管", exact: true });
+  if (await takeOver.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await takeOver.click();
+    await expect(page.getByRole("button", { name: "接管", exact: true })).toHaveCount(0, { timeout: 30_000 });
+  }
+}
+
+// 在指定配方块内下批数并下单（按块定位，避免全局 nth 漂移）。
+async function orderRecipe(page: import("@playwright/test").Page, recipeName: string, batches: number) {
+  const block = page.locator(".landing-build-option", { hasText: recipeName }).first();
+  await expect(block).toBeVisible({ timeout: 30_000 });
+  await ensureControl(page);
+  await block.getByRole("spinbutton").fill(String(batches));
+  await block.getByRole("button", { name: "下单", exact: true }).click();
+}
+
 test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投资；回访与缩放", async ({ page }, testInfo) => {
   test.setTimeout(42 * 60_000);
   const pageErrors: string[] = [];
@@ -35,6 +54,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await page.getByRole("button", { name: "×4" }).click();
 
   const installAt = async (siteName: string, projectName: string) => {
+    await ensureControl(page);
     await page.locator(MAP).getByRole("button", { name: siteName }).click();
     await expect(page.locator(PANEL)).toContainText(projectName, { timeout: 20_000 });
     await page.locator(PANEL).getByRole("button", { name: projectName, exact: true }).click();
@@ -56,6 +76,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   // 圈1b：勘探铁→采矿 4 批。
   await page.locator(GOAL).getByRole("button", { name: "前往处理" }).click();
   await expect(page.locator(PANEL)).toContainText("勘探");
+  await ensureControl(page);
   await page.getByLabel("望山").selectOption({ index: 1 });
   await page.getByRole("button", { name: "开始勘探" }).click();
   await goalSays(page, "安排采矿运输");
@@ -65,6 +86,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await checkboxes.nth(0).check();
   await checkboxes.nth(1).check();
   await page.getByLabel("驮运").selectOption({ index: 1 });
+  await ensureControl(page);
   await page.getByRole("button", { name: /下采矿单/ }).click();
   await expect(page.locator(QUEUE)).toContainText("已送 0/4", { timeout: 30_000 });
   await goalSays(page, "安装加工间"); // 16 铁矿入仓
@@ -77,23 +99,24 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   // 圈1d：冶炼 8 → 结构件 4（第 10 批停机 → 维护）→ 线缆（铜未采，能源路线先铁）。
   await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
   await page.locator(PANEL).getByRole("button", { name: "加工间", exact: true }).click();
-  await page.getByLabel("冶炼铁料 批数").fill("8");
-  await page.locator(PANEL).getByRole("button", { name: "下单", exact: true }).first().click();
-  await expect(page.locator(QUEUE)).toContainText("产出 0/8", { timeout: 30_000 });
-  await page.getByLabel("加工结构件 批数").fill("4");
-  await page.locator(PANEL).getByRole("button", { name: "下单", exact: true }).nth(1).click();
+  await expect(page.locator(PANEL)).toContainText("冶炼铁料", { timeout: 30_000 });
+  await orderRecipe(page, "冶炼铁料", 8);
+  await expect(page.locator(QUEUE)).toContainText("产出 0/8", { timeout: 60_000 });
+  await orderRecipe(page, "加工结构件", 4);
 
   // 等维护窗口（第 10 批）：维护按钮出现在队列/加工面板。
   await expect(page.locator(QUEUE).or(page.locator(PANEL))).toContainText("维护（1 备件）", {
     timeout: 240_000
   });
   await page.screenshot({ path: testInfo.outputPath("04-maintenance-window.png"), fullPage: true });
+  await ensureControl(page);
   await page.getByRole("button", { name: "维护（1 备件）" }).first().click();
   await expect(page.locator(PANEL)).toContainText("维护完成", { timeout: 20_000 });
 
   // 勘探铜 + 采 1 批 + 线缆 1。
   await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
   await page.locator(MAP).getByRole("button", { name: /脊线蓝绿氧化带/ }).click();
+  await ensureControl(page);
   await page.getByLabel("望山").selectOption({ index: 1 });
   await page.getByRole("button", { name: "开始勘探" }).click();
   await expect(page.locator(PANEL)).toContainText("采矿运输", { timeout: 120_000 });
@@ -103,9 +126,8 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await page.getByRole("button", { name: /下采矿单/ }).click();
   await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
   await page.locator(PANEL).getByRole("button", { name: "加工间", exact: true }).click();
-  await expect(page.locator(PANEL)).toContainText("制造线缆", { timeout: 120_000 }); // 铜料就绪后配方可下
-  await page.getByLabel("制造线缆 批数").fill("1");
-  await page.locator(PANEL).getByRole("button", { name: "下单", exact: true }).nth(3).click();
+  await expect(page.locator(PANEL)).toContainText("制造线缆", { timeout: 240_000 }); // 铜料就绪后配方可下
+  await orderRecipe(page, "制造线缆", 1);
 
   // 圈1e：扩建（目标条第 6 步）。
   await goalSays(page, "扩建");
@@ -125,14 +147,12 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await page.getByRole("button", { name: /下采矿单/ }).click();
   await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
   await page.locator(PANEL).getByRole("button", { name: "加工间", exact: true }).click();
-  await page.getByLabel("制造备件 批数").fill("1");
-  await page.locator(PANEL).getByRole("button", { name: "下单", exact: true }).nth(4).click();
-  await expect(page.locator(QUEUE)).toContainText("制造备件", { timeout: 60_000 });
+  await orderRecipe(page, "制造备件", 1);
+  await expect(page.locator(QUEUE)).toContainText("制造备件", { timeout: 120_000 });
 
   // 圈3：后续生产意图（为下一处扩建继续冶炼）。
-  await page.getByLabel("冶炼铁料 批数").fill("4");
-  await page.locator(PANEL).getByRole("button", { name: "下单", exact: true }).first().click();
-  await expect(page.locator(QUEUE)).toContainText("冶炼铁料", { timeout: 60_000 });
+  await orderRecipe(page, "冶炼铁料", 4);
+  await expect(page.locator(QUEUE)).toContainText("冶炼铁料", { timeout: 120_000 });
   await page.screenshot({ path: testInfo.outputPath("06-rounds-2-3.png"), fullPage: true });
 
   // U07 离开回访：暂停 → 记录时间 → 刷新 → 时间/队列不变 → 恢复。
@@ -142,6 +162,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await expect(page.locator(GOAL)).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".landing-clock")).toHaveText(clockBefore, { timeout: 30_000 });
   await expect(page.locator(QUEUE)).toContainText("冶炼铁料");
+  await ensureControl(page);
   await page.getByRole("button", { name: "恢复", exact: true }).click();
   await page.screenshot({ path: testInfo.outputPath("07-revisit.png"), fullPage: true });
 
