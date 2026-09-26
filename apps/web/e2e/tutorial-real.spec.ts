@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-const email = process.env.REAL_E2E_PLAYER_EMAIL;
-const password = process.env.REAL_E2E_PLAYER_PASSWORD;
+// R1：默认注册已是 landing-1；本用例回归显式预置的 legacy 教程档（run-real-player-e2e 预置）。
+const email = process.env.TUTORIAL_E2E_PLAYER_EMAIL;
+const password = process.env.TUTORIAL_E2E_PLAYER_PASSWORD;
 
 if (!email || !password) {
-  throw new Error("The real PostgreSQL E2E runner must provide player credentials.");
+  throw new Error("The tutorial legacy E2E runner must provide preseeded player credentials.");
 }
 
 test("新玩家能看见下一步、实际开工并在同档刷新后保留回执", async ({ page }, testInfo) => {
@@ -13,10 +14,10 @@ test("新玩家能看见下一步、实际开工并在同档刷新后保留回�
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
   await page.goto("/");
-  await expect(page.getByRole("tab", { name: "试玩注册" })).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("tab", { name: "登录" }).click();
   await page.getByLabel("邮箱").fill(email);
   await page.getByLabel("密码").fill(password);
-  await page.getByRole("button", { name: "领取试玩基地" }).click();
+  await page.getByRole("button", { name: "登录并进入基地" }).click();
   await expect(page.getByRole("dialog", { name: "新手引导" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "新手引导" })).toContainText("1200 credits");
   await page.screenshot({ path: testInfo.outputPath("01-intro-1200.png"), fullPage: true });
