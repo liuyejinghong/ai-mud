@@ -131,7 +131,11 @@ function toProvisionSeedDto(seed: ContentProvisionSeed): ProvisionSeedDto {
     power: { ...seed.power },
     sites,
     inventory: seed.inventory.map((entry) => ({ ...entry })),
-    devices: seed.devices.map((device) => ({ ...device }))
+    devices: seed.devices.map((device) => ({ ...device })),
+    ...(seed.initialCredits !== undefined ? { initialCredits: seed.initialCredits } : {}),
+    ...(seed.resourceNodes !== undefined
+      ? { resourceNodes: seed.resourceNodes.map((node) => ({ ...node })) }
+      : {})
   };
 }
 

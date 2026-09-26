@@ -80,7 +80,12 @@ const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 14;
 // M12-I 集成装配：把 world（基地子域）/assets/npc/industry/content-catalog 的
 // 真实实现按 ports.ts 冻结端口绑定成路由依赖与 tick 参与者。
 // transport 路由只 import 本文件（application），不接触各模块内部。
-export function createBaseOperations(input: { db: Db; config: Env }) {
+export function createBaseOperations(input: {
+  db: Db;
+  config: Env;
+  // R1：provision 目录缺省 landing-1；旧 profile 验收测试显式传 legacy 目录（05 §5）。
+  provisionCatalog?: CatalogResolverPort["forProvision"] extends () => infer T ? T : never;
+}) {
   const { db, config } = input;
   const auth = new AuthService();
   const catalog = createContentCatalog();
@@ -90,7 +95,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
   const landingCatalog = createContentCatalog(LANDING_BASE_CONTENT_RELEASE);
   const catalogByTransaction = new WeakMap<object, Map<string, Promise<ContentCatalogPort>>>();
   const catalogResolver: CatalogResolverPort = {
-    forProvision: () => landingCatalog,
+    forProvision: () => input.provisionCatalog ?? landingCatalog,
     forBase: (tx: BaseTx, baseId: string) => {
       const load = async () => {
         const releaseId = await baseRepo.getContentRelease(tx, baseId);
@@ -453,14 +458,18 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
       settleLandingBaseMinute(tx, { baseId, simTime }, {
         catalogResolver: catalogResolver as unknown as Parameters<typeof settleLandingBaseMinute>[2]["catalogResolver"],
         industry: {
-          listProjects: (settleBaseId) => industryRepo.listProjects(settleBaseId),
-          listSteps: (projectIds) => industryRepo.listSteps(projectIds),
+          // 读必须绑定结算事务：多分钟单事务内根 db 连接读不到本事务未提交状态
+          // （完工/能量会按陈旧状态重复应用——G09 分片等价曾因此失败）。
+          listProjects: (settleTx, settleBaseId) =>
+            new IndustryRepository(settleTx).listProjects(settleBaseId),
+          listSteps: (settleTx, projectIds) =>
+            new IndustryRepository(settleTx).listSteps(projectIds),
           saveStepUpdates: (settleTx, updates) =>
             new IndustryRepository(settleTx).saveStepUpdates(settleTx, updates as never),
           saveProjectUpdates: (settleTx, updates) =>
             new IndustryRepository(settleTx).saveProjectUpdates(settleTx, updates),
-          getLandingPower: (settleBaseId) =>
-            new IndustryRepository(db).getLandingPower(settleBaseId),
+          getLandingPower: (settleTx, settleBaseId) =>
+            new IndustryRepository(settleTx).getLandingPower(settleBaseId),
           saveLandingPower: (settleTx, settleBaseId, patch) =>
             new IndustryRepository(settleTx).saveLandingPower(settleTx, settleBaseId, patch),
           markSiteBuilt: (settleTx, siteId, facilityRef) =>
@@ -492,13 +501,16 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
         manufacturing: {
           listLandingJobs: (settleTx, settleBaseId) =>
             new ManufacturingRepository(settleTx).listLandingJobs(settleTx, settleBaseId),
+          findLandingOutputByOrdinal: (settleTx, jobId, ordinal) =>
+            new ManufacturingRepository(settleTx).findOutputByOrdinal(settleTx, jobId, ordinal),
           saveLandingProgress: (settleTx, patch) =>
             new ManufacturingRepository(settleTx).saveLandingProgress(settleTx, patch),
           insertLandingOutput: (settleTx, input) =>
             new ManufacturingRepository(settleTx).insertLandingOutput(settleTx, input)
         },
         robots: {
-          listOperators: (settleBaseId) => robotRuntime.listOperators(settleBaseId),
+          listOperators: (settleTx, settleBaseId) =>
+            new RobotRuntimeService(settleTx).listOperators(settleBaseId),
           applyRobotUpdates: (settleTx, updates) =>
             new RobotRuntimeService(settleTx).applyRobotUpdates(settleTx, updates as never)
         },

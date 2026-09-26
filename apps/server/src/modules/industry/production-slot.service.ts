@@ -66,7 +66,7 @@ export class ProductionSlotService {
     const baseId = await this.requireLandingBase(tx, principal.accountId, input.expectedBaseRevision);
     const requestHash = hashRequest({ siteId: input.siteId, action: "maintain" });
     const replay = await this.claimAndReplay(tx, baseId, MAINTAIN_COMMAND_KIND, input.commandId, requestHash);
-    if (replay) return replay as MaintainResult;
+    if (replay) return { ...(replay as MaintainResult), duplicate: true };
 
     if (!(await this.deps.capabilities.hasCapability(tx, baseId, "maintenance"))) {
       throw new BaseOperationError(409, "REQUIREMENTS_NOT_MET", "需要先建成维护工位。");
@@ -203,7 +203,7 @@ export class PowerPolicyService {
       if (existing.requestHash !== requestHash) {
         throw new BaseOperationError(409, "IDEMPOTENCY_CONFLICT", "相同命令 ID 但请求不一致。");
       }
-      return existing.result as { priority: "production" | "charging"; duplicate: boolean };
+      return { ...(existing.result as { priority: "production" | "charging"; duplicate: boolean }), duplicate: true };
     }
     const claimed = await receipts.claimReceipt({
       actorScope,
@@ -214,7 +214,7 @@ export class PowerPolicyService {
     if (!claimed) {
       const raced = await receipts.findReceiptForUpdate(actorScope, POWER_POLICY_COMMAND_KIND, input.commandId);
       if (raced && raced.requestHash === requestHash) {
-        return raced.result as { priority: "production" | "charging"; duplicate: boolean };
+        return { ...(raced.result as { priority: "production" | "charging"; duplicate: boolean }), duplicate: true };
       }
       throw new BaseOperationError(409, "CONFLICT", "命令幂等登记冲突，请重试。");
     }

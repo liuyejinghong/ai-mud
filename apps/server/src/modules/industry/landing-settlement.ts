@@ -51,12 +51,12 @@ export interface LandingSettlementCatalogPort {
 export interface LandingSettlementDeps {
   catalogResolver: { forBase(tx: ExtractionTx, baseId: string): Promise<LandingSettlementCatalogPort> };
   industry: {
-    listProjects(baseId: string): Promise<Array<{
+    listProjects(tx: ExtractionTx, baseId: string): Promise<Array<{
       id: string; projectDefId: string; templateRevision: number; status: string;
       currentStepIndex: number; siteId: string;
       reservedInputs: Array<{ itemId: string; quantity: number }>;
     }>>;
-    listSteps(projectIds: string[]): Promise<Array<{
+    listSteps(tx: ExtractionTx, projectIds: string[]): Promise<Array<{
       projectId: string; stepIndex: number; kind: string; groupId: string; status: string;
       workRequired: number; workDone: number; blockedReason: string | null;
     }>>;
@@ -66,7 +66,7 @@ export interface LandingSettlementDeps {
     saveProjectUpdates(tx: ExtractionTx, updates: Array<{
       projectId: string; status: ProjectStatus; currentStepIndex: number; completedAt: Date | null;
     }>): Promise<void>;
-    getLandingPower(baseId: string): Promise<{
+    getLandingPower(tx: ExtractionTx, baseId: string): Promise<{
       solarWPeak: number; emergencyW: number; chargeLimitW: number | null;
       storageWm: number; storageCapacityWm: number; dustLevel: number;
       genRemainderWm: number; policy: "production" | "charging";
@@ -107,6 +107,7 @@ export interface LandingSettlementDeps {
   };
   manufacturing: {
     listLandingJobs(tx: ExtractionTx, baseId: string): Promise<ManufacturingJobRecord[]>;
+    findLandingOutputByOrdinal?: (tx: ExtractionTx, jobId: string, ordinal: number) => Promise<unknown | null>;
     saveLandingProgress(tx: ExtractionTx, patch: {
       jobId: string; status: ManufacturingJobRecord["status"];
       outputsDone: number; currentBatchEnergyWm: number; blockedReason: string | null;
@@ -118,7 +119,7 @@ export interface LandingSettlementDeps {
     }): Promise<{ duplicate: boolean }>;
   };
   robots: {
-    listOperators(baseId: string): Promise<Array<BaseRobotRecord & { currentExtractionJobId?: string | null }>>;
+    listOperators(tx: ExtractionTx, baseId: string): Promise<Array<BaseRobotRecord & { currentExtractionJobId?: string | null }>>;
     applyRobotUpdates(tx: ExtractionTx, updates: Array<{
       operatorId: string; batteryWh: number; status: string;
       currentProjectId: string | null; currentStepIndex: number | null;
@@ -158,17 +159,17 @@ export async function settleLandingBaseMinute(
   const catalog = await deps.catalogResolver.forBase(tx, baseId);
   if (catalog.rulesProfile() !== "landing-v1") return false;
 
-  const power = await deps.industry.getLandingPower(baseId);
+  const power = await deps.industry.getLandingPower(tx, baseId);
   if (!power) return false;
 
   const siteRecords = await deps.sites.listSites(tx, baseId);
   const landerSite = siteRecords.find((site) => site.siteKey === "lander") ?? null;
 
-  const projectRecords = await deps.industry.listProjects(baseId);
+  const projectRecords = await deps.industry.listProjects(tx, baseId);
   const activeProjects = projectRecords.filter((project) => project.status === "active");
-  const steps = await deps.industry.listSteps(projectRecords.map((project) => project.id));
+  const steps = await deps.industry.listSteps(tx, projectRecords.map((project) => project.id));
 
-  const robotRecords = await deps.robots.listOperators(baseId);
+  const robotRecords = await deps.robots.listOperators(tx, baseId);
   const robotParams = new Map<string, LandingRobotParams>();
   for (const robot of robotRecords) {
     if (robotParams.has(robot.deviceDefId)) continue;
@@ -455,15 +456,8 @@ async function persistLandingMinute(
     let reservedInputs = job.reservedInputs.map((item) => ({ ...item }));
     const outputsDone = production.outputsDone;
     for (let batch = job.outputsDone + 1; batch <= outputsDone; batch += 1) {
-      const existing = await deps.manufacturing.insertLandingOutput(tx, {
-        jobId: job.id,
-        ordinal: batch,
-        outputKind: recipe.output.kind,
-        ...(recipe.output.kind === "item"
-          ? { itemId: recipe.output.itemId, quantity: recipe.output.quantity }
-          : {})
-      });
-      if (existing.duplicate) continue; // 重放：该批已登记，不重复消耗/产出
+      const already = await deps.manufacturing.findLandingOutputByOrdinal?.(tx, job.id, batch);
+      if (already) continue; // 重放：该批已登记，不重复消耗/产出
       for (const item of recipe.inputs) {
         await deps.assets.consumeReservedBaseInventory(tx, baseId, item.itemId, item.quantity);
         reservedInputs = reservedInputs.map((entry) =>
@@ -473,17 +467,17 @@ async function persistLandingMinute(
         );
       }
       if (recipe.output.kind === "item") {
-        await deps.assets.creditBaseInventory(
-          tx,
-          baseId,
-          recipe.output.itemId,
-          recipe.output.quantity
-        );
+        await deps.assets.creditBaseInventory(tx, baseId, recipe.output.itemId, recipe.output.quantity);
+        await deps.manufacturing.insertLandingOutput(tx, {
+          jobId: job.id, ordinal: batch, outputKind: "item",
+          itemId: recipe.output.itemId, quantity: recipe.output.quantity
+        });
       } else {
         const robotTemplate = context.catalog.getRobotTemplate(recipe.output.templateStableId);
         if (!robotTemplate) {
           throw new Error(`robot template ${recipe.output.templateStableId} missing for job ${job.id}`);
         }
+        // 先建设备与作业者（robot 输出行的外键非空），再写唯一 ordinal。
         // 新造设备初始电量 = 配方声明（landing 组装为 0，需真实充电）。
         const device = await deps.assets.createDeviceAsset(tx, {
           baseId,
@@ -491,12 +485,16 @@ async function persistLandingMinute(
           templateRevision: robotTemplate.ref.revision,
           sourceOperation: `job:${job.id}:${batch}`
         });
-        await context.robotFactory.initializeOperator(tx, {
+        const operator = await context.robotFactory.initializeOperator(tx, {
           deviceId: device.deviceId,
           baseId,
           groupId: robotTemplate.groupId,
           batteryCapacityWh: robotTemplate.batteryCapacityWh,
           initialBatteryWh: recipe.output.initialBatteryWh
+        });
+        await deps.manufacturing.insertLandingOutput(tx, {
+          jobId: job.id, ordinal: batch, outputKind: "robot",
+          deviceId: device.deviceId, operatorId: operator.operatorId
         });
       }
     }

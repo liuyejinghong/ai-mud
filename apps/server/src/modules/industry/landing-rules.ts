@@ -91,6 +91,7 @@ export interface LandingExtractionJobRecord {
 export interface LandingManufacturingJobRecord {
   id: string;
   status: "active" | "paused" | "blocked" | "completed" | "cancelled";
+  blockedReason?: string | null;
   productionSiteId: string | null;
   // 结算层绑定：本分钟占用的加工槽（多槽站点按 FIFO 依序分配）；手工单为 null。
   slotId: string | null;
@@ -598,7 +599,7 @@ export function computeLandingMinute(
           outputsDone: job.outputsDone,
           blockedReason: LANDING_MAINTENANCE_BLOCK,
           batchesCompleted: 0,
-          slotId: job.slotId
+          slotId: job.slotId ?? null
         });
         continue;
       }

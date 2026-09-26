@@ -216,7 +216,7 @@ describe("P02/P03 两条加工路线的批数与维护账本", () => {
       power: power({ solarWPeak: 4000, chargeLimitW: 2000 }),
       slots: [{ id: "slot-1", siteId: "processing", slotIndex: 0, batchesSinceMaintenance: 0, maintenanceBlocked: false }],
       manufacturingJobs: [{
-        id: "job-1", status: "active", productionSiteId: "processing", slotId: "slot-1",
+        id: "job-1", status: "active", blockedReason: null, productionSiteId: "processing", slotId: "slot-1",
         energyWmPerBatch: 2000, currentBatchEnergyWm: 0,
         outputsPlanned: batches, outputsDone: 0, ratedW: 2000, countsSlotMaintenance: true
       }],
@@ -363,7 +363,7 @@ describe("P05 功耗账本与策略", () => {
       robots: [robot("h1", "landing-hauler", 60)],
       slots: [{ id: "slot-1", siteId: "processing", slotIndex: 0, batchesSinceMaintenance: 0, maintenanceBlocked: false }],
       manufacturingJobs: [{
-        id: "job-1", status: "active", productionSiteId: "processing", slotId: "slot-1",
+        id: "job-1", status: "active", blockedReason: null, productionSiteId: "processing", slotId: "slot-1",
         energyWmPerBatch: 2000, currentBatchEnergyWm: 0,
         outputsPlanned: 1, outputsDone: 0, ratedW: 2000, countsSlotMaintenance: true
       }]
@@ -381,7 +381,7 @@ describe("P05 功耗账本与策略", () => {
       power: power({ solarWPeak: 4000, chargeLimitW: 2000, storageWm: 0 }),
       slots: [{ id: "slot-1", siteId: "processing", slotIndex: 0, batchesSinceMaintenance: 0, maintenanceBlocked: false }],
       manufacturingJobs: [{
-        id: "job-1", status: "active", productionSiteId: "processing", slotId: "slot-1",
+        id: "job-1", status: "active", blockedReason: null, productionSiteId: "processing", slotId: "slot-1",
         energyWmPerBatch: 2000, currentBatchEnergyWm: 0,
         outputsPlanned: 1, outputsDone: 0, ratedW: 2000, countsSlotMaintenance: true
       }]
@@ -405,7 +405,7 @@ describe("P05 功耗账本与策略", () => {
         robots: [robot("h1", "landing-hauler", 0)],
         slots: [{ id: "slot-1", siteId: "processing", slotIndex: 0, batchesSinceMaintenance: 0, maintenanceBlocked: false }],
         manufacturingJobs: [{
-          id: "job-1", status: "active", productionSiteId: "processing", slotId: "slot-1",
+          id: "job-1", status: "active", blockedReason: null, productionSiteId: "processing", slotId: "slot-1",
           energyWmPerBatch: 2000, currentBatchEnergyWm: 0,
           outputsPlanned: 1, outputsDone: 0, ratedW: 2000, countsSlotMaintenance: true
         }]

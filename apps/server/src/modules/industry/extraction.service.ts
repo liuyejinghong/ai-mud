@@ -138,7 +138,7 @@ export class ExtractionService {
     const { baseId, catalog } = await this.requireLandingBase(tx, principal, input.expectedBaseRevision);
     const requestHash = hashRequest({ nodeId: input.nodeId, operatorId: input.operatorId });
     const receipt = await this.claim(tx, baseId, SURVEY_COMMAND_KIND, input.commandId, requestHash);
-    if (receipt?.existing) return receipt.existing as SurveyResultPayload;
+    if (receipt?.existing) return { ...(receipt.existing as SurveyResultPayload), duplicate: true };
 
     const node = await this.requireNode(tx, baseId, input.nodeId);
     if (node.discovered) {
@@ -201,7 +201,7 @@ export class ExtractionService {
       haulerOperatorId: input.haulerOperatorId
     });
     const receipt = await this.claim(tx, baseId, CREATE_COMMAND_KIND, input.commandId, requestHash);
-    if (receipt?.existing) return receipt.existing as CreateResultPayload;
+    if (receipt?.existing) return { ...(receipt.existing as CreateResultPayload), duplicate: true };
 
     const node = await this.requireNode(tx, baseId, input.nodeId);
     if (!node.discovered) {
@@ -268,7 +268,7 @@ export class ExtractionService {
     const { baseId } = await this.requireLandingBase(tx, principal, input.expectedBaseRevision);
     const requestHash = hashRequest({ jobId: input.jobId, action: "pause" });
     const receipt = await this.claim(tx, baseId, PAUSE_COMMAND_KIND, input.commandId, requestHash);
-    if (receipt?.existing) return receipt.existing as ActionResultPayload;
+    if (receipt?.existing) return { ...(receipt.existing as ActionResultPayload), duplicate: true };
 
     const job = await this.requireJob(tx, baseId, input.jobId);
     if (job.status !== "active") {
@@ -300,7 +300,7 @@ export class ExtractionService {
       haulerOperatorId: input.haulerOperatorId
     });
     const receipt = await this.claim(tx, baseId, RESUME_COMMAND_KIND, input.commandId, requestHash);
-    if (receipt?.existing) return receipt.existing as ActionResultPayload;
+    if (receipt?.existing) return { ...(receipt.existing as ActionResultPayload), duplicate: true };
 
     const job = await this.requireJob(tx, baseId, input.jobId);
     if (job.status !== "paused") {
@@ -366,7 +366,7 @@ export class ExtractionService {
     const { baseId } = await this.requireLandingBase(tx, principal, input.expectedBaseRevision);
     const requestHash = hashRequest({ jobId: input.jobId, action: "cancel" });
     const receipt = await this.claim(tx, baseId, CANCEL_COMMAND_KIND, input.commandId, requestHash);
-    if (receipt?.existing) return receipt.existing as ActionResultPayload;
+    if (receipt?.existing) return { ...(receipt.existing as ActionResultPayload), duplicate: true };
 
     const job = await this.requireJob(tx, baseId, input.jobId);
     if (job.status === "completed" || job.status === "cancelled") {
@@ -474,7 +474,7 @@ export class ExtractionService {
     commandKind: string,
     commandId: string,
     requestHash: string
-  ): Promise<{ existing: unknown } | null> {
+  ): Promise<{ existing: unknown; raced?: boolean } | null> {
     const actorScope = `base:${baseId}`;
     const receipts = this.deps.receipts(tx);
     const existing = await receipts.findReceiptForUpdate(actorScope, commandKind, commandId);
@@ -484,6 +484,7 @@ export class ExtractionService {
       }
       return { existing: existing.result };
     }
+    // raced 结果由各命令的 replay 返回统一标 duplicate:true。
     const claimed = await receipts.claimReceipt({ actorScope, commandKind, commandId, requestHash });
     if (!claimed) {
       const raced = await receipts.findReceiptForUpdate(actorScope, commandKind, commandId);

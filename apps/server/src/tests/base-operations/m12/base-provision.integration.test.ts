@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { OrderTemplateDto } from "@ai-mud/shared";
+import { TUTORIAL_BASE_CONTENT_RELEASE } from "@ai-mud/content";
 import { createBaseOperations } from "../../../application/base/composition.js";
+import { createContentCatalog } from "../../../modules/content-catalog/catalog.service.js";
 import { createEconomyUseCases } from "../../../application/economy/usecases.js";
 import type { Env } from "../../../config/env.js";
 import { createDb, type Db } from "../../../db/client.js";
@@ -201,7 +203,12 @@ describe("base provisioning against the integrated composition (real PostgreSQL)
     const databaseUrl = requireDatabaseUrl();
     if (!databaseUrl) return;
     harness = await createHarness(databaseUrl);
-    ops = createBaseOperations({ db: harness.db, config: makeEnv() });
+    // R1：注册默认 release 已改为 landing-1；本验收按 05 §5 显式钉住旧 profile。
+    ops = createBaseOperations({
+      db: harness.db,
+      config: makeEnv(),
+      provisionCatalog: createContentCatalog(TUTORIAL_BASE_CONTENT_RELEASE)
+    });
     baseRepo = new BaseRepository(harness.db);
     accountA = await insertAccount(harness.client, "baseprov-a@q.test");
     accountB = await insertAccount(harness.client, "baseprov-b@q.test");
