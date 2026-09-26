@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BaseSnapshotDto } from "@ai-mud/shared";
 import { BaseApp } from "./BaseApp.js";
-import { BaseApiError, createPurchase, getSnapshot, heartbeat, login, playtestRegister, provision } from "./baseApi.js";
+import { BaseApiError, createPurchase, decideCooperation, getSnapshot, heartbeat, login, playtestRegister, provision } from "./baseApi.js";
 import { logout } from "../auth/authApi.js";
 
 vi.mock("./baseApi.js", () => ({
@@ -22,6 +22,7 @@ vi.mock("./baseApi.js", () => ({
   setClock: vi.fn(),
   createProject: vi.fn(),
   createPurchase: vi.fn(),
+  decideCooperation: vi.fn(),
   cancelProject: vi.fn(),
   login: vi.fn()
 }));
@@ -31,16 +32,20 @@ vi.mock("../auth/authApi.js", () => ({
 }));
 
 vi.mock("./BaseShell.js", () => ({
-  BaseShell: ({ snapshot, actionFeedback, onPurchase, onLogout }: {
+  BaseShell: ({ snapshot, actionFeedback, hasControl, onPurchase, onCooperationDecision, onLogout }: {
     snapshot: { baseId: string };
     actionFeedback: { message: string } | null;
+    hasControl?: boolean;
     onPurchase: (itemId: string, quantity: number) => void;
+    onCooperationDecision?: (requestId: string, action: "support" | "wait", expectedHelperOperatorId?: string) => void;
     onLogout?: () => void;
   }) => (
     <div data-testid="base-shell">
       基地 {snapshot.baseId}
       <button type="button" onClick={() => onPurchase("anchor", 1)}>测试采购</button>
+      <button type="button" onClick={() => onCooperationDecision?.("request-1", "support", "operator-2")}>测试协作</button>
       <button type="button" onClick={() => onLogout?.()}>退出登录</button>
+      <span data-testid="has-control">{String(hasControl)}</span>
       <span data-testid="command-feedback">{actionFeedback?.message}</span>
     </div>
   )
@@ -90,6 +95,8 @@ const unauthorized = () => new BaseApiError(401, "UNAUTHENTICATED", "登录已�
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(heartbeat).mockReset();
+  vi.mocked(heartbeat).mockResolvedValue({ controlToken: null, leaseUntil: null, timeMode: "paused" });
 });
 
 afterEach(() => {
@@ -121,6 +128,49 @@ describe("BaseApp", () => {
     await waitFor(() => expect(getSnapshot).toHaveBeenCalledTimes(2));
     expect(screen.getByTestId("command-feedback").textContent).toContain("物资不足，无法采购");
     expect(createPurchase).toHaveBeenCalledOnce();
+  });
+
+  it("采购回执与已提交快照给出付款、在途和到货时间", async () => {
+    vi.mocked(getSnapshot)
+      .mockResolvedValueOnce(buildSnapshot())
+      .mockResolvedValue(buildSnapshot({
+        credits: 485,
+        purchases: [{
+          purchaseId: "purchase-1", itemId: "anchor", itemName: "地锚", quantity: 1,
+          costCredits: 15, status: "in_transit", arrivesAtSim: "2126-01-01T08:20:00.000Z"
+        }]
+      }));
+    vi.mocked(createPurchase).mockResolvedValue({ purchaseId: "purchase-1", duplicate: false });
+    render(<BaseApp initialCsrfToken="csrf-1" />);
+    await screen.findByTestId("base-shell");
+
+    fireEvent.click(screen.getByRole("button", { name: "测试采购" }));
+    await waitFor(() => expect(screen.getByTestId("command-feedback").textContent)
+      .toContain("地锚 ×1"));
+    expect(screen.getByTestId("command-feedback").textContent).toContain("15 credits");
+    expect(screen.getByTestId("command-feedback").textContent).toContain("在途");
+  });
+
+  it("协作决策用具名候选提交，操作处反馈实际接手者", async () => {
+    const after = buildSnapshot({
+      devices: [{
+        deviceId: "device-2", operatorId: "operator-2", name: "驮运二号",
+        groupId: "transport", description: "测试设备", status: "working",
+        batteryWh: 900, batteryCapacityWh: 2000, currentAssignment: { projectId: "project-1", stepIndex: 1 }
+      }]
+    });
+    vi.mocked(getSnapshot).mockResolvedValueOnce(buildSnapshot()).mockResolvedValue(after);
+    vi.mocked(decideCooperation).mockResolvedValue({
+      requestId: "request-1", status: "accepted", helperOperatorId: "operator-2", duplicate: false
+    });
+    render(<BaseApp initialCsrfToken="csrf-1" />);
+    await screen.findByTestId("base-shell");
+
+    fireEvent.click(screen.getByRole("button", { name: "测试协作" }));
+    await waitFor(() => expect(screen.getByTestId("command-feedback").textContent).toContain("驮运二号跨组支援"));
+    expect(decideCooperation).toHaveBeenCalledWith("request-1", expect.objectContaining({
+      action: "support", expectedHelperOperatorId: "operator-2"
+    }), "csrf-1");
   });
 
   it("未登录（401）时显示登录与试玩注册表单", async () => {
@@ -291,8 +341,10 @@ describe("BaseApp", () => {
     expect(getSnapshot).toHaveBeenCalledTimes(3);
   });
 
-  it("登录前不发送心跳，登录后每 30 秒用 csrfToken 心跳续租", async () => {
+  it("登录前不发送心跳，前台获焦后 acquire 并续租，隐藏后 release", async () => {
     vi.useFakeTimers();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
     vi.mocked(getSnapshot).mockRejectedValue(unauthorized());
 
     render(<BaseApp />);
@@ -306,6 +358,7 @@ describe("BaseApp", () => {
     // 切换为已登录链路：登录 → provision → 快照成功。
     vi.mocked(getSnapshot).mockResolvedValue(buildSnapshot());
     vi.mocked(heartbeat).mockResolvedValue({
+      controlToken: "control-1",
       leaseUntil: "2126-01-01T08:02:00.000Z",
       timeMode: "running"
     });
@@ -322,17 +375,79 @@ describe("BaseApp", () => {
       fireEvent.click(screen.getByRole("button", { name: "登录并进入基地" }));
     });
     expect(screen.getByTestId("base-shell")).toBeTruthy();
-    expect(heartbeat).not.toHaveBeenCalled();
+    expect(heartbeat).toHaveBeenCalledWith({ action: "acquire" }, "csrf-hb");
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
-    expect(heartbeat).toHaveBeenCalledTimes(1);
-    expect(heartbeat).toHaveBeenCalledWith("csrf-hb");
+    expect(heartbeat).toHaveBeenCalledWith({ action: "renew", controlToken: "control-1" }, "csrf-hb");
+
+    visibility.mockReturnValue("hidden");
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(heartbeat).toHaveBeenCalledWith({ action: "release", controlToken: "control-1" }, "csrf-hb");
+    const calls = vi.mocked(heartbeat).mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(heartbeat).toHaveBeenCalledTimes(calls);
+    focus.mockRestore();
+    visibility.mockRestore();
+  });
+
+  it("重新获焦拿新 token；旧续租迟到报错不能清掉新控制权", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    let rejectOldRenew: ((error: Error) => void) | undefined;
+    let acquireCount = 0;
+    vi.mocked(heartbeat).mockImplementation((input) => {
+      if (input.action === "renew") {
+        return new Promise((_resolve, reject) => { rejectOldRenew = reject; });
+      }
+      if (input.action === "acquire") acquireCount += 1;
+      return Promise.resolve({
+        controlToken: input.action === "acquire" ? `control-${acquireCount}` : null,
+        leaseUntil: "2126-01-01T08:02:00.000Z", timeMode: "running"
+      });
+    });
+    vi.mocked(getSnapshot).mockResolvedValue(buildSnapshot());
+    render(<BaseApp initialCsrfToken="csrf-1" />);
+    await act(async () => {});
+    expect(getSnapshot).toHaveBeenCalledWith("control-1");
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    focus.mockReturnValue(false);
+    await act(async () => { window.dispatchEvent(new Event("blur")); });
+    focus.mockReturnValue(true);
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    expect(heartbeat).toHaveBeenCalledWith({ action: "acquire" }, "csrf-1");
+    expect(getSnapshot).toHaveBeenCalledWith("control-2");
+
+    await act(async () => { rejectOldRenew?.(new BaseApiError(409, "CONTROL_EXPIRED", "旧控制权失效")); });
+    expect(screen.getByTestId("has-control").textContent).toBe("true");
+    focus.mockRestore();
   });
 });
 
 describe("BaseApp > 退出后不残留凭据（B006）", () => {
+  it("退出后迟到的旧快照不能把上一账号基地重新显示出来", async () => {
+    let finishOldRequest: ((snapshot: BaseSnapshotDto) => void) | undefined;
+    vi.mocked(getSnapshot).mockResolvedValueOnce(buildSnapshot()).mockImplementationOnce(() =>
+      new Promise((resolve) => { finishOldRequest = resolve; })
+    );
+    vi.mocked(logout).mockResolvedValue(undefined);
+    render(<BaseApp />);
+    await screen.findByTestId("base-shell");
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+
+    fireEvent.click(screen.getByRole("button", { name: "退出登录" }));
+    expect(await screen.findByRole("button", { name: "领取试玩基地" })).toBeTruthy();
+    await act(async () => { finishOldRequest?.(buildSnapshot()); });
+    expect(screen.queryByTestId("base-shell")).toBeNull();
+  });
+
   function authFields() {
     return {
       email: screen.getByLabelText("邮箱") as HTMLInputElement,

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BaseDeviceDto, CooperationRequestDto } from "@ai-mud/shared";
 import { CooperationPanel } from "./CooperationPanel.js";
 
@@ -17,7 +17,9 @@ const devices: BaseDeviceDto[] = [
   }
 ];
 
-function makeRequest(overrides: Partial<CooperationRequestDto> = {}): CooperationRequestDto {
+function makeRequest(overrides: Partial<CooperationRequestDto> & { proposedHelper?: {
+  operatorId: string; groupId: string; batteryWh: number; batteryCapacityWh: number;
+} | null } = {}): CooperationRequestDto {
   return {
     requestId: "request-1",
     projectId: "project-1",
@@ -134,9 +136,23 @@ describe("CooperationPanel", () => {
     expect(screen.getAllByText("资源运输组能派一台车把电缆运到建设位 A 吗？")).toHaveLength(55);
   });
 
-  it("只提供来源和历史展开，不提供协作决策按钮", () => {
-    const { container } = render(<CooperationPanel requests={[makeRequest()]} devices={devices} />);
+  it("待决请求展示具名候选，并把支援或等待交给命令处理者", () => {
+    const onDecision = vi.fn();
+    const pending = makeRequest({ proposedHelper: {
+      operatorId: "operator-2", groupId: "transport", batteryWh: 1000, batteryCapacityWh: 2000
+    } });
+    render(<CooperationPanel requests={[pending]} devices={devices} onDecision={onDecision} />);
 
-    expect(container.querySelectorAll("button, input, select")).toHaveLength(0);
+    expect(screen.getByText(/驮运二号.*1000\/2000 Wh/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "批准跨组支援" }));
+    expect(onDecision).toHaveBeenCalledWith("request-1", "support", "operator-2");
+    fireEvent.click(screen.getByRole("button", { name: "等待本组充电" }));
+    expect(onDecision).toHaveBeenCalledWith("request-1", "wait");
+  });
+
+  it("候选失效时仍允许等待，不虚构替代机器人", () => {
+    render(<CooperationPanel requests={[makeRequest({ proposedHelper: null })]} devices={devices} onDecision={vi.fn()} />);
+    expect((screen.getByRole("button", { name: "批准跨组支援" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "等待本组充电" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

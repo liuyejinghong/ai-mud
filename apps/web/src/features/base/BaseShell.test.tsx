@@ -130,6 +130,53 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("BaseShell", () => {
+  it("首屏先给当前步骤与动作，失去控制权时禁用时钟命令", () => {
+    const snapshot = buildSnapshot({
+      controlLease: { heldByThisSession: false, leaseUntil: null },
+      cooperationRequests: [{
+        requestId: "request-1", projectId: "project-1", projectName: "安装太阳能阵列",
+        stepIndex: 1, fromGroupId: "engineering", helperGroupId: "transport",
+        status: "pending", resolutionReason: null, helperOperatorId: null,
+        question: "运输组缺工", createdAt: "2126-01-01T08:00:00.000Z"
+      }]
+    });
+    const { container } = renderShell(snapshot);
+
+    expect(container.querySelector("main.base-shell")?.firstElementChild?.getAttribute("aria-label"))
+      .toBe("当前目标");
+    expect(screen.getByText(/当前步骤.*物资运输.*30\/60/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /处理协作/ })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "暂停计时" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("首工程完成后从订单与在途事实推导补给目标", () => {
+    renderShell(buildSnapshot({
+      projects: [{
+        projectId: "project-1", definitionRef: { kind: "project", stableId: "install-solar-array", revision: 1 },
+        name: "首座太阳阵列", status: "completed", siteId: "site-a", steps: []
+      }],
+      buildableProjects: [{
+        definitionRef: { kind: "project", stableId: "install-second-array", revision: 1 },
+        name: "第二阵列", description: "继续扩大发电能力",
+        inputs: [{ itemId: "solar_panel_set", quantity: 12 }]
+      }],
+      orders: [{
+        orderId: "order-1", orderRef: { kind: "order", stableId: "spares", revision: 1 },
+        name: "备件采购单", status: "delivered", requiredItemId: "spare_parts", requiredItemName: "备件",
+        quantity: 10, rewardCredits: 450, deadlineSim: null, acceptedAtSim: null
+      }],
+      purchases: [{
+        purchaseId: "purchase-1", itemId: "solar_panel_set", itemName: "太阳能板组", quantity: 6,
+        costCredits: 720, status: "in_transit", arrivesAtSim: "2126-01-01T08:20:00.000Z"
+      }]
+    }));
+
+    expect(screen.getByRole("heading", { name: /第 5\/6 段 · 当前目标 · 第二阵列/ })).toBeTruthy();
+    expect(screen.getByText(/相关采购在途/)).toBeTruthy();
+    expect(screen.getByText(/首座太阳阵列已完工.*备件采购单已交付/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "查看订单与补给" })).toBeTruthy();
+  });
+
   it("渲染四区布局，并把 W/Wh 换算成一位小数的 kW/kWh", () => {
     renderShell(buildSnapshot());
 

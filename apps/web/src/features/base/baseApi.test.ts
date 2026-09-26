@@ -3,6 +3,7 @@ import {
   BaseApiError,
   cancelProject,
   createProject,
+  decideCooperation,
   getSnapshot,
   heartbeat,
   login,
@@ -141,20 +142,24 @@ describe("baseApi", () => {
     fetchMock.mockResolvedValue(
       jsonResponse(200, { leaseUntil: "2026-01-01T00:02:00.000Z", timeMode: "running" })
     );
-    await heartbeat("csrf-1");
+    await heartbeat({ action: "acquire" }, "csrf-1");
     expect(fetchMock.mock.calls[1]?.[0]).toBe("http://127.0.0.1:3000/base/heartbeat");
     expect((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).toMatchObject({
       "x-csrf-token": "csrf-1"
     });
+    expect(JSON.parse((fetchMock.mock.calls[1]?.[1] as RequestInit).body as string)).toEqual({ action: "acquire" });
 
     fetchMock.mockResolvedValue(
       jsonResponse(200, { timeMode: "running", speed: 2, simTime: "2026-01-01T00:00:00.000Z" })
     );
-    await setClock({ command: "set_speed", speed: 2 }, "csrf-1");
+    await setClock({ command: "set_speed", speed: 2 }, "csrf-1", "control-1");
     expect(fetchMock.mock.calls[2]?.[0]).toBe("http://127.0.0.1:3000/base/clock");
     expect(JSON.parse((fetchMock.mock.calls[2]?.[1] as RequestInit).body as string)).toEqual({
       command: "set_speed",
       speed: 2
+    });
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).headers).toMatchObject({
+      "X-Base-Control-Token": "control-1"
     });
 
     fetchMock.mockResolvedValue(
@@ -170,5 +175,24 @@ describe("baseApi", () => {
       "http://127.0.0.1:3000/base/projects/project-1/cancel"
     );
     expect(cancelled.releasedInputs).toEqual([{ itemId: "anchor", quantity: 8 }]);
+  });
+
+  it("快照带控制 token，协作决策提交候选身份与命令 ID", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { baseId: "base-1" }));
+    await getSnapshot("control-1");
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).toMatchObject({
+      "X-Base-Control-Token": "control-1"
+    });
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, {
+      requestId: "request-1", status: "accepted", helperOperatorId: "operator-2", duplicate: false
+    }));
+    await decideCooperation("request-1", {
+      action: "support", commandId: "command-1", expectedHelperOperatorId: "operator-2"
+    }, "csrf-1");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("http://127.0.0.1:3000/base/cooperation/request-1/decision");
+    expect(JSON.parse((fetchMock.mock.calls[1]?.[1] as RequestInit).body as string)).toEqual({
+      action: "support", commandId: "command-1", expectedHelperOperatorId: "operator-2"
+    });
   });
 });

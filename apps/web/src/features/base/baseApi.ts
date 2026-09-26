@@ -29,6 +29,8 @@ interface RequestOptions {
   method?: string;
   body?: unknown;
   csrfToken?: string;
+  controlToken?: string;
+  keepalive?: boolean;
 }
 
 function isErrorResponse(value: unknown): value is { error: { code: string; message: string } } {
@@ -46,9 +48,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const response = await fetch(`${API_BASE}${path}`, {
     method: options.method ?? "GET",
     credentials: "include",
+    ...(options.keepalive ? { keepalive: true } : {}),
     headers: {
       "Content-Type": "application/json",
-      ...(options.csrfToken !== undefined ? { "x-csrf-token": options.csrfToken } : {})
+      ...(options.csrfToken !== undefined ? { "x-csrf-token": options.csrfToken } : {}),
+      ...(options.controlToken !== undefined ? { "X-Base-Control-Token": options.controlToken } : {})
     },
     ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {})
   });
@@ -93,8 +97,27 @@ export interface ProvisionResultDto {
 }
 
 export interface HeartbeatResultDto {
-  leaseUntil: string;
+  controlToken: string | null;
+  leaseUntil: string | null;
   timeMode: BaseTimeMode;
+}
+
+export interface HeartbeatInputDto {
+  action: "acquire" | "renew" | "release";
+  controlToken?: string;
+}
+
+export interface CooperationDecisionInputDto {
+  action: "support" | "wait";
+  commandId: string;
+  expectedHelperOperatorId?: string;
+}
+
+export interface CooperationDecisionResultDto {
+  requestId: string;
+  status: "accepted" | "declined";
+  helperOperatorId?: string;
+  duplicate: boolean;
 }
 
 export interface ClockCommandResultDto {
@@ -121,8 +144,8 @@ export interface AuthLoginResultDto {
   csrfToken: string;
 }
 
-export function getSnapshot(): Promise<BaseSnapshotDto> {
-  return request<BaseSnapshotDto>("/base/snapshot");
+export function getSnapshot(controlToken?: string): Promise<BaseSnapshotDto> {
+  return request<BaseSnapshotDto>("/base/snapshot", { ...(controlToken ? { controlToken } : {}) });
 }
 
 export function provision(csrfToken: string, commandId?: string): Promise<ProvisionResultDto> {
@@ -142,19 +165,34 @@ export function playtestRegister(
   });
 }
 
-export function heartbeat(csrfToken: string): Promise<HeartbeatResultDto> {
+export function heartbeat(input: HeartbeatInputDto, csrfToken: string): Promise<HeartbeatResultDto> {
   return request<HeartbeatResultDto>("/base/heartbeat", {
     method: "POST",
     csrfToken,
-    body: {}
+    body: input,
+    keepalive: input.action === "release"
   });
 }
 
 export function setClock(
   input: BaseClockCommandInputDto,
-  csrfToken: string
+  csrfToken: string,
+  controlToken: string
 ): Promise<ClockCommandResultDto> {
   return request<ClockCommandResultDto>("/base/clock", {
+    method: "POST",
+    csrfToken,
+    controlToken,
+    body: input
+  });
+}
+
+export function decideCooperation(
+  requestId: string,
+  input: CooperationDecisionInputDto,
+  csrfToken: string
+): Promise<CooperationDecisionResultDto> {
+  return request<CooperationDecisionResultDto>(`/base/cooperation/${encodeURIComponent(requestId)}/decision`, {
     method: "POST",
     csrfToken,
     body: input
