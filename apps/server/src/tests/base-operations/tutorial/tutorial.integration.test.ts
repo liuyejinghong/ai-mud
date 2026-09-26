@@ -357,26 +357,36 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     expect(newOperator?.battery_wh).toBeGreaterThanOrEqual(1000);
     const first = await project(fresh.principal, "install-solar-array", fresh.siteA);
     let newRobotWorked = false;
-    const pendingMinute = await advanceUntil(fresh.principal, token, 50, async () => {
-      const [operator] = await query<{ status: string; current_project_id: string | null; current_step_index: number | null }>(
-        "SELECT status, current_project_id, current_step_index FROM robot_operators WHERE id = $1",
-        [newOperator!.id]
-      );
-      newRobotWorked ||= operator?.status === "working" && operator.current_project_id === first.projectId &&
-        operator.current_step_index === 1;
-      return (await query<{ n: number }>(
-        "SELECT count(*)::int AS n FROM cooperation_requests WHERE base_id = $1 AND status = 'pending'",
+    let requestId: string | null = null;
+    let helperOperatorId: string | null = null;
+    let pendingMinute: number;
+    try {
+      pendingMinute = await advanceUntil(fresh.principal, token, 70, async () => {
+        const [operator] = await query<{ status: string; current_project_id: string | null; current_step_index: number | null }>(
+          "SELECT status, current_project_id, current_step_index FROM robot_operators WHERE id = $1",
+          [newOperator!.id]
+        );
+        newRobotWorked ||= operator?.status === "working" && operator.current_project_id === first.projectId &&
+          operator.current_step_index === 1;
+        const actionable = (await ops.session.snapshot.execute(fresh.principal, token))
+          .cooperationRequests.find((request) =>
+            request.status === "pending" && request.playerDecisionAllowed && request.proposedHelper
+          );
+        requestId = actionable?.requestId ?? null;
+        helperOperatorId = actionable?.proposedHelper?.operatorId ?? null;
+        return requestId !== null;
+      });
+    } catch (error) {
+      const requests = await query<{ status: string; resolution_reason: string | null; created_at: Date }>(
+        "SELECT status, resolution_reason, created_at FROM cooperation_requests WHERE base_id = $1 ORDER BY created_at",
         [fresh.baseId]
-      ))[0]!.n > 0;
-    });
+      );
+      throw new Error(`Manufacture route had no actionable first decision: ${JSON.stringify({ requests, projectStatus: await projectStatus(first.projectId) })}`, { cause: error });
+    }
     expect(newRobotWorked).toBe(true);
-    const pending = (await ops.session.snapshot.execute(fresh.principal, token))
-      .cooperationRequests.find((request) => request.status === "pending")!;
-    console.info(`tutorial manufacture pending: ${JSON.stringify({ pending, operators: await query("SELECT group_id, status, battery_wh FROM robot_operators WHERE base_id = $1 ORDER BY group_id, battery_wh", [fresh.baseId]) })}`);
-    expect(pending.proposedHelper).toBeTruthy();
     await ops.cooperationDecision.decide.execute(fresh.principal, {
-      requestId: pending.requestId, action: "support", commandId: randomUUID(),
-      expectedHelperOperatorId: pending.proposedHelper!.operatorId
+      requestId: requestId!, action: "support", commandId: randomUUID(),
+      expectedHelperOperatorId: helperOperatorId!
     });
     const afterDecision = await advanceUntil(fresh.principal, token, 110, async () =>
       (await projectStatus(first.projectId)) === "completed"
@@ -407,7 +417,6 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     );
     const pending = (await ops.session.snapshot.execute(fresh.principal, token))
       .cooperationRequests.find((request) => request.status === "pending")!;
-    console.info(`tutorial wait pending: ${JSON.stringify({ pending, operators: await query("SELECT group_id, status, battery_wh FROM robot_operators WHERE base_id = $1 ORDER BY group_id, battery_wh", [fresh.baseId]) })}`);
     expect(pending.proposedHelper).toBeTruthy();
     await query("UPDATE robot_operators SET battery_wh = 0 WHERE id = $1", [pending.proposedHelper!.operatorId]);
     const staleCommandId = randomUUID();
