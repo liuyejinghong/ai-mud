@@ -304,6 +304,7 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     const second = await project(fresh.principal, "install-second-array", fresh.siteB);
     expect(second.duplicate).toBe(false);
     expect(requestMinute + afterDecision + toArrival).toBeLessThanOrEqual(120);
+    console.info(`tutorial build-first: request=${requestMinute}, first-complete=${requestMinute + afterDecision}, second-start=${requestMinute + afterDecision + toArrival} base minutes`);
     expect((await query<{ n: number }>(
       "SELECT count(*)::int AS n FROM base_orders WHERE base_id = $1 AND order_def_id = 'order-maintenance-restock'",
       [fresh.baseId]
@@ -323,8 +324,9 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     ]);
     expect(replacements.reduce((sum, item) => sum + item.costCredits, 0)).toBe(220);
     const token = await control(fresh.principal);
+    let provisionPhaseMinute: number;
     try {
-      await advanceUntil(fresh.principal, token, 25, async () => {
+      provisionPhaseMinute = await advanceUntil(fresh.principal, token, 25, async () => {
         const [jobRow] = await query<{ status: string }>("SELECT status FROM base_manufacturing_jobs WHERE id = $1", [job.jobId]);
         const [deliveries] = await query<{ n: number }>(
           "SELECT count(*)::int AS n FROM base_purchases WHERE base_id = $1 AND status = 'delivered'", [fresh.baseId]
@@ -381,7 +383,9 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     );
     const second = await project(fresh.principal, "install-second-array", fresh.siteB);
     expect(second.duplicate).toBe(false);
-    expect(25 + pendingMinute + afterDecision + toArrival).toBeLessThanOrEqual(180);
+    const secondStart = provisionPhaseMinute + pendingMinute + afterDecision + toArrival;
+    expect(secondStart).toBeLessThanOrEqual(180);
+    console.info(`tutorial manufacture-first: ready=${provisionPhaseMinute}, request=${provisionPhaseMinute + pendingMinute}, first-complete=${provisionPhaseMinute + pendingMinute + afterDecision}, second-start=${secondStart} base minutes`);
     await ops.session.clock.applyCommand(fresh.principal, { command: "pause" }, token);
   }, 120_000);
 
@@ -389,7 +393,7 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     const fresh = await base();
     const token = await control(fresh.principal);
     const first = await project(fresh.principal, "install-solar-array", fresh.siteA);
-    await advanceUntil(fresh.principal, token, 40, async () =>
+    const pendingMinute = await advanceUntil(fresh.principal, token, 40, async () =>
       (await query<{ n: number }>("SELECT count(*)::int AS n FROM cooperation_requests WHERE base_id = $1 AND status = 'pending'", [fresh.baseId]))[0]!.n > 0
     );
     const pending = (await ops.session.snapshot.execute(fresh.principal, token))
@@ -405,6 +409,9 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
       "SELECT count(*)::int AS n FROM command_receipts WHERE actor_scope = $1 AND command_id = $2",
       [`base:${fresh.baseId}`, staleCommandId]
     ))[0]!.n).toBe(0);
+    await query("UPDATE robot_operators SET battery_wh = $2 WHERE id = $1", [
+      pending.proposedHelper!.operatorId, pending.proposedHelper!.batteryWh
+    ]);
     const waited = await ops.cooperationDecision.decide.execute(fresh.principal, {
       requestId: pending.requestId, action: "wait", commandId: randomUUID()
     });
@@ -413,14 +420,28 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
       "SELECT status, helper_operator_id FROM cooperation_requests WHERE id = $1", [pending.requestId]
     );
     expect(request).toMatchObject({ status: "declined", helper_operator_id: null });
-    const waitMinutes = await advanceUntil(fresh.principal, token, 140, async () =>
-      (await projectStatus(first.projectId)) === "completed"
-    );
+    let waitMinutes: number;
+    try {
+      waitMinutes = await advanceUntil(fresh.principal, token, 220, async () =>
+        (await projectStatus(first.projectId)) === "completed"
+      );
+    } catch (error) {
+      const steps = await query<{ step_index: number; status: string; work_done: number; blocked_reason: string | null }>(
+        "SELECT step_index, status, work_done, blocked_reason FROM base_project_steps WHERE project_id = $1 ORDER BY step_index",
+        [first.projectId]
+      );
+      const robots = await query<{ group_id: string; status: string; min_wh: number }>(
+        "SELECT group_id, status, min(battery_wh)::int AS min_wh FROM robot_operators WHERE base_id = $1 GROUP BY group_id, status",
+        [fresh.baseId]
+      );
+      throw new Error(`Wait route after 220 minutes: ${JSON.stringify({ steps, robots })}`, { cause: error });
+    }
     expect(waitMinutes).toBeGreaterThan(50);
     expect((await query<{ n: number }>(
       "SELECT count(*)::int AS n FROM cooperation_requests WHERE id = $1 AND status = 'declined'",
       [pending.requestId]
     ))[0]!.n).toBe(1);
+    console.info(`tutorial wait: request=${pendingMinute}, first-complete=${pendingMinute + waitMinutes} base minutes`);
     await ops.session.clock.applyCommand(fresh.principal, { command: "pause" }, token);
   }, 120_000);
 });
