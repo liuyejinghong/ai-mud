@@ -32,3 +32,10 @@
 - 真人 PLAYTEST 仍未执行（主控/用户职责）。
 - 缺/错 token 的 HTTP 层字面负例未单列（组合根守卫等价覆盖；e2e 走真 HTTP 含合法 token）。
 - U06 替代路线（先加工间）浏览器自动化未单列；PG 侧两路线账本已验（主集成 G07/G08b）。
+
+## 返工轮补充记录（2026-09-27 晚）
+
+- landing-fix.integration 10/10、G13 升级 2/2、landing 主集成 9/9 全部通过（隔离容器 55434）。
+- 全仓 build/typecheck/arch/test 复跑全绿（server 724/web 222 含 4 项主控独立检查）。
+- landing-loop 全循环 e2e 逐轮修复推进（快照透出配方运行参数；勘探显式铁矿；铜先冶炼；
+  tick 粒度等待；hasFocus 钉真）：v14 已到达维护窗口截图（04），v15 修复铜料冶炼顺序后运行中。
