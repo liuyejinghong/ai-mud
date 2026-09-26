@@ -143,7 +143,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
 
   // 勘探铜 + 采 1 批 + 线缆 1。
   await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
-  await page.locator(MAP).getByRole("button", { name: /脊线蓝绿氧化带/ }).click();
+  await page.locator(MAP).getByRole("button", { name: /铜矿|脊线蓝绿氧化带/ }).click();
   await ensureControl(page);
   await page.getByLabel("望山").selectOption({ index: 1 });
   await page.getByRole("button", { name: "开始勘探" }).click();
@@ -179,7 +179,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   // 圈2：备件生产 + 维护（采矿补充 → 制造备件）。
   await waitForText(page, page.locator(PANEL), "返回地图", 10_000).catch(() => undefined);
   await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
-  await page.locator(MAP).getByRole("button", { name: /北坡磁异常/ }).click();
+  await page.locator(MAP).getByRole("button", { name: /铁矿|北坡磁异常/ }).click();
   await checkboxes.nth(0).check();
   await checkboxes.nth(1).check();
   await page.getByLabel("驮运").selectOption({ index: 1 });
