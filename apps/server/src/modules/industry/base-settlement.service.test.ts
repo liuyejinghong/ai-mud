@@ -301,6 +301,26 @@ describe("BaseSettlementService.settleBases > C07 cooperation", () => {
     expect(detected).toEqual([[]]);
   });
 
+  it("running 步骤本组已有可出工电量时不虚报缺工", async () => {
+    const detected: unknown[][] = [];
+    const harness = makeHarness({
+      listOpenRequests: async () => [],
+      detectAndResolve: async (_tx, _baseId, steps) => { detected.push(steps); },
+      applyAcceptedHelpers: async () => 0,
+      markFulfilledByStep: async () => {}
+    });
+    seedStandardBase(harness, {
+      robotOverrides: {
+        status: "charging", batteryWh: 506,
+        currentProjectId: null, currentStepIndex: null
+      }
+    });
+
+    await harness.service.settleBases({} as IndustryTx, T0);
+
+    expect(detected).toEqual([[]]);
+  });
+
   it("accepted 跨组 helper 下一 tick 出工，中途步骤完成即 fulfilled", async () => {
     const fulfilled: Array<[string, number]> = [];
     const harness = makeHarness({

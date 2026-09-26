@@ -380,7 +380,7 @@ export class BaseSettlementService {
             current.currentStepIndex === step.stepIndex;
         });
         if (ownWorker) continue;
-        if (status === "ready" && robotRecords.some((robot) => {
+        if (robotRecords.some((robot) => {
           if (robot.groupId !== step.groupId) return false;
           const current = robotUpdates.get(robot.operatorId) ?? robot;
           const template = robotByStableId.get(robot.deviceDefId);
