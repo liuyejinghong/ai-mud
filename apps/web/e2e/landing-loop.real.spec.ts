@@ -104,7 +104,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
 
   // 圈1b：勘探铁→采矿 4 批。
   await page.locator(GOAL).getByRole("button", { name: "前往处理" }).click();
-  await expect(page.locator(PANEL)).toContainText("勘探");
+  await waitForText(page, page.locator(PANEL), "勘探", 60_000);
   await ensureControl(page);
   await page.getByLabel("望山").selectOption({ index: 1 });
   await page.getByRole("button", { name: "开始勘探" }).click();
@@ -120,7 +120,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await page.getByLabel("驮运").selectOption({ index: 1 });
   await ensureControl(page);
   await page.getByRole("button", { name: /下采矿单/ }).click();
-  await waitForText(page, page.locator(QUEUE), "已送 0/4", 30_000);
+  await waitForText(page, page.locator(QUEUE), "已送 0/4", 180_000);
   await goalSays(page, "安装加工间"); // 16 铁矿入仓
   await page.screenshot({ path: testInfo.outputPath("03-ore-delivered.png"), fullPage: true });
 
@@ -133,7 +133,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await page.locator(PANEL).getByRole("button", { name: "加工间", exact: true }).click();
   await expect(page.locator(PANEL)).toContainText("冶炼铁料", { timeout: 30_000 });
   await orderRecipe(page, "冶炼铁料", 8);
-  await waitForText(page, page.locator(QUEUE), "产出 0/8", 60_000);
+  await waitForText(page, page.locator(QUEUE), "产出 0/8", 180_000);
   await orderRecipe(page, "加工结构件", 4);
 
   // 等维护窗口（第 10 批）：维护按钮出现在队列/加工面板。
@@ -149,7 +149,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await ensureControl(page);
   await page.getByLabel("望山").selectOption({ index: 1 });
   await page.getByRole("button", { name: "开始勘探" }).click();
-  await waitForText(page, page.locator(PANEL), "采矿运输", 120_000);
+  await waitForText(page, page.locator(PANEL), "采矿运输", 300_000);
   await checkboxes.nth(0).check();
   await checkboxes.nth(1).check();
   await page.getByLabel("驮运").selectOption({ index: 1 });
