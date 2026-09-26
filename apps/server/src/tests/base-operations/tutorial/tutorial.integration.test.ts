@@ -139,8 +139,8 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
 
   beforeAll(async () => {
     const url = new URL(databaseUrl!);
-    if (url.hostname !== "127.0.0.1" || !["55432", "55433"].includes(url.port) || url.pathname !== "/ai_mud_ci") {
-      throw new Error("Tutorial Q tests require the isolated local ai_mud_ci database on port 55432 or 55433");
+    if (url.hostname !== "127.0.0.1" || !["55432", "55433", "55434"].includes(url.port) || url.pathname !== "/ai_mud_ci") {
+      throw new Error("Tutorial Q tests require an isolated local ai_mud_ci database on port 55432, 55433, or 55434");
     }
     clockSpy = vi.spyOn(systemWorldClock, "now").mockImplementation(() => new Date(nowMs));
     dbName = `ai_mud_tutorial_q_${process.pid}_${randomUUID().replaceAll("-", "")}`;
@@ -274,7 +274,7 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     await ops.session.clock.applyCommand(fresh.principal, { command: "pause" }, token);
   }, 120_000);
 
-  it("build-first support uses a durable receipt, then earns and spends the exact second-array budget", async () => {
+  it("build-first support earns the second-array budget and completes its construction", async () => {
     const fresh = await base();
     const token = await control(fresh.principal);
     const first = await project(fresh.principal, "install-solar-array", fresh.siteA);
@@ -324,7 +324,19 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     const secondWork = await advanceUntil(fresh.principal, token, 180 - secondStart, () =>
       projectHasWork(second.projectId)
     );
-    console.info(`tutorial build-first: request=${requestMinute}, first-complete=${requestMinute + afterDecision}, second-start=${secondStart}, second-work=${secondStart + secondWork} base minutes`);
+    let secondCompletion: number;
+    try {
+      secondCompletion = await advanceUntil(fresh.principal, token, 480, async () =>
+        (await projectStatus(second.projectId)) === "completed"
+      );
+    } catch (error) {
+      const steps = await query<{ step_index: number; status: string; work_done: number; work_required: number }>(
+        "SELECT step_index, status, work_done, work_required FROM base_project_steps WHERE project_id = $1 ORDER BY step_index",
+        [second.projectId]
+      );
+      throw new Error(`Second array did not complete: ${JSON.stringify(steps)}`, { cause: error });
+    }
+    console.info(`tutorial build-first: request=${requestMinute}, first-complete=${requestMinute + afterDecision}, second-start=${secondStart}, second-work=${secondStart + secondWork}, second-complete=${secondStart + secondWork + secondCompletion} base minutes`);
     expect((await query<{ n: number }>(
       "SELECT count(*)::int AS n FROM base_orders WHERE base_id = $1 AND order_def_id = 'order-maintenance-restock'",
       [fresh.baseId]
