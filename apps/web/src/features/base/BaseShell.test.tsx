@@ -213,6 +213,48 @@ describe("BaseShell", () => {
       .toBe("无法恢复计时");
   });
 
+  it("基地开工反馈出现在对象详情前，操作后不用滚过完整材料清单", () => {
+    const snapshot = buildSnapshot({
+      projects: [],
+      buildableProjects: [{
+        definitionRef: { kind: "project", stableId: "install-solar-array", revision: 1 },
+        name: "安装太阳电池阵", description: "首项工程",
+        inputs: [{ itemId: "solar_panel_set", quantity: 20 }]
+      }]
+    });
+    const { container } = render(<BaseShell {...shellProps(snapshot)} selectedSiteId="site-a"
+      actionFeedback={{ area: "base", kind: "error", message: "开工材料不足" }} />);
+    const feedback = container.querySelector(".base-detail-wrap > .base-task-feedback");
+    expect(feedback?.textContent).toBe("开工材料不足");
+    expect(feedback?.nextElementSibling?.getAttribute("aria-label")).toBe("对象详情");
+  });
+
+  it("首工程完工且第二工程有真实施工量即收束教程，全部完工另行说明", () => {
+    const first = { ...buildSnapshot().projects[0]!, status: "completed" as const,
+      definitionRef: { kind: "project" as const, stableId: "install-solar-array", revision: 1 } };
+    const second = { ...first, projectId: "project-2", name: "架设第二太阳电池阵", status: "active" as const,
+      definitionRef: { kind: "project" as const, stableId: "install-second-array", revision: 1 },
+      steps: first.steps.map((step) => ({ ...step, workDone: 0 })) };
+    const snapshot = buildSnapshot({ projects: [first], buildableProjects: [] });
+    const view = renderShell(snapshot);
+    expect(screen.queryByText("本轮教程已完成")).toBeNull();
+
+    view.rerender(<BaseShell {...shellProps({ ...snapshot, projects: [first, second] })} />);
+    expect(screen.queryByText("本轮教程已完成")).toBeNull();
+
+    const started = { ...second, steps: second.steps.map((step, index) => ({ ...step, workDone: index === 0 ? 1 : 0 })) };
+    view.rerender(<BaseShell {...shellProps({ ...snapshot, projects: [first, started] })} />);
+    expect(screen.getByRole("heading", { name: "本轮教程已完成" })).toBeTruthy();
+    expect(screen.getByText(/首轮经营闭环完成.*第二阵列已有真实施工进度，尚未完工/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "查看第二阵列" })).toBeTruthy();
+    expect(screen.queryByText(/两项内测工程均已完工/)).toBeNull();
+
+    view.rerender(<BaseShell {...shellProps({ ...snapshot, projects: [first, { ...started, status: "completed" }] })} />);
+    expect(screen.getByRole("heading", { name: "两项内测工程全部完工" })).toBeTruthy();
+    expect(screen.getByText(/两项内测工程均已完工/)).toBeTruthy();
+    expect(screen.queryByText(/更多工程类型将随基地发展解锁/)).toBeNull();
+  });
+
   it("计时时显示速度并提供暂停按钮", () => {
     const onClockCommand = vi.fn();
     render(

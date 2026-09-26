@@ -1,10 +1,9 @@
-// M16-D 经济面板：账款、外部订单（接单/交付）、采购（付款→在途→到货）。
-// 展示即事实：所有数字来自快照，本地不做任何计算。
 import { useState } from "react";
-import { PURCHASE_CATALOG } from "@ai-mud/shared";
+import { PURCHASE_CATALOG, PURCHASE_TRANSIT_SIM_MINUTES } from "@ai-mud/shared";
 import type {
   BaseOrderDto,
   BaseResourceDto,
+  BaseSnapshotDto,
   CreatePurchaseInputDto,
   PurchaseOrderDto
 } from "@ai-mud/shared";
@@ -26,6 +25,8 @@ export interface EconomyBoardProps {
   orders: BaseOrderDto[];
   purchases: PurchaseOrderDto[];
   resources: BaseResourceDto[];
+  targetProject?: BaseSnapshotDto["buildableProjects"][number] | undefined;
+  simTime: string;
   isBusy: boolean;
   onAcceptOrder: (orderId: string) => void;
   onDeliverOrder: (orderId: string) => void;
@@ -37,11 +38,31 @@ export function EconomyBoard({
   orders,
   purchases,
   resources,
+  targetProject,
+  simTime,
   isBusy,
   onAcceptOrder,
   onDeliverOrder,
   onPurchase
 }: EconomyBoardProps) {
+  const supply = targetProject?.inputs?.map((input) => {
+    const resource = resources.find((item) => item.itemId === input.itemId);
+    const available = Math.max(0, (resource?.quantity ?? 0) - (resource?.reservedQuantity ?? 0));
+    const short = Math.max(0, input.quantity - available);
+    const inTransit = purchases.filter((purchase) =>
+      purchase.itemId === input.itemId && purchase.status === "in_transit"
+    ).reduce((sum, purchase) => sum + purchase.quantity, 0);
+    const toBuy = Math.max(0, short - inTransit);
+    const unitCost = PURCHASE_CATALOG.find((item) => item.itemId === input.itemId)?.unitCostCredits;
+    return { ...input, available, short, inTransit, toBuy, unitCost };
+  }) ?? [];
+  const totalQty = supply.reduce((sum, item) => sum + item.toBuy, 0);
+  const totalCost = supply.reduce((sum, item) => sum + item.toBuy * (item.unitCost ?? 0), 0);
+  const allPriced = supply.every((item) => item.toBuy === 0 || item.unitCost !== undefined);
+  const now = Date.parse(simTime);
+  const newArrival = Number.isNaN(now) ? null : formatSimDateTime(new Date(
+    now + PURCHASE_TRANSIT_SIM_MINUTES * 60_000
+  ).toISOString());
   return (
     <section className="base-panel base-economy" aria-label="经营">
       <h2 className="base-panel-title">经营</h2>
@@ -109,6 +130,34 @@ export function EconomyBoard({
       )}
 
       <h3 className="base-panel-title">补给采购</h3>
+      {supply.length > 0 ? (
+        <section className="base-supply-plan" aria-label={`${targetProject?.name}材料预算`}>
+          <strong>{targetProject?.name} · 开工材料</strong>
+          <ul>
+            {supply.map((item) => (
+              <li key={item.itemId}>
+                {BASE_ITEM_NAMES[item.itemId] ?? item.itemId}：需 {item.quantity}，可支配 {item.available}，现缺 {item.short}，在途 {item.inTransit}（未入库），净缺口 {item.toBuy}
+                {item.unitCost === undefined
+                  ? " · 暂无采购价"
+                  : ` · ${item.unitCost} credits/件 · 小计 ${item.toBuy * item.unitCost} credits`}
+              </li>
+            ))}
+          </ul>
+          <p className="base-summary-line">
+            {allPriced
+              ? `按当前库存与在途计算，还需采购 ${totalQty} 件 · 合计 ${totalCost} credits`
+              : `还需采购 ${totalQty} 件；部分材料暂无采购价，无法核算总价。`}
+            {allPriced && totalCost > credits ? ` · 当前账款还差 ${totalCost - credits} credits` : ""}
+          </p>
+          {totalQty > 0 && allPriced ? (
+            <p className="base-copy">现在付款后预计 {PURCHASE_TRANSIT_SIM_MINUTES} 基地分钟到货{newArrival ? `（按当前基地时间约 ${newArrival}）` : ""}；新购材料到货前不可用于开工。</p>
+          ) : totalQty > 0 ? (
+            <p className="base-copy">部分材料暂无采购价，请先核对可购材料。</p>
+          ) : supply.some((item) => item.short > 0) ? (
+            <p className="base-copy">当前缺料已有采购在途，到货后请重新核对库存。</p>
+          ) : <p className="base-copy">当前材料可支配量已满足开工需求。</p>}
+        </section>
+      ) : null}
       <ul className="base-purchase-list">
         {PURCHASE_CATALOG.map((entry) => (
           <li key={entry.itemId}>

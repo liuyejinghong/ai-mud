@@ -66,7 +66,6 @@ export interface BaseShellProps {
   onAcquireControl?: () => void;
   hasControl?: boolean;
   accountEmail?: string | null;
-  crewByStep?: Record<string, number>;
   actionFeedback?: BaseActionFeedback | null;
 }
 
@@ -98,7 +97,6 @@ export function BaseShell({
   onAcquireControl,
   hasControl = true,
   accountEmail = null,
-  crewByStep = {},
   actionFeedback = null,
 }: BaseShellProps) {
   const [workspace, setWorkspace] = useState<Workspace>("base");
@@ -124,6 +122,17 @@ export function BaseShell({
     request.status === "pending" && request.playerDecisionAllowed
   );
   const completedProjects = snapshot.projects.filter((project) => project.status === "completed");
+  const firstCompleted = completedProjects.some((project) =>
+    project.definitionRef.stableId === "install-solar-array"
+  );
+  const secondProject = snapshot.projects.find((project) =>
+    project.definitionRef.stableId === "install-second-array"
+  );
+  const secondStarted = secondProject !== undefined &&
+    ["active", "blocked", "paused", "completed"].includes(secondProject.status) &&
+    secondProject.steps.some((step) => step.workDone > 0);
+  const tutorialFinished = firstCompleted && secondStarted;
+  const allFinished = firstCompleted && secondProject?.status === "completed";
   const currentStep = activeProject?.steps.find((step) => step.status !== "completed") ?? null;
   const missingInputs = nextProject?.inputs?.filter((input) => {
     const item = snapshot.resources.find((resource) => resource.itemId === input.itemId);
@@ -177,7 +186,16 @@ export function BaseShell({
   return (
     <main className="base-shell">
       <section className="base-panel base-current-task" aria-label="当前目标">
-        {activeProject ? (
+        {tutorialFinished || allFinished ? (
+          <div>
+            <h2 className="base-panel-title">{allFinished ? "两项内测工程全部完工" : "本轮教程已完成"}</h2>
+            <p className="base-copy">
+              {allFinished
+                ? "首轮经营闭环完成，两项内测工程均已完工。你可以回看基地和经营记录。"
+                : "首轮经营闭环完成；第二阵列已有真实施工进度，尚未完工，可以继续观察。"}
+            </p>
+          </div>
+        ) : activeProject ? (
           <div>
             <h2 className="base-panel-title">
               第 {stage}/6 段 · {activeProject.name}
@@ -221,7 +239,10 @@ export function BaseShell({
             <button type="button" className="base-primary-button" disabled={isBusy}
               onClick={() => onSetSpeed(4)}>速度 ×4</button>
           ) : null}
-          {pendingRequest ? (
+          {(tutorialFinished || allFinished) && secondProject ? (
+            <button type="button" className="base-primary-button"
+              onClick={() => selectAndShow(() => onSelectProject(secondProject.projectId))}>查看第二阵列</button>
+          ) : pendingRequest ? (
             <button type="button" className="base-primary-button" onClick={() => setWorkspace("cooperation")}>处理协作</button>
           ) : activeProject ? (
             <button type="button" className="base-primary-button"
@@ -374,6 +395,7 @@ export function BaseShell({
                 setDetailOpen(false);
               }}>返回地图</button>
             </div>
+            <ActionFeedback area="base" feedback={actionFeedback} />
             <ObjectPanel
               sites={snapshot.sites}
               projects={snapshot.projects}
@@ -392,7 +414,6 @@ export function BaseShell({
               onCancelProject={onCancelProject}
               onResume={() => onClockCommand({ command: "resume" }, "base")}
             />
-            <ActionFeedback area="base" feedback={actionFeedback} />
           </div>
         </div>
         {snapshot.projects.length > 0 ? (
@@ -400,7 +421,7 @@ export function BaseShell({
             buildableProjects={snapshot.buildableProjects}
             selectedProjectId={selectedProjectId}
             onSelectProject={(projectId) => selectAndShow(() => onSelectProject(projectId))}
-            crewByStep={crewByStep}
+            devices={snapshot.devices} timeMode={snapshot.timeMode}
           />
         ) : null}
       </section>
@@ -409,6 +430,8 @@ export function BaseShell({
         <ActionFeedback area="economy" feedback={actionFeedback} />
         <EconomyBoard credits={snapshot.credits} orders={snapshot.orders}
           purchases={snapshot.purchases} resources={snapshot.resources}
+          targetProject={!activeProject && freeSite ? nextProject : undefined}
+          simTime={snapshot.simTime}
           isBusy={isBusy} onAcceptOrder={onAcceptOrder}
           onDeliverOrder={onDeliverOrder} onPurchase={onPurchase}
         />

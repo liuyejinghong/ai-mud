@@ -74,6 +74,14 @@ describe("CooperationPanel", () => {
     expect(screen.getByText("request-1")).toBeTruthy();
   });
 
+  it("已完成协作在折叠历史中仍显示具名接手者", () => {
+    const { container } = render(<CooperationPanel
+      requests={[makeRequest({ status: "fulfilled", helperOperatorId: "operator-2" })]}
+      devices={devices}
+    />);
+    expect(container.querySelector(".base-cooperation-history")?.textContent).toContain("驮运二号接手支援");
+  });
+
   it("操作员不在设备快照中时只显示支援小组", () => {
     render(
       <CooperationPanel
@@ -144,6 +152,8 @@ describe("CooperationPanel", () => {
     render(<CooperationPanel requests={[pending]} devices={devices} onDecision={onDecision} />);
 
     expect(screen.getByText(/驮运二号.*1000\/2000 Wh/)).toBeTruthy();
+    expect(screen.getByText(/至少 500 Wh 才可出工.*每基地分钟消耗 500 Wh.*执行前还会复核/)).toBeTruthy();
+    expect(screen.getByText(/等待会婉拒本次跨组支援.*两种选择都不保证完工时间/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "批准跨组支援" }));
     expect(onDecision).toHaveBeenCalledWith("request-1", "support", "operator-2");
     fireEvent.click(screen.getByRole("button", { name: "等待本组充电" }));

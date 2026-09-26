@@ -709,14 +709,6 @@ export function BaseApp({
   const showIntro =
     snapshot !== null && snapshot.projects.length === 0 && !introDismissed && !introDismissedForBase;
 
-  // 每个工程步骤的作业机组数（来自设备当前任务投影）——施工可读性（评审 D001）
-  const crewByStep: Record<string, number> = {};
-  for (const device of snapshot?.devices ?? []) {
-    if (device.currentAssignment) {
-      const key = `${device.currentAssignment.projectId}:${device.currentAssignment.stepIndex}`;
-      crewByStep[key] = (crewByStep[key] ?? 0) + 1;
-    }
-  }
   return (
     <>
       {showIntro ? (
@@ -776,7 +768,6 @@ export function BaseApp({
         onPurchase={handlePurchase}
         onCooperationDecision={handleCooperationDecision}
         accountEmail={accountEmail}
-        crewByStep={crewByStep}
         onLogout={() => void handleLogout()}
         isBusy={isActionBusy}
       />

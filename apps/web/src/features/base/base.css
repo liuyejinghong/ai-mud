@@ -630,6 +630,19 @@
   display: grid;
   gap: 6px;
 }
+.base-supply-plan {
+  border: 1px solid #ffe08a;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.base-supply-plan ul {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+.base-supply-plan p {
+  margin: 4px 0 0;
+}
 .base-order-card {
   display: grid;
   gap: 4px;
@@ -772,6 +785,13 @@
   border-color: #ff7a6b;
   color: #ffc4bc;
   background: rgba(255, 122, 107, 0.1);
+}
+
+.base-detail-wrap > .base-task-feedback {
+  position: sticky;
+  top: 48px;
+  z-index: 4;
+  margin: 0 0 8px;
 }
 
 .base-workspace[aria-label="经营工作区"] > .base-task-feedback,

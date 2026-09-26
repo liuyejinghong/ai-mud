@@ -66,7 +66,10 @@ export function CooperationPanel({ requests, devices, isBusy = false, onDecision
               ? `可调配：${describeGroupId(helper.groupId)}的${deviceNames.get(helper.operatorId) ?? "候选机器人"} · 电量 ${helper.batteryWh}/${helper.batteryCapacityWh} Wh`
               : "当前没有符合条件的跨组机器人，可以等待本组充电。"}
           </span>
-          <span className="base-copy">支援会调配这台机器人；等待则让本组自行恢复。进度以基地状态为准。</span>
+          <span className="base-copy">
+            批准支援会调配上方候选；至少 500 Wh 才可出工，每基地分钟消耗 500 Wh，执行前还会复核。
+            等待会婉拒本次跨组支援，由本组充电后继续尝试施工。两种选择都不保证完工时间。
+          </span>
           <span className="base-cooperation-actions">
             <button type="button" className="base-primary-button"
               disabled={isBusy || helper === null}
@@ -78,7 +81,7 @@ export function CooperationPanel({ requests, devices, isBusy = false, onDecision
           </span>
         </>
       ) : null}
-      {request.status === "accepted" ? (
+      {request.status === "accepted" || request.status === "fulfilled" ? (
         <span className="base-cooperation-helper">
           {request.helperOperatorId !== null && deviceNames.has(request.helperOperatorId)
             ? `已由${describeGroupId(request.helperGroupId)}的${deviceNames.get(request.helperOperatorId)}接手支援`
