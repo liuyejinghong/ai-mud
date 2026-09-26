@@ -282,6 +282,65 @@ describe("computeBaseTick", () => {
     ]);
   });
 
+  it("充电先补当前步骤的低电工组，输入顺序不影响两分钟内复工", () => {
+    const transportTemplate: RobotTemplateDto = {
+      ...ENGINEERING_TEMPLATE,
+      ref: { kind: "robot_template", stableId: "yd-t1", revision: 1 },
+      groupId: "transport",
+      chargeRateW: 6_000
+    };
+    const transports = Array.from({ length: 4 }, (_, index) => makeRobot({
+      operatorId: `transport-${index}`,
+      deviceId: `transport-device-${index}`,
+      deviceDefId: "yd-t1",
+      groupId: "transport",
+      batteryWh: 0,
+      status: "idle",
+      currentProjectId: null,
+      currentStepIndex: null
+    }));
+    const builder = makeRobot({
+      operatorId: "builder",
+      deviceId: "builder-device",
+      batteryWh: 400,
+      status: "idle",
+      currentProjectId: null,
+      currentStepIndex: null
+    });
+    const input = makeInput({
+      power: makePower({ generationWPeak: 19_600, storageWh: 0 }),
+      projects: [makeProject()],
+      steps: [makeStep({ workDone: 22 })],
+      templates: {
+        robotByStableId: new Map([
+          ["yd-e1", ENGINEERING_TEMPLATE],
+          ["yd-t1", transportTemplate]
+        ]),
+        projectByStableId: new Map([["install_solar_array", PROJECT_TEMPLATE]])
+      }
+    });
+    const firstMinute = runSlices({ ...input, robots: [...transports, builder] }, [TICK_MS]);
+    const transportFirst = runSlices({ ...input, robots: [...transports, builder] }, [TICK_MS, TICK_MS]);
+    const builderFirst = runSlices({ ...input, robots: [builder, ...transports] }, [TICK_MS, TICK_MS]);
+
+    expect(firstMinute.steps[0]?.workDone).toBe(22);
+    expect(firstMinute.robots.find((robot) => robot.operatorId === "builder"))
+      .toMatchObject({ batteryWh: 500, status: "idle" });
+    expect(firstMinute.power).toMatchObject({ storageWh: 0, lastLoadW: 17_640 });
+    for (const state of [transportFirst, builderFirst]) {
+      expect(state.steps[0]).toMatchObject({ workDone: 23, status: "running" });
+      expect(state.robots.find((robot) => robot.operatorId === "builder")).toMatchObject({
+        batteryWh: 0,
+        status: "working",
+        currentProjectId: "p1"
+      });
+    }
+    expect(transportFirst.power).toEqual(builderFirst.power);
+    const byId = (robots: BaseRobotRecord[]) =>
+      robots.slice().sort((a, b) => a.operatorId.localeCompare(b.operatorId));
+    expect(byId(transportFirst.robots)).toEqual(byId(builderFirst.robots));
+  });
+
   it("验收(commissioning)完成触发项目 completion", () => {
     const result = computeBaseTick(
       makeInput({
