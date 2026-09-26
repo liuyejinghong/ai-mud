@@ -84,7 +84,7 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
       nextChangeAt: "2126-01-01T20:00:00.000Z",
       nextWeather: "warning"
     },
-  controlLease: { heldByThisSession: true, leaseUntil: "2126-01-01T08:02:00.000Z" },
+    controlLease: { heldByThisSession: true, controlActive: true, leaseUntil: "2126-01-01T08:02:00.000Z" },
     ...overrides
   };
 }
@@ -132,11 +132,11 @@ afterEach(cleanup);
 describe("BaseShell", () => {
   it("首屏先给当前步骤与动作，失去控制权时禁用时钟命令", () => {
     const snapshot = buildSnapshot({
-      controlLease: { heldByThisSession: false, leaseUntil: null },
+      controlLease: { heldByThisSession: false, controlActive: false, leaseUntil: null },
       cooperationRequests: [{
         requestId: "request-1", projectId: "project-1", projectName: "安装太阳能阵列",
         stepIndex: 1, fromGroupId: "engineering", helperGroupId: "transport",
-        status: "pending", resolutionReason: null, helperOperatorId: null,
+        status: "pending", resolutionReason: null, helperOperatorId: null, proposedHelper: null,
         question: "运输组缺工", createdAt: "2126-01-01T08:00:00.000Z"
       }]
     });

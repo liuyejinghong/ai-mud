@@ -86,7 +86,7 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
       nextChangeAt: "2126-01-01T20:00:00.000Z",
       nextWeather: "warning"
     },
-  controlLease: { heldByThisSession: true, leaseUntil: "2126-01-01T08:02:00.000Z" },
+    controlLease: { heldByThisSession: true, controlActive: true, leaseUntil: "2126-01-01T08:02:00.000Z" },
     ...overrides
   };
 }

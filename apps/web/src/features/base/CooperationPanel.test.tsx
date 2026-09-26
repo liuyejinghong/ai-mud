@@ -30,6 +30,7 @@ function makeRequest(overrides: Partial<CooperationRequestDto> & { proposedHelpe
     status: "pending",
     resolutionReason: null,
     helperOperatorId: null,
+    proposedHelper: null,
     question: "资源运输组能派一台车把电缆运到建设位 A 吗？",
     createdAt: "2026-09-19T08:00:00.000Z",
     ...overrides
