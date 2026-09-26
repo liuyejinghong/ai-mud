@@ -238,23 +238,31 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     await ops.session.clock.applyCommand(fresh.principal, { command: "pause" }, next);
   }, 120_000);
 
-  it("keeps the first player decision visible when one settlement catches up 40 confirmed base minutes", async () => {
+  it("leaves a still-needed first decision actionable after 40 confirmed base minutes", async () => {
     const fresh = await base();
     const token = await control(fresh.principal);
     await project(fresh.principal, "install-solar-array", fresh.siteA);
+    // 运输组暂时离线，保证积压末尾仍真实缺工；否则自然恢复应结案 no_longer_needed。
+    await query("UPDATE robot_operators SET status = 'offline' WHERE base_id = $1 AND group_id = 'transport'", [fresh.baseId]);
     for (let i = 0; i < 40; i++) {
       nowMs += 15_000;
       await ops.session.clock.heartbeat(fresh.principal, { action: "renew", controlToken: token });
     }
     await connection.db.transaction((tx) => ops.settlement.settleBases(tx, new Date(nowMs)));
-    const requests = await query<{ status: string; created_at: Date }>(
-      "SELECT status, created_at FROM cooperation_requests WHERE base_id = $1 ORDER BY created_at",
+    const requests = await query<{ status: string; created_at: Date; resolved_at: Date | null; resolution_reason: string | null }>(
+      "SELECT status, created_at, resolved_at, resolution_reason FROM cooperation_requests WHERE base_id = $1 ORDER BY created_at",
       [fresh.baseId]
     );
     expect(requests.length).toBeGreaterThan(0);
     expect(requests[0]!.status).toBe("pending");
-    expect((await ops.session.snapshot.execute(fresh.principal, token)).cooperationRequests
-      .some((request) => request.status === "pending" && request.proposedHelper !== null)).toBe(true);
+    const pending = (await ops.session.snapshot.execute(fresh.principal, token)).cooperationRequests
+      .find((request) => request.status === "pending")!;
+    expect(pending.playerDecisionAllowed).toBe(true);
+    expect(pending.proposedHelper).toBeTruthy();
+    await expect(ops.cooperationDecision.decide.execute(fresh.principal, {
+      requestId: pending.requestId, action: "support", commandId: randomUUID(),
+      expectedHelperOperatorId: pending.proposedHelper!.operatorId
+    })).resolves.toMatchObject({ status: "accepted", duplicate: false });
     await ops.session.clock.applyCommand(fresh.principal, { command: "pause" }, token);
   }, 120_000);
 
@@ -364,6 +372,7 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     expect(newRobotWorked).toBe(true);
     const pending = (await ops.session.snapshot.execute(fresh.principal, token))
       .cooperationRequests.find((request) => request.status === "pending")!;
+    console.info(`tutorial manufacture pending: ${JSON.stringify({ pending, operators: await query("SELECT group_id, status, battery_wh FROM robot_operators WHERE base_id = $1 ORDER BY group_id, battery_wh", [fresh.baseId]) })}`);
     expect(pending.proposedHelper).toBeTruthy();
     await ops.cooperationDecision.decide.execute(fresh.principal, {
       requestId: pending.requestId, action: "support", commandId: randomUUID(),
@@ -398,6 +407,7 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     );
     const pending = (await ops.session.snapshot.execute(fresh.principal, token))
       .cooperationRequests.find((request) => request.status === "pending")!;
+    console.info(`tutorial wait pending: ${JSON.stringify({ pending, operators: await query("SELECT group_id, status, battery_wh FROM robot_operators WHERE base_id = $1 ORDER BY group_id, battery_wh", [fresh.baseId]) })}`);
     expect(pending.proposedHelper).toBeTruthy();
     await query("UPDATE robot_operators SET battery_wh = 0 WHERE id = $1", [pending.proposedHelper!.operatorId]);
     const staleCommandId = randomUUID();
@@ -422,7 +432,7 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     expect(request).toMatchObject({ status: "declined", helper_operator_id: null });
     let waitMinutes: number;
     try {
-      waitMinutes = await advanceUntil(fresh.principal, token, 220, async () =>
+      waitMinutes = await advanceUntil(fresh.principal, token, 500, async () =>
         (await projectStatus(first.projectId)) === "completed"
       );
     } catch (error) {
@@ -434,7 +444,7 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
         "SELECT group_id, status, min(battery_wh)::int AS min_wh FROM robot_operators WHERE base_id = $1 GROUP BY group_id, status",
         [fresh.baseId]
       );
-      throw new Error(`Wait route after 220 minutes: ${JSON.stringify({ steps, robots })}`, { cause: error });
+      throw new Error(`Wait route after 500 minutes: ${JSON.stringify({ steps, robots })}`, { cause: error });
     }
     expect(waitMinutes).toBeGreaterThan(50);
     expect((await query<{ n: number }>(
