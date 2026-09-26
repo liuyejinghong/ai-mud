@@ -174,6 +174,7 @@ export interface BaseProjectDto {
 
 export interface BaseControlLeaseDto {
   heldByThisSession: boolean;
+  controlActive: boolean;
   leaseUntil: string | null;
 }
 
@@ -246,6 +247,17 @@ export interface CreateProjectResultDto {
 export interface BaseClockCommandInputDto {
   command: "pause" | "resume" | "set_speed";
   speed?: number;
+}
+
+export interface BaseHeartbeatInputDto {
+  action: "acquire" | "renew" | "release";
+  controlToken?: string;
+}
+
+export interface BaseHeartbeatResultDto {
+  controlToken: string | null;
+  leaseUntil: string | null;
+  timeMode: BaseTimeMode;
 }
 
 // 心跳：控制会话每 BASE_LEASE_HINT_MS 续租一次；租期到期基地自动暂停。

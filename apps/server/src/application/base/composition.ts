@@ -1,5 +1,6 @@
 import type { Env } from "../../config/env.js";
 import type { Db } from "../../db/client.js";
+import { TUTORIAL_BASE_CONTENT_RELEASE } from "@ai-mud/content";
 import { DrizzleAuditWriter } from "../../modules/audit/audit.repository.js";
 import { AuthRepository } from "../../modules/auth/auth.repository.js";
 import type { FastifyRequest } from "fastify";
@@ -7,6 +8,7 @@ import { AuthService } from "../../modules/auth/auth.service.js";
 import { AssetMutationService } from "../../modules/ledger/asset-mutation.service.js";
 import { BaseAssetService } from "../../modules/ledger/base-asset.service.js";
 import { createContentCatalog } from "../../modules/content-catalog/catalog.service.js";
+import { loadReleaseCatalog } from "../../modules/content-catalog/catalog-db.loader.js";
 import { ContentAdminRepository } from "../../modules/content-catalog/content-admin.repository.js";
 import { ContentAdminService } from "../../modules/content-catalog/content-admin.service.js";
 import { BaseOperationError } from "../../modules/world-runtime/base.service.js";
@@ -16,11 +18,12 @@ import { ManufacturingRepository } from "../../modules/industry/manufacturing.re
 import { decisionRecords } from "../../db/schema.js";
 import {
   detectAndResolveCooperation,
-  applyAcceptedHelpers
+  applyAcceptedHelpers,
+  decideFirstRequest,
+  previewPending
 } from "../../modules/industry/cooperation.service.js";
 import { CooperationRepository } from "../../modules/industry/cooperation.repository.js";
 import { DecisionGateway, type DecisionAuditRow } from "../../modules/ai/decision-gateway.js";
-import { TypeSafeShadowDecisionProvider } from "../../modules/ai/typesafe-decision-provider.js";
 import { createEconomyUseCases } from "../economy/usecases.js";
 import { OrderRepository } from "../../modules/economy/order.repository.js";
 import { PurchaseRepository } from "../../modules/economy/purchase.repository.js";
@@ -45,13 +48,17 @@ import { BaseService } from "../../modules/world-runtime/base.service.js";
 import { systemWorldClock } from "../../modules/world-runtime/world-clock.js";
 import { BaseClockUseCase } from "./base-clock.js";
 import { BaseSnapshotUseCase } from "./base-snapshot.js";
+import { CooperationDecisionCase } from "./cooperation-decision.js";
 import { CancelProjectCase } from "./cancel-project.js";
 import { CreateProjectCase } from "./create-project.js";
 import type {
   BaseAuthFacade,
   BaseProjectsRouteDeps,
   BaseSessionRouteDeps,
-  PlaytestRegistrationFacade
+  PlaytestRegistrationFacade,
+  CatalogResolverPort,
+  ContentCatalogPort,
+  BaseTx
 } from "./ports.js";
 import { ProvisionBaseUseCase } from "./provision-base.js";
 
@@ -67,6 +74,30 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
   const auth = new AuthService();
   const catalog = createContentCatalog();
   const baseRepo = new BaseRepository(db, systemWorldClock);
+  const tutorialCatalog = createContentCatalog(TUTORIAL_BASE_CONTENT_RELEASE);
+  const catalogByTransaction = new WeakMap<object, Map<string, Promise<ContentCatalogPort>>>();
+  const catalogResolver: CatalogResolverPort = {
+    forProvision: () => tutorialCatalog,
+    forBase: (tx: BaseTx, baseId: string) => {
+      const load = async () => {
+        const releaseId = await baseRepo.getContentRelease(tx, baseId);
+        if (!releaseId) throw new BaseOperationError("BASE_SCOPE_INVALID", "基地不存在。");
+        return loadReleaseCatalog(tx, releaseId);
+      };
+      if (tx === db) return load();
+      let cache = catalogByTransaction.get(tx);
+      if (!cache) {
+        cache = new Map();
+        catalogByTransaction.set(tx, cache);
+      }
+      let resolved = cache.get(baseId);
+      if (!resolved) {
+        resolved = load();
+        cache.set(baseId, resolved);
+      }
+      return resolved;
+    }
+  };
   const baseAssets = new BaseAssetService(db);
   const robotRuntime = new RobotRuntimeService(db);
   const industryRepo = new IndustryRepository(db);
@@ -79,6 +110,13 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     robots: new RobotFactory(db),
     industryInit: industryRepo,
     catalog,
+    catalogResolver,
+    settleConfirmedThrough: async (tx: BaseTx, baseId: string, at: Date) => {
+      scopeTickTransactionToBase(tx, baseId);
+      while (await settlement.settleBases(tx, at) > 0) {
+        // A 单次最多结算十分钟；继续处理已确认的剩余时段。
+      }
+    },
     industryRead: industryRepo,
     robotRead: robotRuntime,
     manufacturingRead: {
@@ -112,7 +150,12 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
           question: row.question,
           createdAt: row.createdAt
         }));
-      }
+      },
+      previewPending: (tx: BaseTx, baseId: string, requestId: string) =>
+        previewPending(tx, baseId, requestId, {
+          robots: new RobotRuntimeService(tx),
+          openCooperation: (readTx) => new CooperationRepository(readTx)
+        })
     }
   });
 
@@ -121,6 +164,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     lookup: baseRepo,
     assets: baseAssetsService,
     catalog,
+    catalogResolver,
     store: new ManufacturingRepository(db),
     receipts: (tx) => new AssetMutationService(tx)
   });
@@ -131,6 +175,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     sites: baseRepo,
     robots: robotRuntime,
     catalog,
+    catalogResolver,
     store: industryRepo,
     receipts: (tx) => new AssetMutationService(tx)
   });
@@ -231,10 +276,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     cancel: new CancelProjectCase(db, construction)
   };
 
-  // M14-LIVE seam：TYPE_SAFE_DECISION_MODE=shadow 且配置 key 时启用 Jev 对照
-  //（SHADOW：Jev 意见只进审计 reason，不改变 RULE 执行语义）。
-  // 审计写必须用调用方事务 tx：用池连接写 decision_records 会与结算事务自死锁
-  //（外键等 bases 行锁 × 事务等审计返回）→ 2026-09-22 全站瘫痪（评审 B001）。
+  // 基地结算事务内只运行确定性 RULE；外部模型网络不能占着基地锁等待。
   const recordAuditInCallerTx = async (tx: unknown, row: DecisionAuditRow) => {
     await (tx as Parameters<Parameters<Db["transaction"]>[0]>[0]).insert(decisionRecords).values({
       decisionId: row.decisionId,
@@ -249,19 +291,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
       latencyMs: row.latencyMs
     });
   };
-  const decisionGateway =
-    config.TYPE_SAFE_DECISION_MODE === "shadow" && config.TYPE_SAFE_API_KEY
-      ? new DecisionGateway({
-          provider: new TypeSafeShadowDecisionProvider({
-            apiKey: config.TYPE_SAFE_API_KEY,
-            model: config.TYPE_SAFE_MODEL,
-            baseUrl: config.TYPE_SAFE_BASE_URL
-          }),
-          recordAudit: recordAuditInCallerTx
-        })
-      : new DecisionGateway({
-          recordAudit: recordAuditInCallerTx
-        });
+  const decisionGateway = new DecisionGateway({ recordAudit: recordAuditInCallerTx });
   const cooperation = {
     listOpenRequests: async (tx: IndustryTx, baseId: string) =>
       (await new CooperationRepository(tx).listByBase(tx, baseId)).flatMap((request) =>

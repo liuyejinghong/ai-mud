@@ -1,12 +1,12 @@
 export const PRODUCT_VERSION = "1.0.1";
 
 export const WORLD_COMPATIBILITY = {
-  schemaVersion: 32,
-  apiVersion: 49,
-  engineVersion: 3,
-  rulesetVersion: 18,
-  contentVersion: 15,
+  schemaVersion: 33,
+  apiVersion: 50,
+  engineVersion: 4,
+  rulesetVersion: 19,
+  contentVersion: 16,
   promptVersion: 8,
-  economyVersion: 5,
-  worldSeedVersion: 2
+  economyVersion: 6,
+  worldSeedVersion: 3
 } as const;

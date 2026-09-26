@@ -4,9 +4,9 @@ import type {
   CreateContentDraftInputDto,
   UpdateContentDraftInputDto
 } from "@ai-mud/shared";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "../../db/client.js";
-import { bases } from "../../db/schema.js";
+import { baseManufacturingJobs, baseProjects, bases } from "../../db/schema.js";
 import { DrizzleAuditWriter } from "../../modules/audit/audit.repository.js";
 import { ContentAdminRepository } from "../../modules/content-catalog/content-admin.repository.js";
 import {
@@ -16,6 +16,7 @@ import {
   type DeleteContentDraftResultDto,
   type PublishReleaseOutcome
 } from "../../modules/content-catalog/content-admin.service.js";
+import { loadReleaseCatalog } from "../../modules/content-catalog/catalog-db.loader.js";
 
 // M13-A 内容工坊应用用例：只负责事务边界 + 管理员 principal 透传；业务语义在
 // content-catalog/content-admin.service（m13-p-contract.md §6：transport 只 import
@@ -67,6 +68,31 @@ export class ContentAdminUseCases implements ContentAdminUseCasesPort {
       const target = releases.find((release) => release.releaseId === input.releaseId);
       if (!target) {
         throw new BaseOperationError("VALIDATION_ERROR", "发布版本不存在。");
+      }
+      const [base] = await tx
+        .select({ id: bases.id })
+        .from(bases)
+        .where(eq(bases.id, input.baseId))
+        .limit(1)
+        .for("no key update");
+      if (!base) throw new BaseOperationError("BASE_SCOPE_INVALID", "基地不存在。");
+      const catalog = await loadReleaseCatalog(tx, input.releaseId);
+      const [projects, jobs] = await Promise.all([
+        tx.select({ stableId: baseProjects.projectDefId, revision: baseProjects.templateRevision })
+          .from(baseProjects)
+          .where(and(eq(baseProjects.baseId, input.baseId), inArray(baseProjects.status, [
+            "planned", "active", "paused", "blocked", "needs_decision"
+          ]))),
+        tx.select({ stableId: baseManufacturingJobs.recipeDefId, revision: baseManufacturingJobs.recipeRevision })
+          .from(baseManufacturingJobs)
+          .where(and(eq(baseManufacturingJobs.baseId, input.baseId), inArray(baseManufacturingJobs.status, [
+            "active", "paused", "blocked"
+          ])))
+      ]);
+      if (projects.some((project) =>
+        catalog.getProjectTemplate(project.stableId)?.ref.revision !== project.revision
+      ) || jobs.some((job) => !catalog.getRecipeTemplate(job.stableId, job.revision))) {
+        throw new BaseOperationError("CONTENT_INCOMPATIBLE", "发布版本无法结算当前在途项目或制造工单。");
       }
       await tx
         .update(bases)

@@ -53,7 +53,15 @@ export type CooperationResolutionReason =
   | "project_cancelled"
   | "project_failed"
   | "step_failed"
-  | "content_missing";
+  | "content_missing"
+  | "no_longer_needed";
+
+export interface CooperationHelperDto {
+  operatorId: string;
+  groupId: string;
+  batteryWh: number;
+  batteryCapacityWh: number;
+}
 
 export interface CooperationRequestDto {
   requestId: string;
@@ -65,9 +73,23 @@ export interface CooperationRequestDto {
   status: CooperationStatus;
   resolutionReason: CooperationResolutionReason | null;
   helperOperatorId: string | null;
+  proposedHelper: CooperationHelperDto | null;
   question: string;
   createdAt: string;
 }
 
-export const COOPERATION_TTL_MS = 120_000;
+export interface CooperationDecisionInputDto {
+  action: "support" | "wait";
+  commandId: string;
+  expectedHelperOperatorId?: string;
+}
+
+export interface CooperationDecisionResultDto {
+  requestId: string;
+  status: "accepted" | "declined";
+  helperOperatorId?: string;
+  duplicate: boolean;
+}
+
+export const COOPERATION_TTL_MS = 720_000;
 export const DECISION_TIMEOUT_MS = 2_000;

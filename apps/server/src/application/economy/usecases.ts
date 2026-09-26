@@ -18,7 +18,8 @@ import {
   type AcceptOrderResultPayload,
   type DeliverOrderResultPayload,
   type EconomyCatalogPort,
-  type EconomyPrincipal
+  type EconomyPrincipal,
+  type EconomyTx
 } from "../../modules/economy/order.service.js";
 import { PurchaseRepository } from "../../modules/economy/purchase.repository.js";
 import {
@@ -66,7 +67,11 @@ export class EconomyUseCases {
   readonly deliver: DeliverOrderUseCase;
   readonly purchase: CreatePurchaseUseCase;
 
-  constructor(db: Db, catalog: EconomyCatalogPort = NULL_ECONOMY_CATALOG) {
+  constructor(
+    db: Db,
+    catalog: EconomyCatalogPort = NULL_ECONOMY_CATALOG,
+    catalogResolver?: { forBase(tx: EconomyTx, baseId: string): Promise<EconomyCatalogPort> }
+  ) {
     const orderRepo = new OrderRepository(db);
     const purchaseRepo = new PurchaseRepository(db);
     // world 基地行只读参与（账号→基地、基地时钟 FOR UPDATE）；BaseRepository 结构满足
@@ -77,6 +82,7 @@ export class EconomyUseCases {
       lookup: baseRepo,
       clock: baseRepo,
       catalog,
+      ...(catalogResolver ? { catalogResolver } : {}),
       assets: orderRepo,
       store: orderRepo,
       credits: purchaseRepo,
@@ -106,6 +112,10 @@ export class EconomyUseCases {
   }
 }
 
-export function createEconomyUseCases(db: Db, catalog?: EconomyCatalogPort): EconomyUseCases {
-  return new EconomyUseCases(db, catalog);
+export function createEconomyUseCases(
+  db: Db,
+  catalog?: EconomyCatalogPort,
+  catalogResolver?: { forBase(tx: EconomyTx, baseId: string): Promise<EconomyCatalogPort> }
+): EconomyUseCases {
+  return new EconomyUseCases(db, catalog, catalogResolver);
 }

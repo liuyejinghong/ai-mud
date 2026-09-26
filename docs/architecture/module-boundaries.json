@@ -1893,6 +1893,13 @@
       "note": "M12-A 试玩注册/心跳/快照/时钟路由；仅 import application"
     },
     {
+      "path": "apps/server/src/modules/world-runtime/base-cooperation.routes.ts",
+      "module": "transport",
+      "layer": "transport",
+      "scope": "production",
+      "note": "教程协作选择路由；仅 import application"
+    },
+    {
       "path": "apps/server/src/application/base/ports.ts",
       "module": "application",
       "layer": "application",
@@ -1919,6 +1926,13 @@
       "layer": "application",
       "scope": "production",
       "note": "M12-A 暂停/恢复/倍速用例"
+    },
+    {
+      "path": "apps/server/src/application/base/cooperation-decision.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "教程协作选择、基地锁与命令回执用例"
     },
     {
       "path": "apps/server/src/application/base/create-project.ts",

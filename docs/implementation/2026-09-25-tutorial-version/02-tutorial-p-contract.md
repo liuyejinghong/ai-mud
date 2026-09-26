@@ -1,6 +1,6 @@
 # 六段教程版 P 合同
 
-状态：**CONTRACT_READY / NOT_IMPLEMENTED**。合同版本 `tutorial-p/1`，基线 `main@deaf40a125f5a72b1885e6a359589b96a4549976`；PRODUCT_VERSION 1.0.1，schema/api/engine/ruleset/content/economy 为 32/49/3/18/15/5。作者 2026-09-26 已选择 [六段方案](01-six-stage-tutorial-proposal.md) §5 的三个推荐方向。本批只交付教程闭环，不包含生产部署、数据重置、像素化、天气/清尘新玩法或毕业后离线收益。
+状态：**CONTRACT_READY / IMPLEMENTING**。合同版本 `tutorial-p/1.1`（只补精确文件归属，不改玩法），基线 `main@deaf40a125f5a72b1885e6a359589b96a4549976`；基线 PRODUCT_VERSION 1.0.1，schema/api/engine/ruleset/content/economy 为 32/49/3/18/15/5。作者 2026-09-26 已选择 [六段方案](01-six-stage-tutorial-proposal.md) §5 的三个推荐方向。本批只交付教程闭环，不包含生产部署、数据重置、像素化、天气/清尘新玩法或毕业后离线收益。
 
 ## 1. 玩家与数据合同
 
@@ -58,7 +58,7 @@ P/I 为唯一共享写者；A–D 从同一 P 提交建独立 worktree、测试�
 | B 内容/经营 | `packages/content/src/base/default-release.ts`（旧模板/种子不改；只允许删除该文件未实现的清尘承诺）、新增教程 release 文件及 `packages/content/src/base/index.ts`；`apps/server/src/modules/content-catalog/catalog.service.ts`、`catalog-db.loader.ts`；`apps/server/src/modules/economy/order.service.ts`、`order.repository.ts`；`apps/server/src/modules/industry/construction.service.ts`、`industry.repository.ts`、`manufacturing.service.ts`、`manufacturing.settlement.ts` | 内容修订/旧工单解析、有限订单、基地行锁下首工程唯一 |
 | C 协作 | `apps/server/src/modules/industry/cooperation.service.ts`、`cooperation.repository.ts` 及原有协作测试 | 首次 pending、候选重验与玩家选择、状态生命周期 |
 | D 界面 | `apps/web/src/features/base/BaseApp.tsx`、`BaseShell.tsx`、`CooperationPanel.tsx`、`BaseIntroModal.tsx`、`ProjectBoard.tsx`、`baseApi.ts`、`base.css` 及同名测试 | 首屏目标、在操作处显示回执/结果、协作可操作、控制状态与最近事实 |
-| P/I 共享 | `packages/shared/src/base.ts`、`decision.ts`、`economy.ts`、`errors.ts`、`version.ts`；`apps/server/src/db/schema.ts`、新迁移及 journal；`apps/server/src/application/base/composition.ts`、`ports.ts`、新增协作决策用例、`apps/server/src/application/economy/usecases.ts`、`apps/server/src/application/content-admin/usecases.ts`、`apps/server/src/modules/world-runtime/base-session.routes.ts`、新增协作路由、`apps/server/src/app.ts`；架构台账和 PR 文档 | DTO、路由装配、迁移、版本、真实连接，审查所需允许边 |
+| P/I 共享 | `packages/shared/src/base.ts`、`decision.ts`、`economy.ts`、`errors.ts`、`version.ts` 及版本测试；`apps/server/src/db/schema.ts`、新迁移及 journal；`apps/server/src/application/base/composition.ts`、`ports.ts`、新增协作决策用例、`apps/server/src/application/economy/usecases.ts`、`apps/server/src/application/content-admin/usecases.ts`、`apps/server/src/modules/npc/robot-runtime.ts`、`apps/server/src/modules/world-runtime/base-session.routes.ts`、新增协作路由、`apps/server/src/app.ts`；旧测试 `apps/server/src/tests/base-operations/{m12/base-construction,p0-integrity/settlement-isolation,p0-fixes/review-p0,m14/cooperation-shadow}.integration.test.ts`、`apps/server/src/modules/industry/cooperation.lifecycle.integration.test.ts`、`apps/server/src/app.world-tick.integration.test.ts` 仅改已过时的 fixture；架构台账和 PR 文档 | DTO、路由装配、迁移、版本、真实连接，审查所需允许边 |
 | Q 独立 | 新增 `apps/server/src/tests/base-operations/tutorial/*.integration.test.ts` 及独立浏览器验收记录 | 只在集成候选 HEAD 上判定，不改业务实现 |
 
 ## 5. 门槛
