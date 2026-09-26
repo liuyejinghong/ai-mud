@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_BASE_CONTENT_RELEASE, type ContentBaseRelease } from "@ai-mud/content";
+import { DEFAULT_BASE_CONTENT_RELEASE, TUTORIAL_BASE_CONTENT_RELEASE, type ContentBaseRelease } from "@ai-mud/content";
 import { createContentCatalog } from "./catalog.service.js";
 import { loadBootstrapRelease } from "./bootstrap-release.js";
 
@@ -10,6 +10,16 @@ function corruptedRelease(mutate: (release: ContentBaseRelease) => void): Conten
 }
 
 describe("createContentCatalog", () => {
+  it("新教程只列出可创建 @2，但旧 @1 工单仍可按保存的修订读取", () => {
+    const catalog = createContentCatalog(TUTORIAL_BASE_CONTENT_RELEASE);
+    expect(catalog.getRecipeTemplate("manufacture-yd-h1")?.ref.revision).toBe(2);
+    expect(catalog.getRecipeTemplate("manufacture-yd-h1", 1)?.output.initialBatteryWh).toBe(12000);
+    expect(catalog.getRecipeTemplate("manufacture-yd-h1", 2)?.output.initialBatteryWh).toBe(1000);
+    expect(catalog.getRecipeTemplate("manufacture-yd-h1", 3)).toBeNull();
+    expect(catalog.listRecipes().find((recipe) => recipe.ref.stableId === "manufacture-yd-h1")?.ref.revision).toBe(2);
+    expect(createContentCatalog().getRecipeTemplate("manufacture-yd-h1", 2)).toBeNull();
+  });
+
   it("exposes the frozen v0.12 release id", () => {
     expect(createContentCatalog().releaseId()).toBe("yudian-base-0");
   });

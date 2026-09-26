@@ -129,20 +129,8 @@ class FakeOrderStore implements OrderStore {
     order.resolvedAt = resolvedAtSim;
   }
 
-  async countOpenOrders(_tx: EconomyTx, baseId: string): Promise<number> {
-    let count = 0;
-    for (const order of this.orders.values()) {
-      if (order.baseId === baseId && order.status === "open") count += 1;
-    }
-    return count;
-  }
-
-  async listOpenOrderDefIds(_tx: EconomyTx, baseId: string): Promise<string[]> {
-    const ids: string[] = [];
-    for (const order of this.orders.values()) {
-      if (order.baseId === baseId && order.status === "open") ids.push(order.orderDefId);
-    }
-    return ids;
+  async listOrdersForBase(_tx: EconomyTx, baseId: string): Promise<BaseOrderRecord[]> {
+    return [...this.orders.values()].filter((order) => order.baseId === baseId);
   }
 
   async insertOpenOrder(_tx: EconomyTx, baseId: string, template: OrderTemplateDto): Promise<{ orderId: string }> {
@@ -436,5 +424,28 @@ describe("OrderService.ensureOrders", () => {
     expect(created).toEqual({ created: 1 });
     const again = await limited.service.ensureOrders(tx, "base-1", SIM_NOW);
     expect(again).toEqual({ created: 0 }); // 模板 A 已有 open，不再重复
+  });
+
+  it("接单后不补同模板，交付后按基地 simTime 等满 24 小时", async () => {
+    const { service, store } = makeService();
+    await service.ensureOrders(tx, "base-1", SIM_NOW);
+    const order = [...store.orders.values()].find((entry) => entry.orderDefId === TEMPLATE_A.ref.stableId)!;
+    order.status = "accepted";
+    expect(await service.ensureOrders(tx, "base-1", SIM_NOW)).toEqual({ created: 0 });
+
+    order.status = "delivered";
+    order.resolvedAt = SIM_NOW;
+    expect(await service.ensureOrders(tx, "base-1", new Date(SIM_NOW.getTime() + 23 * 3_600_000))).toEqual({ created: 0 });
+    expect(await service.ensureOrders(tx, "base-1", new Date(SIM_NOW.getTime() + 24 * 3_600_000))).toEqual({ created: 1 });
+    expect([...store.orders.values()].filter((entry) => entry.orderDefId === TEMPLATE_A.ref.stableId)).toHaveLength(2);
+  });
+
+  it("历史结案订单缺 resolvedAt 时不自动补单", async () => {
+    const { service, store } = makeService({ catalogTemplates: [TEMPLATE_A] });
+    const orderId = await seedOpenOrder(store, TEMPLATE_A);
+    const order = store.orders.get(orderId)!;
+    order.status = "failed";
+    order.resolvedAt = null;
+    expect(await service.ensureOrders(tx, "base-1", new Date(SIM_NOW.getTime() + 10 * 24 * 3_600_000))).toEqual({ created: 0 });
   });
 });

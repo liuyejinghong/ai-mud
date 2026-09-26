@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BaseDeviceDto, CooperationRequestDto } from "@ai-mud/shared";
 import { CooperationPanel } from "./CooperationPanel.js";
 
@@ -28,6 +28,8 @@ function makeRequest(overrides: Partial<CooperationRequestDto> = {}): Cooperatio
     status: "pending",
     resolutionReason: null,
     helperOperatorId: null,
+    playerDecisionAllowed: true,
+    proposedHelper: null,
     question: "资源运输组能派一台车把电缆运到建设位 A 吗？",
     createdAt: "2026-09-19T08:00:00.000Z",
     ...overrides
@@ -70,6 +72,14 @@ describe("CooperationPanel", () => {
     expect(container.querySelector("details")?.open).toBe(true);
     expect(screen.getByText("operator-2")).toBeTruthy();
     expect(screen.getByText("request-1")).toBeTruthy();
+  });
+
+  it("已完成协作在折叠历史中仍显示具名接手者", () => {
+    const { container } = render(<CooperationPanel
+      requests={[makeRequest({ status: "fulfilled", helperOperatorId: "operator-2" })]}
+      devices={devices}
+    />);
+    expect(container.querySelector(".base-cooperation-history")?.textContent).toContain("驮运二号接手支援");
   });
 
   it("操作员不在设备快照中时只显示支援小组", () => {
@@ -134,9 +144,31 @@ describe("CooperationPanel", () => {
     expect(screen.getAllByText("资源运输组能派一台车把电缆运到建设位 A 吗？")).toHaveLength(55);
   });
 
-  it("只提供来源和历史展开，不提供协作决策按钮", () => {
-    const { container } = render(<CooperationPanel requests={[makeRequest()]} devices={devices} />);
+  it("待决请求展示具名候选，并把支援或等待交给命令处理者", () => {
+    const onDecision = vi.fn();
+    const pending = makeRequest({ proposedHelper: {
+      operatorId: "operator-2", groupId: "transport", batteryWh: 1000, batteryCapacityWh: 2000
+    } });
+    render(<CooperationPanel requests={[pending]} devices={devices} onDecision={onDecision} />);
 
-    expect(container.querySelectorAll("button, input, select")).toHaveLength(0);
+    expect(screen.getByText(/驮运二号.*1000\/2000 Wh/)).toBeTruthy();
+    expect(screen.getByText(/至少 500 Wh 才可出工.*每基地分钟消耗 500 Wh.*执行前还会复核/)).toBeTruthy();
+    expect(screen.getByText(/等待会婉拒本次跨组支援.*两种选择都不保证完工时间/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "批准跨组支援" }));
+    expect(onDecision).toHaveBeenCalledWith("request-1", "support", "operator-2");
+    fireEvent.click(screen.getByRole("button", { name: "等待本组充电" }));
+    expect(onDecision).toHaveBeenCalledWith("request-1", "wait");
+  });
+
+  it("候选失效时仍允许等待，不虚构替代机器人", () => {
+    render(<CooperationPanel requests={[makeRequest({ proposedHelper: null })]} devices={devices} onDecision={vi.fn()} />);
+    expect((screen.getByRole("button", { name: "批准跨组支援" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "等待本组充电" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("后续 pending 只显示状态，不提供会被服务端拒绝的玩家按钮", () => {
+    render(<CooperationPanel requests={[makeRequest({ playerDecisionAllowed: false })]} devices={devices} onDecision={vi.fn()} />);
+    expect(screen.getByText("等待支援")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "等待本组充电" })).toBeNull();
   });
 });

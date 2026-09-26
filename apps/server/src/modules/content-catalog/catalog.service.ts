@@ -1,10 +1,8 @@
-// M12-D 只读内容目录：把 @ai-mud/content 的默认 release 映射成
-// apps/server/src/application/base/ports.ts 冻结的 ContentCatalogPort。
-// fail-fast：构造时对 release 全量跑 content 纯层校验谓词，任何失败直接 throw（启动即崩），
-// 绝不带病提供目录。v0.12 目录只读内置 release，发布/激活能力属 M13-P。
+// 将内容 release 映射成只读目录；装载时校验整包定义，损坏内容直接报错。
 import {
   BASE_FACILITY_INFO as FACILITY_INFO,
   DEFAULT_BASE_CONTENT_RELEASE,
+  TUTORIAL_BASE_RELEASE_ID,
   type ContentItemInfo,
   type ContentOrderTemplate,
   type ContentRecipeTemplate,
@@ -46,7 +44,7 @@ interface ProvisionSeedDto {
 export interface ContentCatalogPort {
   releaseId(): string;
   getItemInfo(): Record<string, ContentItemInfo>;
-  getRecipeTemplate(stableId: string): RecipeTemplateDto | null;
+  getRecipeTemplate(stableId: string, revision?: number): RecipeTemplateDto | null;
   listRecipes(): RecipeTemplateDto[];
   getOrderTemplate(stableId: string): OrderTemplateDto | null;
   listOrderTemplates(): OrderTemplateDto[];
@@ -192,7 +190,7 @@ function assertReleaseValid(release: ContentBaseRelease): void {
   }
 }
 
-// stableId + 隐含 revision 查询：v0.12 只发布 rev1，运行实例开工时固定所见修订。
+// 无 revision 只给当前可创建配方；显式 revision 用于读取已在途工单。
 export function createContentCatalog(
   release: ContentBaseRelease = DEFAULT_BASE_CONTENT_RELEASE
 ): ContentCatalogPort {
@@ -221,9 +219,17 @@ export function createContentCatalog(
       const project = projectsByStableId.get(stableId);
       return project === undefined ? null : toProjectTemplateDto(project);
     },
-    getRecipeTemplate: (stableId: string): RecipeTemplateDto | null => {
-      const recipe = recipesByStableId.get(stableId);
-      return recipe === undefined ? null : toRecipeTemplateDto(recipe);
+    getRecipeTemplate: (stableId: string, revision?: number): RecipeTemplateDto | null => {
+      const current = recipesByStableId.get(stableId);
+      if (revision === undefined || current?.ref.revision === revision) {
+        return current === undefined ? null : toRecipeTemplateDto(current);
+      }
+      const archived = release.releaseId === TUTORIAL_BASE_RELEASE_ID
+        ? DEFAULT_BASE_CONTENT_RELEASE.recipes.find(
+            (recipe) => recipe.ref.stableId === stableId && recipe.ref.revision === revision
+          )
+        : undefined;
+      return archived === undefined ? null : toRecipeTemplateDto(archived);
     },
     listRecipes: (): RecipeTemplateDto[] => release.recipes.map(toRecipeTemplateDto),
     getOrderTemplate: (stableId: string): OrderTemplateDto | null => {

@@ -312,7 +312,7 @@ async function seedBase(db: Db) {
     id: accountId, email: `b005-${accountId}@example.invalid`, passwordHash: "x"
   });
   await db.insert(schema.bases).values({
-    id: baseId, accountId, name: "B005 基地", contentRelease: "test",
+    id: baseId, accountId, name: "B005 基地", contentRelease: "yudian-base-0",
     timeMode: "running", simTime: SIM_NOON
   });
   await db.insert(schema.basePowerState).values({
@@ -383,6 +383,17 @@ async function seedRequest(
   return row!.id;
 }
 
+// 这些生命周期用例检验“首条之后”的 RULE 路径；先留下已完成的历史请求。
+async function seedRuleHistory(db: Db, baseId: string) {
+  const history = await seedProject(db, baseId, [
+    { kind: "transport", groupId: "transport", status: "completed", workRequired: 1, workDone: 1 }
+  ]);
+  await db.update(schema.baseProjects).set({ status: "completed" }).where(eq(schema.baseProjects.id, history.projectId));
+  await seedRequest(db, {
+    baseId, projectId: history.projectId, stepIndex: 0, status: "fulfilled", helperOperatorId: null
+  });
+}
+
 async function requestsOf(db: Db, baseId: string) {
   return db.select().from(schema.cooperationRequests).where(eq(schema.cooperationRequests.baseId, baseId));
 }
@@ -393,6 +404,27 @@ async function robotOf(db: Db, operatorId: string) {
 }
 
 d("B005 cooperation lifecycle (real PostgreSQL)", () => {
+  it("玩家等待只结案本基地 pending，请求行锁和条件写在调用方事务内", async () => {
+    const db: Db = drizzle(migPool, { schema });
+    const { baseId } = await seedBase(db);
+    const other = await seedBase(db);
+    const project = await seedProject(db, baseId, [
+      { kind: "transport", groupId: "transport", status: "ready", workRequired: 60 }
+    ]);
+    const requestId = await seedRequest(db, {
+      baseId, projectId: project.projectId, stepIndex: 0, status: "pending", helperOperatorId: null
+    });
+    await db.transaction(async (tx) => {
+      const repo = new CooperationRepository(tx);
+      expect(await repo.findByIdForUpdate(tx, other.baseId, requestId)).toBeNull();
+      expect(await repo.findByIdForUpdate(tx, baseId, requestId)).toMatchObject({ status: "pending" });
+      expect(await repo.decline(tx, requestId, "cmd-wait", SIM_NOON)).toBe(true);
+      expect(await repo.decline(tx, requestId, "cmd-wait-2", SIM_NOON)).toBe(false);
+    });
+    const saved = (await requestsOf(db, baseId)).find((row) => row.id === requestId);
+    expect(saved).toMatchObject({ status: "declined", decisionId: "cmd-wait", resolvedAt: SIM_NOON });
+  });
+
   it("取消项目在调用方事务内结案本项目 pending/accepted（生产默认绑定）；事务回滚时一并回滚", async () => {
     const db: Db = drizzle(migPool, { schema });
     const { accountId, baseId } = await seedBase(db);
@@ -548,6 +580,7 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
   it("取消事务立即释放 working helper，下一 tick 可被新项目再次选中", async () => {
     const db: Db = drizzle(migPool, { schema });
     const { accountId, baseId } = await seedBase(db);
+    await seedRuleHistory(db, baseId);
     // 基地没有运输组机器人：运输步骤本组无人可出工 → 请求跨组支援（不依赖耗电/充电数值）。
     const survey = await seedRobot(db, baseId, { deviceDefId: "yd-s1", groupId: "survey", batteryWh: 10_000, batteryCapacityWh: 10_000 });
     const a = await seedProject(db, baseId, [
@@ -556,7 +589,7 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
     ]);
 
     await db.transaction((tx) => makeSettlement(db, baseId, SIM_NOON).settleBases(tx, new Date()));
-    const [requestA] = await requestsOf(db, baseId);
+    const requestA = (await requestsOf(db, baseId)).find((row) => row.projectId === a.projectId);
     expect(requestA).toMatchObject({ projectId: a.projectId, stepIndex: 0, status: "accepted", helperOperatorId: survey });
     expect(await robotOf(db, survey)).toMatchObject({ status: "working", currentProjectId: a.projectId, currentStepIndex: 0 });
 
@@ -565,7 +598,7 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
         projectId: a.projectId, commandId: randomUUID()
       })
     );
-    expect((await requestsOf(db, baseId))[0]).toMatchObject({ id: requestA!.id, status: "expired" });
+    expect((await requestsOf(db, baseId)).find((row) => row.id === requestA!.id)).toMatchObject({ status: "expired" });
     // 取消与结案、作业者回收同事务；即使玩家马上暂停基地也不留旧分配。
     const surveyAfterCancel = await robotOf(db, survey);
     expect(surveyAfterCancel).toMatchObject({ status: "idle", currentProjectId: null, currentStepIndex: null });
@@ -586,6 +619,7 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
   it("取消事务立即释放原地 charging helper，下一 tick 可被新项目再次选中", async () => {
     const db: Db = drizzle(migPool, { schema });
     const { accountId, baseId } = await seedBase(db);
+    await seedRuleHistory(db, baseId);
     const a = await seedProject(db, baseId, [
       { kind: "installation", groupId: "engineering", status: "blocked", workRequired: 80, workDone: 10, blockedReason: "insufficient_power" }
     ]);
@@ -601,7 +635,7 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
         projectId: a.projectId, commandId: randomUUID()
       })
     );
-    expect((await requestsOf(db, baseId))[0]).toMatchObject({ id: requestA, status: "expired" });
+    expect((await requestsOf(db, baseId)).find((row) => row.id === requestA)).toMatchObject({ status: "expired" });
     // 取消时 npc 唯一写者清除旧分配；下一 tick 才决定新项目是否接入。
     const surveyAfterCancel = await robotOf(db, survey);
     expect(surveyAfterCancel).toMatchObject({ status: "idle", currentProjectId: null, currentStepIndex: null });
@@ -661,7 +695,7 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
     const foreign = await seedRequest(db, { baseId: other.baseId, projectId: q.projectId, stepIndex: 0, status: "accepted", helperOperatorId: null });
 
     const repo = new CooperationRepository(db);
-    expect(await repo.accept(db, expired, survey, "decision-late")).toBe(false);
+    expect(await repo.accept(db, expired, survey, "survey", "decision-late")).toBe(false);
     const [stillExpired] = await db.select().from(schema.cooperationRequests).where(eq(schema.cooperationRequests.id, expired));
     expect(stillExpired).toMatchObject({ status: "expired", helperOperatorId: null, decisionId: null });
 
@@ -685,7 +719,7 @@ d("B005 cooperation lifecycle (real PostgreSQL)", () => {
     expect(byId.get(accepted)?.resolvedAt).not.toBeNull();
     expect(byId.get(expired)?.resolvedAt?.toISOString()).toBe(SIM_NOON.toISOString()); // 已结案不重写
     expect(byId.get(foreign)?.status).toBe("accepted");
-    expect(await repo.accept(db, pending, survey, "decision-late")).toBe(false);
+    expect(await repo.accept(db, pending, survey, "survey", "decision-late")).toBe(false);
     expect(await repo.closeOpen(db, pending, "project_cancelled")).toBe(false);
   });
 });

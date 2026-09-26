@@ -875,7 +875,7 @@ export const bases = pgTable(
     epoch: integer("epoch").notNull().default(1),
     baseRevision: integer("base_revision").notNull().default(1),
     contentRelease: text("content_release").notNull(),
-    credits: integer("credits").notNull().default(500),
+    credits: integer("credits").notNull().default(1200),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
@@ -1260,7 +1260,7 @@ export const cooperationRequests = pgTable(
     ),
     resolutionReasonCheck: check(
       "cooperation_requests_resolution_reason_check",
-      sql`${table.resolutionReason} IS NULL OR (${table.status} = 'expired' AND ${table.resolutionReason} IN ('ttl_expired', 'project_cancelled', 'project_failed', 'step_failed', 'content_missing'))`
+      sql`${table.resolutionReason} IS NULL OR (${table.status} = 'expired' AND ${table.resolutionReason} IN ('ttl_expired', 'project_cancelled', 'project_failed', 'step_failed', 'content_missing', 'no_longer_needed'))`
     )
   })
 );

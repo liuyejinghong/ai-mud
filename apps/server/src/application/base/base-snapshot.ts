@@ -34,7 +34,7 @@ type _CompatibilityWitness = [
 export class BaseSnapshotUseCase implements SnapshotUseCase {
   constructor(private readonly service: BaseService) {}
 
-  execute(principal: BasePrincipal): Promise<BaseSnapshotDto> {
-    return this.service.snapshot(principal);
+  execute(principal: BasePrincipal, controlToken?: string): Promise<BaseSnapshotDto> {
+    return this.service.snapshot(principal, controlToken);
   }
 }

@@ -1,5 +1,5 @@
 // M14-B cooperation_requests 访问（m14-p-contract.md §2/§3；industry 唯一写者）。
-// 协作请求是 industry 的真实调度事实（跨组支援）：不支持玩家创建/取消（合同 §3.4）。
+// 协作请求是 industry 的真实调度事实（跨组支援）；首次真实缺工由玩家决策。
 // 必须在调用方事务内执行（tx 透传构造 + 方法透传），本类永不自开或提交事务。
 // 状态迁移一律带条件写（B005）：只有打开（pending/accepted）的请求能被接受/结案，
 // 并发事务先结案的请求不会被后到的写复活。
@@ -17,7 +17,8 @@ export type CooperationCloseReason =
   | "project_cancelled"
   | "project_failed"
   | "step_failed"
-  | "content_missing";
+  | "content_missing"
+  | "no_longer_needed";
 
 // 协作请求所指步骤的当前事实（base_projects × base_project_steps；stepIndex 为 null 表示步骤行缺失）。
 export interface CooperationStepState {
@@ -36,7 +37,7 @@ export interface CooperationRequestRecord {
   fromGroupId: string;
   helperGroupId: string;
   status: CooperationStatus;
-  resolutionReason: CooperationResolutionReason | null;
+  resolutionReason: CooperationResolutionReason | "no_longer_needed" | null;
   helperOperatorId: string | null;
   decisionId: string | null;
   question: string;
@@ -65,8 +66,16 @@ export interface CooperationRequestStore {
     projectId: string,
     stepIndex: number
   ): Promise<CooperationRequestRecord | null>;
+  findByIdForUpdate(tx: CooperationTx, baseId: string, requestId: string): Promise<CooperationRequestRecord | null>;
   // 只接受仍 pending 的请求；返回是否真正接受（false = 已被并发结案/接受）。
-  accept(tx: CooperationTx, requestId: string, helperOperatorId: string, decisionId: string): Promise<boolean>;
+  accept(
+    tx: CooperationTx,
+    requestId: string,
+    helperOperatorId: string,
+    helperGroupId: string,
+    decisionId: string
+  ): Promise<boolean>;
+  decline(tx: CooperationTx, requestId: string, decisionId: string, resolvedAt: Date): Promise<boolean>;
   expire(tx: CooperationTx, requestId: string): Promise<void>;
   // B005：结案单条打开的请求；返回是否真正结案。
   closeOpen(tx: CooperationTx, requestId: string, reason: CooperationCloseReason): Promise<boolean>;
@@ -97,7 +106,7 @@ function toRecord(row: typeof cooperationRequests.$inferSelect): CooperationRequ
     fromGroupId: row.fromGroupId,
     helperGroupId: row.helperGroupId,
     status: row.status as CooperationStatus,
-    resolutionReason: row.resolutionReason as CooperationResolutionReason | null,
+    resolutionReason: row.resolutionReason as CooperationRequestRecord["resolutionReason"],
     helperOperatorId: row.helperOperatorId,
     decisionId: row.decisionId,
     question: row.question,
@@ -165,17 +174,45 @@ export class CooperationRepository implements CooperationRequestStore {
     return row ? toRecord(row) : null;
   }
 
+  async findByIdForUpdate(
+    _tx: CooperationTx,
+    baseId: string,
+    requestId: string
+  ): Promise<CooperationRequestRecord | null> {
+    const rows = await this.db
+      .select()
+      .from(cooperationRequests)
+      .where(and(eq(cooperationRequests.baseId, baseId), eq(cooperationRequests.id, requestId)))
+      .for("update");
+    return rows[0] ? toRecord(rows[0]) : null;
+  }
+
   // 决策接受：记 helper_operator_id 与 decision_id（决策审计 ↔ 调度事实的连接键）。
   // 条件写：请求在决策期间被取消事务结案时不复活（READ COMMITTED 下 UPDATE 重评 WHERE）。
   async accept(
     _tx: CooperationTx,
     requestId: string,
     helperOperatorId: string,
+    helperGroupId: string,
     decisionId: string
   ): Promise<boolean> {
     const updated = await this.db
       .update(cooperationRequests)
-      .set({ status: "accepted", helperOperatorId, decisionId })
+      .set({ status: "accepted", helperOperatorId, helperGroupId, decisionId })
+      .where(and(eq(cooperationRequests.id, requestId), eq(cooperationRequests.status, "pending")))
+      .returning({ id: cooperationRequests.id });
+    return updated.length > 0;
+  }
+
+  async decline(
+    _tx: CooperationTx,
+    requestId: string,
+    decisionId: string,
+    resolvedAt: Date
+  ): Promise<boolean> {
+    const updated = await this.db
+      .update(cooperationRequests)
+      .set({ status: "declined", decisionId, resolvedAt })
       .where(and(eq(cooperationRequests.id, requestId), eq(cooperationRequests.status, "pending")))
       .returning({ id: cooperationRequests.id });
     return updated.length > 0;

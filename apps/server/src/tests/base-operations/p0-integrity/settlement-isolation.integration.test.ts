@@ -67,6 +67,7 @@ interface SeedBaseOptions {
   // null = 无租约；过去时间 = 租约失效
   leaseUntil: Date | null;
   lastAdvancedAt: Date;
+  lastConfirmedAt?: Date;
   simTime?: Date;
   storageWh?: number;
   jobs: SeedJob[];
@@ -147,7 +148,7 @@ async function seedBase(options: SeedBaseOptions): Promise<SeededBase> {
       id: baseId,
       accountId,
       name: `P0 结算隔离 ${options.label}`,
-      contentRelease: "test",
+      contentRelease: "yudian-base-0",
       timeMode: options.timeMode,
       simTime: options.simTime ?? NIGHT,
       lastAdvancedAt: options.lastAdvancedAt
@@ -156,7 +157,8 @@ async function seedBase(options: SeedBaseOptions): Promise<SeededBase> {
       await tx.insert(schema.baseControlLeases).values({
         baseId,
         leaseToken: `p0int-${options.label}`,
-        leaseUntil: options.leaseUntil
+        leaseUntil: options.leaseUntil,
+        updatedAt: options.lastConfirmedAt ?? new Date()
       });
     }
     await tx.insert(schema.basePowerState).values({
@@ -262,6 +264,7 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
       timeMode: "running",
       leaseUntil: leaseValid,
       lastAdvancedAt: new Date(now.getTime() - MINUTE_MS),
+      lastConfirmedAt: now,
       jobs: [{ recipe: "manufacture-yd-s1", outputsPlanned: 5 }]
     });
     const baseB = await seedBase({
@@ -269,6 +272,7 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
       timeMode: "paused",
       leaseUntil: leaseValid, // 租约有效也不行：暂停就是暂停
       lastAdvancedAt: new Date(now.getTime() - MINUTE_MS),
+      lastConfirmedAt: now,
       jobs: [{ recipe: "manufacture-yd-s1", outputsPlanned: 5, currentUnitWorkDone: 7 }]
     });
     const baseC = await seedBase({
@@ -276,6 +280,7 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
       timeMode: "running",
       leaseUntil: new Date(now.getTime() - 1_000),
       lastAdvancedAt: new Date(now.getTime() - MINUTE_MS),
+      lastConfirmedAt: new Date(now.getTime() - MINUTE_MS), // 已确认时段均已结清
       jobs: [{ recipe: "manufacture-yd-h1", outputsPlanned: 2 }]
     });
     const beforeB = await snapshotBase(baseB.baseId);
@@ -304,6 +309,7 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
         timeMode: "running",
         leaseUntil: new Date(now.getTime() + 300_000),
         lastAdvancedAt: new Date(now.getTime() - 3_600_000),
+        lastConfirmedAt: now,
         jobs: [{ recipe: "manufacture-yd-s1", outputsPlanned: 20 }]
       });
       const target = await seedBase(seedOptions(`a2-target-${runningBases}`));
@@ -343,6 +349,7 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
       timeMode: "running",
       leaseUntil: new Date(now.getTime() + 300_000),
       lastAdvancedAt: new Date(now.getTime() - 3_600_000), // Δsim = 10 分钟 → 预算 250
+      lastConfirmedAt: now,
       jobs: [
         { recipe: "manufacture-yd-h1", outputsPlanned: 3, createdAt: new Date(now.getTime() - 120_000) },
         { recipe: "manufacture-yd-s1", outputsPlanned: 20, createdAt: new Date(now.getTime() - 60_000) }
@@ -368,6 +375,7 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
       timeMode: "running",
       leaseUntil: new Date(now.getTime() + 300_000),
       lastAdvancedAt: new Date(now.getTime() - MINUTE_MS),
+      lastConfirmedAt: now,
       jobs: [{ recipe: "manufacture-yd-h1", outputsPlanned: 1 }]
     });
     const idle = await seedBase({
@@ -375,6 +383,7 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
       timeMode: "running",
       leaseUntil: new Date(now.getTime() + 300_000),
       lastAdvancedAt: new Date(now.getTime() - MINUTE_MS),
+      lastConfirmedAt: now,
       jobs: []
     });
 
@@ -468,6 +477,7 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
       timeMode: "running",
       leaseUntil: new Date(now.getTime() + 300_000),
       lastAdvancedAt: new Date(now.getTime() - MINUTE_MS),
+      lastConfirmedAt: now,
       jobs: [{ recipe: "manufacture-yd-h1", outputsPlanned: 2, currentUnitWorkDone: 20 }]
     });
     let releaseTick!: () => void;

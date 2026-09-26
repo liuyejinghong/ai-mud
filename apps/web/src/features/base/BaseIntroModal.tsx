@@ -7,9 +7,11 @@ const FOCUSABLE = "button, [href], input, select, textarea, [tabindex]:not([tabi
 
 export function BaseIntroModal({
   baseName,
+  credits,
   onDismiss
 }: {
   baseName: string;
+  credits?: number;
   onDismiss: () => void;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
@@ -46,20 +48,19 @@ export function BaseIntroModal({
       >
         <h2 className="base-intro-title">先遣工程队 · 就位</h2>
         <p className="base-intro-copy">
-          2033 年，首批无人货运飞船降落在阿卡迪亚平原。你是地球上远程指挥这批设备的经营者——
-          12 台工程机器人已经在 {baseName}
-          就位，随船物资已经入库。地图上那些已建成的阵列、储能间、仓储棚，只是让基地「活着」的骨架。
+          2033 年，首批无人货运飞船降落在阿卡迪亚平原。你远程指挥 {baseName} 的机器人；
+          随船物资已入库{credits === undefined ? "" : `，当前账款 ${credits} credits`}。新基地的开局资金由着陆区拨付。
         </p>
         <p className="base-intro-goal">
-          你的第一个任务：把运抵的太阳电池阵安装到建设位 A，让基地现有的 15 kW 峰值发电能力再增加 5 kW。
+          第一个任务：把运抵的太阳能设施安装到建设位 A，让现有的 15 kW 峰值发电能力再增加 5 kW。
         </p>
         <ol className="base-intro-steps">
-          <li>在时间控制区点「恢复计时」，让基地时间运行；</li>
-          <li>点地图上的「建设位 A」（虚线框），选择「安装运抵的太阳能设施」开工；</li>
-          <li>查看项目进度——缺电或缺料时，工程队会停下来等你处理。</li>
+          <li>若时间暂停，点「恢复计时」；推荐 ×4 观察工程；</li>
+          <li>点地图上的「建设位 A」开工，或先制造机器人；两条路共用物资；</li>
+          <li>遇到缺工时处理协作，完工后交订单、采购补料，再建设下一阵列。</li>
         </ol>
         <p className="base-intro-hint">
-          火星的一天约等于现实一天；离开时基地自动暂停，不会浪费物资。现在就能接外部订单赚账款、采购材料、制造新机器人，边建设边经营前哨。
+          离开或失焦后基地自动暂停，不补算离线时间。现在就能接外部订单赚账款、采购材料、制造新机器人。
         </p>
         <button type="button" className="base-primary-button" autoFocus onClick={onDismiss}>
           开始指挥

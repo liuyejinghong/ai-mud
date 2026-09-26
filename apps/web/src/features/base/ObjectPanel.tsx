@@ -15,6 +15,7 @@ import type {
 import { BASE_ROBOT_GROUP_NAMES, definitionRefKey } from "@ai-mud/shared";
 import {
   describeBlockedReason,
+  describeIdleStep,
   PROJECT_STATUS_LABELS,
   STEP_KIND_LABELS,
   STEP_STATUS_LABELS
@@ -100,6 +101,7 @@ export function ObjectPanel({
       ) : selectedProject ? (
         <ProjectDetail
           project={selectedProject}
+          devices={devices}
           timeMode={timeMode}
           isBusy={isBusy}
           onCancelProject={onCancelProject}
@@ -131,23 +133,28 @@ export function ObjectPanel({
 
 function ProjectDetail({
   project,
+  devices,
   timeMode,
   isBusy,
   onCancelProject,
   onResume
 }: {
   project: BaseProjectDto;
+  devices: BaseDeviceDto[];
   timeMode: BaseTimeMode;
   isBusy: boolean;
   onCancelProject: (projectId: string) => void;
   onResume: () => void;
 }) {
   const cancellable = project.status !== "completed" && project.status !== "cancelled" && project.status !== "failed";
+  const currentStep = project.steps.find((step) => step.status !== "completed");
+  const idleNote = currentStep ? describeIdleStep(project, currentStep, devices, timeMode) : null;
 
   return (
     <div className="base-detail">
       <h3>{project.name}</h3>
       <p className="base-detail-line">状态：{PROJECT_STATUS_LABELS[project.status]}</p>
+      {idleNote ? <p className="base-blocked-reason">{idleNote}</p> : null}
       {timeMode === "paused" && cancellable ? (
         <div className="base-paused-task">
           <p className="base-copy">
@@ -295,7 +302,9 @@ function SiteDetail({
         {site.description ? <p className="base-copy">{site.description}</p> : null}
         {site.attributes.length > 0 ? (
           <ul className="base-attr-list">
-            {site.attributes.map((attribute) => (
+          {site.attributes.filter((attribute) =>
+            !(site.siteKey === "charging" && attribute.label === "充电位")
+          ).map((attribute) => (
               <li key={attribute.label} className="base-detail-line">
                 {attribute.label}：{attribute.value}
               </li>

@@ -17,9 +17,11 @@ describe("BaseIntroModal", () => {
   });
 
   it("按现有能力说明首工程与可立即使用的经营功能（A08）", () => {
-    render(<BaseIntroModal baseName="先遣前哨" onDismiss={() => undefined} />);
+    render(<BaseIntroModal baseName="先遣前哨" credits={1200} onDismiss={() => undefined} />);
 
     expect(screen.getByText(/现有的 15 kW 峰值发电能力再增加 5 kW/)).toBeTruthy();
+    expect(screen.getByText(/当前账款 1200 credits/)).toBeTruthy();
+    expect(screen.getByText(/新基地的开局资金由着陆区拨付/)).toBeTruthy();
     expect(screen.getByText(/现在就能接外部订单赚账款/)).toBeTruthy();
     expect(screen.getByText(/采购材料、制造新机器人/)).toBeTruthy();
   });

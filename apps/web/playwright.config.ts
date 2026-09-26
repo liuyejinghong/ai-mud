@@ -32,6 +32,14 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         ...(browserChannel ? { channel: browserChannel } : {})
       }
+    },
+    {
+      name: "tutorial-postgres",
+      testMatch: /tutorial-real\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        ...(browserChannel ? { channel: browserChannel } : {})
+      }
     }
   ]
 });

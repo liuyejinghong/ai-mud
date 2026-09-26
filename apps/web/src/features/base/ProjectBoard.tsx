@@ -1,10 +1,14 @@
-// 底部项目清单：全部项目的状态、步骤进度与受阻原因。数据一律来自快照，不在客户端推算。
+// 底部项目清单：显示快照中的项目进度与正在作业的设备。
 import type {
+  BaseDeviceDto,
   BaseProjectDto,
+  BaseProjectStepDto,
+  BaseTimeMode,
   ProjectStatus,
   StepKind,
   StepStatus
 } from "@ai-mud/shared";
+import { BASE_ROBOT_GROUP_NAMES } from "@ai-mud/shared";
 
 export const PROJECT_STATUS_LABELS: Record<ProjectStatus, string> = {
   planned: "准备中",
@@ -41,12 +45,37 @@ export function describeBlockedReason(reason: string | null): string | null {
   return BLOCKED_REASON_LABELS[reason] ?? reason;
 }
 
+export function workingCrew(projectId: string, stepIndex: number, devices: BaseDeviceDto[]): number {
+  return devices.filter((device) =>
+    device.status === "working" && device.currentAssignment?.projectId === projectId &&
+    device.currentAssignment.stepIndex === stepIndex
+  ).length;
+}
+
+export function describeIdleStep(
+  project: BaseProjectDto,
+  step: BaseProjectStepDto,
+  devices: BaseDeviceDto[],
+  timeMode: BaseTimeMode
+): string | null {
+  if (["completed", "cancelled", "failed"].includes(project.status) ||
+    workingCrew(project.projectId, step.index, devices) > 0) return null;
+  if (timeMode === "paused" || project.status === "paused") return "当前 0 台作业中：基地时间已暂停。";
+  if (step.blockedReason) return `当前 0 台作业中：${describeBlockedReason(step.blockedReason)}。`;
+  const group = devices.filter((device) => device.groupId === step.groupId);
+  if (group.length === 0) return `当前 0 台作业中：没有${BASE_ROBOT_GROUP_NAMES[step.groupId]}设备。`;
+  if (group.every((device) => device.batteryWh < 500)) return "当前 0 台作业中：本组设备电量低，需等待补电。";
+  if (group.every((device) => device.status === "charging")) return "当前 0 台作业中：本组设备正在充电。";
+  return "当前 0 台作业中，等待基地调度。";
+}
+
 export interface ProjectBoardProps {
   projects: BaseProjectDto[];
   buildableProjects: Array<{ name: string; description: string }>;
   selectedProjectId: string | null;
   onSelectProject: (projectId: string) => void;
-  crewByStep?: Record<string, number>;
+  devices: BaseDeviceDto[];
+  timeMode: BaseTimeMode;
 }
 
 export function ProjectBoard({
@@ -54,7 +83,8 @@ export function ProjectBoard({
   buildableProjects,
   selectedProjectId,
   onSelectProject,
-  crewByStep
+  devices,
+  timeMode
 }: ProjectBoardProps) {
   return (
     <section className="base-panel base-board" aria-label="项目清单">
@@ -93,6 +123,8 @@ export function ProjectBoard({
                     Math.round((currentStep.workDone / currentStep.workRequired) * 100)
                   )
                 : null;
+            const crew = currentStep ? workingCrew(project.projectId, currentStep.index, devices) : 0;
+            const idleNote = currentStep ? describeIdleStep(project, currentStep, devices, timeMode) : null;
 
             return (
               <li key={project.projectId}>
@@ -111,14 +143,8 @@ export function ProjectBoard({
                       当前步骤 {currentIndex >= 0 ? currentIndex + 1 : project.steps.length}/
                       {project.steps.length}：{STEP_KIND_LABELS[currentStep.kind]}（
                       {STEP_STATUS_LABELS[currentStep.status]}）
-                    
-                  {currentStep.status === "running" &&
-                  (crewByStep?.[`${project.projectId}:${currentStep.index}`] ?? 0) > 0
-                    ? ` · 机组 ${
-                        crewByStep?.[`${project.projectId}:${currentStep.index}`]
-                      } 台作业中`
-                    : ""}
-                </span>
+                      {currentStep.status === "running" && crew > 0 ? ` · 机组 ${crew} 台作业中` : ""}
+                    </span>
                   ) : (
                     <span className="base-project-step">该项目没有施工步骤</span>
                   )}
@@ -143,6 +169,7 @@ export function ProjectBoard({
                   {blockedLabel ? (
                     <span className="base-blocked-reason">受阻：{blockedLabel}</span>
                   ) : null}
+                  {idleNote ? <span className="base-blocked-reason">{idleNote}</span> : null}
                 </button>
               </li>
             );

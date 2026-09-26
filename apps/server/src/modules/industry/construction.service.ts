@@ -93,6 +93,7 @@ export interface ConstructionServiceDeps {
   sites: ConstructionSitePort;
   robots: ConstructionRobotPort;
   catalog: ConstructionCatalogPort;
+  catalogResolver?: { forBase(tx: ConstructionTx, baseId: string): Promise<ConstructionCatalogPort> };
   store: IndustryProjectStore;
   // 生产绑定：(tx) => new AssetMutationService(tx)。测试注入内存替身。
   receipts: (tx: ConstructionTx) => ConstructionReceiptsPort;
@@ -159,6 +160,9 @@ export class ConstructionService {
     input: CreateProjectInputDto
   ): Promise<CreateProjectResultDto> {
     const baseId = await this.requireBaseId(tx, principal);
+    if (!(await this.deps.lookup.getBaseForUpdate(tx, baseId))) {
+      throw new BaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
+    }
     const actorScope = `base:${baseId}`;
     const requestHash = hashRequest({
       definitionRef: {
@@ -193,10 +197,15 @@ export class ConstructionService {
       throw new BaseOperationError(409, "CONFLICT", "命令幂等登记冲突，请重试。");
     }
 
-    const template = this.deps.catalog.getProjectTemplate(input.definitionRef.stableId);
+    const catalog = await this.catalogForBase(tx, baseId);
+    const template = catalog.getProjectTemplate(input.definitionRef.stableId);
     if (!template || template.ref.revision !== input.definitionRef.revision) {
       // 旧 revision 不 fallback latest（S4）
       throw new BaseOperationError(409, "CONTENT_INCOMPATIBLE", "项目模板不存在或修订不匹配。");
+    }
+
+    if (await this.deps.store.hasLiveOrCompletedProject(tx, baseId, template.ref.stableId)) {
+      throw new BaseOperationError(409, "CONFLICT", "这项工程已在建设或已完成。");
     }
 
     const site = await this.deps.sites.getSite(tx, baseId, input.siteId);
@@ -322,6 +331,10 @@ export class ConstructionService {
   }
 
   // ---------- 内部 ----------
+
+  private catalogForBase(tx: ConstructionTx, baseId: string): Promise<ConstructionCatalogPort> {
+    return this.deps.catalogResolver?.forBase(tx, baseId) ?? Promise.resolve(this.deps.catalog);
+  }
 
   private async requireBaseId(tx: ConstructionTx, principal: ConstructionPrincipal): Promise<string> {
     const baseId = await this.deps.lookup.findBaseIdByAccount(tx, principal.accountId);

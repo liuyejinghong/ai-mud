@@ -12,7 +12,7 @@ import { ConstructionService } from "../../../modules/industry/construction.serv
 import { IndustryRepository } from "../../../modules/industry/industry.repository.js";
 import { RobotFactory } from "../../../modules/npc/robot-factory.js";
 import { RobotRuntimeService } from "../../../modules/npc/robot-runtime.js";
-import { BaseRepository } from "../../../modules/world-runtime/base.repository.js";
+import { BaseRepository, scopeTickTransactionToBase } from "../../../modules/world-runtime/base.repository.js";
 import { BaseService } from "../../../modules/world-runtime/base.service.js";
 import { createDb, type Db } from "../../../db/client.js";
 
@@ -155,6 +155,12 @@ function buildControlledOperations(db: Db, clock: { now(): Date }): ControlledOp
     robots: new RobotFactory(db),
     industryInit: industryRepo,
     catalog,
+    settleConfirmedThrough: async (tx, baseId, at) => {
+      scopeTickTransactionToBase(tx, baseId);
+      while (await settlement.settleBases(tx, at) > 0) {
+        // 分段结清已确认的控制时段。
+      }
+    },
     industryRead: industryRepo,
     robotRead: robotRuntime,
     manufacturingRead: {
@@ -296,6 +302,7 @@ describe("base construction full chain (real PostgreSQL, controlled clock)", () 
   let harness: Harness;
   let ops: ControlledOps;
   let nowMs = T0;
+  let controlToken = "";
 
   beforeAll(async () => {
     const databaseUrl = requireDatabaseUrl();
@@ -314,16 +321,22 @@ describe("base construction full chain (real PostgreSQL, controlled clock)", () 
     ops = buildControlledOperations(harness.db, clock);
     const accountId = await insertAccount(harness.client, email);
     const provisioned = await ops.baseService.provision({ accountId }, { commandId: randomUUID() });
+    controlToken = (await ops.baseService.heartbeat({ accountId }, { action: "acquire" })).controlToken ?? "";
     const siteAId = await siteIdForKey(harness.client, provisioned.baseId, "site_a");
     return { accountId, baseId: provisioned.baseId, siteAId };
   }
 
-  async function createProject(accountId: string, siteId: string, commandId = randomUUID()) {
+  async function createProject(
+    accountId: string,
+    siteId: string,
+    commandId = randomUUID(),
+    stableId: string = CREATE_INPUT.definitionRef.stableId
+  ) {
     return harness.db.transaction((tx) =>
       ops.construction.create(
         tx,
         { accountId },
-        { definitionRef: { ...CREATE_INPUT.definitionRef }, siteId, commandId }
+        { definitionRef: { ...CREATE_INPUT.definitionRef, stableId }, siteId, commandId }
       )
     );
   }
@@ -331,7 +344,7 @@ describe("base construction full chain (real PostgreSQL, controlled clock)", () 
   // 一次受控 tick：心跳续租 → settleBases(tx, now)（Δsim = 60s × speed 1）。
   async function tick(accountId: string): Promise<number> {
     nowMs += TICK_MS;
-    await ops.baseService.heartbeat({ accountId });
+    await ops.baseService.heartbeat({ accountId }, { action: "renew", controlToken });
     return harness.db.transaction((tx) => ops.settlement.settleBases(tx, new Date(nowMs)));
   }
 
@@ -399,7 +412,8 @@ describe("base construction full chain (real PostgreSQL, controlled clock)", () 
     await createProject(accountId, siteAId);
 
     const inventoryBefore = await readInventory(harness.client, baseId);
-    await expect(createProject(accountId, siteAId)).rejects.toMatchObject({ code: "SITE_OCCUPIED" });
+    await expect(createProject(accountId, siteAId, randomUUID(), "install-second-array"))
+      .rejects.toMatchObject({ code: "SITE_OCCUPIED" });
 
     expect(await countProjects(harness.client, baseId)).toBe(1);
     expect(await readInventory(harness.client, baseId)).toEqual(inventoryBefore);
@@ -475,7 +489,7 @@ describe("base construction full chain (real PostgreSQL, controlled clock)", () 
     const projectId = created.projectId;
 
     // resume：time_mode=running、lastAdvancedAt=now、租约一并续上（合同 §3.1/§3.7）。
-    const resumed = await ops.baseService.applyCommand({ accountId }, { command: "resume" });
+    const resumed = await ops.baseService.applyCommand({ accountId }, { command: "resume" }, controlToken);
     expect(resumed.timeMode).toBe("running");
     const { rows: baseRow } = await harness.client.query(
       `SELECT time_mode, speed, sim_time, last_advanced_at FROM bases WHERE id = $1`,

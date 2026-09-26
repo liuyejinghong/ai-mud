@@ -38,8 +38,7 @@ export interface EconomyClockPort {
   getBaseForUpdate(tx: EconomyTx, baseId: string): Promise<{ simTime: Date } | null>;
 }
 
-// catalog 订单模板端口（结构镜像）：M16-A/B 不接 content-catalog（该文件不在本线
-// 白名单），占位实现恒 null/[]；I 合并 release payload 的 order_templates 时注入真实现。
+// 订单模板由基地当前内容目录提供；本模块只消费类型化读口。
 export interface EconomyCatalogPort {
   getOrderTemplate(stableId: string): OrderTemplateDto | null;
   listOrderTemplates(): OrderTemplateDto[];
@@ -69,8 +68,7 @@ export interface OrderStore {
   saveOrderAccepted(tx: EconomyTx, orderId: string, acceptedAtSim: Date, deadlineSim: Date): Promise<void>;
   saveOrderDelivered(tx: EconomyTx, orderId: string, resolvedAtSim: Date): Promise<void>;
   saveOrderFailed(tx: EconomyTx, orderId: string, resolvedAtSim: Date): Promise<void>;
-  countOpenOrders(tx: EconomyTx, baseId: string): Promise<number>;
-  listOpenOrderDefIds(tx: EconomyTx, baseId: string): Promise<string[]>;
+  listOrdersForBase(tx: EconomyTx, baseId: string): Promise<BaseOrderRecord[]>;
   insertOpenOrder(tx: EconomyTx, baseId: string, template: OrderTemplateDto): Promise<{ orderId: string }>;
 }
 
@@ -83,6 +81,7 @@ export interface OrderServiceDeps {
   lookup: EconomyLookupPort;
   clock: EconomyClockPort;
   catalog: EconomyCatalogPort;
+  catalogResolver?: { forBase(tx: EconomyTx, baseId: string): Promise<EconomyCatalogPort> };
   assets: EconomyInventoryPort;
   store: OrderStore;
   credits: OrderCreditsPort;
@@ -101,6 +100,7 @@ const DELIVER_COMMAND_KIND = "base.deliverOrder";
 export const ORDER_OPEN_TARGET = 3;
 
 const SIM_MS_PER_HOUR = 3_600_000;
+const ORDER_REFRESH_COOLDOWN_MS = 24 * SIM_MS_PER_HOUR;
 
 export function addSimHours(from: Date, hours: number): Date {
   return new Date(from.getTime() + hours * SIM_MS_PER_HOUR);
@@ -180,7 +180,8 @@ export class OrderService {
 
     // deadline 从订单定义取（模板由 catalog 端口提供）。定义缺失 → CONTENT_INCOMPATIBLE；
     // 修订漂移刻意容忍（在途 open 行不因内容停用而失败，deadline 取当前定义）。
-    const template = this.deps.catalog.getOrderTemplate(order.orderDefId);
+    const catalog = await this.catalogForBase(tx, baseId);
+    const template = catalog.getOrderTemplate(order.orderDefId);
     if (!template) {
       throw new BaseOperationError(409, "CONTENT_INCOMPATIBLE", "订单定义不存在或已下线。");
     }
@@ -266,19 +267,25 @@ export class OrderService {
     return result;
   }
 
-  // 订单刷新（tick 消费，合同 §4：简化为每次补足至 3 个 open）。按 catalog
-  // listOrderTemplates 顺序补足，每模板同一基地同时最多一个 open。sim 参数为
-  // 刷新节流预留位（M16-P 冻结为立即补足，当前无刷新时间戳列）。
+  // 订单刷新只看基地 simTime；在途不补，结案后至少等 24 基地小时。
   async ensureOrders(tx: EconomyTx, baseId: string, sim: Date): Promise<EnsureOrdersResult> {
-    void sim;
-    const openCount = await this.deps.store.countOpenOrders(tx, baseId);
+    const orders = await this.deps.store.listOrdersForBase(tx, baseId);
+    const openCount = orders.filter((order) => order.status === "open").length;
     if (openCount >= ORDER_OPEN_TARGET) return { created: 0 };
 
-    const openDefIds = new Set(await this.deps.store.listOpenOrderDefIds(tx, baseId));
+    const catalog = await this.catalogForBase(tx, baseId);
     let created = 0;
-    for (const template of this.deps.catalog.listOrderTemplates()) {
+    for (const template of catalog.listOrderTemplates()) {
       if (openCount + created >= ORDER_OPEN_TARGET) break;
-      if (openDefIds.has(template.ref.stableId)) continue;
+      const previous = orders.filter((order) => order.orderDefId === template.ref.stableId);
+      if (previous.some((order) => order.status === "open" || order.status === "accepted")) continue;
+      if (previous.some((order) => order.resolvedAt === null)) {
+        if (previous.length > 0) {
+          console.warn(`订单 ${template.ref.stableId} 有无结案基地时间的历史记录，已暂停自动补单。`);
+        }
+        continue;
+      }
+      if (previous.some((order) => sim.getTime() - order.resolvedAt!.getTime() < ORDER_REFRESH_COOLDOWN_MS)) continue;
       await this.deps.store.insertOpenOrder(tx, baseId, template);
       created += 1;
     }
@@ -286,6 +293,10 @@ export class OrderService {
   }
 
   // ---------- 内部 ----------
+
+  private catalogForBase(tx: EconomyTx, baseId: string): Promise<EconomyCatalogPort> {
+    return this.deps.catalogResolver?.forBase(tx, baseId) ?? Promise.resolve(this.deps.catalog);
+  }
 
   private async requireBaseId(tx: EconomyTx, principal: EconomyPrincipal): Promise<string> {
     const baseId = await this.deps.lookup.findBaseIdByAccount(tx, principal.accountId);

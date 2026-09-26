@@ -1015,6 +1015,13 @@
       "note": "playwright e2e（不计入 vitest）"
     },
     {
+      "path": "apps/web/e2e/tutorial-real.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "六段教程真实浏览器与临时 PG 验收"
+    },
+    {
       "path": "apps/web/playwright.config.ts",
       "module": "client_text",
       "layer": "config",
@@ -1893,6 +1900,13 @@
       "note": "M12-A 试玩注册/心跳/快照/时钟路由；仅 import application"
     },
     {
+      "path": "apps/server/src/modules/world-runtime/base-cooperation.routes.ts",
+      "module": "transport",
+      "layer": "transport",
+      "scope": "production",
+      "note": "教程协作选择路由；仅 import application"
+    },
+    {
       "path": "apps/server/src/application/base/ports.ts",
       "module": "application",
       "layer": "application",
@@ -1919,6 +1933,13 @@
       "layer": "application",
       "scope": "production",
       "note": "M12-A 暂停/恢复/倍速用例"
+    },
+    {
+      "path": "apps/server/src/application/base/cooperation-decision.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "教程协作选择、基地锁与命令回执用例"
     },
     {
       "path": "apps/server/src/application/base/create-project.ts",
@@ -2017,6 +2038,20 @@
       "layer": "content",
       "scope": "production",
       "note": "M12-D 默认 release 数据（fixture 数值，纯储能过夜开局）"
+    },
+    {
+      "path": "packages/content/src/base/tutorial-release.ts",
+      "module": "content",
+      "layer": "content",
+      "scope": "production",
+      "note": "六段教程内置内容版本与新档种子"
+    },
+    {
+      "path": "packages/content/src/base/tutorial-release.test.ts",
+      "module": "content",
+      "layer": "test",
+      "scope": "test",
+      "note": "教程内容兼容校验"
     },
     {
       "path": "apps/web/src/features/base/BaseApp.tsx",
@@ -2194,6 +2229,13 @@
       "note": "M12-Q 真 PG 建设全链/争抢/失败回滚"
     },
     {
+      "path": "apps/server/src/tests/base-operations/tutorial/tutorial.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "六段教程两路线与前台时间的隔离真 PG 验收"
+    },
+    {
       "path": "apps/server/src/modules/ledger/base-asset.service.ts",
       "module": "assets",
       "layer": "domain",
@@ -2247,7 +2289,14 @@
       "module": "content-catalog",
       "layer": "capability",
       "scope": "production",
-      "note": "M13-A 按基地解析 active release（DB 优先，内置兜底）"
+      "note": "按基地解析已知内置或已发布 release；未知 ID 拒绝"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/catalog-db.loader.test.ts",
+      "module": "content-catalog",
+      "layer": "test",
+      "scope": "test",
+      "note": "教程目录装载兼容校验"
     },
     {
       "path": "apps/server/src/modules/content-catalog/content-admin.service.test.ts",

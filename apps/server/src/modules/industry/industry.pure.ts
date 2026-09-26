@@ -5,8 +5,9 @@
 //   昼间（simTime UTC 小时 ∈ [6,18)）发电 = generationWPeak × ARRAY_DUST_FACTOR，夜间 0。
 //   负载优先级：基础 BASE_LOAD_W < 施工 CONSTRUCTION_LOAD_W（存在 running 或缺电阻塞的
 //   site_clearing/installation 步骤时）< 制造 MANUFACTURING_LOAD_W（本基地有待制造工作量时，
-//   需求 = min(1500W×Δh, 剩余工作量Wh)，m13-p-contract §4.2）< 充电（idle/charging 机器人，每台
-//   min(chargeRateW, 容量-电量)）。盈余入储能（效率 1.0、容量封顶），不足放储能。
+//   需求 = min(1500W×Δh, 剩余工作量Wh)，m13-p-contract §4.2）< 充电（idle/charging 机器人，
+//   当前步骤所需组的低电设备优先，每台 min(chargeRateW, 容量-电量)）。盈余入储能（效率 1.0、
+//   容量封顶），不足放储能。
 //   制造实际拿到的能量经 manufacturingEnergyWh 交给制造结算按 FIFO 折算工作点（1Wh = 1 点），
 //   并计入 lastLoadW——同一电力池、同一储能（2026-09-25 B001：此前制造不扣电）。
 //   基础负荷优先于一切且永不 clamp 进度——进度只受施工负荷是否被满足影响。
@@ -403,7 +404,17 @@ function computeBaseMinute(input: ComputeBaseTickInput): BaseTickResult {
   if (dh > 0) {
     let chargingBudgetWh =
       Math.max(0, energy.value) + Math.min(TRICKLE_CHARGE_W * dh, storage.value);
-    for (const robot of robotStates) {
+    const neededGroups = new Set([...stepStates.values()]
+      .filter((step) => step.status === "ready" || step.status === "running")
+      .map((step) => step.record.groupId));
+    const needsChargeFirst = (robot: RobotState) =>
+      (robot.status === "idle" || robot.status === "charging") &&
+      robot.battery < ROBOT_WORK_DRAIN_WH && neededGroups.has(robot.record.groupId);
+    const chargeOrder = [
+      ...robotStates.filter(needsChargeFirst),
+      ...robotStates.filter((robot) => !needsChargeFirst(robot))
+    ];
+    for (const robot of chargeOrder) {
       if (chargingBudgetWh <= ENERGY_EPS) break;
       if (robot.status !== "idle" && robot.status !== "charging") continue;
       if (robot.chargeRateW <= 0) continue;

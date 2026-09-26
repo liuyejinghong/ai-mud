@@ -2,7 +2,7 @@
 // 结构性实现 application/base/ports.ts 冻结的 BaseIndustryInitPort / BaseIndustryReadPort
 // 以及基地 tick 的落盘写面；composition 按结构绑定，industry 不 import application。
 // 所有方法必须在调用方事务内执行，本类永不开启或提交事务。
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import type { BaseRobotGroupId, ProjectStatus, StepKind } from "@ai-mud/shared";
 import type { Db } from "../../db/client.js";
 import { basePowerState, baseProjectSteps, baseProjects } from "../../db/schema.js";
@@ -73,6 +73,7 @@ export interface InsertProjectInput {
 }
 
 export interface IndustryProjectStore {
+  hasLiveOrCompletedProject(tx: IndustryTx, baseId: string, projectDefId: string): Promise<boolean>;
   insertProjectWithSteps(
     tx: IndustryTx,
     input: InsertProjectInput
@@ -183,6 +184,19 @@ export class IndustryRepository
           reservedInputs: parseReservedInputs(row.reservedInputs)
         }
       : null;
+  }
+
+  async hasLiveOrCompletedProject(tx: IndustryTx, baseId: string, projectDefId: string): Promise<boolean> {
+    const [row] = await tx
+      .select({ id: baseProjects.id })
+      .from(baseProjects)
+      .where(and(
+        eq(baseProjects.baseId, baseId),
+        eq(baseProjects.projectDefId, projectDefId),
+        notInArray(baseProjects.status, ["cancelled", "failed"])
+      ))
+      .limit(1);
+    return row !== undefined;
   }
 
   async insertProjectWithSteps(

@@ -86,7 +86,7 @@ d("M14 cooperation shadow chain (real PostgreSQL)", () => {
     await db.transaction(async (tx) => {
       await tx.insert(schema.accounts).values({ id: accountId, email: `c07-${accountId}@example.invalid`, passwordHash: "x" });
       await tx.insert(schema.bases).values({
-        id: baseId, accountId, name: "C07 事务基地", contentRelease: "test",
+        id: baseId, accountId, name: "C07 事务基地", contentRelease: "yudian-base-0",
         timeMode: "running", simTime: new Date("2026-09-01T10:00:00Z"),
         lastAdvancedAt: new Date(now.getTime() - 60_000)
       });

@@ -63,7 +63,7 @@ beforeAll(
         id: seededBaseId,
         accountId: seededAccountId,
         name: "P0 回归基地",
-        contentRelease: "test"
+        contentRelease: "yudian-base-0"
       });
     });
   },

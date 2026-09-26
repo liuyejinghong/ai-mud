@@ -90,7 +90,10 @@ interface FakeSite {
 }
 
 class FakeSites implements ConstructionSitePort {
-  sites = new Map<string, FakeSite>([["site-1", { id: "site-1", state: "free" }]]);
+  sites = new Map<string, FakeSite>([
+    ["site-1", { id: "site-1", state: "free" }],
+    ["site-2", { id: "site-2", state: "free" }]
+  ]);
   reservedCalls: string[] = [];
   releasedCalls: string[] = [];
 
@@ -132,6 +135,13 @@ class FakeStore implements IndustryProjectStore {
   projects = new Map<string, StoredProject>();
   statusCalls: Array<{ projectId: string; status: string }> = [];
   private sequence = 0;
+
+  async hasLiveOrCompletedProject(_tx: ConstructionTx, baseId: string, projectDefId: string): Promise<boolean> {
+    return [...this.projects.values()].some((project) =>
+      project.baseId === baseId && project.projectDefId === projectDefId &&
+      project.status !== "cancelled" && project.status !== "failed"
+    );
+  }
 
   async insertProjectWithSteps(
     _tx: ConstructionTx,
@@ -306,6 +316,20 @@ describe("ConstructionService.create", () => {
     expect(saved).toEqual({ projectId: "project-1", duplicate: false });
   });
 
+  it("首工程在别的建设位进行中或已完成时不能再建，失败后可重试", async () => {
+    const { service, store, assets } = makeService();
+    await createFirstProject(service);
+    const secondInput = { ...CREATE_INPUT, siteId: "site-2", commandId: "cmd-create-2" };
+    await expect(service.create(tx, principal, { ...secondInput, commandId: "cmd-create-2a" })).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(store.inserted).toHaveLength(1);
+    expect(assets.reserved).toHaveLength(2);
+
+    store.projects.get("project-1")!.status = "completed";
+    await expect(service.create(tx, principal, { ...secondInput, commandId: "cmd-create-2b" })).rejects.toMatchObject({ code: "CONFLICT" });
+    store.projects.get("project-1")!.status = "failed";
+    expect((await service.create(tx, principal, { ...secondInput, commandId: "cmd-create-3" })).duplicate).toBe(false);
+  });
+
   it("重复 commandId 且请求一致 → 原样重放，不重复预留/建项目", async () => {
     const { service, assets, store } = makeService();
     await createFirstProject(service);
@@ -411,7 +435,7 @@ describe("ConstructionService.cancel", () => {
       { itemId: "anchor", quantity: 8 }
     ]);
     expect(store.statusCalls).toEqual([{ projectId: "project-1", status: "cancelled" }]);
-    expect(lookup.locked).toEqual(["base-1"]);
+    expect(lookup.locked).toEqual(["base-1", "base-1"]);
     expect(sites.releasedCalls).toEqual(["site-1"]);
     expect(robots.released).toEqual([{ tx, baseId: "base-1", projectId: "project-1" }]);
   });

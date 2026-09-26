@@ -1,7 +1,11 @@
 import type {
   BaseClockCommandInputDto,
+  BaseHeartbeatInputDto,
+  BaseHeartbeatResultDto,
   BaseSnapshotDto,
   BaseTimeMode,
+  CooperationDecisionInputDto,
+  CooperationDecisionResultDto,
   CreateProjectInputDto,
   CreateProjectResultDto,
   DefinitionRefDto,
@@ -67,7 +71,7 @@ export interface BaseFacilityInfoDto {
 export interface ContentCatalogPort {
   releaseId(): string;
   getItemInfo(): Record<string, { name: string; description: string }>;
-  getRecipeTemplate(stableId: string): RecipeTemplateDto | null;
+  getRecipeTemplate(stableId: string, revision?: number): RecipeTemplateDto | null;
   listRecipes(): RecipeTemplateDto[];
   getOrderTemplate(stableId: string): OrderTemplateDto | null;
   listOrderTemplates(): OrderTemplateDto[];
@@ -76,6 +80,11 @@ export interface ContentCatalogPort {
   getProjectTemplate(stableId: string): ProjectTemplateDto | null;
   listTemplates(): { robots: RobotTemplateDto[]; projects: ProjectTemplateDto[] };
   getProvisionSeed(): ProvisionSeedDto;
+}
+
+export interface CatalogResolverPort {
+  forBase(tx: BaseTx, baseId: string): Promise<ContentCatalogPort>;
+  forProvision(): ContentCatalogPort;
 }
 
 // ---------- assets 参与端口（事务绑定） ----------
@@ -158,13 +167,10 @@ export interface ProvisionUseCase {
 }
 
 export interface SnapshotUseCase {
-  execute(principal: BasePrincipal): Promise<BaseSnapshotDto>;
+  execute(principal: BasePrincipal, controlToken?: string): Promise<BaseSnapshotDto>;
 }
 
-export interface ClockHeartbeatResultDto {
-  leaseUntil: string;
-  timeMode: BaseTimeMode;
-}
+export type ClockHeartbeatResultDto = BaseHeartbeatResultDto;
 
 export interface ClockCommandResultDto {
   timeMode: BaseTimeMode;
@@ -173,8 +179,15 @@ export interface ClockCommandResultDto {
 }
 
 export interface ClockUseCase {
-  heartbeat(principal: BasePrincipal): Promise<ClockHeartbeatResultDto>;
-  applyCommand(principal: BasePrincipal, input: BaseClockCommandInputDto): Promise<ClockCommandResultDto>;
+  heartbeat(principal: BasePrincipal, input: BaseHeartbeatInputDto): Promise<ClockHeartbeatResultDto>;
+  applyCommand(principal: BasePrincipal, input: BaseClockCommandInputDto, controlToken: string): Promise<ClockCommandResultDto>;
+}
+
+export interface CooperationDecisionUseCase {
+  execute(
+    principal: BasePrincipal,
+    input: CooperationDecisionInputDto & { requestId: string }
+  ): Promise<CooperationDecisionResultDto>;
 }
 
 // ---------- 跨线只读/事务绑定端口（world/industry/npc 各自实现，I 负责绑定） ----------
@@ -296,4 +309,9 @@ export interface BaseProjectsRouteDeps {
   auth: BaseAuthFacade;
   create: CreateProjectUseCase;
   cancel: CancelProjectUseCase;
+}
+
+export interface BaseCooperationRouteDeps {
+  auth: BaseAuthFacade;
+  decide: CooperationDecisionUseCase;
 }

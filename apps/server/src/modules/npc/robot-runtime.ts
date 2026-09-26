@@ -4,7 +4,7 @@
 // deviceDefId 经 robot_operators.device_id ↔ base_devices.id 1:1 只读连接取得
 // （base_devices 写者仍是 assets；本服务不写任何非 npc 表）。
 // 必须在调用方事务内执行，永不自开或提交事务。
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray } from "drizzle-orm";
 import type { RobotStatus } from "@ai-mud/shared";
 import type { Db } from "../../db/client.js";
 import { baseDevices, robotOperators } from "../../db/schema.js";
@@ -78,6 +78,32 @@ export class RobotRuntimeService {
         })
         .where(eq(robotOperators.id, update.operatorId));
     }
+  }
+
+  async claimIdleOperator(
+    tx: RobotRuntimeTx,
+    baseId: string,
+    operatorId: string,
+    projectId: string,
+    stepIndex: number,
+    minBatteryWh: number
+  ): Promise<boolean> {
+    const rows = await tx
+      .update(robotOperators)
+      .set({
+        status: "working",
+        currentProjectId: projectId,
+        currentStepIndex: stepIndex,
+        updatedAt: new Date()
+      })
+      .where(and(
+        eq(robotOperators.baseId, baseId),
+        eq(robotOperators.id, operatorId),
+        eq(robotOperators.status, "idle"),
+        gte(robotOperators.batteryWh, minBatteryWh)
+      ))
+      .returning({ id: robotOperators.id });
+    return rows.length === 1;
   }
 
   // 项目取消与基地 tick 共用事务/基地锁；立即清除该项目的出工和原地充电分配。

@@ -230,6 +230,7 @@ describe("ObjectPanel", () => {
     expect(screen.getByText("设备安装 · 受阻")).toBeTruthy();
     expect(screen.getByText("工作量 10/80")).toBeTruthy();
     expect(screen.getByText("受阻：供电不足")).toBeTruthy();
+    expect(screen.getByText("当前 0 台作业中：基地时间已暂停。")).toBeTruthy();
     expect(screen.getByText(/基地时间已暂停，此项目不会推进/)).toBeTruthy();
     expect(screen.getByText(/恢复计时后仍需解决受阻条件/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "恢复计时" }));
@@ -295,5 +296,20 @@ describe("ObjectPanel", () => {
     expect(screen.getByText("状态：充电中")).toBeTruthy();
     expect(screen.getByText("电量：6000/30000 Wh（约 20%）")).toBeTruthy();
     expect(screen.getByText("当前任务：安装太阳能阵列（设备安装）")).toBeTruthy();
+  });
+
+  it("充电区不展示未参与结算的充电位数字", () => {
+    render(<ObjectPanel
+      sites={[{ siteId: "charging", siteKey: "charging", name: "充电区", state: "built",
+        note: null, description: "给设备充电", attributes: [
+          { label: "充电位", value: "4 个" }, { label: "策略", value: "盈余优先" }
+        ] }]}
+      projects={[]} devices={[]} buildableProjects={[]} resources={[]} purchases={[]}
+      selectedResourceId={null} selectedSiteId="charging" selectedProjectId={null} selectedDeviceId={null}
+      timeMode="running" isBusy={false} onSelectProject={noop} onCreateProject={noop}
+      onCancelProject={noop} onResume={noop}
+    />);
+    expect(screen.queryByText(/充电位/)).toBeNull();
+    expect(screen.getByText("策略：盈余优先")).toBeTruthy();
   });
 });

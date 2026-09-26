@@ -5,14 +5,14 @@ describe("version constants", () => {
   it("keeps v1.0.1 until release and exposes phase 0 compatibility versions", () => {
     expect(PRODUCT_VERSION).toBe("1.0.1");
     expect(WORLD_COMPATIBILITY).toEqual({
-      schemaVersion: 32,
-      apiVersion: 49,
-      engineVersion: 3,
-      rulesetVersion: 18,
-      contentVersion: 15,
+      schemaVersion: 33,
+      apiVersion: 50,
+      engineVersion: 4,
+      rulesetVersion: 20,
+      contentVersion: 16,
       promptVersion: 8,
-      economyVersion: 5,
-      worldSeedVersion: 2
+      economyVersion: 6,
+      worldSeedVersion: 3
     });
   });
 });

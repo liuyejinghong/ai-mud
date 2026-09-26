@@ -16,6 +16,7 @@ import { registerBaseManufacturingRoutes } from "./modules/industry/base-manufac
 import { registerBaseEconomyRoutes } from "./modules/economy/base-economy.routes.js";
 import { registerBaseProjectsRoutes } from "./modules/industry/base-projects.routes.js";
 import { registerBaseSessionRoutes } from "./modules/world-runtime/base-session.routes.js";
+import { registerBaseCooperationRoutes } from "./modules/world-runtime/base-cooperation.routes.js";
 import { registerGameRoutes } from "./modules/game/game.routes.js";
 import {
   createNpcTaskService,
@@ -272,6 +273,7 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
     registerAdminRoutes(instance, undefined, { legacyWorldEnabled })
   );
   await app.register((instance) => registerBaseSessionRoutes(instance, baseOps.session));
+  await app.register((instance) => registerBaseCooperationRoutes(instance, baseOps.cooperationDecision));
   await app.register((instance) => registerBaseProjectsRoutes(instance, baseOps.projects));
   await app.register((instance) =>
     registerBaseManufacturingRoutes(instance, {

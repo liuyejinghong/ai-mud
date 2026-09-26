@@ -132,23 +132,6 @@ export class OrderRepository {
     return rows.length;
   }
 
-  async countOpenOrders(tx: EconomyTx, baseId: string): Promise<number> {
-    const [row] = await tx
-      .select({ value: sql<number>`count(*)::int` })
-      .from(baseOrders)
-      .where(and(eq(baseOrders.baseId, baseId), eq(baseOrders.status, "open")));
-    return row?.value ?? 0;
-  }
-
-  // 每模板同一基地同时最多一个 open（合同 §4）。
-  async listOpenOrderDefIds(tx: EconomyTx, baseId: string): Promise<string[]> {
-    const rows = await tx
-      .select({ orderDefId: baseOrders.orderDefId })
-      .from(baseOrders)
-      .where(and(eq(baseOrders.baseId, baseId), eq(baseOrders.status, "open")));
-    return rows.map((row) => row.orderDefId);
-  }
-
   // 按订单模板开 open 行：运行实例固定开工修订（orderDefId + orderRevision），不静默升级。
   async insertOpenOrder(
     tx: EconomyTx,

@@ -1,7 +1,7 @@
 // M16-B 采购创建/到货结算业务测试（全部内存假端口，无真库、无真事务，同
 // manufacturing.service.test.ts 模式）。失败路径中收据 claim 的回滚由真事务保证，
 // 内存假件不模拟（断言只针对业务状态与回执结果）。
-// 价目/在途延迟 fixture = shared economy.ts（PURCHASE_CATALOG / PURCHASE_TRANSIT_SIM_HOURS）。
+// 价目/在途延迟 fixture = shared economy.ts（PURCHASE_CATALOG / PURCHASE_TRANSIT_SIM_MINUTES）。
 import { describe, expect, it } from "vitest";
 import {
   BaseOperationError,
@@ -186,7 +186,7 @@ const principal = { accountId: "account-1" };
 const BUY_INPUT = { itemId: "solar_panel_set", quantity: 2, commandId: "cmd-buy-1" }; // 120×2 = 240
 
 describe("PurchaseService.createPurchase", () => {
-  it("采购 happy path：扣款 240（500→260）→ in_transit（到货=sim+4h）→ 回执落结果", async () => {
+  it("采购 happy path：扣款 240（500→260）→ in_transit（到货=sim+20m）→ 回执落结果", async () => {
     const { service, credits, store, receipts } = makeService();
 
     const result = await service.createPurchase(tx, principal, BUY_INPUT);
@@ -196,13 +196,13 @@ describe("PurchaseService.createPurchase", () => {
       itemId: "solar_panel_set",
       quantity: 2,
       costCredits: 240,
-      arrivesAtSim: new Date(SIM_NOW.getTime() + 4 * 3_600_000).toISOString(),
+      arrivesAtSim: new Date(SIM_NOW.getTime() + 20 * 60_000).toISOString(),
       duplicate: false
     });
     expect(credits.balances.get("base-1")).toBe(260);
     const purchase = store.purchases.get("purchase-1");
     expect(purchase?.status).toBe("in_transit");
-    expect(purchase?.arrivesAtSim).toEqual(new Date(SIM_NOW.getTime() + 4 * 3_600_000));
+    expect(purchase?.arrivesAtSim).toEqual(new Date(SIM_NOW.getTime() + 20 * 60_000));
     expect(receipts.savedResults.at(-1)).toEqual(result);
   });
 
@@ -271,21 +271,21 @@ describe("PurchaseService.createPurchase", () => {
 describe("PurchaseService.settlePurchases", () => {
   it("到货结算：到期 in_transit 入库 + delivered；未到期保持 in_transit", async () => {
     const { service, clock, inventory, store } = makeService();
-    await service.createPurchase(tx, principal, BUY_INPUT); // 到货 = sim+4h
+    await service.createPurchase(tx, principal, BUY_INPUT); // 到货 = sim+20m
     await service.createPurchase(tx, principal, {
       itemId: "cable",
       quantity: 5,
       commandId: "cmd-buy-2"
-    }); // 同一 sim 开单，同样 sim+4h 到货——用时钟区分到期与否
+    }); // 同一 sim 开单，同样 sim+20m 到货——用时钟区分到期与否
 
-    // 推进 3h：两单都未到期
-    clock.simTime = new Date(SIM_NOW.getTime() + 3 * 3_600_000);
+    // 推进 19 分钟：两单都未到期
+    clock.simTime = new Date(SIM_NOW.getTime() + 19 * 60_000);
     expect(await service.settlePurchases(tx, "base-1", clock.simTime)).toEqual({ delivered: 0 });
     expect(inventory.credits).toHaveLength(0);
     expect([...store.purchases.values()].every((purchase) => purchase.status === "in_transit")).toBe(true);
 
-    // 推进到 4h：两单到期 → 全部入库 + delivered
-    clock.simTime = new Date(SIM_NOW.getTime() + 4 * 3_600_000);
+    // 推进到 20 分钟：两单到期 → 全部入库 + delivered
+    clock.simTime = new Date(SIM_NOW.getTime() + 20 * 60_000);
     expect(await service.settlePurchases(tx, "base-1", clock.simTime)).toEqual({ delivered: 2 });
     expect(inventory.stock.get("solar_panel_set")).toBe(2);
     expect(inventory.stock.get("cable")).toBe(5);
@@ -296,7 +296,7 @@ describe("PurchaseService.settlePurchases", () => {
     const { service, clock, inventory, store } = makeService();
     inventory.stock.set("solar_panel_set", 5);
     await service.createPurchase(tx, principal, BUY_INPUT);
-    clock.simTime = new Date(SIM_NOW.getTime() + 4 * 3_600_000);
+    clock.simTime = new Date(SIM_NOW.getTime() + 20 * 60_000);
 
     await service.settlePurchases(tx, "base-1", clock.simTime);
 

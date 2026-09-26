@@ -226,6 +226,22 @@ const tx = {} as ManufacturingTx;
 const now = new Date("2026-09-19T08:00:00Z");
 
 describe("settleManufacturing", () => {
+  it("新目录仍按旧工单保存的 @1 配方产出 12000Wh", async () => {
+    const { deps, settleRobots } = makeDeps([makeJob({ recipeRevision: 1 })]);
+    const current = {
+      ...RECIPE,
+      ref: { ...RECIPE.ref, revision: 2 },
+      output: { ...RECIPE.output, initialBatteryWh: 1000 }
+    };
+    deps.catalog = {
+      getRecipeTemplate: (_stableId: string, revision?: number) => revision === 1 ? RECIPE : current,
+      getRobotTemplate: () => ROBOT
+    };
+    expect((await measureManufacturingDemand(tx, "base-1", deps)).pendingWorkWh).toBe(30);
+    expect((await settleManufacturing(tx, now, deps)).unitsProduced).toBe(1);
+    expect(settleRobots.operators[0]?.initialBatteryWh).toBe(12000);
+  });
+
   it("正常产出单台原子写入：消耗该台份额 → 建设备+作业者 → 写 outputs → 计数推进", async () => {
     const job = makeJob({ outputsPlanned: 1 });
     const { deps, settleAssets, settleRobots, repo } = makeDeps([job], { availableEnergyWh: 30 });

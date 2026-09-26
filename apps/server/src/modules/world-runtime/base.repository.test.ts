@@ -45,14 +45,14 @@ class FakePgClient {
     if (text.startsWith("select")) {
       let rows: Array<Record<string, unknown>> = [];
       if (/from "bases" inner join "base_control_leases"/.test(text)) {
-        // 到期清单：running ∧ lease_until > $2（按 id 排序由 SQL 声明，这里按 id 排序模拟）。
+        // 到期清单：running 且上次确认点晚于结算游标。
         rows = this.bases
           .filter((base) => base.time_mode === params[0])
           .filter((base) =>
             this.leases.some(
               (lease) =>
                 lease.base_id === base.id &&
-                (lease.lease_until as Date).getTime() > new Date(params[1] as string).getTime()
+                (lease.updated_at as Date).getTime() > (base.last_advanced_at as Date).getTime()
             )
           )
           .sort((left, right) => String(left.id).localeCompare(String(right.id)));
@@ -254,7 +254,42 @@ function seedBase(overrides: Partial<Record<string, unknown>> = {}): Record<stri
 }
 
 describe("BaseRepository.lockAdvanceableBases", () => {
-  it("locks only running bases with a valid lease and applies the catch-up cap times speed", async () => {
+  it("only advances to the last confirmed foreground heartbeat, even after the lease expires", async () => {
+    const { client, repo, tx } = createRepository();
+    const lastAdvancedAt = new Date(NOW.getTime() - 5 * MINUTE_MS);
+    const confirmedAt = new Date(NOW.getTime() - 2 * MINUTE_MS);
+    client.bases.push(seedBase({ id: "b-checkpoint", last_advanced_at: lastAdvancedAt }));
+    client.leases.push({
+      base_id: "b-checkpoint",
+      lease_token: "token",
+      lease_until: new Date(NOW.getTime() - MINUTE_MS),
+      updated_at: confirmedAt
+    });
+
+    expect(await repo.lockAdvanceableBases(tx, NOW)).toMatchObject([{
+      baseId: "b-checkpoint",
+      deltaSimMs: 3 * MINUTE_MS,
+      nextLastAdvancedAt: confirmedAt
+    }]);
+  });
+
+  it("keeps the unprocessed confirmed segment after a ten minute cap", async () => {
+    const { client, repo, tx } = createRepository();
+    const lastAdvancedAt = new Date(NOW.getTime() - 30 * MINUTE_MS);
+    client.bases.push(seedBase({ id: "b-long", last_advanced_at: lastAdvancedAt }));
+    client.leases.push({
+      base_id: "b-long",
+      lease_token: "token",
+      lease_until: new Date(NOW.getTime() - MINUTE_MS),
+      updated_at: NOW
+    });
+
+    expect((await repo.lockAdvanceableBases(tx, NOW))[0]?.nextLastAdvancedAt).toEqual(
+      new Date(lastAdvancedAt.getTime() + BASE_MAX_CATCHUP_MS)
+    );
+  });
+
+  it("locks only running bases with a confirmed segment and applies the cap times speed", async () => {
     const { client, repo, tx } = createRepository();
     const normal = seedBase({
       id: "b-normal",
@@ -296,8 +331,8 @@ describe("BaseRepository.lockAdvanceableBases", () => {
 
     const advanceable = await repo.lockAdvanceableBases(tx, NOW);
 
-    // pause 不返回、无租约不返回、租约过期不返回。
-    expect(advanceable.map((base) => base.baseId)).toEqual(["b-normal", "b-capped"]);
+    // 暂停与无租约不返回；过期租约的已确认时段仍需结清。
+    expect(advanceable.map((base) => base.baseId)).toEqual(["b-normal", "b-capped", "b-expired"]);
     expect(client.queries[0]?.text).toContain("for no key update");
     expect(client.queries[0]?.text).toContain('"time_mode"');
     expect(client.queries[0]?.params[0]).toBe("running");
@@ -389,7 +424,7 @@ describe("BaseRepository per-base tick isolation (车道 C4)", () => {
     expect(unscoped.client.queries[0]?.params).toEqual(["running"]);
   });
 
-  it("lists due bases (running with a live lease) in id order without taking locks or N+1 lease reads", async () => {
+  it("lists due bases with confirmed time in id order without taking locks or N+1 lease reads", async () => {
     const { client, repo, tx } = createRepository();
     client.bases.push(
       seedBase({ id: "b-3" }),
@@ -407,13 +442,13 @@ describe("BaseRepository per-base tick isolation (车道 C4)", () => {
 
     const due = await repo.listAdvanceableBaseIds(tx);
 
-    expect(due).toEqual(["b-1", "b-3"]);
+    expect(due).toEqual(["b-1", "b-3", "b-expired"]);
     expect(client.queries).toHaveLength(1);
     const listQuery = client.queries[0]?.text ?? "";
     expect(listQuery).toContain('inner join "base_control_leases"');
     expect(listQuery).toContain('order by "bases"."id"');
     expect(listQuery).not.toContain("for update");
-    expect(client.queries[0]?.params).toEqual(["running", NOW.toISOString()]);
+    expect(client.queries[0]?.params).toEqual(["running"]);
   });
 });
 

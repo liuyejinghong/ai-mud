@@ -26,6 +26,12 @@ const CLOCK_COMMAND_SCHEMA = z.object({
   speed: z.number().int().optional()
 });
 
+const HEARTBEAT_SCHEMA = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("acquire") }),
+  z.object({ action: z.literal("renew"), controlToken: z.string().uuid() }),
+  z.object({ action: z.literal("release"), controlToken: z.string().uuid() })
+]);
+
 const STATUS_BY_CODE: Partial<Record<ErrorCode, number>> = {
   UNAUTHENTICATED: 401,
   FORBIDDEN: 403,
@@ -33,6 +39,7 @@ const STATUS_BY_CODE: Partial<Record<ErrorCode, number>> = {
   VALIDATION_ERROR: 400,
   RATE_LIMITED: 429,
   IDEMPOTENCY_CONFLICT: 409,
+  CONTROL_EXPIRED: 409,
   RESOURCE_INSUFFICIENT: 409,
   REVISION_EXPIRED: 409,
   CONTENT_INCOMPATIBLE: 409,
@@ -72,6 +79,12 @@ function readSessionToken(app: FastifyInstance, request: FastifyRequest): string
 
 function readCsrfToken(request: FastifyRequest): string | null {
   const header = request.headers["x-csrf-token"];
+  const token = Array.isArray(header) ? header[0] : header;
+  return typeof token === "string" && token.length > 0 ? token : null;
+}
+
+function readControlToken(request: FastifyRequest): string | null {
+  const header = request.headers["x-base-control-token"];
   const token = Array.isArray(header) ? header[0] : header;
   return typeof token === "string" && token.length > 0 ? token : null;
 }
@@ -176,7 +189,7 @@ export async function registerBaseSessionRoutes(app: FastifyInstance, deps: Base
     if (!session) return reply;
 
     try {
-      return await deps.snapshot.execute(session.principal);
+      return await deps.snapshot.execute(session.principal, readControlToken(request) ?? undefined);
     } catch (error) {
       return sendOperationError(reply, error);
     }
@@ -188,8 +201,13 @@ export async function registerBaseSessionRoutes(app: FastifyInstance, deps: Base
 
     if (!authorizeWrite(request, reply, deps, session)) return reply;
 
+    const parsed = HEARTBEAT_SCHEMA.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "控制心跳格式不正确。");
+    }
+
     try {
-      return await deps.clock.heartbeat(session.principal);
+      return await deps.clock.heartbeat(session.principal, parsed.data);
     } catch (error) {
       return sendOperationError(reply, error);
     }
@@ -200,6 +218,11 @@ export async function registerBaseSessionRoutes(app: FastifyInstance, deps: Base
     if (!session) return reply;
 
     if (!authorizeWrite(request, reply, deps, session)) return reply;
+
+    const controlToken = readControlToken(request);
+    if (!controlToken) {
+      return sendError(reply, 409, "CONTROL_EXPIRED", "控制权已失效，请重新进入基地。");
+    }
 
     const parsed = CLOCK_COMMAND_SCHEMA.safeParse(request.body);
     if (!parsed.success) {
@@ -213,7 +236,7 @@ export async function registerBaseSessionRoutes(app: FastifyInstance, deps: Base
         : { command: parsed.data.command, speed: parsed.data.speed };
 
     try {
-      return await deps.clock.applyCommand(session.principal, clockInput);
+      return await deps.clock.applyCommand(session.principal, clockInput, controlToken);
     } catch (error) {
       return sendOperationError(reply, error);
     }

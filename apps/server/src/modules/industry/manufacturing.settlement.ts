@@ -32,7 +32,7 @@ import type {
 // ---------- 结构端口（composition 绑定；不 import application/base/ports.ts） ----------
 
 export interface ManufacturingSettlementCatalogPort {
-  getRecipeTemplate(stableId: string): RecipeTemplateDto | null;
+  getRecipeTemplate(stableId: string, revision?: number): RecipeTemplateDto | null;
   getRobotTemplate(stableId: string): RobotTemplateDto | null;
 }
 
@@ -112,7 +112,7 @@ function resolveRecipe(
   catalog: ManufacturingSettlementCatalogPort,
   job: ManufacturingJobRecord
 ): ResolvedRecipe | null {
-  const recipe = catalog.getRecipeTemplate(job.recipeDefId);
+  const recipe = catalog.getRecipeTemplate(job.recipeDefId, job.recipeRevision);
   if (!recipe || recipe.ref.revision !== job.recipeRevision || !(recipe.workPerUnit > 0)) return null;
   const robotTemplate = catalog.getRobotTemplate(recipe.output.templateStableId);
   if (!robotTemplate) return null;

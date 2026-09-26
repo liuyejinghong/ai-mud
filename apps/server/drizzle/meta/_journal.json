@@ -253,6 +253,13 @@
       "when": 1790352753517,
       "tag": "0036_phase0_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790352754517,
+      "tag": "0037_tutorial_budget",
+      "breakpoints": true
     }
   ]
 }

@@ -62,7 +62,7 @@ export interface CreatePurchaseInputDto {
   commandId: string;
 }
 
-// 采购价目（credits/件，fixture）与到货延迟（模拟小时）。
+// 采购价目（credits/件，fixture）与到货延迟（基地分钟）。
 export const PURCHASE_CATALOG: ReadonlyArray<{
   itemId: string;
   unitCostCredits: number;
@@ -75,5 +75,5 @@ export const PURCHASE_CATALOG: ReadonlyArray<{
   { itemId: "spare_parts", unitCostCredits: 30 }
 ];
 
-export const PURCHASE_TRANSIT_SIM_HOURS = 4;
+export const PURCHASE_TRANSIT_SIM_MINUTES = 20;
 export const ORDER_REFRESH_SIM_HOURS = 24;

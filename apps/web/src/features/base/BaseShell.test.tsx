@@ -84,7 +84,7 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
       nextChangeAt: "2126-01-01T20:00:00.000Z",
       nextWeather: "warning"
     },
-  controlLease: { heldByThisSession: true, leaseUntil: "2126-01-01T08:02:00.000Z" },
+    controlLease: { heldByThisSession: true, controlActive: true, leaseUntil: "2126-01-01T08:02:00.000Z" },
     ...overrides
   };
 }
@@ -130,6 +130,65 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("BaseShell", () => {
+  it("首屏先给当前步骤与动作，失去控制权时禁用时钟命令", () => {
+    const snapshot = buildSnapshot({
+      controlLease: { heldByThisSession: false, controlActive: false, leaseUntil: null },
+      cooperationRequests: [{
+        requestId: "request-1", projectId: "project-1", projectName: "安装太阳能阵列",
+        stepIndex: 1, fromGroupId: "engineering", helperGroupId: "transport",
+        status: "pending", resolutionReason: null, helperOperatorId: null,
+        playerDecisionAllowed: true, proposedHelper: null,
+        question: "运输组缺工", createdAt: "2126-01-01T08:00:00.000Z"
+      }]
+    });
+    const { container, rerender } = renderShell(snapshot);
+
+    expect(container.querySelector("main.base-shell")?.firstElementChild?.getAttribute("aria-label"))
+      .toBe("当前目标");
+    expect(screen.getByText(/当前步骤.*物资运输.*30\/60/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /处理协作/ })).toBeTruthy();
+    expect((screen.getByRole("button", { name: "暂停计时" }) as HTMLButtonElement).disabled).toBe(true);
+    rerender(<BaseShell {...shellProps({
+      ...snapshot,
+      cooperationRequests: snapshot.cooperationRequests.map((request) => ({
+        ...request, status: "expired" as const, resolutionReason: "no_longer_needed" as const,
+        playerDecisionAllowed: false
+      }))
+    })} />);
+    expect(screen.queryByRole("button", { name: /处理协作/ })).toBeNull();
+    expect(screen.getByRole("heading", { name: /第 3\/6 段/ })).toBeTruthy();
+    expect(screen.getByText(/本组已恢复，支援请求已结案，无需再选择/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "查看当前工程" })).toBeTruthy();
+  });
+
+  it("首工程完成后从订单与在途事实推导补给目标", () => {
+    renderShell(buildSnapshot({
+      projects: [{
+        projectId: "project-1", definitionRef: { kind: "project", stableId: "install-solar-array", revision: 1 },
+        name: "首座太阳阵列", status: "completed", siteId: "site-a", steps: []
+      }],
+      buildableProjects: [{
+        definitionRef: { kind: "project", stableId: "install-second-array", revision: 1 },
+        name: "第二阵列", description: "继续扩大发电能力",
+        inputs: [{ itemId: "solar_panel_set", quantity: 12 }]
+      }],
+      orders: [{
+        orderId: "order-1", orderRef: { kind: "order", stableId: "spares", revision: 1 },
+        name: "备件采购单", status: "delivered", requiredItemId: "spare_parts", requiredItemName: "备件",
+        quantity: 10, rewardCredits: 450, deadlineSim: null, acceptedAtSim: null
+      }],
+      purchases: [{
+        purchaseId: "purchase-1", itemId: "solar_panel_set", itemName: "太阳能板组", quantity: 6,
+        costCredits: 720, status: "in_transit", arrivesAtSim: "2126-01-01T08:20:00.000Z"
+      }]
+    }));
+
+    expect(screen.getByRole("heading", { name: /第 5\/6 段 · 当前目标 · 第二阵列/ })).toBeTruthy();
+    expect(screen.getByText(/相关采购在途/)).toBeTruthy();
+    expect(screen.getByText(/首座太阳阵列已完工.*备件采购单已交付/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "查看订单与补给" })).toBeTruthy();
+  });
+
   it("渲染四区布局，并把 W/Wh 换算成一位小数的 kW/kWh", () => {
     renderShell(buildSnapshot());
 
@@ -156,6 +215,69 @@ describe("BaseShell", () => {
       actionFeedback={{ area: "clock", kind: "error", message: "无法恢复计时" }} />);
     expect(within(screen.getByLabelText("基地时间")).getByRole("alert").textContent)
       .toBe("无法恢复计时");
+  });
+
+  it("基地开工反馈出现在对象详情前，操作后不用滚过完整材料清单", () => {
+    const snapshot = buildSnapshot({
+      projects: [],
+      buildableProjects: [{
+        definitionRef: { kind: "project", stableId: "install-solar-array", revision: 1 },
+        name: "安装太阳电池阵", description: "首项工程",
+        inputs: [{ itemId: "solar_panel_set", quantity: 20 }]
+      }]
+    });
+    const { container } = render(<BaseShell {...shellProps(snapshot)} selectedSiteId="site-a"
+      actionFeedback={{ area: "base", kind: "error", message: "开工材料不足" }} />);
+    const feedback = container.querySelector(".base-detail-wrap > .base-task-feedback");
+    expect(feedback?.textContent).toBe("开工材料不足");
+    expect(feedback?.nextElementSibling?.getAttribute("aria-label")).toBe("对象详情");
+  });
+
+  it("首工程完工且第二工程有真实施工量即收束教程，全部完工另行说明", () => {
+    const first = { ...buildSnapshot().projects[0]!, status: "completed" as const,
+      definitionRef: { kind: "project" as const, stableId: "install-solar-array", revision: 1 } };
+    const second = { ...first, projectId: "project-2", name: "架设第二太阳电池阵", status: "active" as const,
+      definitionRef: { kind: "project" as const, stableId: "install-second-array", revision: 1 },
+      steps: first.steps.map((step) => ({ ...step, workDone: 0 })) };
+    const snapshot = buildSnapshot({ projects: [first], buildableProjects: [] });
+    const view = renderShell(snapshot);
+    expect(screen.queryByText("本轮教程已完成")).toBeNull();
+
+    view.rerender(<BaseShell {...shellProps({ ...snapshot, projects: [first, second] })} />);
+    expect(screen.queryByText("本轮教程已完成")).toBeNull();
+
+    const started = { ...second, steps: second.steps.map((step, index) => ({ ...step, workDone: index === 0 ? 1 : 0 })) };
+    view.rerender(<BaseShell {...shellProps({ ...snapshot, projects: [first, started] })} />);
+    expect(screen.getByRole("heading", { name: "本轮教程已完成" })).toBeTruthy();
+    expect(screen.getByText(/首轮经营闭环完成.*第二阵列已有真实施工进度，尚未完工/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "查看第二阵列" })).toBeTruthy();
+    expect(screen.queryByText(/两项内测工程均已完工/)).toBeNull();
+
+    view.rerender(<BaseShell {...shellProps({ ...snapshot, projects: [first, { ...started, status: "completed" }] })} />);
+    expect(screen.getByRole("heading", { name: "两项内测工程全部完工" })).toBeTruthy();
+    expect(screen.getByText(/两项内测工程均已完工/)).toBeTruthy();
+    expect(screen.queryByText(/更多工程类型将随基地发展解锁/)).toBeNull();
+  });
+
+  it("教程已收束但有待决协作时，首屏优先引导处理协作", () => {
+    const first = { ...buildSnapshot().projects[0]!, status: "completed" as const,
+      definitionRef: { kind: "project" as const, stableId: "install-solar-array", revision: 1 } };
+    const second = { ...first, projectId: "project-2", status: "active" as const,
+      definitionRef: { kind: "project" as const, stableId: "install-second-array", revision: 1 },
+      steps: [{ ...first.steps[0]!, status: "running" as const, workDone: 1 }] };
+    const snapshot = buildSnapshot({ projects: [first, second], cooperationRequests: [{
+      requestId: "request-2", projectId: "project-2", projectName: "第二阵列", stepIndex: 0,
+      fromGroupId: "engineering", helperGroupId: "transport", status: "pending",
+      resolutionReason: null, helperOperatorId: null, playerDecisionAllowed: true,
+      proposedHelper: null, question: "需要跨组支援吗？", createdAt: "2126-01-01T08:00:00.000Z"
+    }] });
+    const { container } = renderShell(snapshot);
+
+    expect(screen.getByRole("heading", { name: "本轮教程已完成" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "处理协作" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "查看第二阵列" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "处理协作" }));
+    expect(container.querySelector('[aria-label="协作工作区"]')?.hasAttribute("hidden")).toBe(false);
   });
 
   it("计时时显示速度并提供暂停按钮", () => {

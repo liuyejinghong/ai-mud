@@ -505,6 +505,8 @@
 }
 .base-intro {
   max-width: 560px;
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
   margin: 16px;
   padding: 24px 28px;
   border: 1px solid #29d7b1;
@@ -628,6 +630,19 @@
   display: grid;
   gap: 6px;
 }
+.base-supply-plan {
+  border: 1px solid #ffe08a;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.base-supply-plan ul {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+.base-supply-plan p {
+  margin: 4px 0 0;
+}
 .base-order-card {
   display: grid;
   gap: 4px;
@@ -712,6 +727,8 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 18px;
+  border-color: #ffe08a;
+  padding: 10px 14px;
 }
 
 .base-current-task > div {
@@ -720,6 +737,18 @@
 
 .base-current-task p {
   margin: 0;
+}
+
+.base-current-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.base-current-facts {
+  flex-basis: 100%;
+  color: #9db9cb;
+  font-size: 12px;
 }
 
 .base-scene {
@@ -758,6 +787,20 @@
   background: rgba(255, 122, 107, 0.1);
 }
 
+.base-detail-wrap > .base-task-feedback {
+  position: sticky;
+  top: 48px;
+  z-index: 4;
+  margin: 0 0 8px;
+}
+
+.base-workspace[aria-label="经营工作区"] > .base-task-feedback,
+.base-workspace[aria-label="制造工作区"] > .base-task-feedback {
+  position: sticky;
+  top: 48px;
+  z-index: 4;
+}
+
 .base-cooperation-list {
   display: grid;
   gap: 8px;
@@ -790,6 +833,12 @@
 
 .base-cooperation-item code {
   overflow-wrap: anywhere;
+}
+
+.base-cooperation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .base-paused-task {

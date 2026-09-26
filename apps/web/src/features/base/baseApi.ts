@@ -2,6 +2,8 @@
 // 数据只来自冻结 REST 面（docs/reviews/base-operations/m12-p-contract.md §6）与 @ai-mud/shared DTO。
 import type {
   BaseClockCommandInputDto,
+  BaseHeartbeatInputDto,
+  BaseHeartbeatResultDto,
   AcceptOrderInputDto,
   CreatePurchaseInputDto,
   DeliverOrderInputDto,
@@ -10,7 +12,9 @@ import type {
   CancelManufacturingJobResultDto,
   CreateManufacturingJobInputDto,
   CreateManufacturingJobResultDto,
-  CreateProjectInputDto
+  CreateProjectInputDto,
+  CooperationDecisionInputDto,
+  CooperationDecisionResultDto
 } from "@ai-mud/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:3000";
@@ -29,6 +33,8 @@ interface RequestOptions {
   method?: string;
   body?: unknown;
   csrfToken?: string;
+  controlToken?: string;
+  keepalive?: boolean;
 }
 
 function isErrorResponse(value: unknown): value is { error: { code: string; message: string } } {
@@ -46,9 +52,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const response = await fetch(`${API_BASE}${path}`, {
     method: options.method ?? "GET",
     credentials: "include",
+    ...(options.keepalive ? { keepalive: true } : {}),
     headers: {
       "Content-Type": "application/json",
-      ...(options.csrfToken !== undefined ? { "x-csrf-token": options.csrfToken } : {})
+      ...(options.csrfToken !== undefined ? { "x-csrf-token": options.csrfToken } : {}),
+      ...(options.controlToken !== undefined ? { "X-Base-Control-Token": options.controlToken } : {})
     },
     ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {})
   });
@@ -92,11 +100,6 @@ export interface ProvisionResultDto {
   duplicate: boolean;
 }
 
-export interface HeartbeatResultDto {
-  leaseUntil: string;
-  timeMode: BaseTimeMode;
-}
-
 export interface ClockCommandResultDto {
   timeMode: BaseTimeMode;
   speed: number;
@@ -121,8 +124,8 @@ export interface AuthLoginResultDto {
   csrfToken: string;
 }
 
-export function getSnapshot(): Promise<BaseSnapshotDto> {
-  return request<BaseSnapshotDto>("/base/snapshot");
+export function getSnapshot(controlToken?: string): Promise<BaseSnapshotDto> {
+  return request<BaseSnapshotDto>("/base/snapshot", { ...(controlToken ? { controlToken } : {}) });
 }
 
 export function provision(csrfToken: string, commandId?: string): Promise<ProvisionResultDto> {
@@ -142,19 +145,34 @@ export function playtestRegister(
   });
 }
 
-export function heartbeat(csrfToken: string): Promise<HeartbeatResultDto> {
-  return request<HeartbeatResultDto>("/base/heartbeat", {
+export function heartbeat(input: BaseHeartbeatInputDto, csrfToken: string): Promise<BaseHeartbeatResultDto> {
+  return request<BaseHeartbeatResultDto>("/base/heartbeat", {
     method: "POST",
     csrfToken,
-    body: {}
+    body: input,
+    keepalive: input.action === "release"
   });
 }
 
 export function setClock(
   input: BaseClockCommandInputDto,
-  csrfToken: string
+  csrfToken: string,
+  controlToken: string
 ): Promise<ClockCommandResultDto> {
   return request<ClockCommandResultDto>("/base/clock", {
+    method: "POST",
+    csrfToken,
+    controlToken,
+    body: input
+  });
+}
+
+export function decideCooperation(
+  requestId: string,
+  input: CooperationDecisionInputDto,
+  csrfToken: string
+): Promise<CooperationDecisionResultDto> {
+  return request<CooperationDecisionResultDto>(`/base/cooperation/${encodeURIComponent(requestId)}/decision`, {
     method: "POST",
     csrfToken,
     body: input
