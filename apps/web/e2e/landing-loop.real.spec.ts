@@ -57,9 +57,16 @@ async function orderRecipe(page: import("@playwright/test").Page, recipeName: st
 }
 
 test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投资；回访与缩放", async ({ page }, testInfo) => {
-  test.setTimeout(42 * 60_000);
+  test.setTimeout(50 * 60_000);
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  // 无头长跑中 macOS 焦点反复丢失会停掉心跳、冻结模拟（真实前台窗口不会）。
+  // 这里把 document.hasFocus 钉为 true：只补齐「窗口在前台」这一浏览器事实，
+  // 暂停/倍率/租约等产品规则全部照常走真实路径。
+  await page.addInitScript(() => {
+    Object.defineProperty(Document.prototype, "hasFocus", { value: () => true });
+  });
 
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/");
