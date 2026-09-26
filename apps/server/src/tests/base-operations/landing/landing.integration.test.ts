@@ -181,7 +181,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
       const slot = snap.productionSlots?.[0];
       if (slot?.maintenanceBlocked) {
         await ops.production.maintain.execute({ accountId }, {
-          siteId: slot.siteId, commandId: randomUUID(), controlToken: leaseToken ?? undefined
+          siteId: slot.siteId, commandId: randomUUID(), controlToken: leaseToken
         });
       }
     }
@@ -355,14 +355,14 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
         builderOperatorIds: [builders[0]!.operatorId],
         haulerOperatorId: haulers[0]!.operatorId,
         commandId: randomUUID(),
-        controlToken: leaseToken ?? undefined
+        controlToken: leaseToken
       })
     ).rejects.toMatchObject({ code: "REQUIREMENTS_NOT_MET" });
 
     // 勘探：2 分钟（望山 2 工作点），揭示但不发物资。
     await ops.extraction.survey.execute({ accountId }, {
       nodeId: ironNodeId, operatorId: surveyor.operatorId, commandId: randomUUID(),
-      controlToken: leaseToken ?? undefined
+      controlToken: leaseToken
     });
     let inventory = await inventoryMap(harness.client, baseId);
     expect(inventory.has("iron_ore")).toBe(false);
@@ -379,7 +379,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
       builderOperatorIds: [builders[0]!.operatorId, builders[1]!.operatorId],
       haulerOperatorId: haulers[0]!.operatorId,
       commandId: randomUUID(),
-      controlToken: leaseToken ?? undefined
+      controlToken: leaseToken
     });
     expect(mine).toMatchObject({ status: "active", reservedOre: 16, duplicate: false });
     // 中途检查：第 1 分钟采出未送达 → 库存仍无矿，现场货物 4。
@@ -411,7 +411,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     // 铜矿 1 批，为后续线缆。
     await ops.extraction.survey.execute({ accountId }, {
       nodeId: await nodeIdByKey("copper_ridge"), operatorId: surveyor.operatorId, commandId: randomUUID(),
-      controlToken: leaseToken ?? undefined
+      controlToken: leaseToken
     });
     await advanceMinutes(2);
     const copperMine = await ops.extraction.createMining.execute({ accountId }, {
@@ -419,7 +419,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
       builderOperatorIds: [builders[0]!.operatorId, builders[1]!.operatorId],
       haulerOperatorId: haulers[0]!.operatorId,
       commandId: randomUUID(),
-      controlToken: leaseToken ?? undefined
+      controlToken: leaseToken
     });
     await advanceMinutes(2);
     inventory = await inventoryMap(harness.client, baseId);
@@ -435,12 +435,12 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
       builderOperatorIds: [builders[2]!.operatorId, builders[3]!.operatorId],
       haulerOperatorId: haulers[1]!.operatorId,
       commandId: randomUUID(),
-      controlToken: leaseToken ?? undefined
+      controlToken: leaseToken
     });
     const before = (await snapshot()).resourceNodes!.find((node) => node.nodeKey === "iron_north")!;
     expect(before.reservedQuantity).toBe(8);
     const cancelled = await ops.extraction.cancel.execute({ accountId }, {
-      jobId: mine.jobId, commandId: randomUUID(), controlToken: leaseToken ?? undefined
+      jobId: mine.jobId, commandId: randomUUID(), controlToken: leaseToken
     });
     expect(cancelled).toMatchObject({ status: "cancelled", releasedOre: 8 });
     const after = (await snapshot()).resourceNodes!.find((node) => node.nodeKey === "iron_north")!;
@@ -507,7 +507,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     const spareBefore = (await inventoryMap(harness.client, baseId)).get("spare_part")!.quantity;
     const processingSiteId = blockedSnap.productionSlots![0]!.siteId;
     const maintained = await ops.production.maintain.execute({ accountId }, {
-      siteId: processingSiteId, commandId: randomUUID(), controlToken: leaseToken ?? undefined
+      siteId: processingSiteId, commandId: randomUUID(), controlToken: leaseToken
     });
     expect(maintained).toMatchObject({ batchesSinceMaintenance: 0, duplicate: false });
     const inventoryAfterMaintain = await inventoryMap(harness.client, baseId);
@@ -561,7 +561,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
         builderOperatorIds: [builders[0]!.operatorId, builders[1]!.operatorId],
         haulerOperatorId: haulers[0]!.operatorId,
         commandId: randomUUID(),
-        controlToken: leaseToken ?? undefined
+        controlToken: leaseToken
       });
       await advanceMinutes(batches * 2 + 1);
       void mine;
@@ -624,10 +624,10 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
       haulerOperatorId: haulers[2]!.operatorId
     };
     const first = await ops.extraction.createMining.execute({ accountId }, {
-      ...payload, commandId, controlToken: leaseToken ?? undefined
+      ...payload, commandId, controlToken: leaseToken
     });
     const replay = await ops.extraction.createMining.execute({ accountId }, {
-      ...payload, commandId, controlToken: leaseToken ?? undefined
+      ...payload, commandId, controlToken: leaseToken
     });
     expect(replay.jobId).toBe(first.jobId);
     expect(replay.duplicate).toBe(true);
@@ -635,23 +635,23 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     // 相同 commandId 不同 payload → IDEMPOTENCY_CONFLICT。
     await expect(
       ops.extraction.createMining.execute({ accountId }, {
-        ...payload, batches: 2, commandId, controlToken: leaseToken ?? undefined
+        ...payload, batches: 2, commandId, controlToken: leaseToken
       })
     ).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
     // 清场：取消该单，释放设备。
-    await ops.extraction.cancel.execute({ accountId }, { jobId: first.jobId, commandId: randomUUID(), controlToken: leaseToken ?? undefined });
+    await ops.extraction.cancel.execute({ accountId }, { jobId: first.jobId, commandId: randomUUID(), controlToken: leaseToken });
     // 过期 revision → REVISION_EXPIRED。
     const snap = await snapshot();
     await expect(
       ops.production.powerPolicy.execute({ accountId }, {
         priority: "charging", commandId: randomUUID(),
-        expectedBaseRevision: snap.baseRevision - 1, controlToken: leaseToken ?? undefined
+        expectedBaseRevision: snap.baseRevision - 1, controlToken: leaseToken
       })
     ).rejects.toMatchObject({ code: "REVISION_EXPIRED" });
     // 电力策略命令成功并回读。
     const policy = await ops.production.powerPolicy.execute({ accountId }, {
       priority: "charging", commandId: randomUUID(),
-      expectedBaseRevision: snap.baseRevision, controlToken: leaseToken ?? undefined
+      expectedBaseRevision: snap.baseRevision, controlToken: leaseToken
     });
     expect(policy).toMatchObject({ priority: "charging", duplicate: false });
     expect((await snapshot()).power.powerPolicy).toBe("charging");
