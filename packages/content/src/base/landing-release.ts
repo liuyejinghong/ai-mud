@@ -66,7 +66,8 @@ export const LANDING_PROJECT_TEMPLATES: ContentProjectTemplate[] = [
       ref: { kind: "facility", stableId: "landing-solar", revision: 1 },
       name: "太阳能电站",
       generationWPeak: 4000
-    }
+    },
+    allowedSiteKeys: ["install_solar"],
   },
   {
     ref: { kind: "project", stableId: "landing-install-warehouse", revision: 1 },
@@ -79,7 +80,8 @@ export const LANDING_PROJECT_TEMPLATES: ContentProjectTemplate[] = [
       name: "仓储棚",
       effects: { capabilities: ["warehouse"] }
     },
-    requiresFacilities: ["landing-solar"]
+    requiresFacilities: ["landing-solar"],
+    allowedSiteKeys: ["install_warehouse"]
   },
   {
     ref: { kind: "project", stableId: "landing-install-storage", revision: 1 },
@@ -92,7 +94,8 @@ export const LANDING_PROJECT_TEMPLATES: ContentProjectTemplate[] = [
       name: "储能间",
       effects: { storageCapacityWh: 5000 }
     },
-    requiresFacilities: ["landing-solar"]
+    requiresFacilities: ["landing-solar"],
+    allowedSiteKeys: ["install_storage"]
   },
   {
     ref: { kind: "project", stableId: "landing-install-charging", revision: 1 },
@@ -105,7 +108,8 @@ export const LANDING_PROJECT_TEMPLATES: ContentProjectTemplate[] = [
       name: "充电区",
       effects: { chargeLimitW: 1600 }
     },
-    requiresFacilities: ["landing-solar"]
+    requiresFacilities: ["landing-solar"],
+    allowedSiteKeys: ["install_charging"]
   },
   {
     ref: { kind: "project", stableId: "landing-install-processing", revision: 1 },
@@ -118,7 +122,8 @@ export const LANDING_PROJECT_TEMPLATES: ContentProjectTemplate[] = [
       name: "加工间",
       effects: { processingSlots: 1, capabilities: ["processing"] }
     },
-    requiresFacilities: ["landing-warehouse"]
+    requiresFacilities: ["landing-warehouse"],
+    allowedSiteKeys: ["install_processing"]
   },
   {
     ref: { kind: "project", stableId: "landing-install-maintenance", revision: 1 },
@@ -131,7 +136,8 @@ export const LANDING_PROJECT_TEMPLATES: ContentProjectTemplate[] = [
       name: "维护工位",
       effects: { capabilities: ["maintenance"] }
     },
-    requiresFacilities: ["landing-warehouse"]
+    requiresFacilities: ["landing-warehouse"],
+    allowedSiteKeys: ["install_maintenance"]
   },
   {
     ref: { kind: "project", stableId: "landing-expand-solar", revision: 1 },
@@ -151,7 +157,8 @@ export const LANDING_PROJECT_TEMPLATES: ContentProjectTemplate[] = [
       name: "太阳能电站",
       generationWPeak: 4000
     },
-    expansionSlot: true
+    expansionSlot: true,
+    allowedSiteKeys: ["expand_a", "expand_b", "expand_c", "expand_d"],
   },
   {
     ref: { kind: "project", stableId: "landing-expand-processing", revision: 1 },
@@ -171,7 +178,8 @@ export const LANDING_PROJECT_TEMPLATES: ContentProjectTemplate[] = [
       name: "加工间",
       effects: { processingSlots: 1, capabilities: ["processing"] }
     },
-    expansionSlot: true
+    expansionSlot: true,
+    allowedSiteKeys: ["expand_a", "expand_b", "expand_c", "expand_d"],
   },
   {
     ref: { kind: "project", stableId: "landing-expand-storage", revision: 1 },
@@ -191,7 +199,8 @@ export const LANDING_PROJECT_TEMPLATES: ContentProjectTemplate[] = [
       name: "储能间",
       effects: { storageCapacityWh: 5000 }
     },
-    expansionSlot: true
+    expansionSlot: true,
+    allowedSiteKeys: ["expand_a", "expand_b", "expand_c", "expand_d"]
   }
 ];
 

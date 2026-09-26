@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeLandingMinute,
+  projectLandingSupplyW,
   LANDING_ORE_PER_BATCH,
   LANDING_SLOT_MAINTENANCE_BATCHES,
   type ComputeLandingMinuteInput,
@@ -432,5 +433,29 @@ describe("P05 功耗账本与策略", () => {
     const result = step(sim);
     // 着陆器 1000 − 基础 200 = 800 盈余入储能。
     expect(result.power.storageWm).toBe(60_000 + 800);
+  });
+});
+
+describe("P05b 实际供电投影（快照同源公式）", () => {
+  it("昼间晴/无尘：太阳能=峰值，应急恒定", async () => {
+
+    const day = projectLandingSupplyW({
+      simTime: new Date(Date.UTC(2026, 8, 26, 10, 0, 0)),
+      solarWPeak: 4000, weatherLight: 1, dustLevel: 0, emergencyW: 1000
+    });
+    expect(day).toMatchObject({ solarW: 4000, emergencyW: 1000, totalW: 5000, isDaylight: true });
+  });
+  it("夜间：太阳能 0，应急仍 1 kW；积尘按比例衰减", async () => {
+
+    const night = projectLandingSupplyW({
+      simTime: new Date(Date.UTC(2026, 8, 26, 20, 0, 0)),
+      solarWPeak: 4000, weatherLight: 1, dustLevel: 0, emergencyW: 1000
+    });
+    expect(night).toMatchObject({ solarW: 0, emergencyW: 1000, totalW: 1000, isDaylight: false });
+    const dusty = projectLandingSupplyW({
+      simTime: new Date(Date.UTC(2026, 8, 26, 10, 0, 0)),
+      solarWPeak: 4000, weatherLight: 1, dustLevel: 100, emergencyW: 1000
+    });
+    expect(dusty.solarW).toBe(2000); // 1 − 100/200
   });
 });

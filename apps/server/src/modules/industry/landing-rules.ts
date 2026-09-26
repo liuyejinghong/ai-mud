@@ -820,3 +820,21 @@ export function computeLandingMinute(
 export function landingEnergyWmPerBatch(ratedW: number, workMinutesPerBatch: number): number {
   return ratedW * workMinutesPerBatch;
 }
+
+// 实际当期供电投影（与 computeLandingMinute 同一公式/同源输入）：快照显示用。
+// 太阳能 = 峰值 × 日照 × (1−尘/200)（仅昼间）；应急 = 恒定；二者分列不混算。
+export function projectLandingSupplyW(input: {
+  simTime: Date;
+  solarWPeak: number;
+  weatherLight: number;
+  dustLevel: number;
+  emergencyW: number;
+}): { solarW: number; emergencyW: number; totalW: number; isDaylight: boolean } {
+  const hour = input.simTime.getUTCHours();
+  const isDaylight = hour >= SIM_DAYLIGHT_START_HOUR && hour < SIM_DAYLIGHT_END_HOUR;
+  const dustFactor = 1 - Math.min(100, Math.max(0, input.dustLevel)) / 200;
+  const solarW = isDaylight
+    ? Math.round(input.solarWPeak * (input.weatherLight ?? 1) * dustFactor)
+    : 0;
+  return { solarW, emergencyW: input.emergencyW, totalW: solarW + input.emergencyW, isDaylight };
+}

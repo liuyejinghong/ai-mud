@@ -15,7 +15,7 @@ export interface BaseProductionRouteDeps {
   maintain: {
     execute(
       principal: { accountId: string },
-      input: { siteId: string; commandId: string; expectedBaseRevision?: number }
+      input: { siteId: string; commandId: string; expectedBaseRevision?: number; controlToken?: string | null }
     ): Promise<{ slotId: string; batchesSinceMaintenance: number; duplicate: boolean }>;
   };
   powerPolicy: {
@@ -23,19 +23,20 @@ export interface BaseProductionRouteDeps {
       principal: { accountId: string },
       input: {
         priority: "production" | "charging"; commandId: string; expectedBaseRevision?: number;
+        controlToken?: string | null;
       }
     ): Promise<{ priority: "production" | "charging"; duplicate: boolean }>;
   };
   pauseJob: {
     execute(
       principal: { accountId: string },
-      input: { jobId: string; commandId: string; expectedBaseRevision?: number }
+      input: { jobId: string; commandId: string; expectedBaseRevision?: number; controlToken?: string | null }
     ): Promise<{ jobId: string; status: string; duplicate: boolean }>;
   };
   resumeJob: {
     execute(
       principal: { accountId: string },
-      input: { jobId: string; commandId: string; expectedBaseRevision?: number }
+      input: { jobId: string; commandId: string; expectedBaseRevision?: number; controlToken?: string | null }
     ): Promise<{ jobId: string; status: string; duplicate: boolean }>;
   };
 }
@@ -62,10 +63,11 @@ export async function registerBaseProductionRoutes(
   app: FastifyInstance,
   deps: BaseProductionRouteDeps
 ) {
+  // R1：新写命令与旧面同权——需有效控制租约（X-Base-Control-Token；03 §4）。
   const requireSession = async (
     request: FastifyRequest,
     reply: FastifyReply
-  ): Promise<{ accountId: string } | null> => {
+  ): Promise<{ accountId: string; controlToken: string | null } | null> => {
     const token = request.cookies[app.config.SESSION_COOKIE_NAME];
     if (!token) {
       void sendError(reply, 401, "UNAUTHENTICATED", "未登录。");
@@ -81,13 +83,19 @@ export async function registerBaseProductionRoutes(
       void sendError(reply, 403, "FORBIDDEN", "CSRF 令牌缺失或不有效。");
       return null;
     }
-    return { accountId: principal.accountId };
+    return {
+      accountId: principal.accountId,
+      controlToken:
+        typeof request.headers["x-base-control-token"] === "string"
+          ? request.headers["x-base-control-token"]
+          : null
+    };
   };
 
   const guard = async (
     request: FastifyRequest,
     reply: FastifyReply,
-    handler: (session: { accountId: string }) => Promise<FastifyReply>
+    handler: (session: { accountId: string; controlToken: string | null }) => Promise<FastifyReply>
   ): Promise<FastifyReply> => {
     const session = await requireSession(request, reply);
     if (!session) return reply;
@@ -114,7 +122,8 @@ export async function registerBaseProductionRoutes(
           commandId: parsed.data.commandId ?? randomUUID(),
           ...(parsed.data.expectedBaseRevision !== undefined
             ? { expectedBaseRevision: parsed.data.expectedBaseRevision }
-            : {})
+            : {}),
+          controlToken: session.controlToken
         });
         return reply.code(200).send(result);
       })
@@ -129,7 +138,8 @@ export async function registerBaseProductionRoutes(
         commandId: parsed.data.commandId ?? randomUUID(),
         ...(parsed.data.expectedBaseRevision !== undefined
           ? { expectedBaseRevision: parsed.data.expectedBaseRevision }
-          : {})
+          : {}),
+        controlToken: session.controlToken
       });
       return reply.code(200).send(result);
     })
@@ -149,7 +159,8 @@ export async function registerBaseProductionRoutes(
             commandId: parsed.data.commandId ?? randomUUID(),
             ...(parsed.data.expectedBaseRevision !== undefined
               ? { expectedBaseRevision: parsed.data.expectedBaseRevision }
-              : {})
+              : {}),
+            controlToken: session.controlToken
           };
           const result = action === "pause"
             ? await deps.pauseJob.execute(session, input)

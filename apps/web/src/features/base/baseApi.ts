@@ -293,22 +293,26 @@ import type {
 export function surveyResourceNode(
   csrfToken: string,
   nodeId: string,
-  input: Omit<SurveyNodeInputDto, "commandId"> & { commandId?: string }
+  input: Omit<SurveyNodeInputDto, "commandId"> & { commandId?: string },
+  controlToken?: string | null
 ): Promise<{ jobId: string; duplicate: boolean }> {
   return request(`/base/resource-nodes/${nodeId}/survey`, {
     method: "POST",
     csrfToken,
+    ...(controlToken ? { controlToken } : {}),
     body: { ...input, commandId: input.commandId ?? newCommandId() }
   });
 }
 
 export function createExtractionJob(
   csrfToken: string,
-  input: Omit<CreateExtractionJobInputDto, "commandId"> & { commandId?: string }
+  input: Omit<CreateExtractionJobInputDto, "commandId"> & { commandId?: string },
+  controlToken?: string | null
 ): Promise<CreateExtractionJobResultDto> {
   return request("/base/extraction-jobs", {
     method: "POST",
     csrfToken,
+    ...(controlToken ? { controlToken } : {}),
     body: { ...input, commandId: input.commandId ?? newCommandId() }
   });
 }
@@ -317,11 +321,13 @@ export function extractionJobAction(
   csrfToken: string,
   jobId: string,
   action: "pause" | "resume" | "cancel",
-  input: Omit<ExtractionJobActionInputDto, "commandId"> & { commandId?: string }
+  input: Omit<ExtractionJobActionInputDto, "commandId"> & { commandId?: string },
+  controlToken?: string | null
 ): Promise<ExtractionJobActionResultDto> {
   return request(`/base/extraction-jobs/${jobId}/${action}`, {
     method: "POST",
     csrfToken,
+    ...(controlToken ? { controlToken } : {}),
     body: { ...input, commandId: input.commandId ?? newCommandId() }
   });
 }
@@ -329,22 +335,26 @@ export function extractionJobAction(
 export function maintainProductionSlot(
   csrfToken: string,
   siteId: string,
-  input: Omit<MaintainSlotInputDto, "commandId"> & { commandId?: string }
+  input: Omit<MaintainSlotInputDto, "commandId"> & { commandId?: string },
+  controlToken?: string | null
 ): Promise<MaintainSlotResultDto> {
   return request(`/base/production-slots/${siteId}/maintain`, {
     method: "POST",
     csrfToken,
+    ...(controlToken ? { controlToken } : {}),
     body: { ...input, commandId: input.commandId ?? newCommandId() }
   });
 }
 
 export function setPowerPolicy(
   csrfToken: string,
-  input: Omit<PowerPolicyInputDto, "commandId"> & { commandId?: string }
+  input: Omit<PowerPolicyInputDto, "commandId"> & { commandId?: string },
+  controlToken?: string | null
 ): Promise<{ priority: "production" | "charging"; duplicate: boolean }> {
   return request("/base/power-policy", {
     method: "POST",
     csrfToken,
+    ...(controlToken ? { controlToken } : {}),
     body: { ...input, commandId: input.commandId ?? newCommandId() }
   });
 }
@@ -352,11 +362,13 @@ export function setPowerPolicy(
 export function pauseManufacturingJob(
   csrfToken: string,
   jobId: string,
-  input: Omit<PauseManufacturingJobInputDto, "commandId"> & { commandId?: string }
+  input: Omit<PauseManufacturingJobInputDto, "commandId"> & { commandId?: string },
+  controlToken?: string | null
 ): Promise<{ jobId: string; status: string; duplicate: boolean }> {
   return request(`/base/manufacturing/${jobId}/pause`, {
     method: "POST",
     csrfToken,
+    ...(controlToken ? { controlToken } : {}),
     body: { ...input, commandId: input.commandId ?? newCommandId() }
   });
 }
@@ -364,11 +376,13 @@ export function pauseManufacturingJob(
 export function resumeManufacturingJob(
   csrfToken: string,
   jobId: string,
-  input: Omit<PauseManufacturingJobInputDto, "commandId"> & { commandId?: string }
+  input: Omit<PauseManufacturingJobInputDto, "commandId"> & { commandId?: string },
+  controlToken?: string | null
 ): Promise<{ jobId: string; status: string; duplicate: boolean }> {
   return request(`/base/manufacturing/${jobId}/resume`, {
     method: "POST",
     csrfToken,
+    ...(controlToken ? { controlToken } : {}),
     body: { ...input, commandId: input.commandId ?? newCommandId() }
   });
 }

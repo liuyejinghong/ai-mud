@@ -93,6 +93,9 @@ export interface ContentProjectTemplate {
   // R1 扩建模板标记：同一 release 内标记此位的模板共享“最多 N 个扩建位”配额，
   // 不再各自受“首建一次”限制（landing：四种套件安装一次，扩建模板可重复）。
   expansionSlot?: boolean;
+  // R1 位置合法性：该模板只能开在列出的 siteKey 上（六命名安装位/四扩建位）；
+  // 缺省不限制（旧 release）。服务端与 UI 共用此约束，不靠前端隐藏。
+  allowedSiteKeys?: string[];
 }
 
 export interface ContentProvisionSeedDevice {
@@ -262,7 +265,8 @@ const PROJECT_TEMPLATE_KEYS = [
   "inputs",
   "outputFacility",
   "requiresFacilities",
-  "expansionSlot"
+  "expansionSlot",
+  "allowedSiteKeys"
 ] as const;
 const PROJECT_STEP_KEYS = ["kind", "groupId", "workRequired"] as const;
 const OUTPUT_FACILITY_KEYS = ["ref", "name", "generationWPeak", "effects"] as const;
@@ -400,6 +404,15 @@ export function validateProjectTemplate(template: ContentProjectTemplate): strin
       template.requiresFacilities.some((facilityId) => !isNonEmptyString(facilityId)))
   ) {
     errors.push(`${label}.requiresFacilities must be a non-empty array of non-empty strings`);
+  }
+  if (
+    template.allowedSiteKeys !== undefined &&
+    (!Array.isArray(template.allowedSiteKeys) ||
+      template.allowedSiteKeys.length === 0 ||
+      new Set(template.allowedSiteKeys).size !== template.allowedSiteKeys.length ||
+      template.allowedSiteKeys.some((siteKey) => !isNonEmptyString(siteKey)))
+  ) {
+    errors.push(`${label}.allowedSiteKeys must be a non-empty array of unique non-empty strings`);
   }
   return errors;
 }

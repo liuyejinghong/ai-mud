@@ -984,7 +984,8 @@ describe("BaseService.snapshot", () => {
           outputsPlanned: 2,
           outputsDone: 0,
           currentUnitWorkDone: 0,
-          blockedReason: null
+          blockedReason: null,
+          productionSiteId: null
         }
       ],
       cooperationRequests: [],

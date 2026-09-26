@@ -109,7 +109,8 @@ function toProjectTemplateDto(template: ContentProjectTemplate): ProjectTemplate
     ...(template.requiresFacilities !== undefined
       ? { requiresFacilities: [...template.requiresFacilities] }
       : {}),
-    ...(template.expansionSlot !== undefined ? { expansionSlot: template.expansionSlot } : {})
+    ...(template.expansionSlot !== undefined ? { expansionSlot: template.expansionSlot } : {}),
+    ...(template.allowedSiteKeys !== undefined ? { allowedSiteKeys: [...template.allowedSiteKeys] } : {})
   };
 }
 

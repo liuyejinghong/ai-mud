@@ -108,6 +108,9 @@ export interface LandingSettlementDeps {
   manufacturing: {
     listLandingJobs(tx: ExtractionTx, baseId: string): Promise<ManufacturingJobRecord[]>;
     findLandingOutputByOrdinal?: (tx: ExtractionTx, jobId: string, ordinal: number) => Promise<unknown | null>;
+    saveLandingBinding(tx: ExtractionTx, patch: {
+      jobId: string; status?: ManufacturingJobRecord["status"]; productionSiteId: string | null;
+    }): Promise<void>;
     saveLandingProgress(tx: ExtractionTx, patch: {
       jobId: string; status: ManufacturingJobRecord["status"];
       outputsDone: number; currentBatchEnergyWm: number; blockedReason: string | null;
@@ -187,7 +190,10 @@ export async function settleLandingBaseMinute(
   const manufacturingJobs = await deps.manufacturing.listLandingJobs(tx, baseId);
   const slotRecords = await deps.slots.listForBase(tx, baseId);
 
-  // 槽位绑定：每站点的 live 单（active/blocked、已绑）按 FIFO 依序占用该站点的槽。
+  // FIFO 槽位分配（03 §4）：已绑定的 live 单保留其站点槽位；未绑定的 live 单
+  // （新下单/恢复入队）按全局 FIFO（createdAt, id）填入各站点剩余空闲槽；
+  // 手工单只占着陆器虚拟工位（创建时已绑定）。新绑定持久化到 production_site_id，
+  // 暂停单不占槽（pause 已清绑定）。
   const slotIdByJobId = new Map<string, string | null>();
   const slotsBySite = new Map<string, LandingSlotRecord[]>();
   for (const slot of slotRecords) {
@@ -201,13 +207,49 @@ export async function settleLandingBaseMinute(
   const liveJobs = manufacturingJobs
     .filter((job) => job.productionSiteId !== null && job.status !== "paused" && job.status !== "completed" && job.status !== "cancelled")
     .sort((left, right) => (left.createdAt?.getTime() ?? 0) - (right.createdAt?.getTime() ?? 0) || left.id.localeCompare(right.id));
-  for (const [siteId, slots] of slotsBySite) {
-    const jobs = liveJobs.filter((job) => job.productionSiteId === siteId);
-    jobs.forEach((job, index) => {
-      slotIdByJobId.set(job.id, slots[index]?.id ?? null);
-    });
+  const siteOrder = [...slotsBySite.keys()].sort((left, right) => left.localeCompare(right));
+  const occupied = new Map<string, number>(); // siteId → 已占槽数
+  for (const siteId of siteOrder) occupied.set(siteId, 0);
+  // 1) 已绑定单保槽（同站点 FIFO 对齐槽序）。
+  for (const job of liveJobs) {
+    const siteId = job.productionSiteId!;
+    const slots = slotsBySite.get(siteId);
+    if (!slots) continue; // 着陆器虚拟工位：无槽行
+    const index = occupied.get(siteId) ?? 0;
+    if (index < slots.length) {
+      slotIdByJobId.set(job.id, slots[index]!.id);
+      occupied.set(siteId, index + 1);
+    } else {
+      slotIdByJobId.set(job.id, null); // 异常超绑：按未绑处理
+    }
   }
-
+  // 2) 未绑定 live 单（active、productionSiteId null）按全局 FIFO 填空闲槽并持久化绑定。
+  const queuedJobs = manufacturingJobs
+    .filter((job) => job.productionSiteId === null && job.status === "active")
+    .sort((left, right) => (left.createdAt?.getTime() ?? 0) - (right.createdAt?.getTime() ?? 0) || left.id.localeCompare(right.id));
+  for (const job of queuedJobs) {
+    let placed = false;
+    for (const siteId of siteOrder) {
+      const slots = slotsBySite.get(siteId)!;
+      const index = occupied.get(siteId) ?? 0;
+      if (index < slots.length) {
+        slotIdByJobId.set(job.id, slots[index]!.id);
+        occupied.set(siteId, index + 1);
+        await deps.manufacturing.saveLandingBinding(tx, { jobId: job.id, productionSiteId: siteId });
+        job.productionSiteId = siteId;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) slotIdByJobId.set(job.id, null); // 队列满：等待（不占能量）
+  }
+  // 手工单（绑着陆器）无槽行：slotId null，加工能力路径单独判定。
+  for (const job of liveJobs) {
+    if (job.productionSiteId === landerSite?.id && !slotsBySite.has(job.productionSiteId)) {
+      slotIdByJobId.set(job.id, null);
+    }
+  }
+  // 结算输入的 landing 单视图（带本分钟绑定结果）。
   const landingJobs: LandingManufacturingJobRecord[] = manufacturingJobs
     .filter((job) => job.energyWmPerBatch !== null)
     .map((job) => ({

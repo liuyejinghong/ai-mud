@@ -106,6 +106,7 @@ export interface ProjectTemplateDto {
   // R1 landing（缺省 = 旧语义：无前置、不占扩建配额）。
   requiresFacilities?: string[];
   expansionSlot?: boolean;
+  allowedSiteKeys?: string[];
 }
 
 // ---------- BaseSnapshot（观察投影，纯读） ----------
@@ -120,6 +121,9 @@ export interface BasePowerDto {
   emergencyGenerationW?: number;
   chargeLimitW?: number;
   powerPolicy?: PowerPolicyPriority;
+  // 实际当期供电投影（与结算同源；夜间太阳能为 0，应急恒定）。
+  actualGenerationW?: number;
+  actualSolarW?: number;
 }
 
 // 库存占用来源（M 合同增量）：总量/占用事实以 base_inventory 为唯一权威；
@@ -231,9 +235,10 @@ export interface BaseSnapshotDto {
     description: string;
     // 开工材料需求（来自内容目录模板）；面板据此显示材料清单与库存缺口（BUILD-01）。
     inputs?: Array<{ itemId: string; quantity: number }>;
-    // R1 landing：设施前置 / 扩建位标记 / 当前提可开工结论与结构化阻塞。
+    // R1 landing：设施前置 / 扩建位标记 / 位置合法键 / 当前提可开工结论与结构化阻塞。
     requiresFacilities?: string[];
     expansionSlot?: boolean;
+    allowedSiteKeys?: string[];
     canStart?: boolean;
     blockers?: BaseActionBlockerDto[];
   }>;

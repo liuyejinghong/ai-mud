@@ -66,7 +66,8 @@ export interface ConstructionSitePort {
     tx: ConstructionTx,
     baseId: string,
     siteId: string
-  ): Promise<{ id: string; state: "free" | "reserved" | "built" } | null>;
+  ): Promise<{ id: string; state: "free" | "reserved" | "built"; siteKey?: string } | null>;
+  getSiteKey?(tx: ConstructionTx, baseId: string, siteId: string): Promise<string | null>;
   markSiteReserved(tx: ConstructionTx, siteId: string): Promise<void>;
   releaseSite(tx: ConstructionTx, siteId: string): Promise<void>;
   listSites(
@@ -250,6 +251,16 @@ export class ConstructionService {
     }
     if (site.state !== "free") {
       throw new BaseOperationError(409, "SITE_OCCUPIED", "建设位已被占用。");
+    }
+    // R1 位置合法性（服务端强制）：套件安装/扩建模板只能开在内容声明的命名位置上，
+    // 不能在扩建位装首太阳能或在安装位建扩建——不靠前端隐藏。
+    const siteKey = await this.deps.sites.getSiteKey?.(tx, baseId, site.id);
+    if (template.allowedSiteKeys && siteKey && !template.allowedSiteKeys.includes(siteKey)) {
+      throw new BaseOperationError(
+        409,
+        "REQUIREMENTS_NOT_MET",
+        `该工程只能开在：${template.allowedSiteKeys.join("、")}。`
+      );
     }
 
     for (const required of template.inputs) {

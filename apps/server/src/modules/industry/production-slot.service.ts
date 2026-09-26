@@ -61,12 +61,14 @@ export class ProductionSlotService {
   async maintain(
     tx: ProductionSlotTx,
     principal: { accountId: string },
-    input: { siteId: string; commandId: string; expectedBaseRevision?: number }
+    input: { siteId: string; commandId: string; expectedBaseRevision?: number; controlToken?: string | null }
   ): Promise<MaintainResult> {
-    const baseId = await this.requireLandingBase(tx, principal.accountId, input.expectedBaseRevision);
+    const baseId = await this.requireLandingBase(tx, principal.accountId);
     const requestHash = hashRequest({ siteId: input.siteId, action: "maintain" });
     const replay = await this.claimAndReplay(tx, baseId, MAINTAIN_COMMAND_KIND, input.commandId, requestHash);
     if (replay) return { ...(replay as MaintainResult), duplicate: true };
+    const base = await this.deps.lookup.getBaseForUpdate(tx, baseId);
+    this.ensureRevision(base!.baseRevision, input.expectedBaseRevision);
 
     if (!(await this.deps.capabilities.hasCapability(tx, baseId, "maintenance"))) {
       throw new BaseOperationError(409, "REQUIREMENTS_NOT_MET", "需要先建成维护工位。");
@@ -112,21 +114,24 @@ export class ProductionSlotService {
 
   private async requireLandingBase(
     tx: ProductionSlotTx,
-    accountId: string,
-    expectedBaseRevision?: number
+    accountId: string
   ): Promise<string> {
     const baseId = await this.deps.lookup.findBaseIdByAccount(tx, accountId);
     if (!baseId) throw new BaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
     const base = await this.deps.lookup.getBaseForUpdate(tx, baseId);
     if (!base) throw new BaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
-    if (expectedBaseRevision !== undefined && expectedBaseRevision !== base.baseRevision) {
-      throw new BaseOperationError(409, "REVISION_EXPIRED", "基地状态已变化，请刷新后重试。");
-    }
     const catalog = await this.deps.catalogResolver.forBase(tx, baseId);
     if (catalog.rulesProfile() !== "landing-v1") {
       throw new BaseOperationError(409, "CAPABILITY_UNAVAILABLE", "当前存档不支持加工槽维护。");
     }
     return baseId;
+  }
+
+  // 幂等重放不受其后 revision 变化影响；revision 只校验新命令。
+  private ensureRevision(baseRevision: number, expected?: number): void {
+    if (expected !== undefined && expected !== baseRevision) {
+      throw new BaseOperationError(409, "REVISION_EXPIRED", "基地状态已变化，请刷新后重试。");
+    }
   }
 
   private async claimAndReplay(
@@ -181,6 +186,9 @@ export interface PowerPolicyDeps {
   power: { savePowerPolicy(tx: ProductionSlotTx, baseId: string, priority: "production" | "charging"): Promise<void> };
   catalogResolver: { forBase(tx: ProductionSlotTx, baseId: string): Promise<LandingCommandCatalogPort> };
   receipts: (tx: ProductionSlotTx) => Pick<AssetMutationPort, "findReceiptForUpdate" | "claimReceipt" | "saveReceiptResult">;
+  // 03 §4：切换前先按旧策略结清本基地已确认时段（B008 禁止的是请求路径任意推动全服，
+  // 不是禁止合法的本基地已确认边界结清——与 heartbeat/settleConfirmedThrough 同一参与能力）。
+  settleConfirmedThrough?: (tx: ProductionSlotTx, baseId: string, at: Date) => Promise<void>;
 }
 
 export class PowerPolicyService {
@@ -189,12 +197,12 @@ export class PowerPolicyService {
   async setPolicy(
     tx: ProductionSlotTx,
     principal: { accountId: string },
-    input: { priority: "production" | "charging"; commandId: string; expectedBaseRevision?: number }
+    input: { priority: "production" | "charging"; commandId: string; expectedBaseRevision?: number; controlToken?: string | null }
   ): Promise<{ priority: "production" | "charging"; duplicate: boolean }> {
     if (input.priority !== "production" && input.priority !== "charging") {
       throw new BaseOperationError(400, "VALIDATION_ERROR", "priority 必须为 production 或 charging。");
     }
-    const baseId = await this.requireLandingBase(tx, principal.accountId, input.expectedBaseRevision);
+    const baseId = await this.requireLandingBase(tx, principal.accountId);
     const requestHash = hashRequest({ priority: input.priority });
     const actorScope = `base:${baseId}`;
     const receipts = this.deps.receipts(tx);
@@ -204,6 +212,12 @@ export class PowerPolicyService {
         throw new BaseOperationError(409, "IDEMPOTENCY_CONFLICT", "相同命令 ID 但请求不一致。");
       }
       return { ...(existing.result as { priority: "production" | "charging"; duplicate: boolean }), duplicate: true };
+    }
+    const baseForPolicy = await this.deps.lookup.getBaseForUpdate(tx, baseId);
+    this.ensureRevision(baseForPolicy!.baseRevision, input.expectedBaseRevision);
+    // 先按旧策略结清已确认时段，再落新策略（不追溯重算旧时段）。
+    if (this.deps.settleConfirmedThrough) {
+      await this.deps.settleConfirmedThrough(tx, baseId, new Date());
     }
     const claimed = await receipts.claimReceipt({
       actorScope,
@@ -246,5 +260,11 @@ export class PowerPolicyService {
       throw new BaseOperationError(409, "CAPABILITY_UNAVAILABLE", "当前存档不支持电力策略。");
     }
     return baseId;
+  }
+
+  private ensureRevision(baseRevision: number, expected?: number): void {
+    if (expected !== undefined && expected !== baseRevision) {
+      throw new BaseOperationError(409, "REVISION_EXPIRED", "基地状态已变化，请刷新后重试。");
+    }
   }
 }

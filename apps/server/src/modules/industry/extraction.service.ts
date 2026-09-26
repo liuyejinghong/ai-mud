@@ -8,7 +8,6 @@ import { hashRequest, type AssetMutationPort, type CommandReceipt } from "../led
 import { BaseOperationError } from "./construction.service.js";
 import { LANDING_ORE_PER_BATCH } from "./landing-rules.js";
 import type { ExtractionJobRecord, ExtractionJobStatus, ExtractionTx } from "./extraction.repository.js";
-import type { ResourceNodeRecord } from "../world-runtime/resource-node.repository.js";
 
 const SURVEY_COMMAND_KIND = "base.surveyNode";
 const CREATE_COMMAND_KIND = "base.createExtractionJob";
@@ -24,8 +23,17 @@ export interface ExtractionLookupPort {
   getBaseForUpdate(tx: ExtractionTx, baseId: string): Promise<{ id: string; baseRevision: number } | null>;
 }
 
+// 节点结构值类型（industry 自有形状；不 import world 持久层类型——peer persistence 禁止）。
+export interface ExtractionNodeView {
+  id: string;
+  itemId: string;
+  discovered: boolean;
+  remainingQuantity: number;
+  reservedQuantity: number;
+}
+
 export interface ExtractionNodePort {
-  findNode(tx: ExtractionTx, baseId: string, nodeId: string): Promise<ResourceNodeRecord | null>;
+  findNode(tx: ExtractionTx, baseId: string, nodeId: string): Promise<ExtractionNodeView | null>;
   reserveNode(tx: ExtractionTx, baseId: string, nodeId: string, quantity: number): Promise<boolean>;
   releaseReservation(tx: ExtractionTx, baseId: string, nodeId: string, quantity: number): Promise<boolean>;
 }
@@ -133,12 +141,14 @@ export class ExtractionService {
   async survey(
     tx: ExtractionTx,
     principal: ExtractionPrincipal,
-    input: { nodeId: string; operatorId: string; commandId: string; expectedBaseRevision?: number }
+    input: { nodeId: string; operatorId: string; commandId: string; expectedBaseRevision?: number ; controlToken?: string | null }
   ): Promise<SurveyResultPayload> {
-    const { baseId, catalog } = await this.requireLandingBase(tx, principal, input.expectedBaseRevision);
+    const { baseId, catalog } = await this.requireLandingBase(tx, principal);
     const requestHash = hashRequest({ nodeId: input.nodeId, operatorId: input.operatorId });
     const receipt = await this.claim(tx, baseId, SURVEY_COMMAND_KIND, input.commandId, requestHash);
     if (receipt?.existing) return { ...(receipt.existing as SurveyResultPayload), duplicate: true };
+    const base = await this.deps.lookup.getBaseForUpdate(tx, baseId);
+    this.ensureRevision(base!.baseRevision, input.expectedBaseRevision);
 
     const node = await this.requireNode(tx, baseId, input.nodeId);
     if (node.discovered) {
@@ -176,6 +186,7 @@ export class ExtractionService {
       haulerOperatorId: string;
       commandId: string;
       expectedBaseRevision?: number;
+      controlToken?: string | null;
     }
   ): Promise<CreateResultPayload> {
     if (
@@ -193,7 +204,7 @@ export class ExtractionService {
     ) {
       throw new BaseOperationError(400, "VALIDATION_ERROR", "开采设备必须为 1–2 台不重复的筑垒。");
     }
-    const { baseId, catalog } = await this.requireLandingBase(tx, principal, input.expectedBaseRevision);
+    const { baseId, catalog } = await this.requireLandingBase(tx, principal);
     const requestHash = hashRequest({
       nodeId: input.nodeId,
       batches: input.batches,
@@ -202,6 +213,8 @@ export class ExtractionService {
     });
     const receipt = await this.claim(tx, baseId, CREATE_COMMAND_KIND, input.commandId, requestHash);
     if (receipt?.existing) return { ...(receipt.existing as CreateResultPayload), duplicate: true };
+    const base = await this.deps.lookup.getBaseForUpdate(tx, baseId);
+    this.ensureRevision(base!.baseRevision, input.expectedBaseRevision);
 
     const node = await this.requireNode(tx, baseId, input.nodeId);
     if (!node.discovered) {
@@ -263,12 +276,14 @@ export class ExtractionService {
   async pause(
     tx: ExtractionTx,
     principal: ExtractionPrincipal,
-    input: { jobId: string; commandId: string; expectedBaseRevision?: number }
+    input: { jobId: string; commandId: string; expectedBaseRevision?: number ; controlToken?: string | null }
   ): Promise<ActionResultPayload> {
-    const { baseId } = await this.requireLandingBase(tx, principal, input.expectedBaseRevision);
+    const { baseId } = await this.requireLandingBase(tx, principal);
     const requestHash = hashRequest({ jobId: input.jobId, action: "pause" });
     const receipt = await this.claim(tx, baseId, PAUSE_COMMAND_KIND, input.commandId, requestHash);
     if (receipt?.existing) return { ...(receipt.existing as ActionResultPayload), duplicate: true };
+    const baseForPause = await this.deps.lookup.getBaseForUpdate(tx, baseId);
+    this.ensureRevision(baseForPause!.baseRevision, input.expectedBaseRevision);
 
     const job = await this.requireJob(tx, baseId, input.jobId);
     if (job.status !== "active") {
@@ -290,9 +305,10 @@ export class ExtractionService {
       expectedBaseRevision?: number;
       builderOperatorIds?: string[];
       haulerOperatorId?: string;
+      controlToken?: string | null;
     }
   ): Promise<ActionResultPayload> {
-    const { baseId, catalog } = await this.requireLandingBase(tx, principal, input.expectedBaseRevision);
+    const { baseId, catalog } = await this.requireLandingBase(tx, principal);
     const requestHash = hashRequest({
       jobId: input.jobId,
       action: "resume",
@@ -301,6 +317,8 @@ export class ExtractionService {
     });
     const receipt = await this.claim(tx, baseId, RESUME_COMMAND_KIND, input.commandId, requestHash);
     if (receipt?.existing) return { ...(receipt.existing as ActionResultPayload), duplicate: true };
+    const baseForResume = await this.deps.lookup.getBaseForUpdate(tx, baseId);
+    this.ensureRevision(baseForResume!.baseRevision, input.expectedBaseRevision);
 
     const job = await this.requireJob(tx, baseId, input.jobId);
     if (job.status !== "paused") {
@@ -361,12 +379,14 @@ export class ExtractionService {
   async cancel(
     tx: ExtractionTx,
     principal: ExtractionPrincipal,
-    input: { jobId: string; commandId: string; expectedBaseRevision?: number }
+    input: { jobId: string; commandId: string; expectedBaseRevision?: number ; controlToken?: string | null }
   ): Promise<ActionResultPayload> {
-    const { baseId } = await this.requireLandingBase(tx, principal, input.expectedBaseRevision);
+    const { baseId } = await this.requireLandingBase(tx, principal);
     const requestHash = hashRequest({ jobId: input.jobId, action: "cancel" });
     const receipt = await this.claim(tx, baseId, CANCEL_COMMAND_KIND, input.commandId, requestHash);
     if (receipt?.existing) return { ...(receipt.existing as ActionResultPayload), duplicate: true };
+    const baseForCancel = await this.deps.lookup.getBaseForUpdate(tx, baseId);
+    this.ensureRevision(baseForCancel!.baseRevision, input.expectedBaseRevision);
 
     const job = await this.requireJob(tx, baseId, input.jobId);
     if (job.status === "completed" || job.status === "cancelled") {
@@ -404,8 +424,7 @@ export class ExtractionService {
 
   private async requireLandingBase(
     tx: ExtractionTx,
-    principal: ExtractionPrincipal,
-    expectedBaseRevision?: number
+    principal: ExtractionPrincipal
   ): Promise<{ baseId: string; catalog: ExtractionCatalogPort }> {
     const baseId = await this.deps.lookup.findBaseIdByAccount(tx, principal.accountId);
     if (!baseId) {
@@ -414,9 +433,6 @@ export class ExtractionService {
     const base = await this.deps.lookup.getBaseForUpdate(tx, baseId);
     if (!base) {
       throw new BaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
-    }
-    if (expectedBaseRevision !== undefined && expectedBaseRevision !== base.baseRevision) {
-      throw new BaseOperationError(409, "REVISION_EXPIRED", "基地状态已变化，请刷新后重试。");
     }
     const catalog = await this.deps.catalogResolver.forBase(tx, baseId);
     if (catalog.rulesProfile() !== "landing-v1") {
@@ -427,6 +443,14 @@ export class ExtractionService {
       );
     }
     return { baseId, catalog };
+  }
+
+  // 幂等合同（03 §4）：同命令重放只认 requestHash，不受其后世界 revision 变化影响；
+  // revision 只对「新命令」校验（回执未命中路径）。
+  private ensureRevision(baseRevision: number, expectedBaseRevision?: number): void {
+    if (expectedBaseRevision !== undefined && expectedBaseRevision !== baseRevision) {
+      throw new BaseOperationError(409, "REVISION_EXPIRED", "基地状态已变化，请刷新后重试。");
+    }
   }
 
   private async requireNode(tx: ExtractionTx, baseId: string, nodeId: string) {

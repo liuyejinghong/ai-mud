@@ -100,6 +100,7 @@ export interface ProjectTemplateSpec {
   // R1 landing（缺省无前置/不占扩建配额）。
   requiresFacilities?: string[];
   expansionSlot?: boolean;
+  allowedSiteKeys?: string[];
 }
 
 export interface RecipeTemplateSpec {
@@ -174,6 +175,13 @@ export interface BaseIndustryReadPort {
     chargeLimitW?: number | null;
     powerPolicy?: "production" | "charging";
   } | null>;
+  // R1 landing：实际当期供电投影（与结算同源公式）。
+  powerProjection?: (input: {
+    simTime: Date;
+    solarWPeak: number;
+    dustLevel: number;
+    emergencyW: number;
+  }) => { solarW: number; emergencyW: number; totalW: number };
   listProjects(baseId: string): Promise<
     Array<{
       id: string;
@@ -231,6 +239,13 @@ export interface BaseServiceDeps {
   };
   industryRead: BaseIndustryReadPort;
   robotRead: BaseRobotReadPort;
+  // R1 landing：实际当期供电投影（与结算同源公式；composition 绑定 landing-rules helper）。
+  powerProjection?: (input: {
+    simTime: Date;
+    solarWPeak: number;
+    dustLevel: number;
+    emergencyW: number;
+  }) => { solarW: number; emergencyW: number; totalW: number };
   // R1 landing：资源节点种子写入（world 自域）与快照读面（world/industry 仓库实现）。
   nodeSeeds?: {
     insertResourceNode(
@@ -700,7 +715,21 @@ export class BaseService {
           // R1 landing。
           emergencyGenerationW: powerRecord?.emergencyGenerationW ?? 0,
           chargeLimitW: powerRecord?.chargeLimitW ?? null,
-          powerPolicy: powerRecord?.powerPolicy ?? "production"
+          powerPolicy: powerRecord?.powerPolicy ?? "production",
+          ...(this.deps.powerProjection && powerRecord
+            ? (() => {
+                const projection = this.deps.powerProjection!({
+                  simTime: base.simTime,
+                  solarWPeak: powerRecord.generationWPeak,
+                  dustLevel: powerRecord.dustLevel,
+                  emergencyW: powerRecord.emergencyGenerationW ?? 0
+                });
+                return {
+                  actualGenerationW: projection.totalW,
+                  actualSolarW: projection.solarW
+                };
+              })()
+            : {})
         },
         resources,
         sites: siteDtos,
@@ -717,7 +746,8 @@ export class BaseService {
               ...(project.requiresFacilities
                 ? { requiresFacilities: [...project.requiresFacilities] }
                 : {}),
-              ...(project.expansionSlot !== undefined ? { expansionSlot: project.expansionSlot } : {})
+              ...(project.expansionSlot !== undefined ? { expansionSlot: project.expansionSlot } : {}),
+              ...(project.allowedSiteKeys !== undefined ? { allowedSiteKeys: [...project.allowedSiteKeys] } : {})
             };
             if (!isLanding) return entry;
             // R1 landing：canStart + 结构化 blockers（材料净缺口 / 设施前置 / 扩建位配额 / 无空位）。
@@ -826,7 +856,9 @@ export class BaseService {
             outputsPlanned: job.outputsPlanned,
             outputsDone: job.outputsDone,
             currentUnitWorkDone: job.currentUnitWorkDone,
-            blockedReason: job.blockedReason
+            blockedReason: job.blockedReason,
+            // R1 landing：槽位绑定（null = FIFO 排队中）。
+            productionSiteId: job.productionSiteId ?? null
           })
         ),
         controlLease: {

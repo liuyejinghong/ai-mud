@@ -601,27 +601,37 @@ export function BaseApp({
   const runLandingCommand = useCallback(
     async (
       area: "landing",
-      command: (revision: number | undefined) => Promise<unknown>,
+      command: (revision: number | undefined, controlToken: string | null) => Promise<unknown>,
       describe: () => string
     ) => {
       if (csrfToken === null) return;
       setIsActionBusy(true);
       setLandingFeedback(null);
       try {
-        const attempt = async (withRevision: boolean) => {
+        const attempt = async (withRevision: boolean, token: string | null) => {
           const revision = snapshot?.baseRevision;
           return withRevision && revision !== undefined
-            ? command(revision)
-            : command(undefined);
+            ? command(revision, token)
+            : command(undefined, token);
         };
+        const token = controlTokenRef.current;
         try {
-          await attempt(true);
+          await attempt(true, token);
           setLandingFeedback(describe());
         } catch (error) {
           if (error instanceof BaseApiError && error.code === "REVISION_EXPIRED") {
             await refreshSnapshot();
-            await attempt(false);
+            await attempt(false, controlTokenRef.current);
             setLandingFeedback(describe());
+          } else if (error instanceof BaseApiError && error.code === "CONTROL_EXPIRED") {
+            // 租约过期：重新接管一次再重试（前台心跳偶发断档的恢复路径）。
+            const reacquired = await acquireControl(csrfToken, true);
+            if (reacquired) {
+              await attempt(false, reacquired);
+              setLandingFeedback(describe());
+            } else {
+              throw error;
+            }
           } else {
             throw error;
           }
@@ -633,7 +643,7 @@ export function BaseApp({
         setIsActionBusy(false);
       }
     },
-    [csrfToken, refreshSnapshot, snapshot]
+    [csrfToken, refreshSnapshot, snapshot, acquireControl]
   );
 
   const handleLandingCreateProject = useCallback(
@@ -659,10 +669,10 @@ export function BaseApp({
     (nodeId: string, operatorId: string) => {
       if (csrfToken === null) return;
       void runLandingCommand("landing",
-        (revision) => surveyResourceNode(csrfToken, nodeId, {
+        (revision, controlToken) => surveyResourceNode(csrfToken, nodeId, {
           operatorId,
           ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
-        }),
+        }, controlToken),
         () => "勘探单已提交，望山开始勘察（约 2 个基地分钟）。");
     },
     [csrfToken, runLandingCommand]
@@ -672,23 +682,31 @@ export function BaseApp({
     (input: { nodeId: string; batches: number; builderOperatorIds: string[]; haulerOperatorId: string }) => {
       if (csrfToken === null) return;
       void runLandingCommand("landing",
-        (revision) => createExtractionJob(csrfToken, {
+        (revision, controlToken) => createExtractionJob(csrfToken, {
           ...input,
           ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
-        }),
+        }, controlToken),
         () => `采矿单已提交：${input.batches} 批，预留 ${input.batches * 4} 矿。`);
     },
     [csrfToken, runLandingCommand]
   );
 
   const handleExtractionAction = useCallback(
-    (jobId: string, action: "pause" | "resume" | "cancel") => {
+    (
+      jobId: string,
+      action: "pause" | "resume" | "cancel",
+      payload?: { builderOperatorIds?: string[]; haulerOperatorId?: string }
+    ) => {
       if (csrfToken === null) return;
       void runLandingCommand("landing",
-        (revision) => extractionJobAction(csrfToken, jobId, action, {
+        (revision, controlToken) => extractionJobAction(csrfToken, jobId, action, {
+          ...(payload?.builderOperatorIds !== undefined ? { builderOperatorIds: payload.builderOperatorIds } : {}),
+          ...(payload?.haulerOperatorId !== undefined ? { haulerOperatorId: payload.haulerOperatorId } : {}),
           ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
-        }),
-        () => (action === "cancel" ? "采矿单取消：未采部分已释放，已采出的矿会送完最后一趟。" : `作业已${action === "pause" ? "暂停" : "恢复"}。`));
+        }, controlToken),
+        () => (action === "cancel"
+          ? "采矿单取消：未采部分已释放，已采出的矿会送完最后一趟。"
+          : `作业已${action === "pause" ? "暂停" : "恢复"}（设备已重验）。`));
     },
     [csrfToken, runLandingCommand]
   );
@@ -725,9 +743,9 @@ export function BaseApp({
     (jobId: string) => {
       if (csrfToken === null) return;
       void runLandingCommand("landing",
-        (revision) => pauseManufacturingJob(csrfToken, jobId, {
+        (revision, controlToken) => pauseManufacturingJob(csrfToken, jobId, {
           ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
-        }),
+        }, controlToken),
         () => "工单已暂停，槽位让给下一单（材料预留保留）。");
     },
     [csrfToken, runLandingCommand]
@@ -737,9 +755,9 @@ export function BaseApp({
     (jobId: string) => {
       if (csrfToken === null) return;
       void runLandingCommand("landing",
-        (revision) => resumeManufacturingJob(csrfToken, jobId, {
+        (revision, controlToken) => resumeManufacturingJob(csrfToken, jobId, {
           ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
-        }),
+        }, controlToken),
         () => "工单已恢复并重新绑定加工槽。");
     },
     [csrfToken, runLandingCommand]
@@ -749,9 +767,9 @@ export function BaseApp({
     (siteId: string) => {
       if (csrfToken === null) return;
       void runLandingCommand("landing",
-        (revision) => maintainProductionSlot(csrfToken, siteId, {
+        (revision, controlToken) => maintainProductionSlot(csrfToken, siteId, {
           ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
-        }),
+        }, controlToken),
         () => "维护完成：消耗 1 备件，加工槽计数清零、恢复运行。");
     },
     [csrfToken, runLandingCommand]
@@ -761,10 +779,10 @@ export function BaseApp({
     (priority: PowerPolicyPriority) => {
       if (csrfToken === null) return;
       void runLandingCommand("landing",
-        (revision) => setPowerPolicy(csrfToken, {
+        (revision, controlToken) => setPowerPolicy(csrfToken, {
           priority,
           ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
-        }),
+        }, controlToken),
         () => (priority === "production" ? "已切换为加工优先。" : "已切换为充电优先。"));
     },
     [csrfToken, runLandingCommand]

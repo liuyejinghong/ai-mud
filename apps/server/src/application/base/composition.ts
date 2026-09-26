@@ -41,11 +41,12 @@ import {
 } from "../content-admin/usecases.js";
 import { CancelManufacturingJobCase } from "../manufacturing/cancel-job.js";
 import { CreateManufacturingJobCase } from "../manufacturing/create-job.js";
-import { ConstructionService } from "../../modules/industry/construction.service.js";
+import { BaseOperationError as RouteBaseOperationError, ConstructionService } from "../../modules/industry/construction.service.js";
 import { ExtractionRepository, type ExtractionJobRecord } from "../../modules/industry/extraction.repository.js";
 import { ExtractionService } from "../../modules/industry/extraction.service.js";
 import { ProductionSlotRepository } from "../../modules/industry/production-slot.repository.js";
 import { PowerPolicyService, ProductionSlotService } from "../../modules/industry/production-slot.service.js";
+import { projectLandingSupplyW } from "../../modules/industry/landing-rules.js";
 import { settleLandingBaseMinute } from "../../modules/industry/landing-settlement.js";
 import { collectCapabilities, facilityStableIdFromRef } from "../../modules/industry/facility-effects.js";
 import { ResourceNodeRepository } from "../../modules/world-runtime/resource-node.repository.js";
@@ -146,6 +147,11 @@ export function createBaseOperations(input: {
         new ExtractionRepository(tx).listForBase(tx, baseId) as Promise<ExtractionJobRecord[]>,
       listProductionSlots: (tx, baseId) => new ProductionSlotRepository(tx).listForBase(tx, baseId)
     },
+    powerProjection: (input) => {
+      // 与 landing 结算同源：R1 不生成天气日程，WeatherService.current 对无日程基地
+      // 恒返回 clear/1.0（settlement 侧同一取值路径），积尘经 power 行传入。
+      return projectLandingSupplyW({ ...input, weatherLight: 1.0 });
+    },
     manufacturingRead: {
       listJobsForBase: async (baseId: string) =>
         new ManufacturingRepository(db).listJobsForBase(db, baseId)
@@ -212,7 +218,14 @@ export function createBaseOperations(input: {
   const construction = new ConstructionService({
     lookup: baseRepo,
     assets: baseAssets,
-    sites: baseRepo,
+    sites: {
+      getSite: (tx, baseId, siteId) => baseRepo.forTransaction(tx as never).getSite(tx, baseId, siteId),
+      markSiteReserved: (tx, siteId) => baseRepo.forTransaction(tx as never).markSiteReserved(tx, siteId),
+      releaseSite: (tx, siteId) => baseRepo.forTransaction(tx as never).releaseSite(tx, siteId),
+      listSites: (tx, baseId) => baseRepo.forTransaction(tx as never).listSites(tx, baseId),
+      getSiteKey: async (tx, baseId, siteId) =>
+        (await baseRepo.forTransaction(tx as never).getSite(tx, baseId, siteId))?.siteKey ?? null
+    },
     robots: robotRuntime,
     catalog,
     catalogResolver,
@@ -400,6 +413,32 @@ export function createBaseOperations(input: {
     return collectCapabilities(built, baseCatalog.listTemplates().projects).has(capability);
   };
 
+  // R1：landing 写命令需有效控制租约（03 §4；与 clock 命令同一语义）。
+  const requireLandingControl = async (
+    tx: BaseTx,
+    accountId: string,
+    controlToken: string | null | undefined
+  ): Promise<void> => {
+    const baseId = await baseRepo.findBaseIdByAccount(tx, accountId);
+    if (!baseId) {
+      throw new RouteBaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
+    }
+    const lease = await baseRepo.getControlLease(tx, baseId);
+    const now = systemWorldClock.now();
+    if (
+      !controlToken ||
+      !lease ||
+      lease.leaseToken !== controlToken ||
+      lease.leaseUntil.getTime() <= now.getTime()
+    ) {
+      throw new RouteBaseOperationError(
+        409,
+        "CONTROL_EXPIRED",
+        "当前标签已失去基地控制权，请刷新后重试。"
+      );
+    }
+  };
+
   const extractionService = new ExtractionService({
     lookup: baseRepo,
     nodes: new ResourceNodeRepository(db),
@@ -419,16 +458,6 @@ export function createBaseOperations(input: {
     },
     assets: baseAssets,
     capabilities: { hasCapability: hasLandingCapability },
-    catalogResolver,
-    receipts: (tx) => new AssetMutationService(tx)
-  });
-
-  const powerPolicy = new PowerPolicyService({
-    lookup: baseRepo,
-    power: {
-      savePowerPolicy: (tx, baseId, priority) =>
-        new IndustryRepository(tx).savePowerPolicy(tx, baseId, priority)
-    },
     catalogResolver,
     receipts: (tx) => new AssetMutationService(tx)
   });
@@ -503,6 +532,8 @@ export function createBaseOperations(input: {
             new ManufacturingRepository(settleTx).listLandingJobs(settleTx, settleBaseId),
           findLandingOutputByOrdinal: (settleTx, jobId, ordinal) =>
             new ManufacturingRepository(settleTx).findOutputByOrdinal(settleTx, jobId, ordinal),
+          saveLandingBinding: (settleTx, patch) =>
+            new ManufacturingRepository(settleTx).saveLandingBinding(settleTx, patch),
           saveLandingProgress: (settleTx, patch) =>
             new ManufacturingRepository(settleTx).saveLandingProgress(settleTx, patch),
           insertLandingOutput: (settleTx, input) =>
@@ -561,6 +592,24 @@ export function createBaseOperations(input: {
   });
 
 
+  // R1：电力策略切换前按旧策略结清本基地已确认时段（03 §4；复用 tick 的结算参与，
+  // 只结已确认边界，不在请求路径凭空调用次数产收益——B008 禁的是后者）。
+  const powerPolicy = new PowerPolicyService({
+    lookup: baseRepo,
+    power: {
+      savePowerPolicy: (tx, baseId, priority) =>
+        new IndustryRepository(tx).savePowerPolicy(tx, baseId, priority)
+    },
+    catalogResolver,
+    receipts: (tx) => new AssetMutationService(tx),
+    settleConfirmedThrough: async (tx, baseId, at) => {
+      scopeTickTransactionToBase(tx, baseId);
+      while (await settlement.settleBases(tx, at) > 0) {
+        // 与 heartbeat 同语义：结清已确认时段的剩余部分。
+      }
+    }
+  });
+
   // 管理员会话门面（M13-B 路由消费；与 admin.routes 默认实现同语义）。
   const adminSession = {
     getCurrentAdmin: async (request: FastifyRequest) => {
@@ -594,41 +643,68 @@ export function createBaseOperations(input: {
     extraction: {
       survey: {
         execute: (principal: { accountId: string }, input: Parameters<typeof extractionService.survey>[2]) =>
-          db.transaction((tx) => extractionService.survey(tx as never, principal, input))
+          db.transaction(async (tx) => {
+            await requireLandingControl(tx as never, principal.accountId, input.controlToken);
+            return extractionService.survey(tx as never, principal, input);
+          })
       },
       createMining: {
         execute: (principal: { accountId: string }, input: Parameters<typeof extractionService.createMining>[2]) =>
-          db.transaction((tx) => extractionService.createMining(tx as never, principal, input))
+          db.transaction(async (tx) => {
+            await requireLandingControl(tx as never, principal.accountId, input.controlToken);
+            return extractionService.createMining(tx as never, principal, input);
+          })
       },
       pause: {
         execute: (principal: { accountId: string }, input: Parameters<typeof extractionService.pause>[2]) =>
-          db.transaction((tx) => extractionService.pause(tx as never, principal, input))
+          db.transaction(async (tx) => {
+            await requireLandingControl(tx as never, principal.accountId, input.controlToken);
+            return extractionService.pause(tx as never, principal, input);
+          })
       },
       resume: {
         execute: (principal: { accountId: string }, input: Parameters<typeof extractionService.resume>[2]) =>
-          db.transaction((tx) => extractionService.resume(tx as never, principal, input))
+          db.transaction(async (tx) => {
+            await requireLandingControl(tx as never, principal.accountId, input.controlToken);
+            return extractionService.resume(tx as never, principal, input);
+          })
       },
       cancel: {
         execute: (principal: { accountId: string }, input: Parameters<typeof extractionService.cancel>[2]) =>
-          db.transaction((tx) => extractionService.cancel(tx as never, principal, input))
+          db.transaction(async (tx) => {
+            await requireLandingControl(tx as never, principal.accountId, input.controlToken);
+            return extractionService.cancel(tx as never, principal, input);
+          })
       }
     },
     production: {
       maintain: {
         execute: (principal: { accountId: string }, input: Parameters<typeof productionSlots.maintain>[2]) =>
-          db.transaction((tx) => productionSlots.maintain(tx as never, principal, input))
+          db.transaction(async (tx) => {
+            await requireLandingControl(tx as never, principal.accountId, input.controlToken);
+            return productionSlots.maintain(tx as never, principal, input);
+          })
       },
       powerPolicy: {
         execute: (principal: { accountId: string }, input: Parameters<typeof powerPolicy.setPolicy>[2]) =>
-          db.transaction((tx) => powerPolicy.setPolicy(tx as never, principal, input))
+          db.transaction(async (tx) => {
+            await requireLandingControl(tx as never, principal.accountId, input.controlToken);
+            return powerPolicy.setPolicy(tx as never, principal, input);
+          })
       },
       pauseJob: {
         execute: (principal: { accountId: string }, input: Parameters<typeof manufacturing.pause>[2]) =>
-          db.transaction((tx) => manufacturing.pause(tx as never, principal, input))
+          db.transaction(async (tx) => {
+            await requireLandingControl(tx as never, principal.accountId, input.controlToken);
+            return manufacturing.pause(tx as never, principal, input);
+          })
       },
       resumeJob: {
         execute: (principal: { accountId: string }, input: Parameters<typeof manufacturing.resume>[2]) =>
-          db.transaction((tx) => manufacturing.resume(tx as never, principal, input))
+          db.transaction(async (tx) => {
+            await requireLandingControl(tx as never, principal.accountId, input.controlToken);
+            return manufacturing.resume(tx as never, principal, input);
+          })
       }
     }
   };
