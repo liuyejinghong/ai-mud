@@ -290,7 +290,7 @@
         "config": 0
       }
     },
-    "files": 356
+    "files": 359
   },
   "files": [
     {
@@ -2822,10 +2822,31 @@
     },
     {
       "path": "apps/server/src/tests/base-operations/landing/landing.integration.test.ts",
-      "module": "industry",
+      "module": "application",
       "layer": "test",
       "scope": "test",
-      "note": "R1 真 PG 集成验收（G01–G13）"
+      "note": "R1 真 PG 全链验收（组合根集成；G01–G13 子集）"
+    },
+    {
+      "path": "apps/web/e2e/landing-real.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 真浏览器验收（playwright landing-postgres）"
+    },
+    {
+      "path": "apps/web/src/features/base/LandingShell.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "R1 landing 固定工作区（legacy BaseShell 分支保留）"
+    },
+    {
+      "path": "apps/web/src/features/base/LandingShell.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 landing 工作区状态测试（MOCK fixture）"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",
