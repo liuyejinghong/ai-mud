@@ -139,8 +139,8 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
 
   beforeAll(async () => {
     const url = new URL(databaseUrl!);
-    if (url.hostname !== "127.0.0.1" || url.port !== "55433" || url.pathname !== "/ai_mud_ci") {
-      throw new Error("Tutorial Q tests require the isolated 127.0.0.1:55433/ai_mud_ci database");
+    if (url.hostname !== "127.0.0.1" || !["55432", "55433"].includes(url.port) || url.pathname !== "/ai_mud_ci") {
+      throw new Error("Tutorial Q tests require the isolated local ai_mud_ci database on port 55432 or 55433");
     }
     clockSpy = vi.spyOn(systemWorldClock, "now").mockImplementation(() => new Date(nowMs));
     dbName = `ai_mud_tutorial_q_${process.pid}_${randomUUID().replaceAll("-", "")}`;

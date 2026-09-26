@@ -343,10 +343,10 @@ describe("base REST contract negatives (buildApp + inject, temporary PostgreSQL)
     expect(Array.isArray(body.projects)).toBe(true);
     expect(body.projects).toHaveLength(0);
     expect(body.devices).toHaveLength(12);
-    // 每台设备初始电量 60%：驮运 12000/20000。
+    // 教程发布版新基地：驮运设备初始电量 5500/20000。
     const transports = body.devices.filter((device: { groupId: string }) => device.groupId === "transport");
     expect(transports).toHaveLength(4);
-    expect(transports[0].batteryWh).toBe(12000);
+    expect(transports[0].batteryWh).toBe(5500);
     expect(transports[0].batteryCapacityWh).toBe(20000);
   }, 60_000);
 

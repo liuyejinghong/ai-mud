@@ -11,7 +11,7 @@
 // 种子数据来源（尽量走真实路由/用例，做不到的逐项注明）：
 //   - 账号/会话/基地：POST /base/playtest-register、/auth/login、/base/provision（真实 buildApp）；
 //   - 工程/取消工程/制造工单/采购/接单/时钟/心跳：真实 HTTP 路由；
-//   - 订单生成、制造产出（设备+作业者+outputs）、协作请求+决策记录：真实结算
+//   - 订单生成、制造产出（设备+作业者+outputs）、协作请求：真实结算；
 //     createBaseOperations().settlement.settleBases；
 //   - 管理员：ADMIN_BOOTSTRAP_*（buildApp 启动引导）；内容草稿：POST /admin/content/drafts。
 //   直接 SQL 的例外（均为测试前置条件，不是被测行为）：
@@ -22,6 +22,7 @@
 //   - content_releases / ai_call_logs / system_announcements / activation_codes / characters /
 //     world_runtime_state 探针行 / 旧世界命令收据：保留类数据，用最小合法行代表
 //     （发布整包校验与旧世界流程不在本测范围）。
+//   - decision_records 删除探针：首条协作由玩家决定，不触发规则决策审计；这里只验证重置清表。
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -132,7 +133,7 @@ async function call(
   app: FastifyInstance,
   method: "GET" | "POST",
   url: string,
-  options: { session?: HttpSession; body?: Record<string, unknown> } = {}
+  options: { session?: HttpSession; body?: Record<string, unknown>; controlToken?: string } = {}
 ): Promise<HttpResult> {
   const headers: Record<string, string> = {};
   if (options.session) {
@@ -141,6 +142,7 @@ async function call(
     headers["x-csrf-token"] = options.session.csrf;
     headers["x-ai-mud-csrf"] = options.session.csrf;
   }
+  if (options.controlToken) headers["x-base-control-token"] = options.controlToken;
   const response = await app.inject({
     method,
     url,
@@ -457,12 +459,20 @@ d("试玩服基地经营重置脚本（真 PostgreSQL）", () => {
       await weather.generateSchedule(db, player.baseId, row!.sim_time as Date);
     }
 
-    // 两个基地：4 倍速 + 恢复（附带控制租约）+ 心跳。
+    // 两个基地：先取得前台控制权，再设 4 倍速并恢复。
     for (const player of [playerA, playerB]) {
+      const acquired = await call(app, "POST", "/base/heartbeat", {
+        session: player.session, body: { action: "acquire" }
+      });
+      expect(acquired.status).toBe(200);
+      const controlToken = (acquired.body as { controlToken: string }).controlToken;
+      expect(controlToken).toBeTruthy();
       for (const body of [{ command: "set_speed", speed: 4 }, { command: "resume" }]) {
-        expect((await call(app, "POST", "/base/clock", { session: player.session, body })).status).toBe(200);
+        expect((await call(app, "POST", "/base/clock", { session: player.session, body, controlToken })).status).toBe(200);
       }
-      expect((await call(app, "POST", "/base/heartbeat", { session: player.session, body: {} })).status).toBe(200);
+      expect((await call(app, "POST", "/base/heartbeat", {
+        session: player.session, body: { action: "renew", controlToken }
+      })).status).toBe(200);
     }
 
     // 前置条件：A 的工程组电量清零 → 清场步骤本组无人可出工 → 结算发起跨组协作。
@@ -495,6 +505,15 @@ d("试玩服基地经营重置脚本（真 PostgreSQL）", () => {
       });
       expect(accepted.status).toBe(201);
     }
+
+    // 决策审计删除探针：首条协作请求由玩家决定，规则网关不会替它写审计。
+    await client.query(
+      `INSERT INTO decision_records
+         (decision_id, purpose, mode, provider, base_id, plan_revision, question, candidates, latency_ms)
+       SELECT $2, 'transport_assistance', 'rule', 'reset-fixture', id, base_revision,
+              '重置删除探针', '[]'::jsonb, 0 FROM bases WHERE id = $1`,
+      [playerA.baseId, `reset-${randomUUID()}`]
+    );
 
     // 保留类数据：内容发布、AI 调用日志、公告、激活码、旧西幻角色、旧世界命令收据。
     const adminId = (await client.query(`SELECT id FROM accounts WHERE email = $1`, [ADMIN_EMAIL])).rows[0]!
@@ -672,7 +691,7 @@ d("试玩服基地经营重置脚本（真 PostgreSQL）", () => {
     // 新号基准本身是开局形态（没有继承任何旧经营数据）。
     expect(shapeFresh.devices).toHaveLength(12);
     expect(shapeFresh.resources).toHaveLength(6);
-    expect(shapeFresh.credits).toBe(500);
+    expect(shapeFresh.credits).toBe(1200);
     expect(shapeFresh.timeMode).toBe("paused");
     expect(shapeFresh.projects + shapeFresh.manufacturingJobs + shapeFresh.cooperationRequests).toBe(0);
     expect(shapeFresh.purchases).toBe(0);
