@@ -1015,6 +1015,13 @@
       "note": "playwright e2e（不计入 vitest）"
     },
     {
+      "path": "apps/web/e2e/tutorial-real.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "六段教程真实浏览器与临时 PG 验收"
+    },
+    {
       "path": "apps/web/playwright.config.ts",
       "module": "client_text",
       "layer": "config",
@@ -2220,6 +2227,13 @@
       "layer": "test",
       "scope": "test",
       "note": "M12-Q 真 PG 建设全链/争抢/失败回滚"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/tutorial/tutorial.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "六段教程两路线与前台时间的隔离真 PG 验收"
     },
     {
       "path": "apps/server/src/modules/ledger/base-asset.service.ts",

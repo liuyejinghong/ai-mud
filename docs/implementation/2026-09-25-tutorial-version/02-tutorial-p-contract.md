@@ -1,6 +1,6 @@
 # 六段教程版 P 合同
 
-状态：**CONTRACT_READY / IMPLEMENTING**。合同版本 `tutorial-p/1.1`（只补精确文件归属，不改玩法），基线 `main@deaf40a125f5a72b1885e6a359589b96a4549976`；基线 PRODUCT_VERSION 1.0.1，schema/api/engine/ruleset/content/economy 为 32/49/3/18/15/5。作者 2026-09-26 已选择 [六段方案](01-six-stage-tutorial-proposal.md) §5 的三个推荐方向。本批只交付教程闭环，不包含生产部署、数据重置、像素化、天气/清尘新玩法或毕业后离线收益。
+状态：**CONTRACT_READY / IMPLEMENTED_IN_DRAFT_PR / FINAL_ACCEPTANCE_PENDING**。合同版本 `tutorial-p/1.2`（补首条请求的批量结算时点与可操作字段），原实施基线 `main@deaf40a125f5a72b1885e6a359589b96a4549976`；基线 PRODUCT_VERSION 1.0.1，schema/api/engine/ruleset/content/economy 为 32/49/3/18/15/5。作者 2026-09-26 已选择 [六段方案](01-six-stage-tutorial-proposal.md) §5 的三个推荐方向。本批实现在 PR #36 草稿分支，尚未合并、部署或完成真人盲玩；不包含生产部署、数据重置、像素化、天气/清尘新玩法或毕业后离线收益。
 
 ## 1. 玩家与数据合同
 
@@ -11,7 +11,7 @@
 | 采购 | 普通采购统一交期 20 基地分钟，自付款记录的 simTime 起算；既有在途采购的 `base_purchases.arrives_at_sim` 不重写。 |
 | 订单 | 同一模板 open/accepted 不补单；delivered/failed 的 `base_orders.resolved_at` 起 24 基地小时后才可补，该已有列由结案代码写入 simTime，不用墙钟 `created_at`。历史 terminal 行若 resolved_at 缺失，不自动补单并报可观测异常。现有三张初始订单仍是有限真实需求。 |
 | 首工程 | 同基地同 stableId 有任一非终态或 completed 时不再创建；cancelled/failed 可按正常材料规则重试。旧完工档也适用。旧在途模板/配方修订必须继续能结算。 |
-| 协作 | 首次真实缺工请求保留 pending 给玩家选“跨组支援”或“等本组充电”，不在创建它的 tick 内自动接受/过期。候选、根因和选择后果取服务端事实；同一步 terminal 请求不反复重建。未选择时安全等待，自身恢复或超时结案。本批后续请求只走确定性 RULE；不在 tick 事务里调用外部模型。Jev 仅可在事务外作独立对照，不能代替玩家的首次选择。 |
+| 协作 | 首次真实缺工请求保留 pending 给玩家选“跨组支援”或“等本组充电”，不在创建它的 tick 内自动接受/过期。批量补结算只在最后一个基地分钟创建首条仍需支援的请求，确保提交后有可操作窗口；已有请求仍按生命周期结案。候选、根因和选择后果取服务端事实；同一步 terminal 请求不反复重建。未选择时安全等待，自身恢复或超时结案。本批后续请求只走确定性 RULE；不在 tick 事务里调用外部模型。Jev 仅可在事务外作独立对照，不能代替玩家的首次选择。 |
 | 引导 | 六段只由项目、机器人、资产、订单、采购和时钟的现有快照推导，跳过不限制正常命令；反馈使用命令回执和已提交快照，不增教程状态机/第二事件真相。 |
 
 ### 两路线共同样例
@@ -24,7 +24,7 @@
 | 先制造 | 新驮运真实产出并参与运输；经付费补回材料后首工程中也能看到等价协作选择。**选择支援的路线** 45 分钟内并网且第二阵列开工；选择等待另记实际耗时。不能靠无限同模板订单。 |
 | 失败/恢复 | 缺料、余额不足、候选失效、重复 commandId、不同 payload 同 key、跨基地、项目取消、关页 ≥20 分钟后同档回访，均不得伪造进度或资产。 |
 
-内容数值冻结：新档驮运 4 台各 **5,500Wh**；新造驮运 **1,000Wh**（配方新修订，旧 @1 保留）；首个 pending 的 TTL **12 基地分钟**，本组先恢复时可提前结案。隔离真 PG 探针在临时源码副本注入这些数值、20 基地分钟交期和 1200 credits：先施工支援第 20 分钟遇请求、第 58 分钟并网、第 79 分钟第二阵列可开工；先制造支援分别为第 43/76/97 分钟，新驮运第 30 分钟真实参与运输。等待分支首工程分别第 101/107 分钟，代价约 10.75/7.75 真实分钟。报告在 `/private/tmp/yudian-tutorial-pg-sim/probe-report.md`；其支援仍是旧 RULE 自动接受、等待是临时 abstain，**玩家按钮、旧修订和真实浏览器尚未验收**。若实现后真 PG 不达标，回 P 重算，不由各线私改初值。
+内容数值冻结：新档驮运 4 台各 **5,500Wh**；新造驮运 **1,000Wh**（配方新修订，旧 @1 保留）；首个 pending 的 TTL **12 基地分钟**，本组先恢复时可提前结案。P 阶段隔离真 PG 探针曾在临时源码副本注入这些数值、20 基地分钟交期和 1200 credits：先施工支援第 20 分钟遇请求、第 58 分钟并网、第 79 分钟第二阵列可开工；先制造支援分别为第 43/76/97 分钟，新驮运第 30 分钟真实参与运输。等待分支首工程分别第 101/107 分钟。这些是实现前的基地模拟分钟，不是当前分支的实测或真人用时；探针报告在 `/private/tmp/yudian-tutorial-pg-sim/probe-report.md`。当前分支的真 PG、浏览器与真人证据须分别以最终验收记录为准。
 
 ## 2. 时间、事务与错误
 
@@ -36,7 +36,7 @@
 
 协作公开命令：`POST /base/cooperation/:requestId/decision`，输入 `{action:"support"|"wait",commandId,expectedHelperOperatorId?}`；support 必须给快照上看到的候选 ID，wait 不需要。输出 `{requestId,status:"accepted"|"declined",helperOperatorId?,duplicate}`。应用层 `CooperationDecisionUseCase.execute(principal,input)` 在同一事务中只锁**基地行 → command_receipt**，再调用 industry 的 `decideFirstRequest(tx,baseId,input)` 锁其请求行，industry 经 npc 的事务参与端口锁定/条件分配机器人；总体锁序为基地 → 回执 → 请求 → 机器人，各模块只写自有事实。回执固定 `actorScope=base:<baseId>`、`commandKind=base.cooperation_decision`、`worldEpoch=当前基地 epoch`、`requestHash=hash({requestId,action,expectedHelperOperatorId??null})`。持基地锁后先按回执去重，再重验账号/基地、request pending、项目步骤仍缺本组可出工设备、候选异组 idle 且电量≥500Wh；support 记 accepted 和具名 helper 并经 npc 端口分配机器人，wait 记 declined 并让本组自然充电。请求状态或候选变化返回 `REVISION_EXPIRED`，跨基地按既有隐藏式权限错误；同 key 不同 payload 返回 `IDEMPOTENCY_CONFLICT`。不因客户端文本直接改电池或工程。
 
-快照 `CooperationRequestDto` 增 `proposedHelper: {operatorId,groupId,batteryWh,batteryCapacityWh}|null`；它由 industry 只读端口 `previewPending(tx,baseId,requestId)` 经 npc 的机器人查询端口、复用命令的候选资格规则计算，I 装配到现有 `cooperationRead`，A 的 world 快照只消费投影，不复制规则。预览不预留设备。命令以 `expectedHelperOperatorId` 重验，过期时刷新而不悄悄换人。历史中的 `helperOperatorId` 仍指实际接手者。请求说明存创建时本组低电数量/阈值；本组恢复时 pending 结为 expired/`no_longer_needed`，需在新迁移扩展现有 resolution_reason 约束。等待/超时终态不得让同一步每 tick 重开。所有 pending 的 TTL 改为 **12 基地分钟**，不沿用当前 2 分钟常量。
+快照 `CooperationRequestDto` 增 `playerDecisionAllowed: boolean` 和 `proposedHelper: {operatorId,groupId,batteryWh,batteryCapacityWh}|null`；前者仅在首条 pending 仍真实缺工、允许玩家决策时为 true，后者是当时符合条件的候选，可能为 null。两者由 industry 只读端口 `previewPending(tx,baseId,requestId)` 经 npc 的机器人查询端口、复用命令的候选资格规则计算，I 装配到现有 `cooperationRead`，A 的 world 快照只消费投影，不复制规则。前端仅给 `playerDecisionAllowed` 为 true 的请求显示选择；预览不预留设备。命令以 `expectedHelperOperatorId` 重验，过期时刷新而不悄悄换人。历史中的 `helperOperatorId` 仍指实际接手者。请求说明存创建时本组低电数量/阈值；本组恢复时 pending 结为 expired/`no_longer_needed`，需在新迁移扩展现有 resolution_reason 约束。等待/超时终态不得让同一步每 tick 重开。所有 pending 的 TTL 改为 **12 基地分钟**，不沿用当前 2 分钟常量。
 
 共同合同样例：`{action:"support",commandId:"c1",expectedHelperOperatorId:"00000000-0000-4000-8000-000000000003"}` 在同基地 pending 且该候选仍 idle、≥500Wh 时接受并返回 `duplicate:false`；同一 `c1` 原样重发返回原结果且 `duplicate:true`，改为 wait 则 `IDEMPOTENCY_CONFLICT`。候选已出工或请求已取消时不换机器人，返回 `REVISION_EXPIRED`。新 release 下已有 `manufacture-yd-h1@1` 工单继续按 @1 产出 12,000Wh，但新创建的 @2 工单产出 1,000Wh；旧 release 基地的可创建列表仍是 @1。
 
@@ -46,7 +46,7 @@
 
 P 冻结的类型化端口：应用 `CatalogResolver.forBase(tx,baseId): Promise<ContentCatalogPort>` 只经 world 的只读 `getContentRelease(tx,baseId): Promise<string|null>` 查询取 releaseId，再交 content-catalog 的 `loadReleaseCatalog(tx,releaseId)`；快照和普通查询不得为此拿基地写锁。`forProvision()` 返回新 built-in。各服务在已有事务里按基地取目录，一次 tick 对同一基地只解析一次。目录 `getRecipeTemplate(stableId,revision?)` 无 revision 时只返当前可创建修订；带 revision 只用于旧在途结算/历史显示，未列在 `listRecipes()` 的旧修订不可新建。其他模板查找保持现有签名；不建全局服务定位器。默认设施文案去掉未实现的“定期巡检清理”承诺，天气功能留后续。
 
-新档资金 DB default 需新增迁移（预计 `0037_tutorial_budget.sql`）及 schema 同步；不 UPDATE 旧钱包。采购间隔、订单冷却和内容/程序兼容版本由 I 在集成时按真实差异递增，PRODUCT_VERSION 留到实际发布决定。已执行迁移不得改。回退代码不会撤回已付货运、已完成项目或重写新档余额；一旦存在新 @2 工单，旧 `deaf40a` 二进制不能读该修订，**不可仅回滚到旧二进制**，须保留兼容读取的新代码或做前向修复。
+新档资金 DB default 由新增迁移 `0037_tutorial_budget.sql` 及 schema 同步；不 UPDATE 旧钱包。草稿分支的 schema/api/engine/ruleset/content/economy 已按真实差异递增为 33/50/4/19/16/6，PRODUCT_VERSION 仍为 1.0.1。已执行迁移不得改。回退代码不会撤回已付货运、已完成项目或重写新档余额；一旦存在新 @2 工单，旧 `deaf40a` 二进制不能读该修订，**不可仅回滚到旧二进制**，须保留兼容读取的新代码或做前向修复。
 
 ## 4. 精确所有权与并发
 

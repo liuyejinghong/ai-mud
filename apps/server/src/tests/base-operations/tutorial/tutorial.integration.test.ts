@@ -103,6 +103,14 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     return row!.status;
   }
 
+  async function projectHasWork(projectId: string) {
+    const [row] = await query<{ work_done: number }>(
+      "SELECT COALESCE(sum(work_done), 0)::float8 AS work_done FROM base_project_steps WHERE project_id = $1",
+      [projectId]
+    );
+    return row!.work_done > 0;
+  }
+
   async function payForSecondArray(principal: { accountId: string }, baseId: string) {
     const [order] = await query<{ id: string; status: string }>(
       "SELECT id, status FROM base_orders WHERE base_id = $1 AND order_def_id = 'order-maintenance-restock' ORDER BY created_at LIMIT 1",
@@ -311,8 +319,12 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     expect(toArrival).toBeGreaterThanOrEqual(20);
     const second = await project(fresh.principal, "install-second-array", fresh.siteB);
     expect(second.duplicate).toBe(false);
-    expect(requestMinute + afterDecision + toArrival).toBeLessThanOrEqual(120);
-    console.info(`tutorial build-first: request=${requestMinute}, first-complete=${requestMinute + afterDecision}, second-start=${requestMinute + afterDecision + toArrival} base minutes`);
+    const secondStart = requestMinute + afterDecision + toArrival;
+    expect(secondStart).toBeLessThanOrEqual(120);
+    const secondWork = await advanceUntil(fresh.principal, token, 180 - secondStart, () =>
+      projectHasWork(second.projectId)
+    );
+    console.info(`tutorial build-first: request=${requestMinute}, first-complete=${requestMinute + afterDecision}, second-start=${secondStart}, second-work=${secondStart + secondWork} base minutes`);
     expect((await query<{ n: number }>(
       "SELECT count(*)::int AS n FROM base_orders WHERE base_id = $1 AND order_def_id = 'order-maintenance-restock'",
       [fresh.baseId]
@@ -404,7 +416,10 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     expect(second.duplicate).toBe(false);
     const secondStart = provisionPhaseMinute + pendingMinute + afterDecision + toArrival;
     expect(secondStart).toBeLessThanOrEqual(180);
-    console.info(`tutorial manufacture-first: ready=${provisionPhaseMinute}, request=${provisionPhaseMinute + pendingMinute}, first-complete=${provisionPhaseMinute + pendingMinute + afterDecision}, second-start=${secondStart} base minutes`);
+    const secondWork = await advanceUntil(fresh.principal, token, 180 - secondStart, () =>
+      projectHasWork(second.projectId)
+    );
+    console.info(`tutorial manufacture-first: ready=${provisionPhaseMinute}, request=${provisionPhaseMinute + pendingMinute}, first-complete=${provisionPhaseMinute + pendingMinute + afterDecision}, second-start=${secondStart}, second-work=${secondStart + secondWork} base minutes`);
     await ops.session.clock.applyCommand(fresh.principal, { command: "pause" }, token);
   }, 120_000);
 
