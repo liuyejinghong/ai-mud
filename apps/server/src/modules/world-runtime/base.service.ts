@@ -797,7 +797,12 @@ export class BaseService {
           description: recipe.description,
           inputs: recipe.inputs.map((input) => ({ ...input })),
           workPerUnit: recipe.workPerUnit,
-          output: { ...recipe.output }
+          output: { ...recipe.output },
+          // R1 landing 运行参数（缺 requiredCapability 时前端加工面板会漏配方）。
+          ...(recipe.ratedW !== undefined ? { ratedW: recipe.ratedW } : {}),
+          ...(recipe.workMinutesPerBatch !== undefined ? { workMinutesPerBatch: recipe.workMinutesPerBatch } : {}),
+          ...(recipe.requiredCapability !== undefined ? { requiredCapability: recipe.requiredCapability } : {}),
+          ...(recipe.countsSlotMaintenance !== undefined ? { countsSlotMaintenance: recipe.countsSlotMaintenance } : {})
         })),
         weather: {
           ...(this.deps.weather

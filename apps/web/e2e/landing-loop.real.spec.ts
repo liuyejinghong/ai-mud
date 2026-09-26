@@ -53,13 +53,15 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await page.getByRole("button", { name: "恢复", exact: true }).click();
   await page.getByRole("button", { name: "×4" }).click();
 
-  const installAt = async (siteName: string, projectName: string) => {
+  // 开工后等真实建成（地图卡片出现建成注记；设施效果事实到位才进行下一步）。
+  const installAt = async (siteName: string, projectName: string, builtNote: string) => {
     await ensureControl(page);
     await page.locator(MAP).getByRole("button", { name: siteName }).click();
     await expect(page.locator(PANEL)).toContainText(projectName, { timeout: 20_000 });
     await page.locator(PANEL).getByRole("button", { name: projectName, exact: true }).click();
     await expect(page.locator(PANEL)).toContainText(/已开工|已创建|已提交/, { timeout: 20_000 });
-    // 等待建成：目标条推进即设施事实变化（goal 依建成事实派生）。
+    const siteCard = page.locator(MAP).getByRole("button", { name: siteName });
+    await expect(siteCard).toContainText(builtNote, { timeout: 240_000 });
   };
 
   // 圈1a：首太阳能 → 仓储棚（顺带储能/充电区）。
@@ -68,9 +70,9 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await goalSays(page, "安装仓储棚");
   await page.screenshot({ path: testInfo.outputPath("01-solar-built.png"), fullPage: true });
 
-  await installAt("仓储棚安装位", "安装仓储棚");
-  await installAt("储能间安装位", "安装储能间");
-  await installAt("充电区安装位", "安装充电区");
+  await installAt("仓储棚安装位", "安装仓储棚", "矿石入库与加工前置");
+  await installAt("储能间安装位", "安装储能间", "扩大储电容量");
+  await installAt("充电区安装位", "安装充电区", "提高充电上限");
   await goalSays(page, "勘探");
 
   // 圈1b：勘探铁→采矿 4 批。
@@ -93,8 +95,8 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await page.screenshot({ path: testInfo.outputPath("03-ore-delivered.png"), fullPage: true });
 
   // 圈1c：加工间 + 维护工位。
-  await installAt("加工间安装位", "安装加工间");
-  await installAt("维护工位安装位", "安装维护工位");
+  await installAt("加工间安装位", "安装加工间", "冶炼与材料制造");
+  await installAt("维护工位安装位", "安装维护工位", "维护加工槽");
 
   // 圈1d：冶炼 8 → 结构件 4（第 10 批停机 → 维护）→ 线缆（铜未采，能源路线先铁）。
   await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
