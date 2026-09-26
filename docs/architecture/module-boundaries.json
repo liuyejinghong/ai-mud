@@ -2598,6 +2598,49 @@
       "layer": "test",
       "scope": "test",
       "note": "2026-09-22 评审 P0 修复回归（B001 审计同事务不变量 / B002 小数进度真 PG）"
+    },
+    {
+      "path": "apps/server/src/app.world-tick.integration.test.ts",
+      "module": "composition",
+      "layer": "test",
+      "scope": "test",
+      "note": "第 0 阶段 C：tick 编排与旧世界门控真 PG 回归"
+    },
+    {
+      "path": "apps/server/src/db/client.integration.test.ts",
+      "module": "platform",
+      "layer": "test",
+      "scope": "test",
+      "note": "第 0 阶段 C：连接池与语句超时真 PG 回归"
+    },
+    {
+      "path": "apps/server/src/modules/industry/cooperation.lifecycle.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "第 0 阶段 B：协作结案与机器人回收真 PG 回归"
+    },
+    {
+      "path": "apps/server/src/modules/world-reset/world-reset.repository.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "flags": ["infra_exception"],
+      "note": "第 0 阶段 C：旧世界重置时钟回归"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/p0-integrity/settlement-isolation.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "第 0 阶段 A：多基地结算隔离及取消竞态真 PG 回归"
+    },
+    {
+      "path": "apps/server/src/tests/ops/reset-base-operations.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "第 0 阶段 E：隔离测试库内的基地数据重置脚本回归"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",
@@ -2626,6 +2669,11 @@
       "date": "2026-09-18",
       "kind": "ARCH-04 additions",
       "detail": "新增 equipment-migration.integration.test.ts 归属登记（characters/test）。"
+    },
+    {
+      "date": "2026-09-26",
+      "kind": "phase 0 test ownership",
+      "detail": "登记第 0 阶段六个新增集成测试文件的精确归属；world-reset 测试沿用维护用例例外，未新增允许边。"
     }
   ]
 }

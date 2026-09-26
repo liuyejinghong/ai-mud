@@ -7,12 +7,15 @@ import {
   ConstructionService,
   type ConstructionAssetPort,
   type ConstructionCatalogPort,
+  type ConstructionCooperationPort,
   type ConstructionLookupPort,
   type ConstructionReceiptsPort,
+  type ConstructionRobotPort,
   type ConstructionServiceDeps,
   type ConstructionSitePort,
   type ConstructionTx
 } from "./construction.service.js";
+import type { CooperationCloseReason } from "./cooperation.repository.js";
 import type { BaseProjectRecord } from "./industry.pure.js";
 import type { IndustryProjectStore } from "./industry.repository.js";
 
@@ -44,9 +47,14 @@ const CREATE_INPUT = {
 };
 
 class FakeLookup implements ConstructionLookupPort {
+  locked: string[] = [];
   constructor(private readonly baseByAccount: Map<string, string>) {}
   async findBaseIdByAccount(_tx: ConstructionTx, accountId: string): Promise<string | null> {
     return this.baseByAccount.get(accountId) ?? null;
+  }
+  async getBaseForUpdate(_tx: ConstructionTx, baseId: string): Promise<{ id: string } | null> {
+    this.locked.push(baseId);
+    return [...this.baseByAccount.values()].includes(baseId) ? { id: baseId } : null;
   }
 }
 
@@ -96,6 +104,13 @@ class FakeSites implements ConstructionSitePort {
   }
   async releaseSite(_tx: ConstructionTx, siteId: string): Promise<void> {
     this.releasedCalls.push(siteId);
+  }
+}
+
+class FakeRobots implements ConstructionRobotPort {
+  released: Array<{ tx: ConstructionTx; baseId: string; projectId: string }> = [];
+  async releaseProjectAssignments(tx: ConstructionTx, baseId: string, projectId: string): Promise<void> {
+    this.released.push({ tx, baseId, projectId });
   }
 }
 
@@ -212,6 +227,32 @@ class FakeReceipts implements ConstructionReceiptsPort {
   }
 }
 
+// B005：取消项目时同事务结案本项目协作请求的端口替身（记录调用时的 tx 与回执进度）。
+class FakeCooperation implements ConstructionCooperationPort {
+  calls: Array<{
+    tx: ConstructionTx;
+    baseId: string;
+    projectId: string;
+    reason: CooperationCloseReason;
+    receiptsSavedBefore: number;
+  }> = [];
+  factoryTxs: ConstructionTx[] = [];
+  failWith: Error | null = null;
+
+  constructor(private readonly receipts: { savedResults: unknown[] }) {}
+
+  async closeOpenByProject(
+    tx: ConstructionTx,
+    baseId: string,
+    projectId: string,
+    reason: CooperationCloseReason
+  ): Promise<number> {
+    if (this.failWith) throw this.failWith;
+    this.calls.push({ tx, baseId, projectId, reason, receiptsSavedBefore: this.receipts.savedResults.length });
+    return 2;
+  }
+}
+
 function makeService(overrides: {
   baseByAccount?: Map<string, string>;
   failItems?: Set<string>;
@@ -220,18 +261,25 @@ function makeService(overrides: {
   const assets = new FakeAssets();
   if (overrides.failItems) assets.failItems = overrides.failItems;
   const sites = new FakeSites();
+  const robots = new FakeRobots();
   const catalog = new FakeCatalog();
   const store = new FakeStore();
   const receipts = new FakeReceipts();
+  const cooperation = new FakeCooperation(receipts);
   const deps: ConstructionServiceDeps = {
     lookup,
     assets,
     sites,
+    robots,
     catalog,
     store,
-    receipts: () => receipts
+    receipts: () => receipts,
+    cooperation: (scopedTx) => {
+      cooperation.factoryTxs.push(scopedTx);
+      return cooperation;
+    }
   };
-  return { service: new ConstructionService(deps), assets, sites, catalog, store, receipts };
+  return { service: new ConstructionService(deps), lookup, assets, sites, robots, catalog, store, receipts, cooperation };
 }
 
 const tx = {} as ConstructionTx;
@@ -341,7 +389,7 @@ describe("ConstructionService.create", () => {
 
 describe("ConstructionService.cancel", () => {
   it("取消：释放全部未消耗预留 → cancelled → 释放站点 → 回执落结果", async () => {
-    const { service, assets, sites, store } = makeService();
+    const { service, lookup, assets, sites, robots, store } = makeService();
     await createFirstProject(service);
 
     const result = await service.cancel(tx, principal, {
@@ -363,7 +411,9 @@ describe("ConstructionService.cancel", () => {
       { itemId: "anchor", quantity: 8 }
     ]);
     expect(store.statusCalls).toEqual([{ projectId: "project-1", status: "cancelled" }]);
+    expect(lookup.locked).toEqual(["base-1"]);
     expect(sites.releasedCalls).toEqual(["site-1"]);
+    expect(robots.released).toEqual([{ tx, baseId: "base-1", projectId: "project-1" }]);
   });
 
   it("取消重放：重复 commandId → 原结果 duplicate=true，不二次释放", async () => {
@@ -401,6 +451,67 @@ describe("ConstructionService.cancel", () => {
     await expect(
       completed.service.cancel(tx, principal, { projectId: "project-1", commandId: "cmd-y" })
     ).rejects.toMatchObject({ code: "CONFLICT", statusCode: 409 });
+  });
+});
+
+describe("ConstructionService.cancel > B005 协作请求结案", () => {
+  it("取消在同一事务内以 project_cancelled 结案本项目的协作请求，且先于回执落结果", async () => {
+    const { service, cooperation, receipts } = makeService();
+    await createFirstProject(service);
+    const savedBeforeCancel = receipts.savedResults.length;
+
+    await service.cancel(tx, principal, { projectId: "project-1", commandId: "cmd-cancel-1" });
+
+    expect(cooperation.calls).toHaveLength(1);
+    expect(cooperation.calls[0]).toMatchObject({
+      baseId: "base-1",
+      projectId: "project-1",
+      reason: "project_cancelled",
+      receiptsSavedBefore: savedBeforeCancel
+    });
+    // 与取消共用调用方事务（同一 tx 对象），不另开连接/事务。
+    expect(cooperation.calls[0]?.tx).toBe(tx);
+    expect(cooperation.factoryTxs).toEqual([tx]);
+    expect(receipts.savedResults).toHaveLength(savedBeforeCancel + 1);
+  });
+
+  it("取消重放（同 commandId）不再次结案", async () => {
+    const { service, cooperation } = makeService();
+    await createFirstProject(service);
+    await service.cancel(tx, principal, { projectId: "project-1", commandId: "cmd-cancel-1" });
+
+    await service.cancel(tx, principal, { projectId: "project-1", commandId: "cmd-cancel-1" });
+
+    expect(cooperation.calls).toHaveLength(1);
+  });
+
+  it("项目不存在或已终态：取消被拒，不结案任何协作请求", async () => {
+    const foreign = makeService();
+    await expect(
+      foreign.service.cancel(tx, principal, { projectId: "no-such", commandId: "cmd-x" })
+    ).rejects.toMatchObject({ code: "BASE_SCOPE_INVALID" });
+    expect(foreign.cooperation.calls).toHaveLength(0);
+
+    const completed = makeService();
+    await createFirstProject(completed.service);
+    const project = completed.store.projects.get("project-1");
+    if (project) project.status = "completed";
+    await expect(
+      completed.service.cancel(tx, principal, { projectId: "project-1", commandId: "cmd-y" })
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(completed.cooperation.calls).toHaveLength(0);
+  });
+
+  it("结案失败 → 取消整体抛错、回执不落结果（由调用方事务整体回滚）", async () => {
+    const { service, cooperation, receipts } = makeService();
+    await createFirstProject(service);
+    const savedBeforeCancel = receipts.savedResults.length;
+    cooperation.failWith = new Error("cooperation write failed");
+
+    await expect(
+      service.cancel(tx, principal, { projectId: "project-1", commandId: "cmd-cancel-1" })
+    ).rejects.toThrow("cooperation write failed");
+    expect(receipts.savedResults).toHaveLength(savedBeforeCancel);
   });
 });
 

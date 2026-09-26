@@ -1,6 +1,6 @@
 // 协作请求面板：展示工程队内部跨组支援请求的进展。数据一律来自快照，不在客户端推算。
 // 玩家只读：这里不做任何接受/婉拒操作，是否支援由基地调度服务端决定。
-import type { BaseDeviceDto, CooperationRequestDto, CooperationStatus } from "@ai-mud/shared";
+import type { BaseDeviceDto, CooperationRequestDto, CooperationResolutionReason, CooperationStatus } from "@ai-mud/shared";
 import { BASE_ROBOT_GROUP_NAMES } from "@ai-mud/shared";
 
 export const COOPERATION_STATUS_LABELS: Record<CooperationStatus, string> = {
@@ -9,6 +9,14 @@ export const COOPERATION_STATUS_LABELS: Record<CooperationStatus, string> = {
   declined: "已婉拒",
   expired: "已超时",
   fulfilled: "已完成"
+};
+
+const CLOSE_REASON_LABELS: Record<CooperationResolutionReason, string> = {
+  ttl_expired: "已超时",
+  project_cancelled: "工程已取消",
+  project_failed: "工程已失败",
+  step_failed: "步骤已失败",
+  content_missing: "内容暂不可用"
 };
 
 function describeGroupId(groupId: string): string {
@@ -25,7 +33,12 @@ export function CooperationPanel({ requests, devices }: CooperationPanelProps) {
   const active = requests.filter((request) => request.status === "pending" || request.status === "accepted");
   const history = requests.filter((request) => request.status !== "pending" && request.status !== "accepted");
   const declined = history.filter((request) => request.status === "declined").length;
-  const expired = history.filter((request) => request.status === "expired").length;
+  const expired = history.filter((request) =>
+    request.status === "expired" && (!request.resolutionReason || request.resolutionReason === "ttl_expired")
+  ).length;
+  const closed = history.filter((request) =>
+    request.status === "expired" && request.resolutionReason && request.resolutionReason !== "ttl_expired"
+  ).length;
   const deviceNames = new Map(devices.map((device) => [device.operatorId, device.name]));
   const requestItem = (request: CooperationRequestDto) => (
     <li
@@ -36,7 +49,9 @@ export function CooperationPanel({ requests, devices }: CooperationPanelProps) {
         {request.projectName || "原工程"} · 第 {request.stepIndex + 1} 步
       </span>
       <span className="base-cooperation-status">
-        {COOPERATION_STATUS_LABELS[request.status]}
+        {request.resolutionReason
+          ? CLOSE_REASON_LABELS[request.resolutionReason]
+          : COOPERATION_STATUS_LABELS[request.status]}
       </span>
       <span className="base-cooperation-question">{request.question}</span>
       {request.status === "accepted" ? (
@@ -76,6 +91,7 @@ export function CooperationPanel({ requests, devices }: CooperationPanelProps) {
             协作历史 {history.length} 条
             {declined > 0 ? ` · 已婉拒 ${declined} 条` : ""}
             {expired > 0 ? ` · 已超时 ${expired} 条` : ""}
+            {closed > 0 ? ` · 已结案 ${closed} 条` : ""}
           </summary>
           <ul className="base-cooperation-list">{history.map(requestItem)}</ul>
         </details>

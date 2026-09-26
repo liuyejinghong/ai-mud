@@ -7,6 +7,7 @@ import type {
   BaseRobotGroupId,
   BaseSiteDto,
   BaseSnapshotDto,
+  CooperationResolutionReason,
   CooperationStatus,
   BaseTimeMode,
   DefinitionRefDto,
@@ -230,6 +231,7 @@ export interface BaseServiceDeps {
         fromGroupId: string;
         helperGroupId: string;
         status: string;
+        resolutionReason: CooperationResolutionReason | null;
         helperOperatorId: string | null;
         question: string;
         createdAt: Date | null;
@@ -629,6 +631,7 @@ export class BaseService {
             fromGroupId: request.fromGroupId,
             helperGroupId: request.helperGroupId,
             status: request.status as CooperationStatus,
+            resolutionReason: request.resolutionReason,
             helperOperatorId: request.helperOperatorId,
             question: request.question,
             createdAt: request.createdAt?.toISOString() ?? ""

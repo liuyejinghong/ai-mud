@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ProjectTemplateDto, RobotTemplateDto } from "@ai-mud/shared";
 import {
   BaseSettlementService,
+  type BaseManufacturingSettlePort,
   type BaseSettlementDeps,
   type SettlementAssetPort,
   type SettlementCatalogPort,
@@ -158,13 +159,14 @@ class FakeIndustry implements IndustryReadPort, IndustrySettlementWriter {
   async savePowerState(
     _tx: IndustryTx,
     baseId: string,
-    patch: { storageWh: number; lastLoadW: number }
+    patch: { storageWh: number; lastLoadW: number; dustLevel?: number }
   ) {
     this.savedPower.push({ baseId, storageWh: patch.storageWh, lastLoadW: patch.lastLoadW });
     const stored = this.power.get(baseId);
     if (stored) {
       stored.storageWh = patch.storageWh;
       stored.lastLoadW = patch.lastLoadW;
+      if (patch.dustLevel !== undefined) stored.dustLevel = patch.dustLevel;
     }
   }
   async saveStepUpdates(_tx: IndustryTx, updates: BaseTickStepUpdate[]) {
@@ -210,7 +212,36 @@ class FakeRobots implements SettlementRobotPort {
   }
 }
 
-function makeHarness(cooperation?: BaseSettlementDeps["cooperation"]) {
+class FakeManufacturing implements BaseManufacturingSettlePort {
+  demandByBase = new Map<string, { settleableJobs: number; pendingWorkWh: number }>();
+  measured: string[] = [];
+  settled: Array<{
+    baseId: string;
+    simTime: Date;
+    availableEnergyWh: number;
+    powerW: number;
+    deltaSimMs: number;
+  }> = [];
+  async measure(_tx: IndustryTx, baseId: string) {
+    this.measured.push(baseId);
+    return this.demandByBase.get(baseId) ?? { settleableJobs: 0, pendingWorkWh: 0 };
+  }
+  async settle(
+    _tx: IndustryTx,
+    baseId: string,
+    simTime: Date,
+    input: { availableEnergyWh: number; powerW: number; deltaSimMs: number }
+  ) {
+    this.settled.push({ baseId, simTime, ...input });
+    return { unitsProduced: 0, jobsCompleted: 0 };
+  }
+}
+
+function makeHarness(
+  cooperation?: BaseSettlementDeps["cooperation"],
+  manufacturing?: BaseManufacturingSettlePort,
+  weather?: BaseSettlementDeps["weather"]
+) {
   const clock = new FakeClock();
   const sites = new FakeSites();
   const assets = new FakeAssets();
@@ -223,6 +254,8 @@ function makeHarness(cooperation?: BaseSettlementDeps["cooperation"]) {
     assets,
     catalog,
     ...(cooperation ? { cooperation } : {}),
+    ...(manufacturing ? { manufacturing } : {}),
+    ...(weather ? { weather } : {}),
     openIndustry: () => industry,
     openRobots: () => robots
   });
@@ -601,6 +634,158 @@ describe("BaseSettlementService.settleBases > catch-up steps", () => {
         simTime: new Date(T0.getTime() + TICK_MS),
         lastAdvancedAt: new Date(T0.getTime() + TICK_MS)
       }
+    ]);
+  });
+});
+
+// ---------- 2026-09-25 B001（ARCH-domain-01）：制造结算按基地隔离 + 计入电力池 ----------
+
+describe("BaseSettlementService.settleBases > B001 制造按基地隔离", () => {
+  it("只对被推进的基地测量/结算制造，端口携带该基地 baseId（暂停基地不在推进集合里即不碰）", async () => {
+    const manufacturing = new FakeManufacturing();
+    manufacturing.demandByBase.set("base-1", { settleableJobs: 1, pendingWorkWh: 1_000 });
+    // base-2 暂停：lockAdvanceableBases 不返回它，但它也有在途工单。
+    manufacturing.demandByBase.set("base-2", { settleableJobs: 1, pendingWorkWh: 1_000 });
+    const harness = makeHarness(undefined, manufacturing);
+    seedStandardBase(harness);
+
+    await harness.service.settleBases({} as IndustryTx, T0);
+
+    expect(manufacturing.measured).toEqual(["base-1"]);
+    expect(manufacturing.settled.map((entry) => entry.baseId)).toEqual(["base-1"]);
+  });
+
+  it("制造负载进入同一电力池：储能扣减、lastLoadW 含 1500W，端口拿到电力池实际分给制造的能量", async () => {
+    const manufacturing = new FakeManufacturing();
+    manufacturing.demandByBase.set("base-1", { settleableJobs: 1, pendingWorkWh: 1_000 });
+    const harness = makeHarness(undefined, manufacturing);
+    seedStandardBase(harness);
+
+    await harness.service.settleBases({} as IndustryTx, T0);
+
+    // 发电 13500W；基础 1000 + 施工 2000 + 制造 1500 = 4500W → 盈余 9000W×(1/60)h = 150Wh。
+    expect(harness.industry.savedPower).toEqual([
+      { baseId: "base-1", storageWh: 100_150, lastLoadW: 4_500 }
+    ]);
+    expect(manufacturing.settled).toHaveLength(1);
+    expect(manufacturing.settled[0]?.availableEnergyWh).toBeCloseTo(25, 6);
+    expect(manufacturing.settled[0]?.deltaSimMs).toBe(TICK_MS);
+  });
+
+  it("本基地无可结算工单时不调用制造结算、无制造负载", async () => {
+    const manufacturing = new FakeManufacturing();
+    const harness = makeHarness(undefined, manufacturing);
+    seedStandardBase(harness);
+
+    await harness.service.settleBases({} as IndustryTx, T0);
+
+    expect(manufacturing.measured).toEqual(["base-1"]);
+    expect(manufacturing.settled).toEqual([]);
+    expect(harness.industry.savedPower).toEqual([
+      { baseId: "base-1", storageWh: 100_175, lastLoadW: 3000 }
+    ]);
+  });
+});
+
+// ---------- 2026-09-25 B008（ARCH-domain-02）：结算结果只依赖模拟时长 ----------
+
+describe("BaseSettlementService.settleBases > B008 调度频率无关", () => {
+  it("同一基地 60 秒一次结算 与 12 次 5 秒结算 的施工工作量、机器人电量一致", async () => {
+    const once = makeHarness();
+    seedStandardBase(once);
+    await once.service.settleBases({} as IndustryTx, T0);
+
+    const frequent = makeHarness();
+    seedStandardBase(frequent);
+    for (let i = 0; i < 12; i += 1) {
+      const simTime = new Date(T0.getTime() + i * 5_000);
+      frequent.clock.bases = [{
+        baseId: "base-1",
+        simTime,
+        speed: 1,
+        deltaSimMs: 5_000,
+        nextLastAdvancedAt: new Date(simTime.getTime() + 5_000),
+        catchUp: false
+      }];
+      await frequent.service.settleBases({} as IndustryTx, simTime);
+    }
+
+    expect(once.industry.steps[0]?.workDone).toBe(11);
+    expect(frequent.industry.steps[0]?.workDone).toBe(11);
+    expect(frequent.robots.operators.get("base-1")?.[0]?.batteryWh).toBe(
+      once.robots.operators.get("base-1")?.[0]?.batteryWh
+    );
+  });
+
+  it("天气切换和小数积尘按同一基地分钟采样，长调用与逐分钟调用一致", async () => {
+    const scenario = () => {
+      const sampled: number[] = [];
+      const harness = makeHarness(undefined, undefined, {
+        current: async (_baseId, simTime) => {
+          sampled.push(simTime.getTime());
+          return { lightFactor: simTime.getTime() < T0.getTime() + 2 * TICK_MS ? 1 : 0.25 };
+        }
+      });
+      seedStandardBase(harness);
+      return { harness, sampled };
+    };
+    const once = scenario();
+    once.harness.clock.bases[0]!.deltaSimMs = 4 * TICK_MS;
+    await once.harness.service.settleBases({} as IndustryTx, T0);
+
+    const sliced = scenario();
+    for (let minute = 0; minute < 4; minute += 1) {
+      sliced.harness.clock.bases[0] = {
+        baseId: "base-1",
+        simTime: new Date(T0.getTime() + minute * TICK_MS),
+        speed: 1,
+        deltaSimMs: TICK_MS,
+        nextLastAdvancedAt: new Date(T0.getTime() + (minute + 1) * TICK_MS),
+        catchUp: false
+      };
+      await sliced.harness.service.settleBases({} as IndustryTx, T0);
+    }
+
+    expect(once.sampled).toEqual(sliced.sampled);
+    expect(once.harness.industry.power.get("base-1")?.storageWh).toBe(sliced.harness.industry.power.get("base-1")?.storageWh);
+    expect(once.harness.industry.power.get("base-1")?.dustLevel).toBeCloseTo(8 / 60 * 2, 6);
+    expect(once.harness.industry.power.get("base-1")?.dustLevel).toBeCloseTo(sliced.harness.industry.power.get("base-1")?.dustLevel ?? 0, 6);
+  });
+
+  it("不足整分钟的余量留在时钟，下一次跨界时只结算那个完整基地分钟", async () => {
+    const manufacturing = new FakeManufacturing();
+    manufacturing.demandByBase.set("base-1", { settleableJobs: 1, pendingWorkWh: 10_000 });
+    const harness = makeHarness(undefined, manufacturing);
+    seedStandardBase(harness);
+    const deltaSimMs = 100_001;
+    harness.clock.bases = [{
+      baseId: "base-1",
+      simTime: T0,
+      speed: 1,
+      deltaSimMs,
+      nextLastAdvancedAt: new Date(T0.getTime() + deltaSimMs),
+      catchUp: false
+    }];
+
+    await harness.service.settleBases({} as IndustryTx, T0);
+
+    expect(manufacturing.settled.map((entry) => [entry.simTime.getTime(), entry.deltaSimMs])).toEqual([
+      [T0.getTime(), 60_000]
+    ]);
+    expect(harness.clock.saved[0]?.simTime.getTime()).toBe(T0.getTime() + 100_001);
+
+    harness.clock.bases = [{
+      baseId: "base-1",
+      simTime: new Date(T0.getTime() + 100_001),
+      speed: 1,
+      deltaSimMs: 19_999,
+      nextLastAdvancedAt: new Date(T0.getTime() + 120_000),
+      catchUp: false
+    }];
+    await harness.service.settleBases({} as IndustryTx, T0);
+    expect(manufacturing.settled.map((entry) => [entry.simTime.getTime(), entry.deltaSimMs])).toEqual([
+      [T0.getTime(), 60_000],
+      [T0.getTime() + 60_000, 60_000]
     ]);
   });
 });

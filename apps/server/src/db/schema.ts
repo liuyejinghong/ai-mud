@@ -1005,8 +1005,8 @@ export const basePowerState = pgTable(
     storageWh: integer("storage_wh").notNull(),
     storageCapacityWh: integer("storage_capacity_wh").notNull(),
     lastLoadW: integer("last_load_w").notNull().default(0),
-    // 积尘等级 0—100（M15）：尘暴期间上升，晴天下缓慢沉降；清洁工程归零。
-    dustLevel: integer("dust_level").notNull().default(30),
+    // 积尘等级 0—100；保留每分钟的小数变化，避免按调用次数取整。
+    dustLevel: doublePrecision("dust_level").notNull().default(30),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
@@ -1246,6 +1246,7 @@ export const cooperationRequests = pgTable(
     status: text("status").notNull().default("pending"),
     helperOperatorId: uuid("helper_operator_id"),
     decisionId: text("decision_id"),
+    resolutionReason: text("resolution_reason"),
     question: text("question").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     resolvedAt: timestamp("resolved_at", { withTimezone: true })
@@ -1256,6 +1257,10 @@ export const cooperationRequests = pgTable(
     statusCheck: check(
       "cooperation_requests_status_check",
       sql`${table.status} IN ('pending', 'accepted', 'declined', 'expired', 'fulfilled')`
+    ),
+    resolutionReasonCheck: check(
+      "cooperation_requests_resolution_reason_check",
+      sql`${table.resolutionReason} IS NULL OR (${table.status} = 'expired' AND ${table.resolutionReason} IN ('ttl_expired', 'project_cancelled', 'project_failed', 'step_failed', 'content_missing'))`
     )
   })
 );

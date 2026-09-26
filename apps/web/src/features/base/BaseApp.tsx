@@ -168,6 +168,14 @@ export function BaseApp({
   const [password, setPassword] = useState("");
   const [isAuthBusy, setIsAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  // 登录表单状态挂在 BaseApp 上而不是 AuthPanel 里；App 在登录/未登录两种形态下
+  // 都在同一位置渲染 BaseApp，实例（连同这里的 state）会跨越“登录→退出”保留。
+  // 所以凭据必须显式清空，不能指望 AuthPanel 卸载重建（B006）。
+  const clearAuthForm = useCallback(() => {
+    setEmail("");
+    setPassword("");
+    setAuthError(null);
+  }, []);
   const [actionFeedback, setActionFeedback] = useState<BaseActionFeedback | null>(null);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [completionBanner, setCompletionBanner] = useState<string | null>(null);
@@ -219,6 +227,8 @@ export function BaseApp({
       return next;
     } catch (error) {
       if (error instanceof BaseApiError && error.status === 401) {
+        // 不要在这里清空登录表单：停留在登录面时轮询仍每 5 秒走到这里，
+        // 会抹掉玩家正在输入的内容。凭据在登录成功与退出时清空（B006）。
         setPhase("unauthenticated");
         setSnapshot(null);
         baseIdRef.current = null;
@@ -280,6 +290,10 @@ export function BaseApp({
       // 必须带刚拿到的 CSRF 头，否则写路由 403，只能等轮询兜底进基地。
       await provision(session.csrfToken);
       await refreshSnapshot();
+      // 会话已建立：凭据用完即弃。否则会话在游戏中过期（快照 401）被动回到登录面时，
+      // 表单会带着上次的邮箱和密码，下一个人一键即可登录（B006）。
+      // 失败路径（catch）保留输入，便于改正重试。
+      clearAuthForm();
       // 通知 App 层（管理员由此进入管理台；玩家保持原地）。
       onAuthenticated?.({
         csrfToken: session.csrfToken,
@@ -377,9 +391,11 @@ export function BaseApp({
       setSelectedProjectId(null);
       setSelectedDeviceId(null);
       setSelectedJobId(null);
+      // 退出后登录表单必须为空、提交禁用（B006）：共享设备上下一个人不能一键登录。
+      clearAuthForm();
       onLogout?.();
     }
-  }, [onLogout]);
+  }, [onLogout, clearAuthForm]);
 
   const handleSelectSite = useCallback((siteId: string) => {
     setSelectedSiteId(siteId);

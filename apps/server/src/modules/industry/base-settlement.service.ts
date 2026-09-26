@@ -6,12 +6,18 @@
 //   robotRuntime.applyRobotUpdates → 完成项目：消耗全部预留物料 + 站点 built（facilityRef =
 //   kind:stableId@revision）+ completedAt → clock.saveSimAdvance(simTime+Δsim, now)。
 // 内容修订不一致：该项目步骤全 blocked 'content_missing'（不抛，时钟照常推进）。
+// 制造（2026-09-25 B001）：只对当前被推进的基地测量需求→同一电力池供能→按基地结算，
+// 暂停/租约失效的基地不在推进集合里，其工单永不被别的基地推进。
+// 第 0 阶段 B008：供电、施工、制造、充电与天气都按绝对基地分钟边界结算；
+// 不足一分钟的余量留在 simTime，下次跨界时再结算，调用频率不改变产出。
 import type { ProjectStatus, ProjectTemplateDto, RobotTemplateDto } from "@ai-mud/shared";
 import { definitionRefKey } from "@ai-mud/shared";
 import {
   CONTENT_BLOCK_REASON,
   computeBaseTick,
+  MANUFACTURING_LOAD_W,
   ROBOT_WORK_DRAIN_WH,
+  WORK_MINUTE_MS,
   type BaseProjectRecord,
   type BaseRobotRecord,
   type BaseStepRecord,
@@ -122,16 +128,16 @@ export interface BaseSettlementDeps {
   };
 }
 
-// 基地结算的最小模拟步长（与 world tick 同粒度）。
-const BASE_SUB_TICK_MS = 60_000;
-
-// 制造负载功率（M13-P fixture §5）。
-export const MANUFACTURING_POWER_W = 1500;
-
+// 制造结算端口：一律按基地（B001）。先 measure 给电力池报需求，再用电力池实际分给制造的能量 settle。
 export interface BaseManufacturingSettlePort {
+  measure(
+    tx: IndustryTx,
+    baseId: string
+  ): Promise<{ settleableJobs: number; pendingWorkWh: number }>;
   settle(
     tx: IndustryTx,
-    now: Date,
+    baseId: string,
+    simTime: Date,
     input: { availableEnergyWh: number; powerW: number; deltaSimMs: number }
   ): Promise<{ unitsProduced: number; jobsCompleted: number }>;
 }
@@ -149,13 +155,19 @@ export class BaseSettlementService {
         await this.deps.clock.saveSimAdvance(tx, base.baseId, nextSimTime, base.nextLastAdvancedAt);
         continue;
       }
-      // 按模拟时长拆子 tick：工作量/能耗与 simTime 同比例推进（×4 速度 = 4 倍产出与能耗）。
-      const subTicks = Math.max(1, Math.min(10, Math.round(base.deltaSimMs / BASE_SUB_TICK_MS)));
-      const subDelta = Math.round(base.deltaSimMs / subTicks);
-      for (let i = 0; i < subTicks; i += 1) {
-        const from = new Date(base.simTime.getTime() + subDelta * i);
-        const to = new Date(base.simTime.getTime() + subDelta * (i + 1));
-        await this.settleBase(tx, base.baseId, from, to.getTime() - from.getTime(), to);
+      const startMs = base.simTime.getTime();
+      for (
+        let boundary = (Math.floor(startMs / WORK_MINUTE_MS) + 1) * WORK_MINUTE_MS;
+        boundary <= nextSimTime.getTime();
+        boundary += WORK_MINUTE_MS
+      ) {
+        await this.settleBase(
+          tx,
+          base.baseId,
+          new Date(boundary - WORK_MINUTE_MS),
+          WORK_MINUTE_MS,
+          new Date(boundary)
+        );
       }
       await this.deps.clock.saveSimAdvance(tx, base.baseId, nextSimTime, base.nextLastAdvancedAt);
     }
@@ -227,11 +239,16 @@ export class BaseSettlementService {
     const weatherLight = this.deps.weather
       ? (await this.deps.weather.current(baseId, simTime)).lightFactor
       : 1;
+    // 制造需求（只读、只看本基地）：电力池在施工之后、充电之前为制造供能（m13-p-contract §4.2）。
+    const manufacturingDemand = this.deps.manufacturing
+      ? await this.deps.manufacturing.measure(tx, baseId)
+      : null;
     const result = computeBaseTick({
       simTime,
       deltaSimMs,
       power,
       weatherLight,
+      manufacturingWorkWh: manufacturingDemand?.pendingWorkWh ?? 0,
       projects: matchedProjects,
       steps,
       robots: robotRecords,
@@ -240,9 +257,8 @@ export class BaseSettlementService {
     });
 
     // ---------- 落盘：电力（含 M15 积尘演化：尘暴 +8/h，晴 -1/h，工程清洁归零） ----------
-    const dustDelta = Math.round(
-      (weatherLight <= 0.3 ? 8 : weatherLight <= 0.8 ? 2 : -1) * (deltaSimMs / 3_600_000)
-    );
+    const dustDelta =
+      (weatherLight <= 0.3 ? 8 : weatherLight <= 0.8 ? 2 : -1) * (deltaSimMs / 3_600_000);
     const dustLevel = Math.min(
       100,
       Math.max(0, (power.dustLevel ?? 30) + dustDelta)
@@ -253,12 +269,12 @@ export class BaseSettlementService {
       dustLevel
     });
 
-    // ---------- 制造结算（M13-C）：电力池扣减后按剩余能推进工单 ----------
-    if (this.deps.manufacturing) {
-      const availableEnergyWh = Math.max(0, result.storageWh);
-      await this.deps.manufacturing.settle(tx, simTime, {
-        availableEnergyWh,
-        powerW: MANUFACTURING_POWER_W,
+    // ---------- 制造结算（M13-C）：只结算本基地，用电力池本子 tick 实际分给制造的能量 ----------
+    // Directive：不得改回“遍历全服工单”或“以储能余额当预算”（B001：暂停基地被推进、制造不扣电）。
+    if (this.deps.manufacturing && manufacturingDemand && manufacturingDemand.settleableJobs > 0) {
+      await this.deps.manufacturing.settle(tx, baseId, simTime, {
+        availableEnergyWh: result.manufacturingEnergyWh,
+        powerW: MANUFACTURING_LOAD_W,
         deltaSimMs
       });
     }

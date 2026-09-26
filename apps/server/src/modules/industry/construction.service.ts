@@ -1,7 +1,7 @@
 // M12-B 项目创建/取消业务（m12-p-contract.md §3.4—§3.5）。
 // 同事务：物料全额预留（任一不足整体回滚 RESOURCE_INSUFFICIENT）→ 插项目+步骤 →
 // 站点 reserved → 回执落结果；重放一致 → 原结果，不一致 → IDEMPOTENCY_CONFLICT。
-// 取消：非终态项目 → 释放全部未消耗预留 → cancelled → 释放站点。
+// 取消：非终态项目 → 释放全部未消耗预留 → cancelled → 释放站点 → 结案本项目打开的协作请求（B005）。
 // 事实只经端口写：assets（物料预留/释放）、world（站点）、application 收据端口由
 // composition 以 (tx) => AssetMutationService(tx) 形式注入（industry→assets 边允许）。
 import type {
@@ -16,6 +16,10 @@ import {
   type AssetMutationPort,
   type CommandReceipt
 } from "../ledger/asset-mutation.service.js";
+import {
+  CooperationRepository,
+  type CooperationRequestStore
+} from "./cooperation.repository.js";
 import type {
   IndustryProjectStore,
   IndustryTx
@@ -39,6 +43,7 @@ export class BaseOperationError extends Error {
 
 export interface ConstructionLookupPort {
   findBaseIdByAccount(tx: ConstructionTx, accountId: string): Promise<string | null>;
+  getBaseForUpdate(tx: ConstructionTx, baseId: string): Promise<{ id: string } | null>;
 }
 
 export interface ConstructionAssetPort {
@@ -66,6 +71,10 @@ export interface ConstructionSitePort {
   releaseSite(tx: ConstructionTx, siteId: string): Promise<void>;
 }
 
+export interface ConstructionRobotPort {
+  releaseProjectAssignments(tx: ConstructionTx, baseId: string, projectId: string): Promise<void>;
+}
+
 export interface ConstructionCatalogPort {
   getProjectTemplate(stableId: string): ProjectTemplateDto | null;
 }
@@ -75,14 +84,21 @@ export type ConstructionReceiptsPort = Pick<
   "findReceiptForUpdate" | "claimReceipt" | "saveReceiptResult"
 >;
 
+// 同模块协作请求写面（industry 是 cooperation_requests 唯一写者）。
+export type ConstructionCooperationPort = Pick<CooperationRequestStore, "closeOpenByProject">;
+
 export interface ConstructionServiceDeps {
   lookup: ConstructionLookupPort;
   assets: ConstructionAssetPort;
   sites: ConstructionSitePort;
+  robots: ConstructionRobotPort;
   catalog: ConstructionCatalogPort;
   store: IndustryProjectStore;
   // 生产绑定：(tx) => new AssetMutationService(tx)。测试注入内存替身。
   receipts: (tx: ConstructionTx) => ConstructionReceiptsPort;
+  // B005 取消项目同事务结案协作请求。缺省 = (tx) => new CooperationRepository(tx)（同模块仓库，
+  // composition 未显式绑定时生产路径也生效）；测试注入内存替身。
+  cooperation?: (tx: ConstructionTx) => ConstructionCooperationPort;
 }
 
 export interface ConstructionPrincipal {
@@ -131,7 +147,11 @@ function isCancelResultPayload(value: unknown): value is CancelResultPayload {
 }
 
 export class ConstructionService {
-  constructor(private readonly deps: ConstructionServiceDeps) {}
+  private readonly openCooperation: (tx: ConstructionTx) => ConstructionCooperationPort;
+
+  constructor(private readonly deps: ConstructionServiceDeps) {
+    this.openCooperation = deps.cooperation ?? ((tx) => new CooperationRepository(tx));
+  }
 
   async create(
     tx: ConstructionTx,
@@ -233,6 +253,10 @@ export class ConstructionService {
     input: { projectId: string; commandId: string }
   ): Promise<ConstructionCancelResult> {
     const baseId = await this.requireBaseId(tx, principal);
+    // 与基地 tick 共用 bases 行锁：取消读取的预留、项目状态和协作事实必须来自结算提交后的同一状态。
+    if (!(await this.deps.lookup.getBaseForUpdate(tx, baseId))) {
+      throw new BaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
+    }
     const actorScope = `base:${baseId}`;
     const requestHash = hashRequest({ projectId: input.projectId });
     const receipts = this.deps.receipts(tx);
@@ -278,6 +302,9 @@ export class ConstructionService {
     }
     await this.deps.store.updateProjectStatus(tx, project.id, "cancelled" as ProjectStatus);
     await this.deps.sites.releaseSite(tx, project.siteId);
+    // 请求与作业者分配一起结案，暂停基地后也不留下指向已取消工程的机器人。
+    await this.openCooperation(tx).closeOpenByProject(tx, baseId, project.id, "project_cancelled");
+    await this.deps.robots.releaseProjectAssignments(tx, baseId, project.id);
 
     const result: CancelResultPayload = {
       cancelled: true,

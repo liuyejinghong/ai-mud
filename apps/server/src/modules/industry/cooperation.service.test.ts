@@ -2,14 +2,17 @@
 import { describe, expect, it } from "vitest";
 import type { DecisionRequestDto, DecisionOutcomeDto } from "@ai-mud/shared";
 import { COOPERATION_TTL_MS } from "@ai-mud/shared";
-import type {
-  CooperationRequestRecord,
-  CooperationRequestStore,
-  CooperationTx,
-  CreateCooperationRequestInput
+import {
+  type CooperationCloseReason,
+  type CooperationRequestRecord,
+  type CooperationRequestStore,
+  type CooperationStepState,
+  type CooperationTx,
+  type CreateCooperationRequestInput
 } from "./cooperation.repository.js";
 import {
   applyAcceptedHelpers,
+  cooperationStepOutcome,
   detectAndResolveCooperation,
   type CooperationDetectionStep,
   type CooperationDeps,
@@ -22,6 +25,9 @@ const BASE_ID = "base-1";
 
 class InMemoryCooperationRepo implements CooperationRequestStore {
   records: CooperationRequestRecord[] = [];
+  // 项目/步骤事实（真库由 base_projects × base_project_steps 读出）；默认空 = 状态未知，不结案。
+  stepStates: CooperationStepState[] = [];
+  closeReasons = new Map<string, CooperationCloseReason>();
   private seq = 0;
 
   async create(_tx: CooperationTx, input: CreateCooperationRequestInput) {
@@ -34,6 +40,7 @@ class InMemoryCooperationRepo implements CooperationRequestStore {
       fromGroupId: input.fromGroupId,
       helperGroupId: input.helperGroupId,
       status: "pending",
+      resolutionReason: null,
       helperOperatorId: null,
       decisionId: null,
       question: input.question,
@@ -67,19 +74,51 @@ class InMemoryCooperationRepo implements CooperationRequestStore {
     );
   }
 
+  // 与真库同语义：只有仍 pending 的请求能被接受（并发结案的请求不复活）。
   async accept(_tx: CooperationTx, requestId: string, helperOperatorId: string, decisionId: string) {
-    this.mutate(requestId, (record) => {
-      record.status = "accepted";
-      record.helperOperatorId = helperOperatorId;
-      record.decisionId = decisionId;
-    });
+    const record = this.records.find((entry) => entry.requestId === requestId);
+    if (!record || record.status !== "pending") return false;
+    record.status = "accepted";
+    record.helperOperatorId = helperOperatorId;
+    record.decisionId = decisionId;
+    return true;
   }
 
   async expire(_tx: CooperationTx, requestId: string) {
     this.mutate(requestId, (record) => {
+      if (record.status !== "pending") return;
       record.status = "expired";
+      record.resolutionReason = "ttl_expired";
       record.resolvedAt = T0;
     });
+  }
+
+  async closeOpen(_tx: CooperationTx, requestId: string, reason: CooperationCloseReason) {
+    const record = this.records.find((entry) => entry.requestId === requestId);
+    if (!record || (record.status !== "pending" && record.status !== "accepted")) return false;
+    record.status = "expired";
+    record.resolutionReason = reason;
+    record.resolvedAt = T0;
+    this.closeReasons.set(requestId, reason);
+    return true;
+  }
+
+  async closeOpenByProject(
+    tx: CooperationTx,
+    baseId: string,
+    projectId: string,
+    reason: CooperationCloseReason
+  ) {
+    let closed = 0;
+    for (const record of this.records) {
+      if (record.baseId !== baseId || record.projectId !== projectId) continue;
+      if (await this.closeOpen(tx, record.requestId, reason)) closed += 1;
+    }
+    return closed;
+  }
+
+  async listStepStates(_tx: CooperationTx, _baseId: string, projectIds: string[]) {
+    return this.stepStates.filter((state) => projectIds.includes(state.projectId));
   }
 
   async markFulfilled(_tx: CooperationTx, requestId: string) {
@@ -202,7 +241,8 @@ describe("detectAndResolveCooperation", () => {
       requestsCreated: 1,
       decisionsRequested: 1,
       helpersAccepted: 1,
-      expired: 0
+      expired: 0,
+      closed: {}
     });
     const request = repo.records[0];
     expect(request).toMatchObject({
@@ -234,6 +274,7 @@ describe("detectAndResolveCooperation", () => {
       decisionId: null,
       question: "旧请求",
       createdAt: new Date(T0.getTime() - 1000),
+      resolutionReason: null,
       resolvedAt: null
     });
 
@@ -253,12 +294,14 @@ describe("detectAndResolveCooperation", () => {
       requestId: "req-accepted", baseId: BASE_ID, projectId: "p1", stepIndex: 0,
       fromGroupId: "engineering", helperGroupId: "transport", status: "accepted",
       helperOperatorId: "op-t1", decisionId: "decision-1", question: "已有支援",
-      createdAt: T0, resolvedAt: null
+      createdAt: T0, resolutionReason: null, resolvedAt: null
     });
 
     const result = await detectAndResolveCooperation(tx, BASE_ID, [STEP], deps);
 
-    expect(result).toEqual({ requestsCreated: 0, decisionsRequested: 0, helpersAccepted: 0, expired: 0 });
+    expect(result).toEqual({
+      requestsCreated: 0, decisionsRequested: 0, helpersAccepted: 0, expired: 0, closed: {}
+    });
     expect(repo.records).toHaveLength(1);
     expect(gateway.requests).toHaveLength(0);
   });
@@ -299,7 +342,8 @@ describe("detectAndResolveCooperation", () => {
       requestsCreated: 1,
       decisionsRequested: 0,
       helpersAccepted: 0,
-      expired: 0
+      expired: 0,
+      closed: {}
     });
     expect(gateway.requests).toHaveLength(0);
     expect(repo.records[0]).toMatchObject({ status: "pending", helperGroupId: "transport" });
@@ -345,12 +389,14 @@ describe("detectAndResolveCooperation", () => {
       decisionId: null,
       question: "过期请求",
       createdAt: new Date(T0.getTime() - COOPERATION_TTL_MS - 1),
+      resolutionReason: null,
       resolvedAt: null
     });
 
     const result = await detectAndResolveCooperation(tx, BASE_ID, [STEP], deps);
 
     expect(result.expired).toBe(1);
+    expect(result.closed).toEqual({}); // TTL 超时不计入生命周期结案
     expect(repo.records.find((record) => record.requestId === "req-old")?.status).toBe("expired");
     expect(repo.records.find((record) => record.requestId === "req-1")?.status).toBe("pending");
   });
@@ -365,7 +411,8 @@ describe("detectAndResolveCooperation", () => {
       requestsCreated: 0,
       decisionsRequested: 0,
       helpersAccepted: 0,
-      expired: 0
+      expired: 0,
+      closed: {}
     });
     expect(repo.records).toHaveLength(0);
   });
@@ -387,6 +434,7 @@ describe("applyAcceptedHelpers", () => {
       decisionId: "decision-1",
       question: "支援请求",
       createdAt: T0,
+      resolutionReason: null,
       resolvedAt: null
     });
 
@@ -418,6 +466,7 @@ describe("applyAcceptedHelpers", () => {
       decisionId: "decision-1",
       question: "支援请求",
       createdAt: T0,
+      resolutionReason: null,
       resolvedAt: null
     });
 
@@ -437,7 +486,7 @@ describe("applyAcceptedHelpers", () => {
       requestId: "req-1", baseId: BASE_ID, projectId: "p1", stepIndex: 0,
       fromGroupId: "engineering", helperGroupId: "transport", status: "accepted",
       helperOperatorId: "op-t1", decisionId: "decision-1", question: "支援请求",
-      createdAt: T0, resolvedAt: null
+      createdAt: T0, resolutionReason: null, resolvedAt: null
     });
 
     expect(await applyAcceptedHelpers(tx, BASE_ID, [], deps)).toBe(0);
@@ -467,6 +516,7 @@ describe("markFulfilledByStep", () => {
         decisionId: "decision-1",
         question: "支援请求",
         createdAt: T0,
+        resolutionReason: null,
         resolvedAt: null
       },
       {
@@ -481,6 +531,7 @@ describe("markFulfilledByStep", () => {
         decisionId: null,
         question: "旧请求",
         createdAt: T0,
+        resolutionReason: null,
         resolvedAt: null
       },
       {
@@ -495,6 +546,7 @@ describe("markFulfilledByStep", () => {
         decisionId: null,
         question: "已过期",
         createdAt: T0,
+        resolutionReason: "ttl_expired",
         resolvedAt: T0
       }
     );
@@ -506,5 +558,264 @@ describe("markFulfilledByStep", () => {
       "fulfilled",
       "expired"
     ]);
+  });
+});
+
+// ---------- B005：协作请求生命周期结案（项目取消 / 内容缺失 / 失败；缺电保持） ----------
+
+function openRequest(overrides: Partial<CooperationRequestRecord> = {}): CooperationRequestRecord {
+  return {
+    requestId: "req-a",
+    baseId: BASE_ID,
+    projectId: "p1",
+    stepIndex: 0,
+    fromGroupId: "engineering",
+    helperGroupId: "transport",
+    status: "accepted",
+    resolutionReason: null,
+    helperOperatorId: "op-t1",
+    decisionId: "decision-1",
+    question: "支援请求",
+    createdAt: T0,
+    resolvedAt: null,
+    ...overrides
+  };
+}
+
+function stepState(overrides: Partial<CooperationStepState> = {}): CooperationStepState {
+  return {
+    projectId: "p1",
+    projectStatus: "active",
+    stepIndex: 0,
+    stepStatus: "running",
+    blockedReason: null,
+    ...overrides
+  };
+}
+
+const OTHER_STEP: CooperationDetectionStep = {
+  projectId: "p2",
+  projectName: "架设第二太阳电池阵",
+  stepIndex: 0,
+  groupId: "engineering"
+};
+
+describe("cooperationStepOutcome（B005 结案/回收规则）", () => {
+  it.each([
+    [{ projectStatus: "cancelled", stepStatus: "running", blockedReason: null }, "project_cancelled"],
+    [{ projectStatus: "cancelled", stepStatus: null, blockedReason: null }, "project_cancelled"],
+    [{ projectStatus: "failed", stepStatus: "ready", blockedReason: null }, "project_failed"],
+    [{ projectStatus: "active", stepStatus: "failed", blockedReason: null }, "step_failed"],
+    [{ projectStatus: "active", stepStatus: "blocked", blockedReason: "content_missing" }, "content_missing"],
+    [{ projectStatus: "completed", stepStatus: "running", blockedReason: null }, "fulfilled"],
+    [{ projectStatus: "active", stepStatus: "completed", blockedReason: null }, "fulfilled"]
+  ] as const)("%j → %s", (state, outcome) => {
+    expect(cooperationStepOutcome(state)).toBe(outcome);
+  });
+
+  it.each([
+    { projectStatus: "active", stepStatus: "ready", blockedReason: null },
+    { projectStatus: "active", stepStatus: "running", blockedReason: null },
+    { projectStatus: "active", stepStatus: "pending", blockedReason: null },
+    // 缺电阻塞是可恢复状态：保持 accepted，helper 原地充电、复电后回原步骤（C07）。
+    { projectStatus: "active", stepStatus: "blocked", blockedReason: "insufficient_power" }
+  ])("仍可推进或可恢复的步骤不结案：%j", (state) => {
+    expect(cooperationStepOutcome(state)).toBeNull();
+  });
+
+});
+
+describe("detectAndResolveCooperation > B005 生命周期回收", () => {
+  it("已取消项目上仍打开的请求：结案 project_cancelled，释放仍指向该步骤的 helper，同 tick 可再被选为候选", async () => {
+    const { repo, robots, gateway, deps, tx } = makeHarness();
+    repo.records.push(
+      openRequest(),
+      openRequest({
+        requestId: "req-p", stepIndex: 1, status: "pending", helperOperatorId: null, decisionId: null
+      })
+    );
+    repo.stepStates = [
+      stepState({ projectStatus: "cancelled" }),
+      stepState({ projectStatus: "cancelled", stepIndex: 1, stepStatus: "ready" })
+    ];
+    // 取消时正处缺电阻塞：helper 原地 charging 仍挂着已取消项目的步骤（纯规则只回收 working）。
+    robots.operators = [makeRobot({ status: "charging", currentProjectId: "p1", currentStepIndex: 0 })];
+    gateway.selectedCandidateId = "op-t1";
+
+    const result = await detectAndResolveCooperation(tx, BASE_ID, [OTHER_STEP], deps);
+
+    expect(repo.records.find((r) => r.requestId === "req-a")).toMatchObject({ status: "expired" });
+    expect(repo.records.find((r) => r.requestId === "req-a")?.resolvedAt).not.toBeNull();
+    expect(repo.records.find((r) => r.requestId === "req-p")).toMatchObject({ status: "expired" });
+    expect(repo.closeReasons.get("req-a")).toBe("project_cancelled");
+    expect(repo.closeReasons.get("req-p")).toBe("project_cancelled");
+    expect(result.closed).toEqual({ project_cancelled: 2 });
+    expect(result.expired).toBe(0); // 生命周期结案不算 TTL 超时
+    expect(robots.applied).toContainEqual({
+      operatorId: "op-t1", batteryWh: 9000, status: "idle", currentProjectId: null, currentStepIndex: null
+    });
+    // helper 不再被 reservedHelpers 占住：新缺工步骤把它列为候选并接受。
+    expect(gateway.requests[0]?.candidates.map((candidate) => candidate.candidateId)).toEqual(["op-t1"]);
+    expect(repo.records.find((r) => r.projectId === "p2")).toMatchObject({
+      status: "accepted", helperOperatorId: "op-t1"
+    });
+    expect(result.helpersAccepted).toBe(1);
+  });
+
+  it("内容缺失（content_missing）阻塞的步骤：accepted 结案并释放 helper，helper 可再被选中", async () => {
+    const { repo, robots, gateway, deps, tx } = makeHarness();
+    repo.records.push(openRequest());
+    repo.stepStates = [stepState({ stepStatus: "blocked", blockedReason: "content_missing" })];
+    robots.operators = [makeRobot({ status: "charging", currentProjectId: "p1", currentStepIndex: 0 })];
+    gateway.selectedCandidateId = "op-t1";
+
+    const result = await detectAndResolveCooperation(tx, BASE_ID, [OTHER_STEP], deps);
+
+    expect(repo.records[0]).toMatchObject({ status: "expired" });
+    expect(repo.closeReasons.get("req-a")).toBe("content_missing");
+    expect(result.closed).toEqual({ content_missing: 1 });
+    expect(result.expired).toBe(0);
+    expect(robots.operators[0]).toMatchObject({ status: "idle", currentProjectId: null, currentStepIndex: null });
+    expect(repo.records.find((r) => r.projectId === "p2")).toMatchObject({
+      status: "accepted", helperOperatorId: "op-t1"
+    });
+  });
+
+  it("失败的项目或步骤：打开的请求结案（project_failed / step_failed）", async () => {
+    const { repo, robots, deps, tx } = makeHarness();
+    robots.operators = [];
+    repo.records.push(
+      openRequest({ requestId: "req-pf", projectId: "pf" }),
+      openRequest({ requestId: "req-sf", projectId: "sf", status: "pending", helperOperatorId: null })
+    );
+    repo.stepStates = [
+      stepState({ projectId: "pf", projectStatus: "failed" }),
+      stepState({ projectId: "sf", stepStatus: "failed" })
+    ];
+
+    const result = await detectAndResolveCooperation(tx, BASE_ID, [], deps);
+
+    expect(repo.closeReasons.get("req-pf")).toBe("project_failed");
+    expect(repo.closeReasons.get("req-sf")).toBe("step_failed");
+    expect(repo.records.map((r) => r.status)).toEqual(["expired", "expired"]);
+    expect(result.closed).toEqual({ project_failed: 1, step_failed: 1 });
+    expect(result.expired).toBe(0);
+  });
+
+  it("缺电阻塞（insufficient_power）：accepted 保持，helper 保留原地充电分配（C07 复电返回）", async () => {
+    const { repo, robots, gateway, deps, tx } = makeHarness();
+    repo.records.push(openRequest());
+    repo.stepStates = [stepState({ stepStatus: "blocked", blockedReason: "insufficient_power" })];
+    robots.operators = [makeRobot({ status: "charging", currentProjectId: "p1", currentStepIndex: 0 })];
+    gateway.selectedCandidateId = "op-t1";
+
+    const result = await detectAndResolveCooperation(tx, BASE_ID, [OTHER_STEP], deps);
+
+    expect(repo.records[0]).toMatchObject({ status: "accepted", helperOperatorId: "op-t1" });
+    expect(result.expired).toBe(0);
+    expect(result.closed).toEqual({});
+    expect(robots.applied).toHaveLength(0);
+    expect(robots.operators[0]).toMatchObject({ status: "charging", currentProjectId: "p1", currentStepIndex: 0 });
+  });
+
+  it("步骤或项目已完成但请求仍打开：补结案为 fulfilled，不计入 expired", async () => {
+    const { repo, robots, deps, tx } = makeHarness();
+    robots.operators = [];
+    repo.records.push(
+      openRequest({ requestId: "req-step" }),
+      openRequest({ requestId: "req-project", projectId: "pc", status: "pending", helperOperatorId: null })
+    );
+    repo.stepStates = [
+      stepState({ stepStatus: "completed" }),
+      stepState({ projectId: "pc", projectStatus: "completed", stepStatus: "running" })
+    ];
+
+    const result = await detectAndResolveCooperation(tx, BASE_ID, [], deps);
+
+    expect(repo.records.map((r) => r.status)).toEqual(["fulfilled", "fulfilled"]);
+    expect(result.expired).toBe(0);
+    expect(result.closed).toEqual({}); // 完成不是非完成结案
+  });
+
+  it("遗留已结案请求仍挂着充电 helper：tick 自愈后可再被选为候选", async () => {
+    const { repo, robots, gateway, deps, tx } = makeHarness();
+    repo.records.push(openRequest({ status: "expired", resolvedAt: T0 }));
+    repo.stepStates = [stepState({ projectStatus: "cancelled" })];
+    robots.operators = [makeRobot({ status: "charging", currentProjectId: "p1", currentStepIndex: 0 })];
+    gateway.selectedCandidateId = "op-t1";
+
+    const result = await detectAndResolveCooperation(tx, BASE_ID, [OTHER_STEP], deps);
+
+    expect(result.expired).toBe(0); // 已结案的历史不重复计数
+    expect(result.closed).toEqual({});
+    expect(repo.records[0]).toMatchObject({ status: "expired" });
+    expect(robots.applied[0]).toMatchObject({ operatorId: "op-t1", status: "idle", currentProjectId: null });
+    expect(repo.records.find((r) => r.projectId === "p2")).toMatchObject({
+      status: "accepted", helperOperatorId: "op-t1"
+    });
+  });
+
+  it("状态未知（查无项目行）或 helper 已去别处：不结案、不改机器人", async () => {
+    const { repo, robots, deps, tx } = makeHarness();
+    repo.records.push(openRequest());
+    repo.stepStates = [];
+    robots.operators = [makeRobot({ status: "working", currentProjectId: "p9", currentStepIndex: 0 })];
+
+    const result = await detectAndResolveCooperation(tx, BASE_ID, [], deps);
+
+    expect(repo.records[0]).toMatchObject({ status: "accepted" });
+    expect(result.expired).toBe(0);
+    expect(result.closed).toEqual({});
+    expect(robots.applied).toHaveLength(0);
+  });
+
+  it("同一 tick 里 TTL 超时与生命周期结案分开计数；已取消项目上超时的 pending 只算结案、不重复计", async () => {
+    const { repo, robots, deps, tx } = makeHarness();
+    robots.operators = [];
+    const stale = new Date(T0.getTime() - COOPERATION_TTL_MS - 1);
+    repo.records.push(
+      // 仍在推进的项目上等太久的 pending：真实超时。
+      openRequest({ requestId: "req-ttl", projectId: "pa", status: "pending", helperOperatorId: null, createdAt: stale }),
+      // 已取消项目上同样超时的 pending：先按取消结案，TTL 不再碰它。
+      openRequest({ requestId: "req-cancel", projectId: "pc", status: "pending", helperOperatorId: null, createdAt: stale })
+    );
+    repo.stepStates = [
+      stepState({ projectId: "pa", stepStatus: "ready" }),
+      stepState({ projectId: "pc", projectStatus: "cancelled" })
+    ];
+
+    const result = await detectAndResolveCooperation(tx, BASE_ID, [], deps);
+
+    expect(result.expired).toBe(1);
+    expect(result.closed).toEqual({ project_cancelled: 1 });
+    expect(repo.closeReasons.get("req-cancel")).toBe("project_cancelled");
+    expect(repo.closeReasons.has("req-ttl")).toBe(false);
+  });
+
+  it("被并发结案的请求不会被 accept 复活：不计 helpersAccepted，helper 不被预留", async () => {
+    const { repo, robots, gateway, deps, tx } = makeHarness();
+    robots.operators = [makeRobot()];
+    gateway.selectedCandidateId = "op-t1";
+    repo.records.push(openRequest({ status: "pending", helperOperatorId: null, decisionId: null }));
+    // 模拟取消事务在决策期间提交：请求已被结案。
+    const decide = gateway.decide.bind(gateway);
+    let first = true;
+    gateway.decide = async (decisionTx, request) => {
+      if (first) {
+        first = false;
+        await repo.closeOpen(decisionTx, "req-a", "project_cancelled");
+      }
+      return decide(decisionTx, request);
+    };
+
+    const result = await detectAndResolveCooperation(tx, BASE_ID, [STEP, OTHER_STEP], deps);
+
+    expect(repo.records.find((r) => r.requestId === "req-a")).toMatchObject({
+      status: "expired", helperOperatorId: null
+    });
+    expect(result.helpersAccepted).toBe(1);
+    expect(repo.records.find((r) => r.projectId === "p2")).toMatchObject({
+      status: "accepted", helperOperatorId: "op-t1"
+    });
   });
 });

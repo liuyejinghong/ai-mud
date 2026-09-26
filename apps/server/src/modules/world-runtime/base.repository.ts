@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 import type { BaseTimeMode } from "@ai-mud/shared";
 import { BASE_MAX_CATCHUP_MS } from "@ai-mud/shared";
 import type { Db } from "../../db/client.js";
@@ -64,6 +64,18 @@ export interface BaseCommandReceipt {
 }
 
 export const BASE_PROVISION_COMMAND_KIND = "base.provision";
+
+// ---------- 逐基地 tick 事务作用域（第 0 阶段车道 C4，评审 ARCH-domain-03） ----------
+// 世界 tick 为每个到期基地开一个独立事务，并先把该事务句柄绑定到这个基地：此后经这个句柄调用的
+// lockAdvanceableBases 只锁定/返回该基地。这样 BaseSettlementService.settleBases(tx, now)
+// 的签名不必改动，一个基地抛错只回滚它自己的事务。
+// 以事务对象为键（WeakMap）：绑定随事务句柄一起失效，其他事务与请求路径的调用不受影响。
+// Directive: 这是跨车道的过渡接缝——settleBases 有了显式的按基地入参后应删除本机制，改为显式传参。
+const tickScopeByTransaction = new WeakMap<object, string>();
+
+export function scopeTickTransactionToBase(tx: BaseRepoTx, baseId: string): void {
+  tickScopeByTransaction.set(tx, baseId);
+}
 
 export function hashRequestPayload(payload: unknown): string {
   return createHash("sha256").update(JSON.stringify(payload ?? null)).digest("hex");
@@ -209,7 +221,7 @@ export class BaseRepository {
     return row ? mapBaseRow(row) : null;
   }
 
-  // 行锁即时钟命令互斥；时钟命令前必须先经此读取。
+  // 非主键更新锁与 tick/取消互斥，同时不挡住新项目/工单的外键检查。
   async getBaseForUpdate(tx: BaseRepoTx, baseId: string): Promise<BaseRecord | null> {
     const [row] = await tx
       .select({
@@ -228,7 +240,7 @@ export class BaseRepository {
       .from(bases)
       .where(eq(bases.id, baseId))
       .limit(1)
-      .for("update");
+      .for("no key update");
     return row ? mapBaseRow(row) : null;
   }
 
@@ -323,11 +335,15 @@ export class BaseRepository {
 
   // ---------- BaseClockStorePort：结算推进政策封装（running + 租约 + 追补上限） ----------
 
-  // SELECT … FOR UPDATE 锁住 running 基地行，逐行联 base_control_leases 校验
-  // leaseUntil > now；无租约/租约过期/暂停的基地不返回（天然无补算）。
+  // SELECT … FOR NO KEY UPDATE SKIP LOCKED 锁住 running 基地行（按 id 排序，锁序确定），逐行联
+  // base_control_leases 校验 leaseUntil > now；无租约/租约过期/暂停的基地不返回（天然无补算）。
+  // 被别的事务（玩家命令/心跳）持锁的基地本次跳过而不排队：lastAdvancedAt 不动，下个 tick
+  // 按真实流逝补上（受 BASE_MAX_CATCHUP_MS 封顶），不丢时长。
+  // 事务句柄经 scopeTickTransactionToBase 绑定过基地时，只锁定/返回那一个基地。
   // deltaSimMs = clamp(now - lastAdvancedAt, 0, BASE_MAX_CATCHUP_MS) × speed。
   async lockAdvanceableBases(tx: BaseRepoTx, now: Date): Promise<AdvanceableBaseRecord[]> {
     const wallNow = this.wallClock.now();
+    const scopedBaseId = tickScopeByTransaction.get(tx);
     const rows = await tx
       .select({
         id: bases.id,
@@ -336,8 +352,13 @@ export class BaseRepository {
         lastAdvancedAt: bases.lastAdvancedAt
       })
       .from(bases)
-      .where(eq(bases.timeMode, "running"))
-      .for("update");
+      .where(
+        scopedBaseId === undefined
+          ? eq(bases.timeMode, "running")
+          : and(eq(bases.timeMode, "running"), eq(bases.id, scopedBaseId))
+      )
+      .orderBy(asc(bases.id))
+      .for("no key update", { skipLocked: true });
 
     const advanceable: AdvanceableBaseRecord[] = [];
     for (const row of rows) {
@@ -362,6 +383,19 @@ export class BaseRepository {
       });
     }
     return advanceable;
+  }
+
+  // 逐基地 tick 的到期清单（车道 C4）：running 且租约有效（SQL 内联表过滤，无 N+1），按 id 排序，
+  // 不加锁——每个基地随后在自己的事务里经 lockAdvanceableBases 重新锁定并复核租约与 delta。
+  async listAdvanceableBaseIds(tx: BaseRepoTx): Promise<string[]> {
+    const wallNow = this.wallClock.now();
+    const rows = await tx
+      .select({ id: bases.id })
+      .from(bases)
+      .innerJoin(baseControlLeases, eq(baseControlLeases.baseId, bases.id))
+      .where(and(eq(bases.timeMode, "running"), gt(baseControlLeases.leaseUntil, wallNow)))
+      .orderBy(asc(bases.id));
+    return rows.map((row) => row.id);
   }
 
   // 推进后 base_revision 自增（基地行变更守卫）。

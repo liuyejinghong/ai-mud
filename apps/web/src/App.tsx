@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getCurrentSession, logout, type AuthSessionDto } from "./features/auth/authApi";
+import { getCurrentSession, type AuthSessionDto } from "./features/auth/authApi";
 import { BaseApp } from "./features/base/BaseApp";
 import { AdminShell } from "./features/game/ui/AdminShell";
 
@@ -33,11 +33,6 @@ export function App() {
   function expireSession() {
     setActiveWorkspace("game");
     setSession(null);
-  }
-
-  async function endSession() {
-    await logout();
-    expireSession();
   }
 
   useEffect(() => {
@@ -75,7 +70,7 @@ export function App() {
     return (
       <BaseApp
         onAuthenticated={authenticate}
-        onLogout={endSession}
+        onLogout={expireSession}
       />
     );
   }
@@ -86,7 +81,7 @@ export function App() {
     <BaseApp
       initialCsrfToken={session.csrfToken}
       initialAccountEmail={session.user.email}
-      onLogout={endSession}
+      onLogout={expireSession}
     />
   );
 

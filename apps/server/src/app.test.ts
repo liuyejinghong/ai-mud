@@ -73,6 +73,106 @@ describe("buildApp", () => {
   });
 });
 
+// 车道 C1/C2/C3（ARCH-boundaries-01/02）：旧西幻世界默认不再注册 /game 与旧世界管理接口。
+describe("buildApp legacy world switch", () => {
+  const legacyOnlyRoutes = [
+    ["GET", "/game/state"],
+    ["POST", "/game/characters"],
+    ["POST", "/admin/world-reset"],
+    ["GET", "/admin/economy"],
+    ["GET", "/admin/npc-memory"],
+    ["GET", "/admin/npcs"],
+    ["POST", "/admin/npcs/settle"],
+    ["POST", "/admin/npcs/simulate"]
+  ] as const;
+
+  const alwaysOnRoutes = [
+    ["GET", "/base/snapshot"],
+    ["POST", "/base/heartbeat"],
+    ["GET", "/auth/me"],
+    ["GET", "/admin/activation-codes"],
+    ["GET", "/admin/accounts"],
+    ["GET", "/admin/world-runtime"],
+    ["GET", "/admin/asset-ledger/health"],
+    ["GET", "/admin/ai-layer/status"]
+  ] as const;
+
+  it.each(legacyOnlyRoutes)("does not register legacy route %s %s by default", async (method, url) => {
+    const app = await buildApp({ env: testEnv, db: {} as Db });
+
+    const response = await app.inject({ method, url, ...(method === "POST" ? { payload: {} } : {}) });
+
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it.each(alwaysOnRoutes)("keeps %s %s registered with the legacy world disabled", async (method, url) => {
+    const app = await buildApp({ env: testEnv, db: {} as Db });
+
+    const response = await app.inject({ method, url, ...(method === "POST" ? { payload: {} } : {}) });
+
+    expect(response.statusCode).not.toBe(404);
+    await app.close();
+  });
+
+  it.each(legacyOnlyRoutes)("registers legacy route %s %s when LEGACY_WORLD_ENABLED=true", async (method, url) => {
+    const app = await buildApp({ env: { ...testEnv, LEGACY_WORLD_ENABLED: true }, db: {} as Db });
+
+    const response = await app.inject({ method, url, ...(method === "POST" ? { payload: {} } : {}) });
+
+    expect(response.statusCode).not.toBe(404);
+    await app.close();
+  });
+});
+
+// 车道 C5（ARCH-domain-08）：组合根未注入 db 时，自建连接池必须带上 DB_* 配置。
+// 其余 buildApp 用例都注入 db，这条是唯一走 createDb 分支的用例；端口 1 拒绝连接，
+// 启动预检（ensureRow）失败只记 warn，不影响构建。
+describe("buildApp database pool wiring", () => {
+  const unreachableEnv = {
+    ...testEnv,
+    DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:1/ai_mud_unreachable"
+  };
+
+  function poolOptionsOf(app: Awaited<ReturnType<typeof buildApp>>) {
+    return app.di.db.$client.options as unknown as Record<string, unknown>;
+  }
+
+  it("builds its pool from DB_* settings when no db is injected", async () => {
+    const app = await buildApp({
+      env: {
+        ...unreachableEnv,
+        DB_POOL_MAX: 3,
+        DB_POOL_CONNECTION_TIMEOUT_MS: 1_500,
+        DB_STATEMENT_TIMEOUT_MS: 2_500,
+        DB_IDLE_IN_TRANSACTION_TIMEOUT_MS: 4_000
+      }
+    });
+    try {
+      const options = poolOptionsOf(app);
+      expect(options.max).toBe(3);
+      expect(options.connectionTimeoutMillis).toBe(1_500);
+      expect(options.statement_timeout).toBe(2_500);
+      expect(options.idle_in_transaction_session_timeout).toBe(4_000);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keeps the bounded pool defaults when DB_* is unset", async () => {
+    const app = await buildApp({ env: unreachableEnv });
+    try {
+      const options = poolOptionsOf(app);
+      expect(options.max).toBe(10);
+      expect(options.connectionTimeoutMillis).toBe(10_000);
+      expect(options.statement_timeout).toBe(30_000);
+      expect(options.idle_in_transaction_session_timeout).toBe(30_000);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 describe("createWorldRuntimeScheduler", () => {
   it("starts post-tick work after a successful settled step without awaiting it", async () => {
     const calls: string[] = [];

@@ -25,7 +25,10 @@ import { createEconomyUseCases } from "../economy/usecases.js";
 import { OrderRepository } from "../../modules/economy/order.repository.js";
 import { PurchaseRepository } from "../../modules/economy/purchase.repository.js";
 import { WeatherService } from "../../modules/world-runtime/weather.service.js";
-import { settleManufacturing } from "../../modules/industry/manufacturing.settlement.js";
+import {
+  measureManufacturingDemand,
+  settleManufacturing
+} from "../../modules/industry/manufacturing.settlement.js";
 import {
   ContentAdminUseCases
 } from "../content-admin/usecases.js";
@@ -104,6 +107,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
           fromGroupId: row.fromGroupId,
           helperGroupId: row.helperGroupId,
           status: row.status,
+          resolutionReason: row.resolutionReason,
           helperOperatorId: row.helperOperatorId,
           question: row.question,
           createdAt: row.createdAt
@@ -125,6 +129,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     lookup: baseRepo,
     assets: baseAssets,
     sites: baseRepo,
+    robots: robotRuntime,
     catalog,
     store: industryRepo,
     receipts: (tx) => new AssetMutationService(tx)
@@ -209,8 +214,11 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     clock: new BaseClockUseCase(baseService)
   };
 
-  // 开工动员：创建项目提交后立即结算一个模拟步，机器人马上到位出工，
-  // 消除"下一分钟才有动静"的空窗（玩家视角：点下建设就看到设备进场）。
+  // 开工只受理，不在请求路径结算（2026-09-25 B008 / ARCH-domain-02）：此前开工成功后另开事务跑
+  // 全服 settleBases，且不看 duplicate——任何已登录玩家重放同一 commandId 即可给全服加速施工、
+  // 反复发起锁住全部 running 基地行的全服事务。结算只由 world tick 按模拟时长推进；
+  // 开工后首次进度变化最长约一个 tick（约 60 秒），是预期行为。
+  // Directive：不要把请求路径结算加回来；需要“就地反馈”时在前端写明“下次结算时间”。
   const createCase = new CreateProjectCase(db, construction);
   const manufacturingJobs = {
     create: new CreateManufacturingJobCase(db, manufacturing),
@@ -219,13 +227,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
 
   const projects: BaseProjectsRouteDeps = {
     auth: authFacade,
-    create: {
-      execute: async (principal, input) => {
-        const result = await createCase.execute(principal, input);
-        await db.transaction((tx) => settlement.settleBases(tx, systemWorldClock.now()));
-        return result;
-      }
-    },
+    create: createCase,
     cancel: new CancelProjectCase(db, construction)
   };
 
@@ -326,9 +328,16 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     openRobots: (tx) => (tx === db ? robotRuntime : new RobotRuntimeService(tx)),
     cooperation,
     economy: economyTick,
+    // 制造按基地结算（B001）：baseId 必须由 settleBase 传入，禁止在此遍历全服工单。
     manufacturing: {
-      settle: (tx, now, input) =>
-        settleManufacturing(tx, now, {
+      measure: (tx, baseId) =>
+        measureManufacturingDemand(tx, baseId, {
+          catalog,
+          openManufacturing: (settleTx) => new ManufacturingRepository(settleTx)
+        }),
+      settle: (tx, baseId, simTime, input) =>
+        settleManufacturing(tx, simTime, {
+          baseId,
           availableEnergyWh: input.availableEnergyWh,
           powerW: input.powerW,
           deltaSimMs: input.deltaSimMs,

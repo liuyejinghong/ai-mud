@@ -2,9 +2,11 @@
 // 配方/负载 fixture = m13-p-contract.md §5（manufacture-yd-h1：inputs 4/6/1、
 // workPerUnit 30、产出 yd-h1 initialBatteryWh 12000；制造负载 1500W）。
 // 能量折算：Δh = deltaSimMs/3_600_000；可用能 = min(powerW×Δh, availableEnergyWh)，1:1 工作点。
+// 2026-09-25 B001：结算按基地隔离（deps.baseId），同基地多张工单按 FIFO 分摊本子 tick 预算。
 import { describe, expect, it } from "vitest";
 import type { RecipeTemplateDto, RobotTemplateDto } from "@ai-mud/shared";
 import {
+  measureManufacturingDemand,
   settleManufacturing,
   type ManufacturingSettlementDeps,
   type ManufacturingSettleAssetsPort,
@@ -146,15 +148,16 @@ class FakeRepo implements ManufacturingSettlementRepo {
     return this.jobsByBase.get(baseId) ?? [];
   }
 
-  async listBasesWithSettleableJobs(_tx: ManufacturingTx): Promise<string[]> {
-    return [...this.jobsByBase.keys()];
-  }
+  listedBases: string[] = [];
 
   async listSettleableJobs(
     _tx: ManufacturingTx,
     baseId: string
   ): Promise<ManufacturingJobRecord[]> {
-    return this.jobsByBase.get(baseId) ?? [];
+    this.listedBases.push(baseId);
+    return (this.jobsByBase.get(baseId) ?? []).filter(
+      (job) => job.status === "active" || job.status === "blocked"
+    );
   }
 
   async findOutputByOrdinal(
@@ -195,14 +198,19 @@ class FakeRepo implements ManufacturingSettlementRepo {
 }
 
 function makeDeps(
-  jobs: ManufacturingJobRecord[],
-  energy: { availableEnergyWh?: number; powerW?: number; deltaSimMs?: number } = {}
+  jobs: ManufacturingJobRecord[] | Array<[string, ManufacturingJobRecord[]]>,
+  energy: { availableEnergyWh?: number; powerW?: number; deltaSimMs?: number; baseId?: string } = {}
 ) {
   const catalog = new FakeCatalog();
   const settleAssets = new FakeSettleAssets();
   const settleRobots = new FakeSettleRobots();
-  const repo = new FakeRepo([["base-1", jobs]]);
+  const byBase: Array<[string, ManufacturingJobRecord[]]> =
+    jobs.length > 0 && Array.isArray(jobs[0])
+      ? (jobs as Array<[string, ManufacturingJobRecord[]]>)
+      : [["base-1", jobs as ManufacturingJobRecord[]]];
+  const repo = new FakeRepo(byBase);
   const deps: ManufacturingSettlementDeps = {
+    baseId: energy.baseId ?? "base-1",
     availableEnergyWh: energy.availableEnergyWh ?? 30,
     powerW: energy.powerW ?? 1500,
     deltaSimMs: energy.deltaSimMs ?? 3_600_000,
@@ -224,7 +232,7 @@ describe("settleManufacturing", () => {
 
     const result = await settleManufacturing(tx, now, deps);
 
-    expect(result).toEqual({ basesSettled: 1, unitsProduced: 1, jobsCompleted: 1, jobsBlocked: 0 });
+    expect(result).toEqual({ unitsProduced: 1, jobsCompleted: 1, jobsBlocked: 0, energyUsedWh: 30 });
     expect(settleAssets.consumed).toEqual(UNIT_SHARE);
     expect(settleAssets.devices).toEqual([
       {
@@ -395,7 +403,7 @@ describe("settleManufacturing", () => {
     expect(settleAssets.consumed).toHaveLength(0);
   });
 
-  it("需求侧封顶：可用能受 powerW×Δh 限制（1500W×1h 上限），多基地逐基地 FIFO 推进", async () => {
+  it("需求侧封顶：可用能受 powerW×Δh 限制（1500W×1h 上限）；只结算 deps.baseId 本基地（多基地隔离）", async () => {
     const jobA = makeJob({
       id: "job-a",
       outputsPlanned: 2,
@@ -406,20 +414,153 @@ describe("settleManufacturing", () => {
       outputsPlanned: 2,
       reservedInputs: UNIT_SHARE.map((item) => ({ ...item, quantity: item.quantity * 2 }))
     });
-    const { deps, settleAssets } = makeDeps([jobA, jobB], {
-      availableEnergyWh: 999_999,
-      powerW: 1500,
-      deltaSimMs: 3_600_000
+    // 另一基地（暂停或租约失效——不在本次结算里）的在途工单。
+    const otherJob = makeJob({
+      id: "job-other",
+      baseId: "base-2",
+      outputsPlanned: 2,
+      currentUnitWorkDone: 7,
+      reservedInputs: UNIT_SHARE.map((item) => ({ ...item, quantity: item.quantity * 2 }))
     });
+    const otherBefore = structuredClone(otherJob);
+    const { deps, settleAssets, settleRobots, repo } = makeDeps(
+      [
+        ["base-1", [jobA, jobB]],
+        ["base-2", [otherJob]]
+      ],
+      { availableEnergyWh: 999_999, powerW: 1500, deltaSimMs: 3_600_000, baseId: "base-1" }
+    );
 
     const result = await settleManufacturing(tx, now, deps);
 
-    // 1500 工作点/单 ≥ 2×30：每单两台全部产出（封顶只体现为工作点=1500 而非 999999）
-    expect(result.basesSettled).toBe(1);
+    // 1500 工作点预算 ≥ 2×30 + 2×30：本基地两单各两台全部产出，实际只用 120（封顶=1500 而非 999999）。
     expect(result.unitsProduced).toBe(4);
+    expect(result.energyUsedWh).toBe(120);
     expect(jobA.outputsDone).toBe(2);
     expect(jobB.outputsDone).toBe(2);
     expect(settleAssets.devices.filter((d) => d.sourceOperation.startsWith("job:job-a"))).toHaveLength(2);
     expect(settleAssets.devices.filter((d) => d.sourceOperation.startsWith("job:job-b"))).toHaveLength(2);
+    // 多基地隔离：只读本基地工单；另一基地逐字段不变、零产出、零消耗、零写入。
+    expect(repo.listedBases).toEqual(["base-1"]);
+    expect(otherJob).toEqual(otherBefore);
+    expect(settleAssets.devices.every((d) => d.baseId === "base-1")).toBe(true);
+    expect(settleRobots.operators.every((o) => o.baseId === "base-1")).toBe(true);
+    expect(repo.saved.some((patch) => patch.jobId === "job-other")).toBe(false);
+  });
+
+  it("同基地多张工单按 FIFO 分摊本子 tick 预算：先到先得，合计不超过预算，排队单保持 active", async () => {
+    const first = makeJob({
+      id: "job-first",
+      outputsPlanned: 2,
+      reservedInputs: UNIT_SHARE.map((item) => ({ ...item, quantity: item.quantity * 2 }))
+    });
+    const second = makeJob({
+      id: "job-second",
+      outputsPlanned: 2,
+      reservedInputs: UNIT_SHARE.map((item) => ({ ...item, quantity: item.quantity * 2 }))
+    });
+    // 1 基地分钟 × 1500W = 25Wh 预算。
+    const { deps, settleAssets } = makeDeps([first, second], {
+      availableEnergyWh: 25,
+      powerW: 1500,
+      deltaSimMs: 60_000
+    });
+
+    const result = await settleManufacturing(tx, now, deps);
+
+    expect(first.currentUnitWorkDone).toBeCloseTo(25, 6);
+    expect(second.currentUnitWorkDone).toBe(0);
+    expect(second.status).toBe("active");
+    expect(second.blockedReason).toBeNull();
+    expect(result.energyUsedWh).toBeCloseTo(25, 6);
+    expect(result.unitsProduced).toBe(0);
+    expect(settleAssets.consumed).toHaveLength(0);
+  });
+
+  it("FIFO 余量顺延：前单只差 10 点时拿 10 点完工，剩余 15 点给下一单", async () => {
+    const first = makeJob({ id: "job-first", outputsPlanned: 1, currentUnitWorkDone: 20 });
+    const second = makeJob({
+      id: "job-second",
+      outputsPlanned: 2,
+      reservedInputs: UNIT_SHARE.map((item) => ({ ...item, quantity: item.quantity * 2 }))
+    });
+    const { deps } = makeDeps([first, second], {
+      availableEnergyWh: 25,
+      powerW: 1500,
+      deltaSimMs: 60_000
+    });
+
+    const result = await settleManufacturing(tx, now, deps);
+
+    expect(first.status).toBe("completed");
+    expect(first.outputsDone).toBe(1);
+    expect(second.currentUnitWorkDone).toBeCloseTo(15, 6);
+    expect(result.energyUsedWh).toBeCloseTo(25, 6);
+    expect(first.currentUnitWorkDone + second.currentUnitWorkDone).toBeLessThanOrEqual(25 + 1e-6);
+  });
+
+  it("排队单曾因缺电阻塞：本子 tick 制造线有电（被前单用满）→ 解除缺电阻塞回 active，工作量不动", async () => {
+    const first = makeJob({
+      id: "job-first",
+      outputsPlanned: 2,
+      reservedInputs: UNIT_SHARE.map((item) => ({ ...item, quantity: item.quantity * 2 }))
+    });
+    const second = makeJob({
+      id: "job-second",
+      status: "blocked",
+      blockedReason: POWER_BLOCK_REASON,
+      currentUnitWorkDone: 3
+    });
+    const { deps } = makeDeps([first, second], { availableEnergyWh: 25, deltaSimMs: 60_000 });
+
+    await settleManufacturing(tx, now, deps);
+
+    expect(second.status).toBe("active");
+    expect(second.blockedReason).toBeNull();
+    expect(second.currentUnitWorkDone).toBe(3);
+  });
+});
+
+describe("settleManufacturing > 无电但单台工作量已够", () => {
+  it("预算为 0 时，工作量已达 workPerUnit 的单台仍落产出（不卡在缺电阻塞）", async () => {
+    const job = makeJob({ outputsPlanned: 1, currentUnitWorkDone: 30 });
+    const { deps, settleAssets } = makeDeps([job], { availableEnergyWh: 0 });
+
+    const result = await settleManufacturing(tx, now, deps);
+
+    expect(result.unitsProduced).toBe(1);
+    expect(result.jobsBlocked).toBe(0);
+    expect(job.status).toBe("completed");
+    expect(settleAssets.consumed).toEqual(UNIT_SHARE);
+  });
+});
+
+describe("measureManufacturingDemand", () => {
+  it("只统计本基地、内容有效工单的剩余工作量", async () => {
+    const running = makeJob({ id: "job-run", outputsPlanned: 2, outputsDone: 1, currentUnitWorkDone: 12 });
+    const stale = makeJob({ id: "job-stale", recipeRevision: 2 });
+    const other = makeJob({ id: "job-other", baseId: "base-2", outputsPlanned: 5 });
+    const { deps, repo } = makeDeps(
+      [
+        ["base-1", [running, stale]],
+        ["base-2", [other]]
+      ],
+      { baseId: "base-1" }
+    );
+
+    const demand = await measureManufacturingDemand(tx, "base-1", deps);
+
+    // 剩 1 台 × 30 − 已做 12 = 18；修订不一致的工单不计负载，但仍计入可结算数（需落 content_missing）。
+    expect(demand).toEqual({ settleableJobs: 2, pendingWorkWh: 18 });
+    expect(repo.listedBases).toEqual(["base-1"]);
+  });
+
+  it("本基地无可结算工单 → 0/0", async () => {
+    const { deps } = makeDeps([], { baseId: "base-1" });
+
+    expect(await measureManufacturingDemand(tx, "base-1", deps)).toEqual({
+      settleableJobs: 0,
+      pendingWorkWh: 0
+    });
   });
 });

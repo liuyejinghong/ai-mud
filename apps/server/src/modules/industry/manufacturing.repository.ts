@@ -67,9 +67,9 @@ export interface ManufacturingJobStore {
 }
 
 export interface ManufacturingSettlementRepo {
-  // 有可结算工单（active 或 blocked——blocked 需要在复电时恢复）的基地。
-  listBasesWithSettleableJobs(tx: ManufacturingTx): Promise<string[]>;
-  // 单基地可结算工单，FIFO 按 created_at（合同 §4.1）。
+  // 单基地可结算工单（active 或 blocked——blocked 需要在复电时恢复），FIFO 按 created_at（合同 §4.1）。
+  // 结算只按基地读：不提供“全服有工单的基地”查询（2026-09-25 B001——全服遍历曾让暂停/离线基地
+  // 被别人的 tick 推进）。
   listSettleableJobs(tx: ManufacturingTx, baseId: string): Promise<ManufacturingJobRecord[]>;
   findOutputByOrdinal(
     tx: ManufacturingTx,
@@ -184,14 +184,6 @@ export class ManufacturingRepository
   }
 
   // ---------- 结算读+写面 ----------
-
-  async listBasesWithSettleableJobs(tx: ManufacturingTx): Promise<string[]> {
-    const rows = await tx
-      .select({ baseId: baseManufacturingJobs.baseId })
-      .from(baseManufacturingJobs)
-      .where(inArray(baseManufacturingJobs.status, [...SETTLEABLE_STATUSES]));
-    return [...new Set(rows.map((row) => row.baseId))];
-  }
 
   async listSettleableJobs(
     tx: ManufacturingTx,
