@@ -475,7 +475,8 @@ describe("教程首次协作选择", () => {
     expect(repo.records[0]?.status).toBe("pending");
     expect(gateway.requests).toHaveLength(0);
     expect(await previewPending(tx, BASE_ID, requestId, deps)).toEqual({
-      operatorId: "op-t1", groupId: "transport", batteryWh: 9000, batteryCapacityWh: 10000
+      allowed: true,
+      helper: { operatorId: "op-t1", groupId: "transport", batteryWh: 9000, batteryCapacityWh: 10000 }
     });
 
     const result = await decideFirstRequest(tx, BASE_ID, {

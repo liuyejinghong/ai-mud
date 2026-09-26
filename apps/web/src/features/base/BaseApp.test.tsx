@@ -264,6 +264,30 @@ describe("BaseApp", () => {
     expect(provision).toHaveBeenCalledOnce();
   });
 
+  it("注册仍在 provision 时，前台轮询不会抢先展示未获控制的快照", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    vi.mocked(getSnapshot).mockRejectedValueOnce(unauthorized()).mockResolvedValue(buildSnapshot());
+    vi.mocked(playtestRegister).mockResolvedValue({
+      user: { accountId: "account-9", email: "p@e.test" }, baseId: "base-1", csrfToken: "csrf-1"
+    });
+    let finishProvision!: (value: { baseId: string; duplicate: boolean }) => void;
+    vi.mocked(provision).mockImplementation(() => new Promise((resolve) => { finishProvision = resolve; }));
+    vi.mocked(heartbeat).mockResolvedValue({ controlToken: "control-1", leaseUntil: "2126-01-01T08:02:00.000Z", timeMode: "running" });
+    render(<BaseApp />);
+    fireEvent.change(await screen.findByLabelText("邮箱"), { target: { value: "p@e.test" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "领取试玩基地" }));
+    await waitFor(() => expect(provision).toHaveBeenCalledOnce());
+
+    fireEvent(document, new Event("visibilitychange"));
+    expect(getSnapshot).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId("base-shell")).toBeNull();
+
+    finishProvision({ baseId: "base-1", duplicate: false });
+    expect(await screen.findByTestId("base-shell")).toBeTruthy();
+    expect(heartbeat).toHaveBeenCalledWith({ action: "acquire" }, "csrf-1");
+  });
+
   it("已有账号登录成功后同样自动 provision", async () => {
     vi.mocked(getSnapshot)
       .mockRejectedValueOnce(unauthorized())

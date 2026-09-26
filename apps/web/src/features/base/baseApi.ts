@@ -2,6 +2,8 @@
 // 数据只来自冻结 REST 面（docs/reviews/base-operations/m12-p-contract.md §6）与 @ai-mud/shared DTO。
 import type {
   BaseClockCommandInputDto,
+  BaseHeartbeatInputDto,
+  BaseHeartbeatResultDto,
   AcceptOrderInputDto,
   CreatePurchaseInputDto,
   DeliverOrderInputDto,
@@ -10,7 +12,9 @@ import type {
   CancelManufacturingJobResultDto,
   CreateManufacturingJobInputDto,
   CreateManufacturingJobResultDto,
-  CreateProjectInputDto
+  CreateProjectInputDto,
+  CooperationDecisionInputDto,
+  CooperationDecisionResultDto
 } from "@ai-mud/shared";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:3000";
@@ -96,30 +100,6 @@ export interface ProvisionResultDto {
   duplicate: boolean;
 }
 
-export interface HeartbeatResultDto {
-  controlToken: string | null;
-  leaseUntil: string | null;
-  timeMode: BaseTimeMode;
-}
-
-export interface HeartbeatInputDto {
-  action: "acquire" | "renew" | "release";
-  controlToken?: string;
-}
-
-export interface CooperationDecisionInputDto {
-  action: "support" | "wait";
-  commandId: string;
-  expectedHelperOperatorId?: string;
-}
-
-export interface CooperationDecisionResultDto {
-  requestId: string;
-  status: "accepted" | "declined";
-  helperOperatorId?: string;
-  duplicate: boolean;
-}
-
 export interface ClockCommandResultDto {
   timeMode: BaseTimeMode;
   speed: number;
@@ -165,8 +145,8 @@ export function playtestRegister(
   });
 }
 
-export function heartbeat(input: HeartbeatInputDto, csrfToken: string): Promise<HeartbeatResultDto> {
-  return request<HeartbeatResultDto>("/base/heartbeat", {
+export function heartbeat(input: BaseHeartbeatInputDto, csrfToken: string): Promise<BaseHeartbeatResultDto> {
+  return request<BaseHeartbeatResultDto>("/base/heartbeat", {
     method: "POST",
     csrfToken,
     body: input,

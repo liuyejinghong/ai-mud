@@ -73,6 +73,7 @@ export interface CooperationRequestDto {
   status: CooperationStatus;
   resolutionReason: CooperationResolutionReason | null;
   helperOperatorId: string | null;
+  playerDecisionAllowed: boolean;
   proposedHelper: CooperationHelperDto | null;
   question: string;
   createdAt: string;

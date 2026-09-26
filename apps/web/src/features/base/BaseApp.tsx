@@ -172,6 +172,7 @@ export function BaseApp({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isAuthBusy, setIsAuthBusy] = useState(false);
+  const authenticatingRef = useRef(false);
   const [authError, setAuthError] = useState<string | null>(null);
   // 登录表单状态挂在 BaseApp 上而不是 AuthPanel 里；App 在登录/未登录两种形态下
   // 都在同一位置渲染 BaseApp，实例（连同这里的 state）会跨越“登录→退出”保留。
@@ -308,7 +309,7 @@ export function BaseApp({
   // 首次前台快照在 acquire 后读取；轮询只读已提交的服务端事实。
   useEffect(() => {
     const poll = () => {
-      if (document.visibilityState !== "visible" || acquiringRef.current) return;
+      if (document.visibilityState !== "visible" || acquiringRef.current || authenticatingRef.current) return;
       void refreshSnapshot();
     };
     void (async () => {
@@ -372,6 +373,7 @@ export function BaseApp({
   }, [csrfToken, acquireControl, refreshSnapshot, releaseControl]);
 
   const handleAuthSubmit = async () => {
+    authenticatingRef.current = true;
     setIsAuthBusy(true);
     setAuthError(null);
     try {
@@ -411,6 +413,7 @@ export function BaseApp({
     } catch (error) {
       setAuthError(describeError(error));
     } finally {
+      authenticatingRef.current = false;
       setIsAuthBusy(false);
     }
   };

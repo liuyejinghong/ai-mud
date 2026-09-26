@@ -108,6 +108,8 @@ export interface CooperationDeps {
   robots: CooperationRobotPort;
   gateway: CooperationDecisionPort;
   clock: CooperationClock;
+  // 同一次批量结算内新建的请求，提交前不能因模拟时间跳跃而过期。
+  settlementStart?: Date;
   // DecisionRequestDto 上下文：planRevision 用 base_revision（bases 行），epoch 为基地纪元。
   baseRevision: number;
   epoch: number;
@@ -362,6 +364,7 @@ export async function detectAndResolveCooperation(
   // 先过期，再决定是否建新请求；同一步有任何终态记录都不再重开。
   for (const request of pending) {
     if (lifecycle.closedRequestIds.has(request.requestId)) continue;
+    if (deps.settlementStart && request.createdAt >= deps.settlementStart) continue;
     if (now.getTime() - request.createdAt.getTime() >= COOPERATION_TTL_MS) {
       await repo.expire(tx, request.requestId);
       lifecycle.closedRequestIds.add(request.requestId);
@@ -482,22 +485,26 @@ async function requestStillNeedy(
     !ownWorkerAvailable(request, operators);
 }
 
-// 快照只展示第一条仍可由玩家决定的请求；资格与写命令使用同一候选函数。
+// 快照只允许玩家决定第一条仍需支援的请求；资格与写命令使用同一候选函数。
 export async function previewPending(
   tx: CooperationTx,
   baseId: string,
   requestId: string,
   deps: { robots: Pick<CooperationRobotPort, "listOperators">; openCooperation: CooperationDecisionDeps["openCooperation"] }
-): Promise<CooperationProposedHelper | null> {
+): Promise<{ allowed: boolean; helper: CooperationProposedHelper | null }> {
   const repo = deps.openCooperation(tx);
   const requests = await repo.listByBase(tx, baseId);
   const request = requests.find((entry) => entry.requestId === requestId);
-  if (!request || request.status !== "pending" || requestId !== firstRequestId(requests)) return null;
+  if (!request || request.status !== "pending" || requestId !== firstRequestId(requests)) {
+    return { allowed: false, helper: null };
+  }
   const operators = await deps.robots.listOperators(baseId);
-  if (!await requestStillNeedy(tx, baseId, repo, request, operators)) return null;
+  if (!await requestStillNeedy(tx, baseId, repo, request, operators)) {
+    return { allowed: false, helper: null };
+  }
   const reserved = new Set(requests.flatMap((entry) =>
     entry.status === "accepted" && entry.helperOperatorId ? [entry.helperOperatorId] : []));
-  return eligibleHelpers(operators, request.fromGroupId, reserved)[0] ?? null;
+  return { allowed: true, helper: eligibleHelpers(operators, request.fromGroupId, reserved)[0] ?? null };
 }
 
 // 调用方持有基地行和回执锁；这里锁请求行后重验步骤，再经 npc 端口锁/条件分配机器人。

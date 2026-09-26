@@ -1,13 +1,13 @@
 // M16-B 采购创建/到货结算业务（m16-p-contract.md §1/§3）。
 // 采购（同事务）：价目经 shared PURCHASE_CATALOG 查价（未知 itemId → CONTENT_INCOMPATIBLE）
 //   → credits 条件扣减（不足 RESOURCE_INSUFFICIENT，不产生在途行）→ 插 in_transit
-//   （arrivesAtSim = 基地 simTime + PURCHASE_TRANSIT_SIM_HOURS）→ 回执落结果；
+//   （arrivesAtSim = 基地 simTime + PURCHASE_TRANSIT_SIM_MINUTES）→ 回执落结果；
 //   重放一致 → 原结果（duplicate:true），不一致 → IDEMPOTENCY_CONFLICT。
 // 到货（tick 消费，BOUNDARY-03：基地 tick 统一结算，付款≠到货）：in_transit 且
 //   arrivesAtSim<=sim → 逐单 inventory upsert 入库 + delivered（同事务）。
 // 回据：actorScope=base:{baseId}，kind=base.purchase。一切失败发生在 claim 回据之后：
 // 调用方 db.transaction 捕获异常整体回滚（含 claim），失败不残留收据、无部分提交。
-import { PURCHASE_CATALOG, PURCHASE_TRANSIT_SIM_HOURS } from "@ai-mud/shared";
+import { PURCHASE_CATALOG, PURCHASE_TRANSIT_SIM_MINUTES } from "@ai-mud/shared";
 import {
   hashRequest,
   type AssetMutationPort,
@@ -15,7 +15,6 @@ import {
 } from "../ledger/asset-mutation.service.js";
 import {
   BaseOperationError,
-  addSimHours,
   type EconomyClockPort,
   type EconomyLookupPort,
   type EconomyPrincipal,
@@ -146,7 +145,7 @@ export class PurchaseService {
     }
     const costCredits = entry.unitCostCredits * input.quantity;
 
-    // 命令时间取基地 simTime（独立基地时钟）；到货 = sim + PURCHASE_TRANSIT_SIM_HOURS。
+    // 命令时间取基地 simTime（独立基地时钟）；到货 = sim + PURCHASE_TRANSIT_SIM_MINUTES。
     const base = await this.requireBase(tx, baseId);
     const sim = base.simTime;
 
@@ -156,7 +155,7 @@ export class PurchaseService {
       throw new BaseOperationError(409, "RESOURCE_INSUFFICIENT", "credits 不足，无法采购。");
     }
 
-    const arrivesAtSim = addSimHours(sim, PURCHASE_TRANSIT_SIM_HOURS);
+    const arrivesAtSim = new Date(sim.getTime() + PURCHASE_TRANSIT_SIM_MINUTES * 60_000);
     const { purchaseId } = await this.deps.store.insertPurchaseInTransit(tx, {
       baseId,
       itemId: input.itemId,

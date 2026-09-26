@@ -30,6 +30,7 @@ function makeRequest(overrides: Partial<CooperationRequestDto> & { proposedHelpe
     status: "pending",
     resolutionReason: null,
     helperOperatorId: null,
+    playerDecisionAllowed: true,
     proposedHelper: null,
     question: "资源运输组能派一台车把电缆运到建设位 A 吗？",
     createdAt: "2026-09-19T08:00:00.000Z",
@@ -155,5 +156,11 @@ describe("CooperationPanel", () => {
     render(<CooperationPanel requests={[makeRequest({ proposedHelper: null })]} devices={devices} onDecision={vi.fn()} />);
     expect((screen.getByRole("button", { name: "批准跨组支援" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "等待本组充电" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("后续 pending 只显示状态，不提供会被服务端拒绝的玩家按钮", () => {
+    render(<CooperationPanel requests={[makeRequest({ playerDecisionAllowed: false })]} devices={devices} onDecision={vi.fn()} />);
+    expect(screen.getByText("等待支援")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "等待本组充电" })).toBeNull();
   });
 });

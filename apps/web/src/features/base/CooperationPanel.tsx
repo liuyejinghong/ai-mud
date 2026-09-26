@@ -44,9 +44,7 @@ export function CooperationPanel({ requests, devices, isBusy = false, onDecision
   ).length;
   const deviceNames = new Map(devices.map((device) => [device.operatorId, device.name]));
   const requestItem = (request: CooperationRequestDto) => {
-    const helper = (request as CooperationRequestDto & { proposedHelper?: {
-      operatorId: string; groupId: string; batteryWh: number; batteryCapacityWh: number;
-    } | null }).proposedHelper ?? null;
+    const helper = request.proposedHelper;
     return (
     <li
       key={request.requestId}
@@ -61,7 +59,7 @@ export function CooperationPanel({ requests, devices, isBusy = false, onDecision
           : COOPERATION_STATUS_LABELS[request.status]}
       </span>
       <span className="base-cooperation-question">{request.question}</span>
-      {request.status === "pending" && onDecision ? (
+      {request.status === "pending" && request.playerDecisionAllowed && onDecision ? (
         <>
           <span className="base-cooperation-helper">
             {helper

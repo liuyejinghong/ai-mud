@@ -104,7 +104,7 @@ export interface BaseSettlementDeps {
         stepIndex: number;
         groupId: string;
       }>,
-      meta: { baseRevision: number; epoch: number; clock: { now(): Date } }
+      meta: { baseRevision: number; epoch: number; clock: { now(): Date }; settlementStart: Date }
     ): Promise<unknown>;
     // accepted helper 转入 working。
     applyAcceptedHelpers(
@@ -165,7 +165,8 @@ export class BaseSettlementService {
           new Date(boundary - WORK_MINUTE_MS),
           WORK_MINUTE_MS,
           new Date(boundary),
-          catalog
+          catalog,
+          base.simTime
         );
       }
       await this.deps.clock.saveSimAdvance(tx, base.baseId, nextSimTime, base.nextLastAdvancedAt);
@@ -179,7 +180,8 @@ export class BaseSettlementService {
     simTime: Date,
     deltaSimMs: number,
     nextSimTime: Date,
-    catalog: SettlementCatalogPort
+    catalog: SettlementCatalogPort,
+    settlementStart: Date
   ): Promise<void> {
     // ---------- M16 经济 tick：过期订单→failed、补单、采购到货入库 ----------
     if (this.deps.economy) {
@@ -397,7 +399,8 @@ export class BaseSettlementService {
       await this.deps.cooperation.detectAndResolve(tx, baseId, needySteps, {
         baseRevision: 1,
         epoch: 1,
-        clock: { now: () => simTime }
+        clock: { now: () => simTime },
+        settlementStart
       });
       await this.deps.cooperation.applyAcceptedHelpers(tx, baseId, runnableSteps);
     }

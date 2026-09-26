@@ -136,7 +136,8 @@ describe("BaseShell", () => {
       cooperationRequests: [{
         requestId: "request-1", projectId: "project-1", projectName: "安装太阳能阵列",
         stepIndex: 1, fromGroupId: "engineering", helperGroupId: "transport",
-        status: "pending", resolutionReason: null, helperOperatorId: null, proposedHelper: null,
+        status: "pending", resolutionReason: null, helperOperatorId: null,
+        playerDecisionAllowed: true, proposedHelper: null,
         question: "运输组缺工", createdAt: "2126-01-01T08:00:00.000Z"
       }]
     });

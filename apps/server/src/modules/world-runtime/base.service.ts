@@ -244,11 +244,14 @@ export interface BaseServiceDeps {
       }>
     >;
     previewPending?(tx: BaseRepoTx, baseId: string, requestId: string): Promise<{
-      operatorId: string;
-      groupId: string;
-      batteryWh: number;
-      batteryCapacityWh: number;
-    } | null>;
+      allowed: boolean;
+      helper: {
+        operatorId: string;
+        groupId: string;
+        batteryWh: number;
+        batteryCapacityWh: number;
+      } | null;
+    }>;
   };
   weather?: {
     current(baseId: string, simTime: Date): Promise<{
@@ -562,7 +565,11 @@ export class BaseService {
       }));
 
       const cooperationRequests = await Promise.all(
-        (await this.deps.cooperationRead.listByBase(baseId)).map(async (request) => ({
+        (await this.deps.cooperationRead.listByBase(baseId)).map(async (request) => {
+          const preview = request.status === "pending" && this.deps.cooperationRead.previewPending
+            ? await this.deps.cooperationRead.previewPending(tx, baseId, request.id)
+            : null;
+          return {
           requestId: request.id,
           projectId: request.projectId,
           projectName: projects.find((project) => project.projectId === request.projectId)?.name ?? "",
@@ -572,12 +579,12 @@ export class BaseService {
           status: request.status as CooperationStatus,
           resolutionReason: request.resolutionReason,
           helperOperatorId: request.helperOperatorId,
-          proposedHelper: request.status === "pending" && this.deps.cooperationRead.previewPending
-            ? await this.deps.cooperationRead.previewPending(tx, baseId, request.id)
-            : null,
+          playerDecisionAllowed: preview?.allowed ?? false,
+          proposedHelper: preview?.helper ?? null,
           question: request.question,
           createdAt: request.createdAt?.toISOString() ?? ""
-        }))
+          };
+        })
       );
       const unavailableProjects = new Set(
         projectRecords
