@@ -17,9 +17,7 @@ const devices: BaseDeviceDto[] = [
   }
 ];
 
-function makeRequest(overrides: Partial<CooperationRequestDto> & { proposedHelper?: {
-  operatorId: string; groupId: string; batteryWh: number; batteryCapacityWh: number;
-} | null } = {}): CooperationRequestDto {
+function makeRequest(overrides: Partial<CooperationRequestDto> = {}): CooperationRequestDto {
   return {
     requestId: "request-1",
     projectId: "project-1",
