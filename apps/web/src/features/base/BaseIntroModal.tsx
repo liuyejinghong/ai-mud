@@ -52,7 +52,7 @@ export function BaseIntroModal({
           随船物资已入库{credits === undefined ? "" : `，当前账款 ${credits} credits`}。新基地的开局资金由着陆区拨付。
         </p>
         <p className="base-intro-goal">
-          第一个任务：把运抵的太阳电池阵安装到建设位 A，让现有的 15 kW 峰值发电能力再增加 5 kW。
+          第一个任务：把运抵的太阳能设施安装到建设位 A，让现有的 15 kW 峰值发电能力再增加 5 kW。
         </p>
         <ol className="base-intro-steps">
           <li>若时间暂停，点「恢复计时」；推荐 ×4 观察工程；</li>
