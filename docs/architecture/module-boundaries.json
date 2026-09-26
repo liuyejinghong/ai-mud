@@ -290,7 +290,7 @@
         "config": 0
       }
     },
-    "files": 360
+    "files": 361
   },
   "files": [
     {
@@ -2854,6 +2854,13 @@
       "layer": "test",
       "scope": "test",
       "note": "R1 返工回归（#4-#7/stopping/隔离/手工恢复/双槽）"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/landing/landing-upgrade.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "G13 旧schema升级"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",
