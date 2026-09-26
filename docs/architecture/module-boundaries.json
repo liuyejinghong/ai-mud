@@ -2033,6 +2033,20 @@
       "note": "M12-D 默认 release 数据（fixture 数值，纯储能过夜开局）"
     },
     {
+      "path": "packages/content/src/base/tutorial-release.ts",
+      "module": "content",
+      "layer": "content",
+      "scope": "production",
+      "note": "六段教程内置内容版本与新档种子"
+    },
+    {
+      "path": "packages/content/src/base/tutorial-release.test.ts",
+      "module": "content",
+      "layer": "test",
+      "scope": "test",
+      "note": "教程内容兼容校验"
+    },
+    {
       "path": "apps/web/src/features/base/BaseApp.tsx",
       "module": "client_text",
       "layer": "client_view",
@@ -2261,7 +2275,14 @@
       "module": "content-catalog",
       "layer": "capability",
       "scope": "production",
-      "note": "M13-A 按基地解析 active release（DB 优先，内置兜底）"
+      "note": "按基地解析已知内置或已发布 release；未知 ID 拒绝"
+    },
+    {
+      "path": "apps/server/src/modules/content-catalog/catalog-db.loader.test.ts",
+      "module": "content-catalog",
+      "layer": "test",
+      "scope": "test",
+      "note": "教程目录装载兼容校验"
     },
     {
       "path": "apps/server/src/modules/content-catalog/content-admin.service.test.ts",

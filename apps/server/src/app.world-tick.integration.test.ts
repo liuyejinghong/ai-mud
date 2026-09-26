@@ -375,10 +375,10 @@ describe("world tick orchestration (buildApp + temporary PostgreSQL)", () => {
 
       expect(await readWorldClock()).toBe(floorToTick(resetAt).getTime());
 
-      // 基地侧：下一次 tick 的步对基地不是追补步（旧实现 tickAt=1970-01-01T00:01Z → catchUp=true）。
+      // 基地侧：重置后的时钟仍能结算已确认的前台控制时段。
       const nextTickAt = new Date(floorToTick(resetAt).getTime() + WORLD_RUNTIME_TICK_MS);
-      await client.query(`UPDATE base_control_leases SET lease_until = $1`, [
-        new Date(Date.now() + 10 * 60_000)
+      await client.query(`UPDATE base_control_leases SET lease_until = $1, updated_at = $2`, [
+        new Date(Date.now() + 10 * 60_000), new Date()
       ]);
       await client.query(`UPDATE bases SET time_mode = 'running', last_advanced_at = $1`, [
         new Date(Date.now() - 60_000)
@@ -389,7 +389,7 @@ describe("world tick orchestration (buildApp + temporary PostgreSQL)", () => {
       expect(advanceable.map((base) => base.baseId).sort()).toEqual(
         players.map((player) => player.baseId).sort()
       );
-      expect(advanceable.every((base) => base.catchUp === false)).toBe(true);
+      expect(advanceable.every((base) => base.deltaSimMs > 0)).toBe(true);
 
       // 世界侧：一次唤醒只需推进 1 步即追平（旧实现从 1970 起每次 60 步仍追不平）。
       const result = await legacyApp.di.worldRuntime.settleDue(nextTickAt);

@@ -43,7 +43,7 @@ import { IndustryRepository } from "../../modules/industry/industry.repository.j
 import { RobotFactory } from "../../modules/npc/robot-factory.js";
 import { RobotRuntimeService } from "../../modules/npc/robot-runtime.js";
 import { InMemoryRateLimitService } from "../../modules/rate-limit/rate-limit.service.js";
-import { BaseRepository } from "../../modules/world-runtime/base.repository.js";
+import { BaseRepository, scopeTickTransactionToBase } from "../../modules/world-runtime/base.repository.js";
 import { BaseService } from "../../modules/world-runtime/base.service.js";
 import { systemWorldClock } from "../../modules/world-runtime/world-clock.js";
 import { BaseClockUseCase } from "./base-clock.js";
@@ -276,6 +276,17 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     cancel: new CancelProjectCase(db, construction)
   };
 
+  const cooperationDecision = {
+    auth: authFacade,
+    decide: new CooperationDecisionCase(db, baseRepo, {
+      decide: (tx, baseId, decision) =>
+        decideFirstRequest(tx, baseId, decision, {
+          robots: new RobotRuntimeService(tx),
+          openCooperation: (decisionTx) => new CooperationRepository(decisionTx)
+        })
+    })
+  };
+
   // 基地结算事务内只运行确定性 RULE；外部模型网络不能占着基地锁等待。
   const recordAuditInCallerTx = async (tx: unknown, row: DecisionAuditRow) => {
     await (tx as Parameters<Parameters<Db["transaction"]>[0]>[0]).insert(decisionRecords).values({
@@ -334,7 +345,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
 
 
 
-  const economy = createEconomyUseCases(db, catalog);
+  const economy = createEconomyUseCases(db, catalog, catalogResolver);
   const economyTick = {
     markExpiredAndRefresh: (tx: IndustryTx, baseId: string, sim: Date) =>
       new OrderRepository(tx)
@@ -354,24 +365,25 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     sites: baseRepo,
     assets: baseAssets,
     catalog,
+    catalogResolver,
     openIndustry: (tx) => new IndustryRepository(tx),
     openRobots: (tx) => (tx === db ? robotRuntime : new RobotRuntimeService(tx)),
     cooperation,
     economy: economyTick,
     // 制造按基地结算（B001）：baseId 必须由 settleBase 传入，禁止在此遍历全服工单。
     manufacturing: {
-      measure: (tx, baseId) =>
+      measure: async (tx, baseId) =>
         measureManufacturingDemand(tx, baseId, {
-          catalog,
+          catalog: await catalogResolver.forBase(tx, baseId),
           openManufacturing: (settleTx) => new ManufacturingRepository(settleTx)
         }),
-      settle: (tx, baseId, simTime, input) =>
+      settle: async (tx, baseId, simTime, input) =>
         settleManufacturing(tx, simTime, {
           baseId,
           availableEnergyWh: input.availableEnergyWh,
           powerW: input.powerW,
           deltaSimMs: input.deltaSimMs,
-          catalog,
+          catalog: await catalogResolver.forBase(tx, baseId),
           settleAssets: baseAssets,
           settleRobots: {
             initializeOperator: (settleTx: IndustryTx, input) =>
@@ -406,6 +418,7 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
   return {
     session,
     projects,
+    cooperationDecision,
     settlement,
     manufacturingJobs,
     contentAdmin,
