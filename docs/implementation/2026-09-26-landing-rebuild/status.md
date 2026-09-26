@@ -1,7 +1,7 @@
 # R1 着陆重建 · 实施状态（集成线 GLM-5.3）
 
 工作树：`/private/tmp/yudian-landing-r1-glm53`，分支 `codex/landing-r1-glm53`（基于 2783edb = main ac61a17 + 两份文档提交）。
-候选 HEAD 见交付报告；本文件随实施更新。
+**候选 HEAD：`4b955526e8dd91220e129f72b014c0289717c9d3`**（该 SHA 上 build/typecheck/arch:check/全仓单测 全绿；真 PG 与真浏览器在同一代码树运行通过）。
 
 ## 阶段状态
 
