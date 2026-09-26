@@ -57,7 +57,7 @@ async function orderRecipe(page: import("@playwright/test").Page, recipeName: st
 }
 
 test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投资；回访与缩放", async ({ page }, testInfo) => {
-  test.setTimeout(50 * 60_000);
+  test.setTimeout(55 * 60_000);
   const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
@@ -154,7 +154,16 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await page.getByRole("button", { name: /下采矿单/ }).click();
   await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
   await page.locator(PANEL).getByRole("button", { name: "加工间", exact: true }).click();
-  await waitForText(page, page.locator(PANEL), "制造线缆", 300_000); // 铜料就绪后配方可下
+  // 铜矿 → 冶炼铜料 2 批 → 铜料产出后再下线缆（线缆输入=铜料，需先冶炼）。
+  await waitForText(page, page.locator(PANEL), "冶炼铜料", 120_000);
+  await orderRecipe(page, "冶炼铜料", 2);
+  await waitForText(page, page.locator(QUEUE), "冶炼铜料", 120_000);
+  for (let index = 0; index < 40; index += 1) {
+    await page.waitForTimeout(5_000);
+    const done = await page.locator(QUEUE).textContent().catch(() => "");
+    if (done?.includes("产出 2/2") || !done?.includes("冶炼铜料")) break;
+  }
+  await waitForText(page, page.locator(PANEL), "制造线缆", 120_000);
   await orderRecipe(page, "制造线缆", 1);
 
   // 圈1e：扩建（目标条第 6 步）。
