@@ -134,6 +134,16 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
   let surveyor: OperatorInfo;
   let builders: OperatorInfo[];
   let haulers: OperatorInfo[];
+  // R1 #5：landing 写命令需要有效控制租约——测试用真实 heartbeat 取得（非 SQL 伪造）。
+  let leaseToken: string | null = null;
+  const acquireLease = async (): Promise<string> => {
+    const result = await ops.session.clock.heartbeat(
+      { accountId },
+      { action: "acquire" }
+    );
+    leaseToken = result.controlToken;
+    return result.controlToken!;
+  };
 
   // 推进 N 个模拟分钟：回拨 last_advanced_at（测试专用时钟控制）→ 真结算入口补算。
   async function advanceMinutes(minutes: number): Promise<void> {
@@ -142,11 +152,13 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
       `UPDATE bases SET time_mode = 'running', last_advanced_at = $1 WHERE id = $2`,
       [new Date(now.getTime() - minutes * 60_000), baseId]
     );
+    const token = leaseToken ?? `r1-test-${baseId}`;
+    const leaseUntil = new Date(now.getTime() + 300_000); // 租约有效期 5 分钟（命令守卫要验未过期）
     await harness.client.query(
       `INSERT INTO base_control_leases (base_id, lease_token, lease_until, updated_at)
-       VALUES ($1, 'r1-test', $2, $3)
-       ON CONFLICT (base_id) DO UPDATE SET updated_at = $3, lease_until = $2, lease_token = 'r1-test'`,
-      [baseId, now, now]
+       VALUES ($1, $4, $2, $3)
+       ON CONFLICT (base_id) DO UPDATE SET updated_at = $3, lease_until = $2, lease_token = $4`,
+      [baseId, leaseUntil, now, token]
     );
     let guard = 0;
     while (guard < 200) {
@@ -169,7 +181,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
       const slot = snap.productionSlots?.[0];
       if (slot?.maintenanceBlocked) {
         await ops.production.maintain.execute({ accountId }, {
-          siteId: slot.siteId, commandId: randomUUID()
+          siteId: slot.siteId, commandId: randomUUID(), controlToken: leaseToken ?? undefined
         });
       }
     }
@@ -280,6 +292,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     haulers = await operatorsByGroup(harness.client, baseId, "transport");
     expect(builders.length).toBe(5);
     expect(haulers.length).toBe(4);
+    await acquireLease();
   });
 
   it("G11 新档旧经济入口：直接调用旧采购/接单被后端拒绝（CAPABILITY_UNAVAILABLE）", async () => {
@@ -341,13 +354,15 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
         nodeId: ironNodeId, batches: 1,
         builderOperatorIds: [builders[0]!.operatorId],
         haulerOperatorId: haulers[0]!.operatorId,
-        commandId: randomUUID()
+        commandId: randomUUID(),
+        controlToken: leaseToken ?? undefined
       })
     ).rejects.toMatchObject({ code: "REQUIREMENTS_NOT_MET" });
 
     // 勘探：2 分钟（望山 2 工作点），揭示但不发物资。
     await ops.extraction.survey.execute({ accountId }, {
-      nodeId: ironNodeId, operatorId: surveyor.operatorId, commandId: randomUUID()
+      nodeId: ironNodeId, operatorId: surveyor.operatorId, commandId: randomUUID(),
+      controlToken: leaseToken ?? undefined
     });
     let inventory = await inventoryMap(harness.client, baseId);
     expect(inventory.has("iron_ore")).toBe(false);
@@ -363,7 +378,8 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
       nodeId: ironNodeId, batches: 4,
       builderOperatorIds: [builders[0]!.operatorId, builders[1]!.operatorId],
       haulerOperatorId: haulers[0]!.operatorId,
-      commandId: randomUUID()
+      commandId: randomUUID(),
+      controlToken: leaseToken ?? undefined
     });
     expect(mine).toMatchObject({ status: "active", reservedOre: 16, duplicate: false });
     // 中途检查：第 1 分钟采出未送达 → 库存仍无矿，现场货物 4。
@@ -394,14 +410,16 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     expect(outputs.every((row) => row.item_id === "iron_ore" && row.quantity === 4)).toBe(true);
     // 铜矿 1 批，为后续线缆。
     await ops.extraction.survey.execute({ accountId }, {
-      nodeId: await nodeIdByKey("copper_ridge"), operatorId: surveyor.operatorId, commandId: randomUUID()
+      nodeId: await nodeIdByKey("copper_ridge"), operatorId: surveyor.operatorId, commandId: randomUUID(),
+      controlToken: leaseToken ?? undefined
     });
     await advanceMinutes(2);
     const copperMine = await ops.extraction.createMining.execute({ accountId }, {
       nodeId: await nodeIdByKey("copper_ridge"), batches: 1,
       builderOperatorIds: [builders[0]!.operatorId, builders[1]!.operatorId],
       haulerOperatorId: haulers[0]!.operatorId,
-      commandId: randomUUID()
+      commandId: randomUUID(),
+      controlToken: leaseToken ?? undefined
     });
     await advanceMinutes(2);
     inventory = await inventoryMap(harness.client, baseId);
@@ -416,12 +434,13 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
       nodeId: ironNodeId, batches: 2,
       builderOperatorIds: [builders[2]!.operatorId, builders[3]!.operatorId],
       haulerOperatorId: haulers[1]!.operatorId,
-      commandId: randomUUID()
+      commandId: randomUUID(),
+      controlToken: leaseToken ?? undefined
     });
     const before = (await snapshot()).resourceNodes!.find((node) => node.nodeKey === "iron_north")!;
     expect(before.reservedQuantity).toBe(8);
     const cancelled = await ops.extraction.cancel.execute({ accountId }, {
-      jobId: mine.jobId, commandId: randomUUID()
+      jobId: mine.jobId, commandId: randomUUID(), controlToken: leaseToken ?? undefined
     });
     expect(cancelled).toMatchObject({ status: "cancelled", releasedOre: 8 });
     const after = (await snapshot()).resourceNodes!.find((node) => node.nodeKey === "iron_north")!;
@@ -488,7 +507,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     const spareBefore = (await inventoryMap(harness.client, baseId)).get("spare_part")!.quantity;
     const processingSiteId = blockedSnap.productionSlots![0]!.siteId;
     const maintained = await ops.production.maintain.execute({ accountId }, {
-      siteId: processingSiteId, commandId: randomUUID()
+      siteId: processingSiteId, commandId: randomUUID(), controlToken: leaseToken ?? undefined
     });
     expect(maintained).toMatchObject({ batchesSinceMaintenance: 0, duplicate: false });
     const inventoryAfterMaintain = await inventoryMap(harness.client, baseId);
@@ -497,25 +516,38 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
 
     // 维护后完成剩余批次（结构件 2 + 铜 2 + 线缆 1，FIFO 同槽）。
     await advanceMinutes(3);
+    // 铜料 2 批（预留整单输入 4 铜）；铜料产出后再下线缆单（其输入在创建时预留）。
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-smelt-copper", revision: 1 },
       outputsPlanned: 2, commandId: randomUUID()
     });
-    await advanceMinutes(3); // 槽位模型：单槽一单，先完成铜再下单缆
+    await advanceMinutes(2);
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-make-cable", revision: 1 },
       outputsPlanned: 1, commandId: randomUUID()
     });
-    await advanceMinutes(2);
+    await advanceMinutes(1);
     inventory = await inventoryMap(harness.client, baseId);
     expect(inventory.get("structural_frame")).toMatchObject({ quantity: 4, reserved: 0 });
     expect(inventory.get("copper_ingot")).toMatchObject({ quantity: 1, reserved: 0 }); // 2 − 线缆 1
     expect(inventory.get("wire_cable")).toMatchObject({ quantity: 2, reserved: 0 });
-    // 能源路线终局账本：铁矿 0、铜矿 0、铜料 1、光伏片 12；备件 6−1=5。
+    // 能源路线终局账本：铁矿 0、铜矿 0、铜料 1；备件 6−1=5。
     expect(inventory.get("iron_ore")).toMatchObject({ quantity: 0, reserved: 0 });
     expect(inventory.get("copper_ore")).toMatchObject({ quantity: 0, reserved: 0 });
-    expect(inventory.get("pv_cell")?.quantity).toBe(12);
     expect(inventory.get("spare_part")?.quantity).toBe(5);
+
+    // 用自产部件真正完成首能源扩建：第二座太阳能（发电 4000→8000、光伏片 12→6）。
+    await createProject("landing-expand-solar", await siteIdByKey("expand_a"));
+    inventory = await inventoryMap(harness.client, baseId);
+    expect(inventory.get("structural_frame")).toMatchObject({ quantity: 4, reserved: 4 });
+    await advanceMinutes(4); // 安装 4 点（2 筑垒 2 分钟）+ 验收 2 点（1 望山 2 分钟）
+    const expanded = await snapshot();
+    expect(expanded.power.generationWPeak).toBe(8000);
+    inventory = await inventoryMap(harness.client, baseId);
+    expect(inventory.get("pv_cell")).toMatchObject({ quantity: 6, reserved: 0 });
+    expect(expanded.projects.some(
+      (project) => project.definitionRef.stableId === "landing-expand-solar" && project.status === "completed"
+    )).toBe(true);
   });
 
   it("G08b 组装驮运（robot 产出）：初始电量 0，真实入库设备资产", async () => {
@@ -528,7 +560,8 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
         nodeId, batches,
         builderOperatorIds: [builders[0]!.operatorId, builders[1]!.operatorId],
         haulerOperatorId: haulers[0]!.operatorId,
-        commandId: randomUUID()
+        commandId: randomUUID(),
+        controlToken: leaseToken ?? undefined
       });
       await advanceMinutes(batches * 2 + 1);
       void mine;
@@ -545,17 +578,15 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
       recipeRef: { kind: "recipe", stableId: "landing-smelt-copper", revision: 1 },
       outputsPlanned: 2, commandId: randomUUID()
     });
-    await advanceWithMaintenance(3);
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-make-structural", revision: 1 },
       outputsPlanned: 4, commandId: randomUUID()
     });
-    await advanceWithMaintenance(5);
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-make-cable", revision: 1 },
       outputsPlanned: 1, commandId: randomUUID()
     });
-    await advanceWithMaintenance(2);
+    await advanceWithMaintenance(10);
     inventory = await inventoryMap(harness.client, baseId);
     expect(inventory.get("structural_frame")?.quantity).toBeGreaterThanOrEqual(4);
 
@@ -593,10 +624,10 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
       haulerOperatorId: haulers[2]!.operatorId
     };
     const first = await ops.extraction.createMining.execute({ accountId }, {
-      ...payload, commandId
+      ...payload, commandId, controlToken: leaseToken ?? undefined
     });
     const replay = await ops.extraction.createMining.execute({ accountId }, {
-      ...payload, commandId
+      ...payload, commandId, controlToken: leaseToken ?? undefined
     });
     expect(replay.jobId).toBe(first.jobId);
     expect(replay.duplicate).toBe(true);
@@ -604,21 +635,23 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     // 相同 commandId 不同 payload → IDEMPOTENCY_CONFLICT。
     await expect(
       ops.extraction.createMining.execute({ accountId }, {
-        ...payload, batches: 2, commandId
+        ...payload, batches: 2, commandId, controlToken: leaseToken ?? undefined
       })
     ).rejects.toMatchObject({ code: "IDEMPOTENCY_CONFLICT" });
     // 清场：取消该单，释放设备。
-    await ops.extraction.cancel.execute({ accountId }, { jobId: first.jobId, commandId: randomUUID() });
+    await ops.extraction.cancel.execute({ accountId }, { jobId: first.jobId, commandId: randomUUID(), controlToken: leaseToken ?? undefined });
     // 过期 revision → REVISION_EXPIRED。
     const snap = await snapshot();
     await expect(
       ops.production.powerPolicy.execute({ accountId }, {
-        priority: "charging", commandId: randomUUID(), expectedBaseRevision: snap.baseRevision - 1
+        priority: "charging", commandId: randomUUID(),
+        expectedBaseRevision: snap.baseRevision - 1, controlToken: leaseToken ?? undefined
       })
     ).rejects.toMatchObject({ code: "REVISION_EXPIRED" });
     // 电力策略命令成功并回读。
     const policy = await ops.production.powerPolicy.execute({ accountId }, {
-      priority: "charging", commandId: randomUUID(), expectedBaseRevision: snap.baseRevision
+      priority: "charging", commandId: randomUUID(),
+      expectedBaseRevision: snap.baseRevision, controlToken: leaseToken ?? undefined
     });
     expect(policy).toMatchObject({ priority: "charging", duplicate: false });
     expect((await snapshot()).power.powerPolicy).toBe("charging");
@@ -637,6 +670,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
         `SELECT b.id FROM bases b WHERE b.account_id = $1`, [account]
       )).rows[0]!.id as string;
       accountId = account;
+      await acquireLease();
       await createProject("landing-install-solar", await siteIdByKey("install_solar"));
       if (mode === "one-shot") {
         await advanceMinutes(10);

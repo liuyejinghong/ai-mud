@@ -290,7 +290,7 @@
         "config": 0
       }
     },
-    "files": 359
+    "files": 360
   },
   "files": [
     {
@@ -2847,6 +2847,13 @@
       "layer": "test",
       "scope": "test",
       "note": "R1 landing 工作区状态测试（MOCK fixture）"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/landing/landing-fix.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 返工回归（#4-#7/stopping/隔离/手工恢复/双槽）"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",
