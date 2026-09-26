@@ -37,7 +37,10 @@ export type { ManufacturingTx };
 
 export interface ManufacturingLookupPort {
   findBaseIdByAccount(tx: ManufacturingTx, accountId: string): Promise<string | null>;
-  getBaseForUpdate(tx: ManufacturingTx, baseId: string): Promise<{ id: string } | null>;
+  getBaseForUpdate(
+    tx: ManufacturingTx,
+    baseId: string
+  ): Promise<{ id: string; baseRevision: number } | null>;
 }
 
 export interface ManufacturingAssetPort {
@@ -56,7 +59,29 @@ export interface ManufacturingAssetPort {
 }
 
 export interface ManufacturingCatalogPort {
-  getRecipeTemplate(stableId: string): RecipeTemplateDto | null;
+  getRecipeTemplate(stableId: string, revision?: number): RecipeTemplateDto | null;
+  rulesProfile(): "legacy" | "landing-v1";
+  listTemplates(): { projects: Array<{
+    ref: { stableId: string };
+    outputFacility: { ref: { stableId: string }; effects?: { processingSlots?: number } };
+  }> };
+}
+
+// R1 landing：站点与槽位读面（槽位绑定由 world 站点 + industry 槽行推导）。
+export interface ManufacturingSitePort {
+  listSites(
+    tx: ManufacturingTx,
+    baseId: string
+  ): Promise<Array<{ id: string; siteKey: string; state: string; builtFacilityRef: string | null }>>;
+}
+
+export interface ManufacturingSlotPort {
+  countSlotsForSite(tx: ManufacturingTx, siteId: string): Promise<number>;
+  listSlotsForSite(
+    tx: ManufacturingTx,
+    baseId: string,
+    siteId: string
+  ): Promise<Array<{ id: string; slotIndex: number; maintenanceBlocked: boolean }>>;
 }
 
 export type ManufacturingReceiptsPort = Pick<
@@ -72,6 +97,17 @@ export interface ManufacturingServiceDeps {
   store: ManufacturingJobStore;
   // 生产绑定：(tx) => new AssetMutationService(tx)。测试注入内存替身。
   receipts: (tx: ManufacturingTx) => ManufacturingReceiptsPort;
+  // R1 landing（缺省 = 旧路径，不带槽位绑定）。
+  sites?: ManufacturingSitePort;
+  slots?: ManufacturingSlotPort;
+  // 站点占用查询（自动选最早空闲槽）。
+  boundSites?: {
+    listBoundSiteJobs(
+      tx: ManufacturingTx,
+      baseId: string,
+      siteId: string
+    ): Promise<Array<{ id: string }>>;
+  };
 }
 
 export interface ManufacturingPrincipal {
@@ -176,6 +212,29 @@ export class ManufacturingService {
       throw new BaseOperationError(409, "CONTENT_INCOMPATIBLE", "配方不存在或修订不匹配。");
     }
 
+    // R1 landing：解析生产站点（加工槽/着陆器手工），冻结每批能量。
+    const isLanding = catalog.rulesProfile() === "landing-v1";
+    let productionSiteId: string | null = null;
+    let energyWmPerBatch: number | null = null;
+    if (isLanding) {
+      const requiredCapability = recipe.requiredCapability;
+      if (!requiredCapability || recipe.ratedW === undefined || recipe.workMinutesPerBatch === undefined) {
+        throw new BaseOperationError(
+          409,
+          "CONTENT_INCOMPATIBLE",
+          "该配方缺少 landing 运行参数（额定功率/工作分钟/所需能力）。"
+        );
+      }
+      energyWmPerBatch = recipe.ratedW * recipe.workMinutesPerBatch;
+      productionSiteId = await this.resolveProductionSite(
+        tx,
+        baseId,
+        catalog,
+        requiredCapability,
+        input.slotId ?? null
+      );
+    }
+
     // 全额预留：inputs × outputsPlanned，任一不足 → 抛出走调用方事务整体回滚，无悬挂预留。
     const totalInputs = recipe.inputs.map((item) => ({
       itemId: item.itemId,
@@ -198,7 +257,9 @@ export class ManufacturingService {
       recipeDefId: recipe.ref.stableId,
       recipeRevision: recipe.ref.revision,
       outputsPlanned: input.outputsPlanned,
-      reservedInputs: totalInputs
+      reservedInputs: totalInputs,
+      productionSiteId,
+      energyWmPerBatch
     });
 
     const result: CreateResultPayload = { jobId, duplicate: false };
@@ -281,7 +342,182 @@ export class ManufacturingService {
     return result;
   }
 
+  // R1 landing：暂停当前单（释放槽位给下一单；材料预留保留，进度保留）。
+  async pause(
+    tx: ManufacturingTx,
+    principal: ManufacturingPrincipal,
+    input: { jobId: string; commandId: string; expectedBaseRevision?: number }
+  ): Promise<{ jobId: string; status: "paused"; duplicate: boolean }> {
+    const baseId = await this.requireLandingBase(tx, principal, input.expectedBaseRevision);
+    const requestHash = hashRequest({ jobId: input.jobId, action: "pause" });
+    const receipts = this.deps.receipts(tx);
+    const actorScope = `base:${baseId}`;
+    const existing = await receipts.findReceiptForUpdate(actorScope, "base.pauseManufacturingJob", input.commandId);
+    if (existing) {
+      if (existing.requestHash !== requestHash) {
+        throw new BaseOperationError(409, "IDEMPOTENCY_CONFLICT", "相同命令 ID 但请求不一致。");
+      }
+      return existing.result as { jobId: string; status: "paused"; duplicate: boolean };
+    }
+    const claimed = await receipts.claimReceipt({
+      actorScope, commandKind: "base.pauseManufacturingJob", commandId: input.commandId, requestHash
+    });
+    if (!claimed) {
+      const raced = await receipts.findReceiptForUpdate(actorScope, "base.pauseManufacturingJob", input.commandId);
+      if (raced && raced.requestHash === requestHash) {
+        return raced.result as { jobId: string; status: "paused"; duplicate: boolean };
+      }
+      throw new BaseOperationError(409, "CONFLICT", "命令幂等登记冲突，请重试。");
+    }
+    const job = await this.deps.store.findJob(tx, baseId, input.jobId);
+    if (!job) {
+      throw new BaseOperationError(403, "BASE_SCOPE_INVALID", "工单不存在或不属于该基地。");
+    }
+    if (job.status !== "active" && job.status !== "blocked") {
+      throw new BaseOperationError(409, "CONFLICT", "只有进行中/受阻的工单可以暂停。");
+    }
+    await this.deps.store.saveLandingBinding(tx, { jobId: job.id, status: "paused", productionSiteId: null });
+    const result = { jobId: job.id, status: "paused" as const, duplicate: false };
+    await receipts.saveReceiptResult({ actorScope, commandKind: "base.pauseManufacturingJob", commandId: input.commandId, result });
+    return result;
+  }
+
+  // R1 landing：恢复暂停单（重新绑定最早空闲槽/着陆器）。
+  async resume(
+    tx: ManufacturingTx,
+    principal: ManufacturingPrincipal,
+    input: { jobId: string; commandId: string; expectedBaseRevision?: number }
+  ): Promise<{ jobId: string; status: "active"; duplicate: boolean }> {
+    const baseId = await this.requireLandingBase(tx, principal, input.expectedBaseRevision);
+    const requestHash = hashRequest({ jobId: input.jobId, action: "resume" });
+    const receipts = this.deps.receipts(tx);
+    const actorScope = `base:${baseId}`;
+    const existing = await receipts.findReceiptForUpdate(actorScope, "base.resumeManufacturingJob", input.commandId);
+    if (existing) {
+      if (existing.requestHash !== requestHash) {
+        throw new BaseOperationError(409, "IDEMPOTENCY_CONFLICT", "相同命令 ID 但请求不一致。");
+      }
+      return existing.result as { jobId: string; status: "active"; duplicate: boolean };
+    }
+    const claimed = await receipts.claimReceipt({
+      actorScope, commandKind: "base.resumeManufacturingJob", commandId: input.commandId, requestHash
+    });
+    if (!claimed) {
+      const raced = await receipts.findReceiptForUpdate(actorScope, "base.resumeManufacturingJob", input.commandId);
+      if (raced && raced.requestHash === requestHash) {
+        return raced.result as { jobId: string; status: "active"; duplicate: boolean };
+      }
+      throw new BaseOperationError(409, "CONFLICT", "命令幂等登记冲突，请重试。");
+    }
+    const job = await this.deps.store.findJob(tx, baseId, input.jobId);
+    if (!job) {
+      throw new BaseOperationError(403, "BASE_SCOPE_INVALID", "工单不存在或不属于该基地。");
+    }
+    if (job.status !== "paused") {
+      throw new BaseOperationError(409, "CONFLICT", "只有已暂停的工单可以恢复。");
+    }
+    const catalog = await this.catalogForBase(tx, baseId);
+    const recipe = catalog.getRecipeTemplate(job.recipeDefId, job.recipeRevision);
+    const requiredCapability = recipe?.requiredCapability;
+    if (!requiredCapability) {
+      throw new BaseOperationError(409, "CONTENT_INCOMPATIBLE", "配方缺少能力要求，无法恢复。");
+    }
+    const productionSiteId = await this.resolveProductionSite(tx, baseId, catalog, requiredCapability, null);
+    await this.deps.store.saveLandingBinding(tx, { jobId: job.id, status: "active", productionSiteId });
+    const result = { jobId: job.id, status: "active" as const, duplicate: false };
+    await receipts.saveReceiptResult({ actorScope, commandKind: "base.resumeManufacturingJob", commandId: input.commandId, result });
+    return result;
+  }
+
   // ---------- 内部 ----------
+
+  // 自动选最早空闲槽（多加工间按站点 id 稳定排序）；手工配方绑着陆器且同时只允许一单。
+  private async resolveProductionSite(
+    tx: ManufacturingTx,
+    baseId: string,
+    catalog: ManufacturingCatalogPort,
+    requiredCapability: string,
+    explicitSlotSiteId: string | null
+  ): Promise<string> {
+    if (!this.deps.sites || !this.deps.slots || !this.deps.boundSites) {
+      throw new BaseOperationError(500, "INTERNAL_ERROR", "landing 制造未绑定站点/槽位端口。");
+    }
+    const sites = await this.deps.sites.listSites(tx, baseId);
+    const lander = sites.find((site) => site.siteKey === "lander");
+
+    if (requiredCapability === "lander_manual") {
+      if (!lander || lander.state !== "built") {
+        throw new BaseOperationError(409, "REQUIREMENTS_NOT_MET", "着陆器不可用。");
+      }
+      const bound = await this.deps.boundSites.listBoundSiteJobs(tx, baseId, lander.id);
+      if (bound.length > 0) {
+        throw new BaseOperationError(409, "CONFLICT", "着陆器手工工位已有进行中的工单。");
+      }
+      return lander.id;
+    }
+
+    // processing：已建成加工间站点（目录 effects.processingSlots > 0）。
+    const processingFacilityIds = new Set(
+      catalog
+        .listTemplates()
+        .projects.filter(
+          (project) => (project.outputFacility.effects?.processingSlots ?? 0) > 0
+        )
+        .map((project) => project.outputFacility.ref.stableId)
+    );
+    const processingSites = sites
+      .filter(
+        (site) =>
+          site.state === "built" &&
+          site.builtFacilityRef !== null &&
+          processingFacilityIds.has(
+            site.builtFacilityRef.split(":")[1]?.split("@")[0] ?? ""
+          )
+      )
+      .sort((left, right) => left.id.localeCompare(right.id));
+
+    if (explicitSlotSiteId !== null) {
+      const explicit = processingSites.find((site) => site.id === explicitSlotSiteId);
+      if (!explicit) {
+        throw new BaseOperationError(409, "REQUIREMENTS_NOT_MET", "指定站点不是已建成的加工间。");
+      }
+      const slots = await this.deps.slots.listSlotsForSite(tx, baseId, explicit.id);
+      const bound = await this.deps.boundSites.listBoundSiteJobs(tx, baseId, explicit.id);
+      if (slots.length - bound.length <= 0) {
+        throw new BaseOperationError(409, "REQUIREMENTS_NOT_MET", "该加工间的槽位已满。");
+      }
+      return explicit.id;
+    }
+
+    for (const site of processingSites) {
+      const slots = await this.deps.slots.listSlotsForSite(tx, baseId, site.id);
+      const bound = await this.deps.boundSites.listBoundSiteJobs(tx, baseId, site.id);
+      // 只有非维护停机的槽可用。
+      const usable = slots.filter((slot) => !slot.maintenanceBlocked).length;
+      if (usable - bound.length > 0) return site.id;
+    }
+    throw new BaseOperationError(
+      409,
+      "REQUIREMENTS_NOT_MET",
+      "没有可用的加工槽（可能都在维护或已满）。"
+    );
+  }
+
+  private async requireLandingBase(
+    tx: ManufacturingTx,
+    principal: ManufacturingPrincipal,
+    expectedBaseRevision?: number
+  ): Promise<string> {
+    const baseId = await this.requireBaseId(tx, principal);
+    const base = await this.deps.lookup.getBaseForUpdate(tx, baseId);
+    if (!base) {
+      throw new BaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
+    }
+    if (expectedBaseRevision !== undefined && expectedBaseRevision !== base.baseRevision) {
+      throw new BaseOperationError(409, "REVISION_EXPIRED", "基地状态已变化，请刷新后重试。");
+    }
+    return baseId;
+  }
 
   private catalogForBase(tx: ManufacturingTx, baseId: string): Promise<ManufacturingCatalogPort> {
     return this.deps.catalogResolver?.forBase(tx, baseId) ?? Promise.resolve(this.deps.catalog);

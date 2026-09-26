@@ -260,6 +260,13 @@
       "when": 1790352754517,
       "tag": "0037_tutorial_budget",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791000000000,
+      "tag": "0038_landing_rebuild",
+      "breakpoints": true
     }
   ]
 }

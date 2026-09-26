@@ -87,6 +87,28 @@ export class BaseAssetService {
       );
   }
 
+  // 条件消耗可用量（不触碰预留）：可用 = quantity - reserved_quantity ≥ quantity 参数才扣。
+  // R1 landing：维护命令消耗备件等“普通消耗”走这里；预留消耗仍走 consumeReserved。
+  async consumeBaseInventoryIfAvailable(
+    tx: BaseAssetTx,
+    baseId: string,
+    itemId: string,
+    quantity: number
+  ): Promise<boolean> {
+    const rows = await tx
+      .update(baseInventory)
+      .set({ quantity: sql`${baseInventory.quantity} - ${quantity}`, updatedAt: new Date() })
+      .where(
+        and(
+          eq(baseInventory.baseId, baseId),
+          eq(baseInventory.itemId, itemId),
+          sql`${baseInventory.quantity} - ${baseInventory.reservedQuantity} >= ${quantity}`
+        )
+      )
+      .returning({ id: baseInventory.id });
+    return rows.length > 0;
+  }
+
   async listBaseInventory(
     tx: BaseAssetTx,
     baseId: string

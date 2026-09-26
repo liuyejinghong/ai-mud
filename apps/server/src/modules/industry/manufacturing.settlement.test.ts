@@ -32,7 +32,7 @@ const RECIPE: RecipeTemplateDto = {
     { itemId: "power_box", quantity: 1 }
   ],
   workPerUnit: 30,
-  output: { templateStableId: "yd-h1", initialBatteryWh: 12000 }
+  output: { kind: "robot" as const, templateStableId: "yd-h1", initialBatteryWh: 12000 }
 };
 
 const ROBOT: RobotTemplateDto = {
@@ -62,6 +62,10 @@ function makeJob(overrides: Partial<ManufacturingJobRecord> = {}): Manufacturing
     outputsPlanned: 1,
     outputsDone: 0,
     currentUnitWorkDone: 0,
+    productionSiteId: null,
+    energyWmPerBatch: null,
+    currentBatchEnergyWm: 0,
+    createdAt: new Date("2026-09-26T00:00:00Z"),
     reservedInputs: UNIT_SHARE.map((item) => ({ ...item })),
     blockedReason: null,
     ...overrides
@@ -176,8 +180,11 @@ class FakeRepo implements ManufacturingSettlementRepo {
     if (this.outputs.has(key)) return { duplicate: true };
     this.outputs.set(key, {
       ordinal: input.ordinal,
+      outputKind: "robot" as const,
       deviceId: input.deviceId,
-      operatorId: input.operatorId
+      operatorId: input.operatorId,
+      itemId: null,
+      quantity: null
     });
     return { duplicate: false };
   }
@@ -269,8 +276,11 @@ describe("settleManufacturing", () => {
     ]);
     expect(repo.outputs.get("job-1:1")).toEqual({
       ordinal: 1,
+      outputKind: "robot",
       deviceId: "device-1",
-      operatorId: "operator-1"
+      operatorId: "operator-1",
+      itemId: null,
+      quantity: null
     });
     expect(job.outputsDone).toBe(1);
     expect(job.currentUnitWorkDone).toBe(0);
@@ -368,7 +378,7 @@ describe("settleManufacturing", () => {
     });
     const { deps, settleAssets, settleRobots, repo } = makeDeps([job], { availableEnergyWh: 60 });
     // 模拟此前已提交的 ordinal 1（部分完成后的重放）
-    repo.outputs.set("job-1:1", { ordinal: 1, deviceId: "device-0", operatorId: "operator-0" });
+    repo.outputs.set("job-1:1", { ordinal: 1, outputKind: "robot" as const, deviceId: "device-0", operatorId: "operator-0", itemId: null, quantity: null });
 
     const result = await settleManufacturing(tx, now, deps);
 

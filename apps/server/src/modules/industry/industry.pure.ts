@@ -58,6 +58,10 @@ export interface BasePowerRecord {
   storageCapacityWh: number;
   lastLoadW: number;
   dustLevel: number;
+  // R1 landing（旧档缺省；legacy computeBaseTick 不消费）。
+  emergencyGenerationW?: number;
+  chargeLimitW?: number | null;
+  powerPolicy?: "production" | "charging";
 }
 
 export interface BaseProjectRecord {

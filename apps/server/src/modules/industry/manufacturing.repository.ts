@@ -4,7 +4,7 @@
 //   - ManufacturingJobStore：创建/取消工单的持久化面（manufacturing.service 消费）
 //   - ManufacturingSettlementRepo：基地 tick 结算的读+写面（manufacturing.settlement 消费）
 // 所有方法必须在调用方事务内执行，本类永不开启或提交事务。
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import type { ManufacturingJobStatus } from "@ai-mud/shared";
 import type { Db } from "../../db/client.js";
 import { baseManufacturingJobs, baseManufacturingOutputs } from "../../db/schema.js";
@@ -23,6 +23,11 @@ export interface ManufacturingJobRecord {
   // 剩余预留（结算逐台产出时按该台份额递减；取消时按此值整体释放）
   reservedInputs: Array<{ itemId: string; quantity: number }>;
   blockedReason: string | null;
+  // R1 landing（旧单 NULL：继续走旧结算语义）。
+  productionSiteId: string | null;
+  energyWmPerBatch: number | null;
+  currentBatchEnergyWm: number;
+  createdAt: Date;
 }
 
 export interface InsertManufacturingJobInput {
@@ -31,6 +36,9 @@ export interface InsertManufacturingJobInput {
   recipeRevision: number;
   outputsPlanned: number;
   reservedInputs: Array<{ itemId: string; quantity: number }>;
+  // R1 landing（缺省旧行为）。
+  productionSiteId?: string | null;
+  energyWmPerBatch?: number | null;
 }
 
 export interface JobProgressPatch {
@@ -45,8 +53,11 @@ export interface JobProgressPatch {
 
 export interface ManufacturingOutputRow {
   ordinal: number;
-  deviceId: string;
-  operatorId: string;
+  outputKind: "robot" | "item";
+  deviceId: string | null;
+  operatorId: string | null;
+  itemId: string | null;
+  quantity: number | null;
 }
 
 export interface ManufacturingJobStore {
@@ -63,6 +74,11 @@ export interface ManufacturingJobStore {
     tx: ManufacturingTx,
     jobId: string,
     status: ManufacturingJobStatus
+  ): Promise<void>;
+  // R1 landing：暂停释放槽位绑定；恢复重新绑定。
+  saveLandingBinding(
+    tx: ManufacturingTx,
+    patch: { jobId: string; status?: ManufacturingJobStatus; productionSiteId: string | null }
   ): Promise<void>;
 }
 
@@ -98,18 +114,7 @@ function parseReservedInputs(value: unknown): Array<{ itemId: string; quantity: 
   return inputs;
 }
 
-function toRecord(row: {
-  id: string;
-  baseId: string;
-  recipeDefId: string;
-  recipeRevision: number;
-  status: string;
-  outputsPlanned: number;
-  outputsDone: number;
-  currentUnitWorkDone: number;
-  reservedInputs: unknown;
-  blockedReason: string | null;
-}): ManufacturingJobRecord {
+function toRecord(row: typeof baseManufacturingJobs.$inferSelect): ManufacturingJobRecord {
   return {
     id: row.id,
     baseId: row.baseId,
@@ -120,7 +125,11 @@ function toRecord(row: {
     outputsDone: row.outputsDone,
     currentUnitWorkDone: row.currentUnitWorkDone,
     reservedInputs: parseReservedInputs(row.reservedInputs),
-    blockedReason: row.blockedReason
+    blockedReason: row.blockedReason,
+    productionSiteId: row.productionSiteId,
+    energyWmPerBatch: row.energyWmPerBatch,
+    currentBatchEnergyWm: row.currentBatchEnergyWm,
+    createdAt: row.createdAt
   };
 }
 
@@ -151,7 +160,10 @@ export class ManufacturingRepository
           itemId: item.itemId,
           quantity: item.quantity
         })),
-        blockedReason: null
+        blockedReason: null,
+        productionSiteId: input.productionSiteId ?? null,
+        energyWmPerBatch: input.energyWmPerBatch ?? null,
+        currentBatchEnergyWm: 0
       })
       .returning({ id: baseManufacturingJobs.id });
     const row = inserted[0];
@@ -219,8 +231,11 @@ export class ManufacturingRepository
     const [row] = await tx
       .select({
         ordinal: baseManufacturingOutputs.ordinal,
+        outputKind: baseManufacturingOutputs.outputKind,
         deviceId: baseManufacturingOutputs.deviceId,
-        operatorId: baseManufacturingOutputs.operatorId
+        operatorId: baseManufacturingOutputs.operatorId,
+        itemId: baseManufacturingOutputs.itemId,
+        quantity: baseManufacturingOutputs.quantity
       })
       .from(baseManufacturingOutputs)
       .where(
@@ -230,7 +245,7 @@ export class ManufacturingRepository
         )
       )
       .limit(1);
-    return row ?? null;
+    return row ? { ...row, outputKind: row.outputKind as "robot" | "item" } : null;
   }
 
   async insertOutput(
@@ -254,6 +269,118 @@ export class ManufacturingRepository
     const existing = await this.findOutputByOrdinal(tx, input.jobId, input.ordinal);
     if (!existing) throw new Error("base_manufacturing_outputs insert conflicted but no row found");
     return { duplicate: true };
+  }
+
+  // R1 landing：本基地 landing 工单（energy_wm_per_batch 非空），FIFO（createdAt, id）。
+  async listLandingJobs(
+    tx: ManufacturingTx,
+    baseId: string
+  ): Promise<ManufacturingJobRecord[]> {
+    const rows = await tx
+      .select()
+      .from(baseManufacturingJobs)
+      .where(
+        and(
+          eq(baseManufacturingJobs.baseId, baseId),
+          sql`${baseManufacturingJobs.energyWmPerBatch} IS NOT NULL`
+        )
+      )
+      .orderBy(asc(baseManufacturingJobs.createdAt), asc(baseManufacturingJobs.id));
+    return rows.map(toRecord);
+  }
+
+  // R1 landing：暂停释放槽位绑定（材料预留保留）；恢复重新绑定。
+  async saveLandingBinding(
+    tx: ManufacturingTx,
+    patch: { jobId: string; status?: ManufacturingJobStatus; productionSiteId: string | null }
+  ): Promise<void> {
+    await tx
+      .update(baseManufacturingJobs)
+      .set({
+        status: patch.status ?? sql`${baseManufacturingJobs.status}`,
+        productionSiteId: patch.productionSiteId
+      })
+      .where(eq(baseManufacturingJobs.id, patch.jobId));
+  }
+
+  // R1 landing：landing 进度（整批能量推进；current_unit_work_done 不用于 landing）。
+  async saveLandingProgress(
+    tx: ManufacturingTx,
+    patch: {
+      jobId: string;
+      status: ManufacturingJobStatus;
+      outputsDone: number;
+      currentBatchEnergyWm: number;
+      blockedReason: string | null;
+      reservedInputs: Array<{ itemId: string; quantity: number }>;
+      completedAt: Date | null;
+    }
+  ): Promise<void> {
+    await tx
+      .update(baseManufacturingJobs)
+      .set({
+        status: patch.status,
+        outputsDone: patch.outputsDone,
+        currentBatchEnergyWm: patch.currentBatchEnergyWm,
+        blockedReason: patch.blockedReason,
+        reservedInputs: patch.reservedInputs.map((item) => ({
+          itemId: item.itemId,
+          quantity: item.quantity
+        })),
+        completedAt: patch.completedAt
+      })
+      .where(eq(baseManufacturingJobs.id, patch.jobId));
+  }
+
+  // R1 landing：产出登记（item 或 robot 二选一；CHECK 由 DB 兜底）。
+  async insertLandingOutput(
+    tx: ManufacturingTx,
+    input: {
+      jobId: string;
+      ordinal: number;
+      outputKind: "robot" | "item";
+      deviceId?: string;
+      operatorId?: string;
+      itemId?: string;
+      quantity?: number;
+    }
+  ): Promise<{ duplicate: boolean }> {
+    const inserted = await tx
+      .insert(baseManufacturingOutputs)
+      .values({
+        jobId: input.jobId,
+        ordinal: input.ordinal,
+        outputKind: input.outputKind,
+        deviceId: input.deviceId ?? null,
+        operatorId: input.operatorId ?? null,
+        itemId: input.itemId ?? null,
+        quantity: input.quantity ?? null
+      })
+      .onConflictDoNothing({
+        target: [baseManufacturingOutputs.jobId, baseManufacturingOutputs.ordinal]
+      })
+      .returning({ id: baseManufacturingOutputs.id });
+    if (inserted.length > 0) return { duplicate: false };
+    const existing = await this.findOutputByOrdinal(tx, input.jobId, input.ordinal);
+    if (!existing) throw new Error("base_manufacturing_outputs insert conflicted but no row found");
+    return { duplicate: true };
+  }
+
+  // R1 landing：非终态工单占用的站点（槽位分配/恢复绑定用）。
+  async listBoundSiteJobs(
+    tx: ManufacturingTx,
+    baseId: string,
+    siteId: string
+  ): Promise<ManufacturingJobRecord[]> {
+    const rows = await tx
+      .select()
+      .from(baseManufacturingJobs)
+      .where(and(
+        eq(baseManufacturingJobs.baseId, baseId),
+        eq(baseManufacturingJobs.productionSiteId, siteId),
+        inArray(baseManufacturingJobs.status, ["active", "blocked"])
+      ));
+    return rows.map(toRecord);
   }
 
   async saveJobProgress(tx: ManufacturingTx, patch: JobProgressPatch): Promise<void> {

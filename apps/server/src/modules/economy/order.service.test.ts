@@ -55,6 +55,7 @@ class FakeClock implements EconomyClockPort {
 
 class FakeCatalog {
   templates = new Map<string, OrderTemplateDto | null>();
+  capabilities() { return ["external_trade"]; }
   constructor(seed: OrderTemplateDto[]) {
     for (const template of seed) this.templates.set(template.ref.stableId, template);
   }

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type {
+  BaseActionBlockerDto,
   BaseClockCommandInputDto,
   BaseDeviceDto,
   BaseProjectDto,
@@ -70,7 +71,15 @@ export interface BaseIndustryInitPort {
   ensurePowerState(
     tx: BaseRepoTx,
     baseId: string,
-    seed: { generationWPeak: number; storageCapacityWh: number; initialStorageWh: number }
+    seed: {
+      generationWPeak: number;
+      storageCapacityWh: number;
+      initialStorageWh: number;
+      emergencyGenerationW?: number;
+      baseLoadW?: number;
+      chargeLimitW?: number;
+      initialDustLevel?: number;
+    }
   ): Promise<void>;
 }
 
@@ -88,6 +97,9 @@ export interface ProjectTemplateSpec {
   description: string;
   // 开工材料需求（内容模板必有；快照原样透出，面板据此显示清单与缺口）。
   inputs: Array<{ itemId: string; quantity: number }>;
+  // R1 landing（缺省无前置/不占扩建配额）。
+  requiresFacilities?: string[];
+  expansionSlot?: boolean;
 }
 
 export interface RecipeTemplateSpec {
@@ -96,7 +108,13 @@ export interface RecipeTemplateSpec {
   description: string;
   inputs: Array<{ itemId: string; quantity: number }>;
   workPerUnit: number;
-  output: { templateStableId: string; initialBatteryWh: number };
+  output:
+    | { kind: "robot"; templateStableId: string; initialBatteryWh: number }
+    | { kind: "item"; itemId: string; quantity: number };
+  ratedW?: number;
+  workMinutesPerBatch?: number;
+  requiredCapability?: string;
+  countsSlotMaintenance?: boolean;
 }
 
 export interface ProvisionSeedSpec {
@@ -106,10 +124,15 @@ export interface ProvisionSeedSpec {
     generationWPeak: number;
     storageCapacityWh: number;
     initialStorageWh: number;
+    emergencyGenerationW?: number;
+    chargeLimitW?: number;
+    initialDustLevel?: number;
   };
   sites: Array<{ siteKey: string; name: string; state: "free" | "built"; facilityRef?: DefinitionRefDto | undefined }>;
   inventory: Array<{ itemId: string; quantity: number }>;
   devices: Array<{ templateStableId: string; groupId: string; count: number; initialBatteryWh: number }>;
+  initialCredits?: number;
+  resourceNodes?: Array<{ nodeKey: string; name: string; itemId: string; initialQuantity: number }>;
 }
 
 // 订单模板端口契约：base.service 只消费 name（快照订单标题）；其余字段由目录层自持。
@@ -120,6 +143,8 @@ export interface OrderTemplateSpec {
 }
 
 export interface ContentCatalogPort {
+  rulesProfile(): "legacy" | "landing-v1";
+  capabilities(): string[];
   getProvisionSeed(): ProvisionSeedSpec;
   getItemInfo(): Record<string, { name: string; description: string }>;
   getRecipeTemplate(stableId: string, revision?: number): RecipeTemplateSpec | null;
@@ -145,6 +170,9 @@ export interface BaseIndustryReadPort {
     storageCapacityWh: number;
     lastLoadW: number;
     dustLevel: number;
+    emergencyGenerationW?: number;
+    chargeLimitW?: number | null;
+    powerPolicy?: "production" | "charging";
   } | null>;
   listProjects(baseId: string): Promise<
     Array<{
@@ -183,6 +211,7 @@ export interface BaseRobotReadPort {
       status: string;
       currentProjectId: string | null;
       currentStepIndex: number | null;
+      currentExtractionJobId?: string | null;
     }>
   >;
 }
@@ -202,6 +231,31 @@ export interface BaseServiceDeps {
   };
   industryRead: BaseIndustryReadPort;
   robotRead: BaseRobotReadPort;
+  // R1 landing：资源节点种子写入（world 自域）与快照读面（world/industry 仓库实现）。
+  nodeSeeds?: {
+    insertResourceNode(
+      tx: BaseRepoTx,
+      input: { baseId: string; nodeKey: string; name: string; itemId: string; initialQuantity: number }
+    ): Promise<void>;
+  };
+  landingRead?: {
+    listResourceNodes(tx: BaseRepoTx, baseId: string): Promise<Array<{
+      id: string; nodeKey: string; name: string; itemId: string;
+      discovered: boolean; remainingQuantity: number; reservedQuantity: number;
+    }>>;
+    listExtractionJobs(tx: BaseRepoTx, baseId: string): Promise<Array<{
+      id: string; kind: "survey" | "mine";
+      status: "active" | "paused" | "stopping" | "completed" | "cancelled";
+      nodeId: string; batchesPlanned: number; batchesExtracted: number; batchesDelivered: number;
+      phase: "mining" | "hauling" | null; phaseWorkDone: number;
+      builderOperatorIds: string[]; haulerOperatorId: string | null; surveyorOperatorId: string | null;
+      blockedReason: string | null;
+    }>>;
+    listProductionSlots(tx: BaseRepoTx, baseId: string): Promise<Array<{
+      id: string; siteId: string; slotIndex: number;
+      batchesSinceMaintenance: number; maintenanceBlocked: boolean;
+    }>>;
+  };
   economyRead: {
     getCredits(baseId: string): Promise<number>;
     listOrdersForBase(baseId: string): Promise<
@@ -275,6 +329,10 @@ export interface BaseServiceDeps {
         // 剩余预留（结算逐台递减；快照占用来源投影用）。manufacturing.repository
         // 的 ManufacturingJobRecord 已含此列，组合根原样透传，无需适配。
         reservedInputs: Array<{ itemId: string; quantity: number }>;
+        // R1 landing（旧档 null）。
+        productionSiteId?: string | null;
+        energyWmPerBatch?: number | null;
+        currentBatchEnergyWm?: number;
       }>
     >;
   };
@@ -387,7 +445,9 @@ export class BaseService {
         timeMode: "paused",
         speed: 1,
         simTime,
-        lastAdvancedAt: now
+        lastAdvancedAt: now,
+        // R1 landing：新档显式 0；旧 release 未声明时保持 DB 默认（旧行为）。
+        ...(seed.initialCredits !== undefined ? { credits: seed.initialCredits } : {})
       });
 
       for (const site of seed.sites) {
@@ -400,6 +460,19 @@ export class BaseService {
       }
 
       await this.deps.industryInit.ensurePowerState(tx, baseId, seed.power);
+
+      // R1 landing：资源节点种子（world 自域唯一写者；幂等 by (base, nodeKey)）。
+      if (this.deps.nodeSeeds) {
+        for (const node of seed.resourceNodes ?? []) {
+          await this.deps.nodeSeeds.insertResourceNode(tx, {
+            baseId,
+            nodeKey: node.nodeKey,
+            name: node.name,
+            itemId: node.itemId,
+            initialQuantity: node.initialQuantity
+          });
+        }
+      }
 
       for (const item of seed.inventory) {
         await this.deps.assets.creditBaseInventory(tx, baseId, item.itemId, item.quantity);
@@ -468,10 +541,25 @@ export class BaseService {
           : [];
       const operators = await this.deps.robotRead.listOperators(baseId);
       const jobRecords = await this.deps.manufacturingRead.listJobsForBase(baseId);
+      const isLanding = catalog.rulesProfile() === "landing-v1";
+      const nodeRecords = isLanding && this.deps.landingRead
+        ? await this.deps.landingRead.listResourceNodes(tx, baseId)
+        : [];
+      const extractionRecords = isLanding && this.deps.landingRead
+        ? await this.deps.landingRead.listExtractionJobs(tx, baseId)
+        : [];
+      const slotRecords = isLanding && this.deps.landingRead
+        ? await this.deps.landingRead.listProductionSlots(tx, baseId)
+        : [];
 
       const seed = catalog.getProvisionSeed();
       const siteNames = new Map(seed.sites.map((site) => [site.siteKey, site.name]));
       const itemInfo = catalog.getItemInfo();
+      const expansionTemplateIds = new Set(
+        catalog.listTemplates().projects
+          .filter((project) => project.expansionSlot)
+          .map((project) => project.ref.stableId)
+      );
 
       const siteDtos: BaseSiteDto[] = sites.map((site: BaseSiteRecord) => {
         const facility =
@@ -536,7 +624,8 @@ export class BaseService {
           currentAssignment:
             operator.currentProjectId !== null && operator.currentStepIndex !== null
               ? { projectId: operator.currentProjectId, stepIndex: operator.currentStepIndex }
-              : null
+              : null,
+          currentExtractionJobId: operator.currentExtractionJobId ?? null
         };
       });
 
@@ -592,7 +681,7 @@ export class BaseService {
           .map((project) => project.projectDefId)
       );
 
-      return {
+      const snapshot: BaseSnapshotDto = {
         name: base.name,
         baseId: base.id,
         epoch: base.epoch,
@@ -607,7 +696,11 @@ export class BaseService {
           availableW: powerRecord?.generationWPeak ?? 0,
           storageWh: powerRecord?.storageWh ?? 0,
           storageCapacityWh: powerRecord?.storageCapacityWh ?? 0,
-          loadW: powerRecord?.lastLoadW ?? 0
+          loadW: powerRecord?.lastLoadW ?? 0,
+          // R1 landing。
+          emergencyGenerationW: powerRecord?.emergencyGenerationW ?? 0,
+          chargeLimitW: powerRecord?.chargeLimitW ?? null,
+          powerPolicy: powerRecord?.powerPolicy ?? "production"
         },
         resources,
         sites: siteDtos,
@@ -615,12 +708,59 @@ export class BaseService {
         projects,
         buildableProjects: catalog.listTemplates().projects
           .filter((project) => !unavailableProjects.has(project.ref.stableId))
-          .map((project) => ({
-            definitionRef: project.ref,
-            name: project.name,
-            description: project.description,
-            inputs: project.inputs.map((input) => ({ itemId: input.itemId, quantity: input.quantity }))
-          })),
+          .map((project) => {
+            const entry = {
+              definitionRef: project.ref,
+              name: project.name,
+              description: project.description,
+              inputs: project.inputs.map((input) => ({ itemId: input.itemId, quantity: input.quantity })),
+              ...(project.requiresFacilities
+                ? { requiresFacilities: [...project.requiresFacilities] }
+                : {}),
+              ...(project.expansionSlot !== undefined ? { expansionSlot: project.expansionSlot } : {})
+            };
+            if (!isLanding) return entry;
+            // R1 landing：canStart + 结构化 blockers（材料净缺口 / 设施前置 / 扩建位配额 / 无空位）。
+            const builtFacilityIds = new Set(
+              sites
+                .filter((site) => site.state === "built" && site.builtFacilityRef)
+                .map((site) => site.builtFacilityRef!.split(":")[1]?.split("@")[0] ?? "")
+            );
+            const resourceByItemId = new Map(resources.map((resource) => [resource.itemId, resource]));
+            const blockers: BaseActionBlockerDto[] = [];
+            for (const input of project.inputs) {
+              const resource = resourceByItemId.get(input.itemId);
+              const available = (resource?.quantity ?? 0) - (resource?.reservedQuantity ?? 0);
+              if (available < input.quantity) {
+                blockers.push({
+                  type: "material",
+                  itemId: input.itemId,
+                  required: input.quantity,
+                  available: Math.max(0, available),
+                  inTransit: 0
+                });
+              }
+            }
+            for (const facilityId of project.requiresFacilities ?? []) {
+              if (!builtFacilityIds.has(facilityId)) {
+                blockers.push({ type: "facility", facilityId });
+              }
+            }
+            if (project.expansionSlot) {
+              const expansionUsed = projectRecords.filter(
+                (record) =>
+                  record.status !== "cancelled" &&
+                  expansionTemplateIds.has(record.projectDefId)
+              ).length;
+              if (expansionUsed >= 4) {
+                blockers.push({ type: "expansion_quota" });
+              }
+            }
+            if (!sites.some((site) => site.state === "free")) {
+              blockers.push({ type: "site" });
+            }
+            return { ...entry, canStart: blockers.length === 0, blockers };
+          }),
         availableRecipes: catalog.listRecipes().map((recipe) => ({
           ref: recipe.ref,
           name: recipe.name,
@@ -693,8 +833,63 @@ export class BaseService {
           heldByThisSession: !!lease && lease.leaseUntil.getTime() > now.getTime() && lease.leaseToken === controlToken,
           controlActive: !!lease && lease.leaseUntil.getTime() > now.getTime(),
           leaseUntil: lease ? lease.leaseUntil.toISOString() : null
-        }
-      };
+        },
+        // R1 landing：能力位（旧档为 ["external_trade"]）。
+        capabilities: catalog.capabilities()
+      } as BaseSnapshotDto;
+
+      // R1 landing 投影：资源节点 / 采矿单 / 加工槽（只在 landing 档携带）。
+      if (isLanding) {
+        snapshot.resourceNodes = nodeRecords.map((node) => ({
+          nodeId: node.id,
+          nodeKey: node.nodeKey,
+          name: node.name,
+          discovered: node.discovered,
+          itemId: node.discovered ? node.itemId : null,
+          itemName: node.discovered ? (itemInfo[node.itemId]?.name ?? node.itemId) : null,
+          remainingQuantity: node.discovered ? node.remainingQuantity : null,
+          reservedQuantity: node.discovered ? node.reservedQuantity : null
+        }));
+        snapshot.extractionJobs = extractionRecords.map((job) => {
+          const node = nodeRecords.find((entry) => entry.id === job.nodeId);
+          return {
+            jobId: job.id,
+            kind: job.kind,
+            status: job.status,
+            nodeId: job.nodeId,
+            nodeName: node?.name ?? job.nodeId,
+            batchesPlanned: job.batchesPlanned,
+            batchesExtracted: job.batchesExtracted,
+            batchesDelivered: job.batchesDelivered,
+            phase: job.phase,
+            phaseWorkDone: job.phaseWorkDone,
+            phaseWorkRequired: job.kind === "survey" ? 2 : job.phase === "hauling" ? 1 : 2,
+            builderOperatorIds: job.builderOperatorIds,
+            haulerOperatorId: job.haulerOperatorId,
+            surveyorOperatorId: job.surveyorOperatorId,
+            blockedReason: job.blockedReason
+          };
+        });
+        snapshot.productionSlots = slotRecords.map((slot) => {
+          const site = sites.find((entry) => entry.id === slot.siteId);
+          const activeJob = jobRecords.find(
+            (job) =>
+              job.productionSiteId === slot.siteId &&
+              job.status !== "completed" &&
+              job.status !== "cancelled"
+          );
+          return {
+            slotId: slot.id,
+            siteId: slot.siteId,
+            siteName: site ? (siteNames.get(site.siteKey) ?? site.siteKey) : slot.siteId,
+            slotIndex: slot.slotIndex,
+            batchesSinceMaintenance: slot.batchesSinceMaintenance,
+            maintenanceBlocked: slot.maintenanceBlocked,
+            activeJobId: activeJob?.id ?? null
+          };
+        });
+      }
+      return snapshot;
     });
   }
 

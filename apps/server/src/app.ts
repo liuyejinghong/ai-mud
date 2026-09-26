@@ -13,6 +13,8 @@ import { AuthRepository } from "./modules/auth/auth.repository.js";
 import { registerAuthRoutes } from "./modules/auth/auth.routes.js";
 import { AuthService } from "./modules/auth/auth.service.js";
 import { registerBaseManufacturingRoutes } from "./modules/industry/base-manufacturing.routes.js";
+import { registerBaseExtractionRoutes } from "./modules/industry/base-extraction.routes.js";
+import { registerBaseProductionRoutes } from "./modules/industry/base-production.routes.js";
 import { registerBaseEconomyRoutes } from "./modules/economy/base-economy.routes.js";
 import { registerBaseProjectsRoutes } from "./modules/industry/base-projects.routes.js";
 import { registerBaseSessionRoutes } from "./modules/world-runtime/base-session.routes.js";
@@ -280,6 +282,25 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
       auth: baseOps.session.auth,
       create: baseOps.manufacturingJobs.create,
       cancel: baseOps.manufacturingJobs.cancel
+    })
+  );
+  await app.register((instance) =>
+    registerBaseExtractionRoutes(instance, {
+      auth: baseOps.session.auth,
+      survey: baseOps.extraction.survey,
+      createMining: baseOps.extraction.createMining,
+      pause: baseOps.extraction.pause,
+      resume: baseOps.extraction.resume,
+      cancel: baseOps.extraction.cancel
+    })
+  );
+  await app.register((instance) =>
+    registerBaseProductionRoutes(instance, {
+      auth: baseOps.session.auth,
+      maintain: baseOps.production.maintain,
+      powerPolicy: baseOps.production.powerPolicy,
+      pauseJob: baseOps.production.pauseJob,
+      resumeJob: baseOps.production.resumeJob
     })
   );
   await app.register((instance) =>

@@ -114,6 +114,9 @@ function resolveRecipe(
 ): ResolvedRecipe | null {
   const recipe = catalog.getRecipeTemplate(job.recipeDefId, job.recipeRevision);
   if (!recipe || recipe.ref.revision !== job.recipeRevision || !(recipe.workPerUnit > 0)) return null;
+  // 旧结算只认机器人产出；item 产出配方（landing）在此路径按内容缺失阻塞，
+  // landing 基地走 landing-settlement，不进这里。
+  if (recipe.output.kind !== "robot") return null;
   const robotTemplate = catalog.getRobotTemplate(recipe.output.templateStableId);
   if (!robotTemplate) return null;
   return { recipe, robotTemplate };
@@ -225,6 +228,7 @@ async function settleJob(
         await deps.settleAssets.consumeReservedBaseInventory(tx, baseId, item.itemId, item.quantity);
         reservedInputs = decrementReserved(reservedInputs, item.itemId, item.quantity);
       }
+      if (recipe.output.kind !== "robot") return; // resolveRecipe 已挡；类型收窄
       const device = await deps.settleAssets.createDeviceAsset(tx, {
         baseId,
         deviceDefId: recipe.output.templateStableId,
@@ -236,7 +240,7 @@ async function settleJob(
         baseId,
         groupId: robotTemplate.groupId,
         batteryCapacityWh: robotTemplate.batteryCapacityWh,
-        initialBatteryWh: recipe.output.initialBatteryWh
+        initialBatteryWh: recipe.output.kind === "robot" ? recipe.output.initialBatteryWh : 0
       });
       // (job_id, ordinal) 唯一索引冲突 → 吞掉返回已有（重复 ordinal 幂等 G03）。
       await repo.insertOutput(tx, {

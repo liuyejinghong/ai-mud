@@ -29,7 +29,12 @@ describe("yudian-base-tutorial-1 release", () => {
     });
     expect(tutorial.recipes.flatMap(validateRecipeTemplate)).toEqual([]);
     expect(DEFAULT_BASE_CONTENT_RELEASE.recipes[0]?.ref.revision).toBe(1);
-    expect(DEFAULT_BASE_CONTENT_RELEASE.recipes[0]?.output.initialBatteryWh).toBe(12000);
+    const legacyOutput = DEFAULT_BASE_CONTENT_RELEASE.recipes[0]?.output;
+    expect(
+      legacyOutput !== undefined && "templateStableId" in legacyOutput
+        ? legacyOutput.initialBatteryWh
+        : undefined
+    ).toBe(12000);
   });
 
   it("reuses the other published definitions and seed values", () => {

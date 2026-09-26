@@ -128,14 +128,21 @@ describe("validateProjectTemplate", () => {
     expect(errors.join("; ")).toContain("steps");
   });
 
-  it("rejects a last step that is not commissioning", () => {
+  it("rejects a last step that is neither commissioning nor installation", () => {
+    // R1 landing 放开 installation 结尾（单工序安装工程）；transport 结尾仍非法。
     const bad = structuredClone(validProject);
-    bad.steps[bad.steps.length - 1] = { kind: "installation", groupId: "engineering", workRequired: 20 };
+    bad.steps[bad.steps.length - 1] = { kind: "transport", groupId: "transport", workRequired: 60 };
     const errors = validateProjectTemplate(bad);
     expect(errors.join("; ")).toContain("commissioning");
   });
 
-  it("rejects a first step that is not site_clearing", () => {
+  it("accepts a landing-style single installation step chain", () => {
+    const landing = structuredClone(validProject);
+    landing.steps = [{ kind: "installation", groupId: "engineering", workRequired: 2 }];
+    expect(validateProjectTemplate(landing)).toEqual([]);
+  });
+
+  it("rejects a first step that is neither site_clearing nor installation", () => {
     const bad = structuredClone(validProject);
     bad.steps[0] = { kind: "transport", groupId: "transport", workRequired: 40 };
     const errors = validateProjectTemplate(bad);

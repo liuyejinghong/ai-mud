@@ -13,8 +13,10 @@ describe("createContentCatalog", () => {
   it("新教程只列出可创建 @2，但旧 @1 工单仍可按保存的修订读取", () => {
     const catalog = createContentCatalog(TUTORIAL_BASE_CONTENT_RELEASE);
     expect(catalog.getRecipeTemplate("manufacture-yd-h1")?.ref.revision).toBe(2);
-    expect(catalog.getRecipeTemplate("manufacture-yd-h1", 1)?.output.initialBatteryWh).toBe(12000);
-    expect(catalog.getRecipeTemplate("manufacture-yd-h1", 2)?.output.initialBatteryWh).toBe(1000);
+    const archived = catalog.getRecipeTemplate("manufacture-yd-h1", 1)?.output;
+    const current = catalog.getRecipeTemplate("manufacture-yd-h1", 2)?.output;
+    expect(archived?.kind === "robot" ? archived.initialBatteryWh : undefined).toBe(12000);
+    expect(current?.kind === "robot" ? current.initialBatteryWh : undefined).toBe(1000);
     expect(catalog.getRecipeTemplate("manufacture-yd-h1", 3)).toBeNull();
     expect(catalog.listRecipes().find((recipe) => recipe.ref.stableId === "manufacture-yd-h1")?.ref.revision).toBe(2);
     expect(createContentCatalog().getRecipeTemplate("manufacture-yd-h1", 2)).toBeNull();

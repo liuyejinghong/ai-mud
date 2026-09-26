@@ -1,6 +1,10 @@
 import type { Env } from "../../config/env.js";
 import type { Db } from "../../db/client.js";
-import { TUTORIAL_BASE_CONTENT_RELEASE } from "@ai-mud/content";
+import {
+  LANDING_BASE_CONTENT_RELEASE,
+  LANDING_BASE_RELEASE_ID,
+  TUTORIAL_BASE_CONTENT_RELEASE
+} from "@ai-mud/content";
 import { DrizzleAuditWriter } from "../../modules/audit/audit.repository.js";
 import { AuthRepository } from "../../modules/auth/auth.repository.js";
 import type { FastifyRequest } from "fastify";
@@ -38,6 +42,13 @@ import {
 import { CancelManufacturingJobCase } from "../manufacturing/cancel-job.js";
 import { CreateManufacturingJobCase } from "../manufacturing/create-job.js";
 import { ConstructionService } from "../../modules/industry/construction.service.js";
+import { ExtractionRepository, type ExtractionJobRecord } from "../../modules/industry/extraction.repository.js";
+import { ExtractionService } from "../../modules/industry/extraction.service.js";
+import { ProductionSlotRepository } from "../../modules/industry/production-slot.repository.js";
+import { PowerPolicyService, ProductionSlotService } from "../../modules/industry/production-slot.service.js";
+import { settleLandingBaseMinute } from "../../modules/industry/landing-settlement.js";
+import { collectCapabilities, facilityStableIdFromRef } from "../../modules/industry/facility-effects.js";
+import { ResourceNodeRepository } from "../../modules/world-runtime/resource-node.repository.js";
 import type { IndustryTx } from "../../modules/industry/industry.repository.js";
 import { IndustryRepository } from "../../modules/industry/industry.repository.js";
 import { RobotFactory } from "../../modules/npc/robot-factory.js";
@@ -75,9 +86,11 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
   const catalog = createContentCatalog();
   const baseRepo = new BaseRepository(db, systemWorldClock);
   const tutorialCatalog = createContentCatalog(TUTORIAL_BASE_CONTENT_RELEASE);
+  // R1：注册默认内容改为 landing-1；旧档按 bases.content_release 继续读旧目录。
+  const landingCatalog = createContentCatalog(LANDING_BASE_CONTENT_RELEASE);
   const catalogByTransaction = new WeakMap<object, Map<string, Promise<ContentCatalogPort>>>();
   const catalogResolver: CatalogResolverPort = {
-    forProvision: () => tutorialCatalog,
+    forProvision: () => landingCatalog,
     forBase: (tx: BaseTx, baseId: string) => {
       const load = async () => {
         const releaseId = await baseRepo.getContentRelease(tx, baseId);
@@ -119,6 +132,15 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     },
     industryRead: industryRepo,
     robotRead: robotRuntime,
+    nodeSeeds: {
+      insertResourceNode: (tx, input) => new ResourceNodeRepository(tx).insertNode(tx, input)
+    },
+    landingRead: {
+      listResourceNodes: (tx, baseId) => new ResourceNodeRepository(tx).listForBase(tx, baseId),
+      listExtractionJobs: (tx, baseId) =>
+        new ExtractionRepository(tx).listForBase(tx, baseId) as Promise<ExtractionJobRecord[]>,
+      listProductionSlots: (tx, baseId) => new ProductionSlotRepository(tx).listForBase(tx, baseId)
+    },
     manufacturingRead: {
       listJobsForBase: async (baseId: string) =>
         new ManufacturingRepository(db).listJobsForBase(db, baseId)
@@ -166,6 +188,19 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     catalog,
     catalogResolver,
     store: new ManufacturingRepository(db),
+    sites: {
+      listSites: (tx, baseId) => baseRepo.forTransaction(tx as never).listSites(tx, baseId)
+    },
+    slots: {
+      countSlotsForSite: (tx: Parameters<typeof ProductionSlotRepository.prototype.countSlotsForSite>[0], siteId: string) =>
+        new ProductionSlotRepository(tx).countSlotsForSite(tx, siteId),
+      listSlotsForSite: (tx: Parameters<typeof ProductionSlotRepository.prototype.listForSite>[0], baseId: string, siteId: string) =>
+        new ProductionSlotRepository(tx).listForSite(tx, baseId, siteId)
+    },
+    boundSites: {
+      listBoundSiteJobs: (tx, baseId, siteId) =>
+        new ManufacturingRepository(tx).listBoundSiteJobs(tx, baseId, siteId)
+    },
     receipts: (tx) => new AssetMutationService(tx)
   });
 
@@ -177,6 +212,8 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     catalog,
     catalogResolver,
     store: industryRepo,
+    countExpansionProjects: (tx, baseId, projectDefIds) =>
+      new IndustryRepository(tx).countExpansionProjects(tx, baseId, projectDefIds),
     receipts: (tx) => new AssetMutationService(tx)
   });
 
@@ -346,7 +383,57 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
 
 
 
-  const economy = createEconomyUseCases(db, catalog, catalogResolver);
+  // R1 能力位派生：built 站点 × 目录项目模板 effects（采矿要 warehouse、维护要 maintenance）。
+  const hasLandingCapability = async (tx: BaseTx, baseId: string, capability: string): Promise<boolean> => {
+    const sites = await baseRepo.forTransaction(tx as never).listSites(tx, baseId);
+    const baseCatalog = await catalogResolver.forBase(tx, baseId);
+    const built = new Set(
+      sites
+        .filter((site) => site.state === "built" && site.builtFacilityRef)
+        .map((site) => facilityStableIdFromRef(site.builtFacilityRef!))
+    );
+    return collectCapabilities(built, baseCatalog.listTemplates().projects).has(capability);
+  };
+
+  const extractionService = new ExtractionService({
+    lookup: baseRepo,
+    nodes: new ResourceNodeRepository(db),
+    robots: robotRuntime,
+    store: new ExtractionRepository(db),
+    catalogResolver,
+    capabilities: { hasCapability: hasLandingCapability },
+    receipts: (tx) => new AssetMutationService(tx)
+  });
+
+  const productionSlots = new ProductionSlotService({
+    lookup: baseRepo,
+    slots: {
+      listForSite: (tx, baseId, siteId) =>
+        new ProductionSlotRepository(tx).listForSite(tx, baseId, siteId),
+      saveSlot: (tx, patch) => new ProductionSlotRepository(tx).saveSlot(tx, patch)
+    },
+    assets: baseAssets,
+    capabilities: { hasCapability: hasLandingCapability },
+    catalogResolver,
+    receipts: (tx) => new AssetMutationService(tx)
+  });
+
+  const powerPolicy = new PowerPolicyService({
+    lookup: baseRepo,
+    power: {
+      savePowerPolicy: (tx, baseId, priority) =>
+        new IndustryRepository(tx).savePowerPolicy(tx, baseId, priority)
+    },
+    catalogResolver,
+    receipts: (tx) => new AssetMutationService(tx)
+  });
+
+  const economy = createEconomyUseCases(
+    db,
+    catalog,
+    catalogResolver,
+    async (tx, baseId) => (await catalogResolver.forBase(tx, baseId)).capabilities()
+  );
   const economyTick = {
     markExpiredAndRefresh: (tx: IndustryTx, baseId: string, sim: Date) =>
       new OrderRepository(tx)
@@ -362,6 +449,72 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
   );
 
   const settlement = new BaseSettlementService({
+    landing: (tx, baseId, simTime) =>
+      settleLandingBaseMinute(tx, { baseId, simTime }, {
+        catalogResolver: catalogResolver as unknown as Parameters<typeof settleLandingBaseMinute>[2]["catalogResolver"],
+        industry: {
+          listProjects: (settleBaseId) => industryRepo.listProjects(settleBaseId),
+          listSteps: (projectIds) => industryRepo.listSteps(projectIds),
+          saveStepUpdates: (settleTx, updates) =>
+            new IndustryRepository(settleTx).saveStepUpdates(settleTx, updates as never),
+          saveProjectUpdates: (settleTx, updates) =>
+            new IndustryRepository(settleTx).saveProjectUpdates(settleTx, updates),
+          getLandingPower: (settleBaseId) =>
+            new IndustryRepository(db).getLandingPower(settleBaseId),
+          saveLandingPower: (settleTx, settleBaseId, patch) =>
+            new IndustryRepository(settleTx).saveLandingPower(settleTx, settleBaseId, patch),
+          markSiteBuilt: (settleTx, siteId, facilityRef) =>
+            baseRepo.forTransaction(settleTx as never).markSiteBuilt(settleTx, siteId, facilityRef),
+          addGenerationWPeak: (settleTx, settleBaseId, deltaW) =>
+            new IndustryRepository(settleTx).addGenerationWPeak(settleTx, settleBaseId, deltaW),
+          addStorageCapacityWh: (settleTx, settleBaseId, deltaWh) =>
+            new IndustryRepository(settleTx).addStorageCapacityWh(settleTx, settleBaseId, deltaWh),
+          addChargeLimitW: (settleTx, settleBaseId, deltaW) =>
+            new IndustryRepository(settleTx).addChargeLimitW(settleTx, settleBaseId, deltaW),
+          insertProductionSlots: (settleTx, settleBaseId, siteId, count) =>
+            new ProductionSlotRepository(settleTx).insertSlots(settleTx, settleBaseId, siteId, count)
+        },
+        slots: {
+          listForBase: (settleTx, settleBaseId) =>
+            new ProductionSlotRepository(settleTx).listForBase(settleTx, settleBaseId),
+          saveSlot: (settleTx, patch) => new ProductionSlotRepository(settleTx).saveSlot(settleTx, patch)
+        },
+        nodes: new ResourceNodeRepository(db),
+        extraction: {
+          listSettleable: (settleTx, settleBaseId) =>
+            new ExtractionRepository(settleTx).listSettleable(settleTx, settleBaseId),
+          saveJob: (settleTx, patch) => new ExtractionRepository(settleTx).saveJob(settleTx, patch),
+          insertOutput: (settleTx, input) =>
+            new ExtractionRepository(settleTx).insertOutput(settleTx, input),
+          markOutputDelivered: (settleTx, jobId, ordinal) =>
+            new ExtractionRepository(settleTx).markOutputDelivered(settleTx, jobId, ordinal)
+        },
+        manufacturing: {
+          listLandingJobs: (settleTx, settleBaseId) =>
+            new ManufacturingRepository(settleTx).listLandingJobs(settleTx, settleBaseId),
+          saveLandingProgress: (settleTx, patch) =>
+            new ManufacturingRepository(settleTx).saveLandingProgress(settleTx, patch),
+          insertLandingOutput: (settleTx, input) =>
+            new ManufacturingRepository(settleTx).insertLandingOutput(settleTx, input)
+        },
+        robots: {
+          listOperators: (settleBaseId) => robotRuntime.listOperators(settleBaseId),
+          applyRobotUpdates: (settleTx, updates) =>
+            new RobotRuntimeService(settleTx).applyRobotUpdates(settleTx, updates as never)
+        },
+        assets: baseAssets,
+        robotFactory: {
+          initializeOperator: (settleTx, input) => new RobotFactory(settleTx).initializeOperator(settleTx, input)
+        },
+        sites: {
+          listSites: (settleTx, settleBaseId) =>
+            baseRepo.forTransaction(settleTx as never).listSites(settleTx, settleBaseId)
+        },
+        weather: {
+          current: (settleBaseId, simTime) =>
+            new WeatherService(db).current(db, settleBaseId, simTime)
+        }
+      }),
     clock: baseRepo,
     sites: baseRepo,
     assets: baseAssets,
@@ -424,6 +577,47 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
     manufacturingJobs,
     contentAdmin,
     adminSession,
-    economy
+    economy,
+    // R1 landing 命令面（transport 路由消费）。
+    extraction: {
+      survey: {
+        execute: (principal: { accountId: string }, input: Parameters<typeof extractionService.survey>[2]) =>
+          db.transaction((tx) => extractionService.survey(tx as never, principal, input))
+      },
+      createMining: {
+        execute: (principal: { accountId: string }, input: Parameters<typeof extractionService.createMining>[2]) =>
+          db.transaction((tx) => extractionService.createMining(tx as never, principal, input))
+      },
+      pause: {
+        execute: (principal: { accountId: string }, input: Parameters<typeof extractionService.pause>[2]) =>
+          db.transaction((tx) => extractionService.pause(tx as never, principal, input))
+      },
+      resume: {
+        execute: (principal: { accountId: string }, input: Parameters<typeof extractionService.resume>[2]) =>
+          db.transaction((tx) => extractionService.resume(tx as never, principal, input))
+      },
+      cancel: {
+        execute: (principal: { accountId: string }, input: Parameters<typeof extractionService.cancel>[2]) =>
+          db.transaction((tx) => extractionService.cancel(tx as never, principal, input))
+      }
+    },
+    production: {
+      maintain: {
+        execute: (principal: { accountId: string }, input: Parameters<typeof productionSlots.maintain>[2]) =>
+          db.transaction((tx) => productionSlots.maintain(tx as never, principal, input))
+      },
+      powerPolicy: {
+        execute: (principal: { accountId: string }, input: Parameters<typeof powerPolicy.setPolicy>[2]) =>
+          db.transaction((tx) => powerPolicy.setPolicy(tx as never, principal, input))
+      },
+      pauseJob: {
+        execute: (principal: { accountId: string }, input: Parameters<typeof manufacturing.pause>[2]) =>
+          db.transaction((tx) => manufacturing.pause(tx as never, principal, input))
+      },
+      resumeJob: {
+        execute: (principal: { accountId: string }, input: Parameters<typeof manufacturing.resume>[2]) =>
+          db.transaction((tx) => manufacturing.resume(tx as never, principal, input))
+      }
+    }
   };
 }

@@ -387,7 +387,8 @@ describe("base provisioning against the integrated composition (real PostgreSQL)
     );
     const economy = createEconomyUseCases(harness.db, {
       getOrderTemplate: () => template,
-      listOrderTemplates: () => [template]
+      listOrderTemplates: () => [template],
+      capabilities: () => ["external_trade"]
     });
     await economy.accept.execute({ accountId: accountD }, { orderId, commandId: randomUUID() });
 

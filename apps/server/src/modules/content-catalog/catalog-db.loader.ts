@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import {
   DEFAULT_BASE_CONTENT_RELEASE,
   TUTORIAL_BASE_CONTENT_RELEASE,
+  LANDING_BASE_CONTENT_RELEASE,
   type ContentBaseRelease
 } from "@ai-mud/content";
 import type { Db } from "../../db/client.js";
@@ -18,6 +19,9 @@ export async function loadReleaseCatalog(
   }
   if (releaseId === TUTORIAL_BASE_CONTENT_RELEASE.releaseId) {
     return createContentCatalog(TUTORIAL_BASE_CONTENT_RELEASE);
+  }
+  if (releaseId === LANDING_BASE_CONTENT_RELEASE.releaseId) {
+    return createContentCatalog(LANDING_BASE_CONTENT_RELEASE);
   }
   const rows = await db
     .select({ payload: contentReleases.payload })

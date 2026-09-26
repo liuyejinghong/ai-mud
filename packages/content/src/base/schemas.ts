@@ -13,6 +13,16 @@ export type ContentRobotGroupId = (typeof CONTENT_ROBOT_GROUP_IDS)[number];
 export const CONTENT_STEP_KINDS = ["site_clearing", "transport", "installation", "commissioning"] as const;
 export type ContentStepKind = (typeof CONTENT_STEP_KINDS)[number];
 
+// 规则档位（R1）：legacy = v0.12 computeBaseTick 原语义；landing-v1 = 着陆重建规则
+// （小电池、W·min 能量、勘探/采矿/加工槽）。release 缺省 legacy。
+export const CONTENT_RULES_PROFILES = ["legacy", "landing-v1"] as const;
+export type ContentRulesProfile = (typeof CONTENT_RULES_PROFILES)[number];
+
+// release 级能力位（R1-03）：external_trade = 旧补给站订单/采购主循环。
+// 缺省（旧 release 未声明）按 ["external_trade"] 解释；landing-v1 显式 []。
+export const CONTENT_KNOWN_CAPABILITIES = ["external_trade"] as const;
+export type ContentKnownCapability = (typeof CONTENT_KNOWN_CAPABILITIES)[number];
+
 // ProvisionSeedDto.sites[].state 的种子期取值（运行期另有 "reserved"，不属于内容包）。
 export const CONTENT_SEED_SITE_STATES = ["free", "built"] as const;
 export type ContentSeedSiteState = (typeof CONTENT_SEED_SITE_STATES)[number];
@@ -32,8 +42,24 @@ export interface ContentRobotTemplate {
   chargeRateW: number;
   // 单位：工作点 / 基地分钟（字段名沿用历史的 "PerTick"，这里的 tick = 1 个基地分钟，
   // 不是结算调用次数）。结算按跨过的整基地分钟边界计工作量，与子 tick 切分、调用频率无关
-  // （2026-09-25 B008）。出工每基地分钟另耗 ROBOT_WORK_DRAIN_WH（运行侧规则常量）。
+  // （2026-09-25 B008）。出工每基地分钟另耗 workDrainWhPerTick（缺省 = 运行侧旧规则常量
+  // ROBOT_WORK_DRAIN_WH=500；landing-v1 按机型声明 3/6/2，不得把旧常量套小电池）。
   workRatePerTick: number;
+  workDrainWhPerTick?: number;
+}
+
+// R1 设施投产效果（typed 有限字段；缺省 = 无效果，发电仍走 generationWPeak）。
+// 不得扩展成任意 JSON 指令执行器。
+export interface ContentFacilityEffects {
+  // 储能容量增量 Wh：只加容量，不加存量（新增容量初始为空，不凭空加电）。
+  storageCapacityWh?: number;
+  // 充电总上限增量 W（landing：着陆器 400W + 充电区 1600W = 2000W）。
+  chargeLimitW?: number;
+  // 加工槽数：设施完工同事务创建对应槽行。
+  processingSlots?: number;
+  // 授予能力位：warehouse（矿石入库/本地加工前置）、maintenance（可维护加工槽）、
+  // processing（可运行加工配方）。
+  capabilities?: string[];
 }
 
 export interface ContentProjectStepTemplate {
@@ -57,8 +83,16 @@ export interface ContentProjectTemplate {
   outputFacility: {
     ref: ContentDefinitionRef;
     name: string;
-    generationWPeak: number;
+    // 发电增量 W；与 effects 至少声明其一（纯效果设施可省略）。
+    generationWPeak?: number;
+    // R1 typed 设施效果；未声明 = 仅发电增量（旧语义）。
+    effects?: ContentFacilityEffects;
   };
+  // R1 投产前置：这些设施 stableId 已在本基地建成才允许开工。缺省无前置。
+  requiresFacilities?: string[];
+  // R1 扩建模板标记：同一 release 内标记此位的模板共享“最多 N 个扩建位”配额，
+  // 不再各自受“首建一次”限制（landing：四种套件安装一次，扩建模板可重复）。
+  expansionSlot?: boolean;
 }
 
 export interface ContentProvisionSeedDevice {
@@ -75,17 +109,36 @@ export interface ContentProvisionSeedSite {
   facilityRef?: ContentDefinitionRef;
 }
 
+export interface ContentProvisionSeedResourceNode {
+  nodeKey: string;
+  name: string;
+  // 矿种物品 id（landing：iron_ore / copper_ore）。
+  itemId: string;
+  initialQuantity: number;
+}
+
 export interface ContentProvisionSeed {
   releaseId: string;
   baseName: string;
   power: {
+    // landing-v1 允许 0（新档太阳能峰值为 0，供电来自 emergencyGenerationW）。
     generationWPeak: number;
     storageCapacityWh: number;
     initialStorageWh: number;
+    // landing-v1 临时电源（着陆器）参数；缺省 = 旧行为（无临时电源/基础负载另计）。
+    emergencyGenerationW?: number;
+    baseLoadW?: number;
+    chargeLimitW?: number;
+    // 初始积尘等级 0—100；缺省沿用运行侧默认（30）。
+    initialDustLevel?: number;
   };
   sites: ContentProvisionSeedSite[];
   inventory: ContentProjectInput[];
   devices: ContentProvisionSeedDevice[];
+  // R1 新档显式 0 credits；缺省 = 旧行为（bases.credits 默认 1200）。
+  initialCredits?: number;
+  // R1 资源节点种子；缺省无节点（旧 release）。
+  resourceNodes?: ContentProvisionSeedResourceNode[];
 }
 
 // 一个内容 release 的整体形状：content-catalog 启动时对它全量跑校验谓词。
@@ -97,6 +150,12 @@ export interface ContentBaseRelease {
   recipes: ContentRecipeTemplate[];
   orderTemplates: ContentOrderTemplate[];
   provisionSeed: ContentProvisionSeed;
+  // 规则档位；缺省 legacy。
+  rulesProfile?: ContentRulesProfile;
+  // 能力位列表；缺省按 ["external_trade"]（旧 release）解释，landing-v1 显式 []。
+  capabilities?: string[];
+  // 设施静态说明（地图/对象卡）；缺省回落 BASE_FACILITY_INFO（旧 release）。
+  facilityInfo?: Record<string, ContentFacilityInfo>;
 }
 
 // ---------- 运行时校验谓词 ----------
@@ -158,7 +217,8 @@ const ROBOT_TEMPLATE_KEYS = [
   "description",
   "batteryCapacityWh",
   "chargeRateW",
-  "workRatePerTick"
+  "workRatePerTick",
+  "workDrainWhPerTick"
 ] as const;
 
 export function validateRobotTemplate(template: ContentRobotTemplate): string[] {
@@ -185,12 +245,61 @@ export function validateRobotTemplate(template: ContentRobotTemplate): string[] 
       errors.push(`${label}.${field} must be a positive integer`);
     }
   }
+  if (
+    template.workDrainWhPerTick !== undefined &&
+    !isPositiveInteger(template.workDrainWhPerTick)
+  ) {
+    errors.push(`${label}.workDrainWhPerTick must be a positive integer (Wh per worked base-minute)`);
+  }
   return errors;
 }
 
-const PROJECT_TEMPLATE_KEYS = ["ref", "name", "description", "steps", "inputs", "outputFacility"] as const;
+const PROJECT_TEMPLATE_KEYS = [
+  "ref",
+  "name",
+  "description",
+  "steps",
+  "inputs",
+  "outputFacility",
+  "requiresFacilities",
+  "expansionSlot"
+] as const;
 const PROJECT_STEP_KEYS = ["kind", "groupId", "workRequired"] as const;
-const OUTPUT_FACILITY_KEYS = ["ref", "name", "generationWPeak"] as const;
+const OUTPUT_FACILITY_KEYS = ["ref", "name", "generationWPeak", "effects"] as const;
+const FACILITY_EFFECTS_KEYS = [
+  "storageCapacityWh",
+  "chargeLimitW",
+  "processingSlots",
+  "capabilities"
+] as const;
+
+function validateFacilityEffects(
+  effects: unknown,
+  label: string,
+  errors: string[]
+): void {
+  if (typeof effects !== "object" || effects === null) {
+    errors.push(`${label} must be an object`);
+    return;
+  }
+  collectUnknownKeys(effects, FACILITY_EFFECTS_KEYS, label, errors);
+  const candidate = effects as Partial<ContentFacilityEffects>;
+  for (const field of ["storageCapacityWh", "chargeLimitW", "processingSlots"] as const) {
+    const value = candidate[field];
+    if (value !== undefined && !isPositiveInteger(value)) {
+      errors.push(`${label}.${field} must be a positive integer when present`);
+    }
+  }
+  if (candidate.capabilities !== undefined) {
+    if (
+      !Array.isArray(candidate.capabilities) ||
+      candidate.capabilities.length === 0 ||
+      candidate.capabilities.some((capability) => !isNonEmptyString(capability))
+    ) {
+      errors.push(`${label}.capabilities must be a non-empty array of non-empty strings`);
+    }
+  }
+}
 
 export function validateProjectTemplate(template: ContentProjectTemplate): string[] {
   const errors: string[] = [];
@@ -228,11 +337,12 @@ export function validateProjectTemplate(template: ContentProjectTemplate): strin
         errors.push(`${stepLabel}.workRequired must be a positive integer`);
       }
     });
-    if (steps[0]!.kind !== "site_clearing") {
-      errors.push(`${label}.steps[0].kind must be "site_clearing"`);
+    if (steps[0]!.kind !== "site_clearing" && steps[0]!.kind !== "installation") {
+      errors.push(`${label}.steps[0].kind must be "site_clearing" or "installation"`);
     }
-    if (steps[steps.length - 1]!.kind !== "commissioning") {
-      errors.push(`${label}.steps must end with kind "commissioning"`);
+    const lastKind = steps[steps.length - 1]!.kind;
+    if (lastKind !== "commissioning" && lastKind !== "installation") {
+      errors.push(`${label}.steps must end with kind "commissioning" or "installation"`);
     }
   }
 
@@ -267,22 +377,61 @@ export function validateProjectTemplate(template: ContentProjectTemplate): strin
     if (!isNonEmptyString(facility.name)) {
       errors.push(`${label}.outputFacility.name must be a non-empty string`);
     }
-    if (!isPositiveInteger(facility.generationWPeak)) {
-      errors.push(`${label}.outputFacility.generationWPeak must be a positive integer`);
+    if (facility.generationWPeak !== undefined && !isPositiveInteger(facility.generationWPeak)) {
+      errors.push(`${label}.outputFacility.generationWPeak must be a positive integer when present`);
     }
+    if (
+      facility.generationWPeak === undefined &&
+      (facility.effects === undefined ||
+        Object.keys(facility.effects).length === 0)
+    ) {
+      errors.push(
+        `${label}.outputFacility must declare generationWPeak and/or non-empty effects`
+      );
+    }
+    if (facility.effects !== undefined) {
+      validateFacilityEffects(facility.effects, `${label}.outputFacility.effects`, errors);
+    }
+  }
+  if (
+    template.requiresFacilities !== undefined &&
+    (!Array.isArray(template.requiresFacilities) ||
+      template.requiresFacilities.length === 0 ||
+      template.requiresFacilities.some((facilityId) => !isNonEmptyString(facilityId)))
+  ) {
+    errors.push(`${label}.requiresFacilities must be a non-empty array of non-empty strings`);
   }
   return errors;
 }
 
-const SEED_KEYS = ["releaseId", "baseName", "power", "sites", "inventory", "devices"] as const;
-const SEED_POWER_KEYS = ["generationWPeak", "storageCapacityWh", "initialStorageWh"] as const;
+const SEED_KEYS = [
+  "releaseId",
+  "baseName",
+  "power",
+  "sites",
+  "inventory",
+  "devices",
+  "initialCredits",
+  "resourceNodes"
+] as const;
+const SEED_POWER_KEYS = [
+  "generationWPeak",
+  "storageCapacityWh",
+  "initialStorageWh",
+  "emergencyGenerationW",
+  "baseLoadW",
+  "chargeLimitW",
+  "initialDustLevel"
+] as const;
 const SEED_SITE_KEYS = ["siteKey", "name", "state", "facilityRef"] as const;
 const SEED_DEVICE_KEYS = ["templateStableId", "groupId", "count", "initialBatteryWh"] as const;
+const SEED_NODE_KEYS = ["nodeKey", "name", "itemId", "initialQuantity"] as const;
 
 export function validateProvisionSeed(
   seed: ContentProvisionSeed,
   robots: readonly ContentRobotTemplate[],
-  projects: readonly ContentProjectTemplate[]
+  projects: readonly ContentProjectTemplate[],
+  itemNames?: Record<string, ContentItemInfo>
 ): string[] {
   const errors: string[] = [];
   const label = `provision seed "${seed.releaseId ?? "?"}"`;
@@ -300,10 +449,34 @@ export function validateProvisionSeed(
     errors.push(`${label}.power must be an object`);
   } else {
     collectUnknownKeys(power, SEED_POWER_KEYS, `${label}.power`, errors);
-    for (const field of ["generationWPeak", "storageCapacityWh", "initialStorageWh"] as const) {
+    // generationWPeak 允许 0：landing-v1 新档太阳能峰值为 0，供电来自着陆器临时电源。
+    for (const field of ["generationWPeak"] as const) {
+      if (!Number.isInteger(power[field]) || power[field] < 0) {
+        errors.push(`${label}.power.${field} must be a non-negative integer`);
+      }
+    }
+    for (const field of ["storageCapacityWh", "initialStorageWh"] as const) {
       if (!isPositiveInteger(power[field])) {
         errors.push(`${label}.power.${field} must be a positive integer`);
       }
+    }
+    for (const field of [
+      "emergencyGenerationW",
+      "baseLoadW",
+      "chargeLimitW"
+    ] as const) {
+      const value = power[field];
+      if (value !== undefined && !isPositiveInteger(value)) {
+        errors.push(`${label}.power.${field} must be a positive integer when present`);
+      }
+    }
+    if (
+      power.initialDustLevel !== undefined &&
+      (!Number.isFinite(power.initialDustLevel) ||
+        power.initialDustLevel < 0 ||
+        power.initialDustLevel > 100)
+    ) {
+      errors.push(`${label}.power.initialDustLevel must be within 0..100 when present`);
     }
     if (
       isPositiveInteger(power.initialStorageWh) &&
@@ -311,6 +484,50 @@ export function validateProvisionSeed(
       power.initialStorageWh > power.storageCapacityWh
     ) {
       errors.push(`${label}.power.initialStorageWh must not exceed storageCapacityWh`);
+    }
+  }
+
+  if (seed.initialCredits !== undefined && !Number.isInteger(seed.initialCredits)) {
+    errors.push(`${label}.initialCredits must be an integer when present`);
+  }
+  const resourceNodes = seed.resourceNodes;
+  if (resourceNodes !== undefined) {
+    if (!Array.isArray(resourceNodes) || resourceNodes.length === 0) {
+      errors.push(`${label}.resourceNodes must be a non-empty array when present`);
+    } else {
+      const seenNodeKeys = new Set<string>();
+      const nodeItemIds = new Set<string>();
+      resourceNodes.forEach((node, index) => {
+        const nodeLabel = `${label}.resourceNodes[${index}]`;
+        if (typeof node !== "object" || node === null) {
+          errors.push(`${nodeLabel} must be an object`);
+          return;
+        }
+        collectUnknownKeys(node, SEED_NODE_KEYS, nodeLabel, errors);
+        if (!isNonEmptyString(node.nodeKey)) {
+          errors.push(`${nodeLabel}.nodeKey must be a non-empty string`);
+        } else if (seenNodeKeys.has(node.nodeKey)) {
+          errors.push(`${nodeLabel} duplicates nodeKey "${node.nodeKey}"`);
+        } else {
+          seenNodeKeys.add(node.nodeKey);
+        }
+        if (!isNonEmptyString(node.name)) {
+          errors.push(`${nodeLabel}.name must be a non-empty string`);
+        }
+        if (!isNonEmptyString(node.itemId)) {
+          errors.push(`${nodeLabel}.itemId must be a non-empty string`);
+        } else {
+          nodeItemIds.add(node.itemId);
+        }
+        if (!isPositiveInteger(node.initialQuantity)) {
+          errors.push(`${nodeLabel}.initialQuantity must be a positive integer`);
+        }
+      });
+      for (const itemId of nodeItemIds) {
+        if (!itemNames?.[itemId]?.name) {
+          errors.push(`${label}.resourceNodes references item "${itemId}" missing from itemNames`);
+        }
+      }
     }
   }
 
@@ -467,10 +684,22 @@ export interface ContentRecipeTemplate {
   name: string;
   description: string;
   inputs: Array<{ itemId: string; quantity: number }>;
-  // 单位：工作点 / 台；制造工作点 = 电力池分给制造的能量 Wh（1:1，制造负载 1500W → 25 点/基地分钟，
-  // 同基地多张工单 FIFO 分摊；m13-p-contract §4）。
+  // 旧单位：工作点 / 台；制造工作点 = 电力池分给制造的能量 Wh（1:1，制造负载 1500W → 25 点/基地分钟，
+  // 同基地多张工单 FIFO 分摊；m13-p-contract §4）。landing-v1 配方改用 ratedW/workMinutesPerBatch，
+  // 缺省时继续按旧 workPerUnit 语义解释。
   workPerUnit: number;
-  output: { templateStableId: string; initialBatteryWh: number };
+  output:
+    | { templateStableId: string; initialBatteryWh: number } // 机器人（旧形态，目录边界补 kind）
+    | { kind: "item"; itemId: string; quantity: number };    // 材料（landing-v1）
+  // ---------- landing-v1 配方参数（缺省 = 旧语义） ----------
+  // 额定负载 W：一槽一分钟的最大功率；实际功耗只按取得的加工能量。
+  ratedW?: number;
+  // 每批所需工作分钟（满供电）；一批所需能量 = ratedW × workMinutesPerBatch（W·min）。
+  workMinutesPerBatch?: number;
+  // 需要的设施能力：processing（加工间槽位）| lander_manual（着陆器手工恢复，单槽、不计维护）。
+  requiredCapability?: string;
+  // 是否计入槽位维护计数；缺省 true（landing 加工配方），手工配方显式 false。
+  countsSlotMaintenance?: boolean;
 }
 
 export interface ContentOrderTemplate {
@@ -502,8 +731,49 @@ const RECIPE_KEYS = [
   "description",
   "inputs",
   "workPerUnit",
-  "output"
+  "output",
+  "ratedW",
+  "workMinutesPerBatch",
+  "requiredCapability",
+  "countsSlotMaintenance"
 ] as const;
+
+
+
+function validateRecipeOutput(
+  output: unknown,
+  label: string,
+  errors: string[]
+): void {
+  if (typeof output !== "object" || output === null) {
+    errors.push(`${label} must be an object`);
+    return;
+  }
+  const record = output as Record<string, unknown>;
+  if (record.kind === "item") {
+    collectUnknownKeys(record, ["kind", "itemId", "quantity"], label, errors);
+    if (!isNonEmptyString(record.itemId)) {
+      errors.push(`${label}.itemId must be a non-empty string`);
+    }
+    if (!isPositiveInteger(record.quantity)) {
+      errors.push(`${label}.quantity must be a positive integer`);
+    }
+    return;
+  }
+  // 机器人产出（旧形态：无 kind 字段；目录边界补 kind:"robot"）。initialBatteryWh 允许 0：
+  // landing-v1 新造设备初始电量为 0，需真实充电。
+  collectUnknownKeys(record, ["templateStableId", "initialBatteryWh"], label, errors);
+  if (!isNonEmptyString(record.templateStableId)) {
+    errors.push(`${label}.templateStableId must be a non-empty string`);
+  }
+  if (record.kind !== undefined && record.kind !== "robot") {
+    errors.push(`${label}.kind must be "robot" or "item" when present`);
+  }
+  const battery = record.initialBatteryWh;
+  if (typeof battery !== "number" || !Number.isInteger(battery) || battery < 0) {
+    errors.push(`${label}.initialBatteryWh must be a non-negative integer`);
+  }
+}
 
 export function validateRecipeTemplate(recipe: ContentRecipeTemplate): string[] {
   const errors: string[] = [];
@@ -536,17 +806,24 @@ export function validateRecipeTemplate(recipe: ContentRecipeTemplate): string[] 
   if (!isPositiveInteger(recipe.workPerUnit)) {
     errors.push(`${label}.workPerUnit must be a positive integer`);
   }
-  const output = recipe.output;
-  if (typeof output !== "object" || output === null) {
-    errors.push(`${label}.output must be an object`);
-  } else {
-    collectUnknownKeys(output, ["templateStableId", "initialBatteryWh"], `${label}.output`, errors);
-    if (!isNonEmptyString(output.templateStableId)) {
-      errors.push(`${label}.output.templateStableId must be a non-empty string`);
+  validateRecipeOutput(recipe.output, `${label}.output`, errors);
+  for (const field of ["ratedW", "workMinutesPerBatch"] as const) {
+    const value = (recipe as unknown as Record<string, unknown>)[field];
+    if (value !== undefined && !isPositiveInteger(value)) {
+      errors.push(`${label}.${field} must be a positive integer when present`);
     }
-    if (!isPositiveInteger(output.initialBatteryWh)) {
-      errors.push(`${label}.output.initialBatteryWh must be a positive integer`);
-    }
+  }
+  if (
+    recipe.requiredCapability !== undefined &&
+    !isNonEmptyString(recipe.requiredCapability)
+  ) {
+    errors.push(`${label}.requiredCapability must be a non-empty string when present`);
+  }
+  if (
+    recipe.countsSlotMaintenance !== undefined &&
+    typeof recipe.countsSlotMaintenance !== "boolean"
+  ) {
+    errors.push(`${label}.countsSlotMaintenance must be a boolean when present`);
   }
   return errors;
 }

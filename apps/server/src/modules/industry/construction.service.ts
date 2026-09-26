@@ -69,6 +69,10 @@ export interface ConstructionSitePort {
   ): Promise<{ id: string; state: "free" | "reserved" | "built" } | null>;
   markSiteReserved(tx: ConstructionTx, siteId: string): Promise<void>;
   releaseSite(tx: ConstructionTx, siteId: string): Promise<void>;
+  listSites(
+    tx: ConstructionTx,
+    baseId: string
+  ): Promise<Array<{ id: string; siteKey: string; state: string; builtFacilityRef: string | null }>>;
 }
 
 export interface ConstructionRobotPort {
@@ -77,6 +81,7 @@ export interface ConstructionRobotPort {
 
 export interface ConstructionCatalogPort {
   getProjectTemplate(stableId: string): ProjectTemplateDto | null;
+  listTemplates(): { projects: ProjectTemplateDto[] };
 }
 
 export type ConstructionReceiptsPort = Pick<
@@ -95,6 +100,8 @@ export interface ConstructionServiceDeps {
   catalog: ConstructionCatalogPort;
   catalogResolver?: { forBase(tx: ConstructionTx, baseId: string): Promise<ConstructionCatalogPort> };
   store: IndustryProjectStore;
+  // R1 landing：扩建配额计数（缺省 = 无配额检查，旧 release 行为）。
+  countExpansionProjects?: (tx: ConstructionTx, baseId: string, projectDefIds: string[]) => Promise<number>;
   // 生产绑定：(tx) => new AssetMutationService(tx)。测试注入内存替身。
   receipts: (tx: ConstructionTx) => ConstructionReceiptsPort;
   // B005 取消项目同事务结案协作请求。缺省 = (tx) => new CooperationRepository(tx)（同模块仓库，
@@ -204,8 +211,37 @@ export class ConstructionService {
       throw new BaseOperationError(409, "CONTENT_INCOMPATIBLE", "项目模板不存在或修订不匹配。");
     }
 
-    if (await this.deps.store.hasLiveOrCompletedProject(tx, baseId, template.ref.stableId)) {
-      throw new BaseOperationError(409, "CONFLICT", "这项工程已在建设或已完成。");
+    // R1 landing：扩建模板可重复，共享 4 个扩建位配额；套件安装仍一次建成。
+    const isExpansion = template.expansionSlot === true;
+    if (!isExpansion) {
+      if (await this.deps.store.hasLiveOrCompletedProject(tx, baseId, template.ref.stableId)) {
+        throw new BaseOperationError(409, "CONFLICT", "这项工程已在建设或已完成。");
+      }
+    } else if (this.deps.countExpansionProjects) {
+      const expansionTemplateIds = this.deps.catalog === (await this.catalogForBase(tx, baseId))
+        ? this.deps.catalog.listTemplates().projects
+            .filter((project) => project.expansionSlot)
+            .map((project) => project.ref.stableId)
+        : (await this.catalogForBase(tx, baseId)).listTemplates().projects
+            .filter((project) => project.expansionSlot)
+            .map((project) => project.ref.stableId);
+      const used = await this.deps.countExpansionProjects(tx, baseId, expansionTemplateIds);
+      if (used >= 4) {
+        throw new BaseOperationError(409, "CONFLICT", "四个扩建位已用完。");
+      }
+    }
+
+    // R1 landing：投产前置（requiresFacilities 必须已建成）。
+    for (const facilityId of template.requiresFacilities ?? []) {
+      const sites = await this.deps.sites.listSites(tx, baseId);
+      const built = sites.some(
+        (site) =>
+          site.state === "built" &&
+          (site.builtFacilityRef?.split(":")[1]?.split("@")[0] ?? "") === facilityId
+      );
+      if (!built) {
+        throw new BaseOperationError(409, "REQUIREMENTS_NOT_MET", "投产前置设施尚未建成。");
+      }
     }
 
     const site = await this.deps.sites.getSite(tx, baseId, input.siteId);

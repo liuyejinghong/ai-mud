@@ -66,6 +66,8 @@ export interface PurchaseServiceDeps {
   store: PurchaseStore;
   // 生产绑定：(tx) => new AssetMutationService(tx)。测试注入内存替身。
   receipts: (tx: EconomyTx) => EconomyReceiptsPort;
+  // R1：基地内容能力位（无 external_trade 的新档拒绝旧采购命令——不能只靠 UI 隐藏）。
+  capabilitiesForBase?: (tx: EconomyTx, baseId: string) => Promise<string[]>;
 }
 
 const PURCHASE_COMMAND_KIND = "base.purchase";
@@ -104,6 +106,17 @@ export class PurchaseService {
     principal: EconomyPrincipal,
     input: { itemId: string; quantity: number; commandId: string }
   ): Promise<CreatePurchaseResultPayload> {
+    const gateBaseId = await this.deps.lookup.findBaseIdByAccount(tx, principal.accountId);
+    if (gateBaseId && this.deps.capabilitiesForBase) {
+      const capabilities = await this.deps.capabilitiesForBase(tx, gateBaseId);
+      if (!capabilities.includes("external_trade")) {
+        throw new BaseOperationError(
+          409,
+          "CAPABILITY_UNAVAILABLE",
+          "当前存档没有外部补给渠道（着陆重建内容）。"
+        );
+      }
+    }
     if (
       !Number.isInteger(input.quantity) ||
       input.quantity < 1 ||
