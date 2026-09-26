@@ -292,7 +292,7 @@ async function main() {
       WEB_ORIGINS: `http://127.0.0.1:${webPort}`,
       ADMIN_BOOTSTRAP_EMAIL: adminEmail,
       ADMIN_BOOTSTRAP_PASSWORD: adminPassword,
-      WORLD_TICK_ENABLED: "false",
+      WORLD_TICK_ENABLED: process.env.REAL_E2E_WORLD_TICK ?? "false",
       PLAYTEST_REGISTRATION_ENABLED: "true",
       AI_NPC_DIALOGUE_ENABLED: "false",
       TEST_GATHERING_CYCLE_MS: "200",

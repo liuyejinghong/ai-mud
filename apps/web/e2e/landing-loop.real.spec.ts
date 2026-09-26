@@ -1,0 +1,159 @@
+// R1 返工：U04/U05 真实浏览器全循环（正常 UI，无 SQL 赠料/改时钟；真实 API+隔离 PG）。
+// 能源路线三圈：①安装自举→采矿→加工→维护→扩建 ②备件生产+维护 ③后续生产意图；
+// 另含 U07 离开回访（暂停/刷新/无离线收益）与 U09 720×450/200% 缩放。
+// 时钟为真 tick（runner 以 REAL_E2E_WORLD_TICK=true 启动服务端），倍率 ×4 由 UI 设置。
+import { expect, test } from "@playwright/test";
+
+const runId = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
+const email = `r1-loop-${runId}@example.test`;
+const password = "r1-loop-password";
+
+const GOAL = "[aria-label='当前目标']";
+const MAP = "[aria-label='基地地图']";
+const PANEL = "[aria-label='对象操作']";
+const QUEUE = "[aria-label='进行中的工作']";
+
+async function goalSays(page: import("@playwright/test").Page, text: string) {
+  await expect(page.locator(GOAL)).toContainText(text, { timeout: 240_000 });
+}
+
+test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投资；回访与缩放", async ({ page }, testInfo) => {
+  test.setTimeout(42 * 60_000);
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  await page.getByLabel("邮箱").fill(email);
+  await page.getByLabel("密码").fill(password);
+  await page.getByRole("button", { name: "领取试玩基地" }).click();
+  await expect(page.locator(GOAL)).toContainText("安装首座太阳能");
+  await page.screenshot({ path: testInfo.outputPath("00-first.png"), fullPage: true });
+
+  // 恢复计时并 ×4（玩家时间政策）。
+  await page.getByRole("button", { name: "恢复", exact: true }).click();
+  await page.getByRole("button", { name: "×4" }).click();
+
+  const installAt = async (siteName: string, projectName: string) => {
+    await page.locator(MAP).getByRole("button", { name: siteName }).click();
+    await expect(page.locator(PANEL)).toContainText(projectName, { timeout: 20_000 });
+    await page.locator(PANEL).getByRole("button", { name: projectName, exact: true }).click();
+    await expect(page.locator(PANEL)).toContainText(/已开工|已创建|已提交/, { timeout: 20_000 });
+    // 等待建成：目标条推进即设施事实变化（goal 依建成事实派生）。
+  };
+
+  // 圈1a：首太阳能 → 仓储棚（顺带储能/充电区）。
+  await page.locator(GOAL).getByRole("button", { name: "前往处理" }).click();
+  await page.locator(PANEL).getByRole("button", { name: "安装首座太阳能", exact: true }).click();
+  await goalSays(page, "安装仓储棚");
+  await page.screenshot({ path: testInfo.outputPath("01-solar-built.png"), fullPage: true });
+
+  await installAt("仓储棚安装位", "安装仓储棚");
+  await installAt("储能间安装位", "安装储能间");
+  await installAt("充电区安装位", "安装充电区");
+  await goalSays(page, "勘探");
+
+  // 圈1b：勘探铁→采矿 4 批。
+  await page.locator(GOAL).getByRole("button", { name: "前往处理" }).click();
+  await expect(page.locator(PANEL)).toContainText("勘探");
+  await page.getByLabel("望山").selectOption({ index: 1 });
+  await page.getByRole("button", { name: "开始勘探" }).click();
+  await goalSays(page, "安排采矿运输");
+  await page.screenshot({ path: testInfo.outputPath("02-surveyed.png"), fullPage: true });
+
+  const checkboxes = page.getByRole("checkbox");
+  await checkboxes.nth(0).check();
+  await checkboxes.nth(1).check();
+  await page.getByLabel("驮运").selectOption({ index: 1 });
+  await page.getByRole("button", { name: /下采矿单/ }).click();
+  await expect(page.locator(QUEUE)).toContainText("已送 0/4", { timeout: 30_000 });
+  await goalSays(page, "安装加工间"); // 16 铁矿入仓
+  await page.screenshot({ path: testInfo.outputPath("03-ore-delivered.png"), fullPage: true });
+
+  // 圈1c：加工间 + 维护工位。
+  await installAt("加工间安装位", "安装加工间");
+  await installAt("维护工位安装位", "安装维护工位");
+
+  // 圈1d：冶炼 8 → 结构件 4（第 10 批停机 → 维护）→ 线缆（铜未采，能源路线先铁）。
+  await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
+  await page.locator(PANEL).getByRole("button", { name: "加工间", exact: true }).click();
+  await page.getByLabel("冶炼铁料 批数").fill("8");
+  await page.locator(PANEL).getByRole("button", { name: "下单", exact: true }).first().click();
+  await expect(page.locator(QUEUE)).toContainText("产出 0/8", { timeout: 30_000 });
+  await page.getByLabel("加工结构件 批数").fill("4");
+  await page.locator(PANEL).getByRole("button", { name: "下单", exact: true }).nth(1).click();
+
+  // 等维护窗口（第 10 批）：维护按钮出现在队列/加工面板。
+  await expect(page.locator(QUEUE).or(page.locator(PANEL))).toContainText("维护（1 备件）", {
+    timeout: 240_000
+  });
+  await page.screenshot({ path: testInfo.outputPath("04-maintenance-window.png"), fullPage: true });
+  await page.getByRole("button", { name: "维护（1 备件）" }).first().click();
+  await expect(page.locator(PANEL)).toContainText("维护完成", { timeout: 20_000 });
+
+  // 勘探铜 + 采 1 批 + 线缆 1。
+  await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
+  await page.locator(MAP).getByRole("button", { name: /脊线蓝绿氧化带/ }).click();
+  await page.getByLabel("望山").selectOption({ index: 1 });
+  await page.getByRole("button", { name: "开始勘探" }).click();
+  await expect(page.locator(PANEL)).toContainText("采矿运输", { timeout: 120_000 });
+  await checkboxes.nth(0).check();
+  await checkboxes.nth(1).check();
+  await page.getByLabel("驮运").selectOption({ index: 1 });
+  await page.getByRole("button", { name: /下采矿单/ }).click();
+  await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
+  await page.locator(PANEL).getByRole("button", { name: "加工间", exact: true }).click();
+  await expect(page.locator(PANEL)).toContainText("制造线缆", { timeout: 120_000 }); // 铜料就绪后配方可下
+  await page.getByLabel("制造线缆 批数").fill("1");
+  await page.locator(PANEL).getByRole("button", { name: "下单", exact: true }).nth(3).click();
+
+  // 圈1e：扩建（目标条第 6 步）。
+  await goalSays(page, "扩建");
+  await page.locator(GOAL).getByRole("button", { name: "前往处理" }).click();
+  await expect(page.locator(PANEL)).toContainText("扩建位");
+  await page.locator(PANEL).getByRole("button", { name: "增建太阳能", exact: true }).click();
+  await expect(page.locator(PANEL)).toContainText(/已开工/, { timeout: 20_000 });
+  await goalSays(page, "继续下一轮"); // 首扩建完成 → 再投资轮次
+  await expect(page.getByLabel("电力概览")).toContainText("峰值 8.0 kW", { timeout: 60_000 });
+  await page.screenshot({ path: testInfo.outputPath("05-expansion-done-8kW.png"), fullPage: true });
+
+  // 圈2：备件生产 + 维护（采矿补充 → 制造备件）。
+  await page.locator(MAP).getByRole("button", { name: /北坡磁异常/ }).click();
+  await checkboxes.nth(0).check();
+  await checkboxes.nth(1).check();
+  await page.getByLabel("驮运").selectOption({ index: 1 });
+  await page.getByRole("button", { name: /下采矿单/ }).click();
+  await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
+  await page.locator(PANEL).getByRole("button", { name: "加工间", exact: true }).click();
+  await page.getByLabel("制造备件 批数").fill("1");
+  await page.locator(PANEL).getByRole("button", { name: "下单", exact: true }).nth(4).click();
+  await expect(page.locator(QUEUE)).toContainText("制造备件", { timeout: 60_000 });
+
+  // 圈3：后续生产意图（为下一处扩建继续冶炼）。
+  await page.getByLabel("冶炼铁料 批数").fill("4");
+  await page.locator(PANEL).getByRole("button", { name: "下单", exact: true }).first().click();
+  await expect(page.locator(QUEUE)).toContainText("冶炼铁料", { timeout: 60_000 });
+  await page.screenshot({ path: testInfo.outputPath("06-rounds-2-3.png"), fullPage: true });
+
+  // U07 离开回访：暂停 → 记录时间 → 刷新 → 时间/队列不变 → 恢复。
+  await page.getByRole("button", { name: "暂停", exact: true }).click();
+  const clockBefore = await page.locator(".landing-clock").innerText();
+  await page.reload();
+  await expect(page.locator(GOAL)).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".landing-clock")).toHaveText(clockBefore, { timeout: 30_000 });
+  await expect(page.locator(QUEUE)).toContainText("冶炼铁料");
+  await page.getByRole("button", { name: "恢复", exact: true }).click();
+  await page.screenshot({ path: testInfo.outputPath("07-revisit.png"), fullPage: true });
+
+  // U09：720×450 与真实 200% 缩放下目标与主动作可见。
+  await page.setViewportSize({ width: 720, height: 450 });
+  await expect(page.locator(GOAL)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("08-720x450.png"), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.evaluate(() => { document.documentElement.style.zoom = "200%"; });
+  await expect(page.locator(GOAL)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("09-zoom200.png"), fullPage: true });
+  await page.evaluate(() => { document.documentElement.style.zoom = ""; });
+
+  expect(pageErrors).toEqual([]);
+});

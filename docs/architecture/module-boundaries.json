@@ -290,7 +290,7 @@
         "config": 0
       }
     },
-    "files": 361
+    "files": 363
   },
   "files": [
     {
@@ -2861,6 +2861,20 @@
       "layer": "test",
       "scope": "test",
       "note": "G13 旧schema升级"
+    },
+    {
+      "path": "apps/web/e2e/landing-loop.real.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 U04/U05 全循环真浏览器验收（playwright landing-postgres）"
+    },
+    {
+      "path": "apps/web/src/features/base/LandingShell.acceptance-review.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "主控独立 UI 回归（MOCK；预期来自合同，不改期望迎合实现）"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",

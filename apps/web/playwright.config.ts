@@ -43,7 +43,7 @@ export default defineConfig({
     },
     {
       name: "landing-postgres",
-      testMatch: /landing-real\.spec\.ts/,
+      testMatch: /landing-.*\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         ...(browserChannel ? { channel: browserChannel } : {})
