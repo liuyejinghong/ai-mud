@@ -13,13 +13,33 @@ const MAP = "[aria-label='基地地图']";
 const PANEL = "[aria-label='对象操作']";
 const QUEUE = "[aria-label='进行中的工作']";
 
+// 长等待统一走轮询：每 3 秒强制窗口前台（无头长跑中 macOS 焦点会丢 → 心跳停 → 模拟冻结；
+// 真实玩家窗口始终前台，此操作只是恢复等价前台事实，不改产品规则）。
+async function waitForText(
+  page: import("@playwright/test").Page,
+  locator: import("@playwright/test").Locator,
+  text: string,
+  timeoutMs = 240_000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await page.evaluate(() => { window.focus(); }).catch(() => undefined);
+    if (await locator.textContent({ timeout: 5_000 }).then((v) => v?.includes(text) ?? false).catch(() => false)) {
+      return;
+    }
+    await page.waitForTimeout(3_000);
+  }
+  throw new Error(`waitForText timed out: ${await locator.textContent().catch(() => "<null>")} 不含 "${text}"`);
+}
+
 async function goalSays(page: import("@playwright/test").Page, text: string) {
-  await expect(page.locator(GOAL)).toContainText(text, { timeout: 240_000 });
+  await waitForText(page, page.locator(GOAL), text);
 }
 
 // 长时间运行中无头页可能失焦 → 心跳停止 → 控制租约过期；命令前确保持有控制权。
 async function ensureControl(page: import("@playwright/test").Page) {
   await page.bringToFront();
+  await page.evaluate(() => { window.focus(); }).catch(() => undefined);
   const takeOver = page.getByRole("button", { name: "接管", exact: true });
   if (await takeOver.isVisible({ timeout: 3_000 }).catch(() => false)) {
     await takeOver.click();
@@ -61,7 +81,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
     await page.locator(PANEL).getByRole("button", { name: projectName, exact: true }).click();
     await expect(page.locator(PANEL)).toContainText(/已开工|已创建|已提交/, { timeout: 20_000 });
     const siteCard = page.locator(MAP).getByRole("button", { name: siteName });
-    await expect(siteCard).toContainText(builtNote, { timeout: 240_000 });
+    await waitForText(page, siteCard, builtNote);
   };
 
   // 圈1a：首太阳能 → 仓储棚（顺带储能/充电区）。
@@ -90,7 +110,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await page.getByLabel("驮运").selectOption({ index: 1 });
   await ensureControl(page);
   await page.getByRole("button", { name: /下采矿单/ }).click();
-  await expect(page.locator(QUEUE)).toContainText("已送 0/4", { timeout: 30_000 });
+  await waitForText(page, page.locator(QUEUE), "已送 0/4", 30_000);
   await goalSays(page, "安装加工间"); // 16 铁矿入仓
   await page.screenshot({ path: testInfo.outputPath("03-ore-delivered.png"), fullPage: true });
 
@@ -103,13 +123,11 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await page.locator(PANEL).getByRole("button", { name: "加工间", exact: true }).click();
   await expect(page.locator(PANEL)).toContainText("冶炼铁料", { timeout: 30_000 });
   await orderRecipe(page, "冶炼铁料", 8);
-  await expect(page.locator(QUEUE)).toContainText("产出 0/8", { timeout: 60_000 });
+  await waitForText(page, page.locator(QUEUE), "产出 0/8", 60_000);
   await orderRecipe(page, "加工结构件", 4);
 
   // 等维护窗口（第 10 批）：维护按钮出现在队列/加工面板。
-  await expect(page.locator(QUEUE).or(page.locator(PANEL))).toContainText("维护（1 备件）", {
-    timeout: 240_000
-  });
+  await waitForText(page, page.locator(QUEUE), "维护（1 备件）", 300_000);
   await page.screenshot({ path: testInfo.outputPath("04-maintenance-window.png"), fullPage: true });
   await ensureControl(page);
   await page.getByRole("button", { name: "维护（1 备件）" }).first().click();
@@ -121,14 +139,14 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await ensureControl(page);
   await page.getByLabel("望山").selectOption({ index: 1 });
   await page.getByRole("button", { name: "开始勘探" }).click();
-  await expect(page.locator(PANEL)).toContainText("采矿运输", { timeout: 120_000 });
+  await waitForText(page, page.locator(PANEL), "采矿运输", 120_000);
   await checkboxes.nth(0).check();
   await checkboxes.nth(1).check();
   await page.getByLabel("驮运").selectOption({ index: 1 });
   await page.getByRole("button", { name: /下采矿单/ }).click();
   await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
   await page.locator(PANEL).getByRole("button", { name: "加工间", exact: true }).click();
-  await expect(page.locator(PANEL)).toContainText("制造线缆", { timeout: 240_000 }); // 铜料就绪后配方可下
+  await waitForText(page, page.locator(PANEL), "制造线缆", 300_000); // 铜料就绪后配方可下
   await orderRecipe(page, "制造线缆", 1);
 
   // 圈1e：扩建（目标条第 6 步）。
@@ -138,7 +156,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await page.locator(PANEL).getByRole("button", { name: "增建太阳能", exact: true }).click();
   await expect(page.locator(PANEL)).toContainText(/已开工/, { timeout: 20_000 });
   await goalSays(page, "继续下一轮"); // 首扩建完成 → 再投资轮次
-  await expect(page.getByLabel("电力概览")).toContainText("峰值 8.0 kW", { timeout: 60_000 });
+  await waitForText(page, page.getByLabel("电力概览"), "峰值 8.0 kW", 120_000);
   await page.screenshot({ path: testInfo.outputPath("05-expansion-done-8kW.png"), fullPage: true });
 
   // 圈2：备件生产 + 维护（采矿补充 → 制造备件）。
@@ -150,11 +168,11 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
   await page.locator(PANEL).getByRole("button", { name: "加工间", exact: true }).click();
   await orderRecipe(page, "制造备件", 1);
-  await expect(page.locator(QUEUE)).toContainText("制造备件", { timeout: 120_000 });
+  await waitForText(page, page.locator(QUEUE), "制造备件", 120_000);
 
   // 圈3：后续生产意图（为下一处扩建继续冶炼）。
   await orderRecipe(page, "冶炼铁料", 4);
-  await expect(page.locator(QUEUE)).toContainText("冶炼铁料", { timeout: 120_000 });
+  await waitForText(page, page.locator(QUEUE), "冶炼铁料", 120_000);
   await page.screenshot({ path: testInfo.outputPath("06-rounds-2-3.png"), fullPage: true });
 
   // U07 离开回访：暂停 → 记录时间 → 刷新 → 时间/队列不变 → 恢复。
