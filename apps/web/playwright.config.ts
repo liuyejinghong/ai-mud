@@ -40,6 +40,14 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         ...(browserChannel ? { channel: browserChannel } : {})
       }
+    },
+    {
+      name: "landing-postgres",
+      testMatch: /landing-real\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        ...(browserChannel ? { channel: browserChannel } : {})
+      }
     }
   ]
 });

@@ -6,6 +6,7 @@ import type {
   CreateManufacturingJobInputDto,
   CreateProjectInputDto
 } from "@ai-mud/shared";
+import type { PowerPolicyPriority, RecipeTemplateDto } from "@ai-mud/shared";
 import {
   acceptOrder,
   BaseApiError,
@@ -14,19 +15,27 @@ import {
   decideCooperation,
   deliverOrder,
   createManufacturingJob,
+  createExtractionJob,
   createProject,
   cancelProject,
+  extractionJobAction,
   getSnapshot,
   heartbeat,
   login,
+  maintainProductionSlot,
+  pauseManufacturingJob,
   playtestRegister,
   provision,
-  setClock
+  resumeManufacturingJob,
+  setClock,
+  setPowerPolicy,
+  surveyResourceNode
 } from "./baseApi.js";
 import { logout } from "../auth/authApi.js";
 import { BaseIntroModal } from "./BaseIntroModal.js";
 import { BaseShell } from "./BaseShell.js";
 import type { BaseActionFeedback } from "./BaseShell.js";
+import { isLandingSnapshot, LandingShell, type LandingSelection } from "./LandingShell.js";
 
 const SNAPSHOT_POLL_MS = 5_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -202,6 +211,8 @@ export function BaseApp({
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [introDismissed, setIntroDismissed] = useState(false);
+  const [landingSelection, setLandingSelection] = useState<LandingSelection>({ kind: "none" });
+  const [landingFeedback, setLandingFeedback] = useState<string | null>(null);
 
   const releaseControl = useCallback((csrf: string | null) => {
     controlGenerationRef.current += 1;
@@ -585,6 +596,180 @@ export function BaseApp({
     [csrfToken, runCommand]
   );
 
+  // R1 landing：REVISION_EXPIRED 时刷新一次快照并重试一次（tick 每分钟自增 revision，
+  // 运行中的基地偶发过期是预期路径，不该让玩家手动重敲表单）。
+  const runLandingCommand = useCallback(
+    async (
+      area: "landing",
+      command: (revision: number | undefined) => Promise<unknown>,
+      describe: () => string
+    ) => {
+      if (csrfToken === null) return;
+      setIsActionBusy(true);
+      setLandingFeedback(null);
+      try {
+        const attempt = async (withRevision: boolean) => {
+          const revision = snapshot?.baseRevision;
+          return withRevision && revision !== undefined
+            ? command(revision)
+            : command(undefined);
+        };
+        try {
+          await attempt(true);
+          setLandingFeedback(describe());
+        } catch (error) {
+          if (error instanceof BaseApiError && error.code === "REVISION_EXPIRED") {
+            await refreshSnapshot();
+            await attempt(false);
+            setLandingFeedback(describe());
+          } else {
+            throw error;
+          }
+        }
+        await refreshSnapshot();
+      } catch (error) {
+        setLandingFeedback(describeError(error));
+      } finally {
+        setIsActionBusy(false);
+      }
+    },
+    [csrfToken, refreshSnapshot, snapshot]
+  );
+
+  const handleLandingCreateProject = useCallback(
+    (stableId: string, siteId: string) => {
+      if (csrfToken === null || snapshot === null) return;
+      const template = snapshot.buildableProjects.find((project) => project.definitionRef.stableId === stableId);
+      void runLandingCommand("landing",
+        (revision) => createProject(
+          {
+            definitionRef: { kind: "project", stableId, revision: template?.definitionRef.revision ?? 1 },
+            siteId,
+            commandId: newCommandId(),
+            ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
+          } as never,
+          csrfToken
+        ),
+        () => `工程「${template?.name ?? stableId}」已开工，材料已预留。`);
+    },
+    [csrfToken, snapshot, runLandingCommand]
+  );
+
+  const handleSurvey = useCallback(
+    (nodeId: string, operatorId: string) => {
+      if (csrfToken === null) return;
+      void runLandingCommand("landing",
+        (revision) => surveyResourceNode(csrfToken, nodeId, {
+          operatorId,
+          ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
+        }),
+        () => "勘探单已提交，望山开始勘察（约 2 个基地分钟）。");
+    },
+    [csrfToken, runLandingCommand]
+  );
+
+  const handleCreateMining = useCallback(
+    (input: { nodeId: string; batches: number; builderOperatorIds: string[]; haulerOperatorId: string }) => {
+      if (csrfToken === null) return;
+      void runLandingCommand("landing",
+        (revision) => createExtractionJob(csrfToken, {
+          ...input,
+          ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
+        }),
+        () => `采矿单已提交：${input.batches} 批，预留 ${input.batches * 4} 矿。`);
+    },
+    [csrfToken, runLandingCommand]
+  );
+
+  const handleExtractionAction = useCallback(
+    (jobId: string, action: "pause" | "resume" | "cancel") => {
+      if (csrfToken === null) return;
+      void runLandingCommand("landing",
+        (revision) => extractionJobAction(csrfToken, jobId, action, {
+          ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
+        }),
+        () => (action === "cancel" ? "采矿单取消：未采部分已释放，已采出的矿会送完最后一趟。" : `作业已${action === "pause" ? "暂停" : "恢复"}。`));
+    },
+    [csrfToken, runLandingCommand]
+  );
+
+  const handleLandingCreateJob = useCallback(
+    (recipe: RecipeTemplateDto, batches: number) => {
+      if (csrfToken === null) return;
+      void runLandingCommand("landing",
+        (revision) => createManufacturingJob(
+          {
+            recipeRef: recipe.ref,
+            outputsPlanned: batches,
+            commandId: newCommandId(),
+            ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
+          },
+          csrfToken
+        ),
+        () => `加工单「${recipe.name}」× ${batches} 批已提交，材料已预留。`);
+    },
+    [csrfToken, runLandingCommand]
+  );
+
+  const handleLandingCancelJob = useCallback(
+    (jobId: string) => {
+      if (csrfToken === null) return;
+      void runLandingCommand("landing",
+        () => cancelManufacturingJob(jobId, newCommandId(), csrfToken),
+        () => "加工单已取消，未耗材料退回仓库。");
+    },
+    [csrfToken, runLandingCommand]
+  );
+
+  const handlePauseJob = useCallback(
+    (jobId: string) => {
+      if (csrfToken === null) return;
+      void runLandingCommand("landing",
+        (revision) => pauseManufacturingJob(csrfToken, jobId, {
+          ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
+        }),
+        () => "工单已暂停，槽位让给下一单（材料预留保留）。");
+    },
+    [csrfToken, runLandingCommand]
+  );
+
+  const handleResumeJob = useCallback(
+    (jobId: string) => {
+      if (csrfToken === null) return;
+      void runLandingCommand("landing",
+        (revision) => resumeManufacturingJob(csrfToken, jobId, {
+          ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
+        }),
+        () => "工单已恢复并重新绑定加工槽。");
+    },
+    [csrfToken, runLandingCommand]
+  );
+
+  const handleMaintain = useCallback(
+    (siteId: string) => {
+      if (csrfToken === null) return;
+      void runLandingCommand("landing",
+        (revision) => maintainProductionSlot(csrfToken, siteId, {
+          ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
+        }),
+        () => "维护完成：消耗 1 备件，加工槽计数清零、恢复运行。");
+    },
+    [csrfToken, runLandingCommand]
+  );
+
+  const handlePowerPolicy = useCallback(
+    (priority: PowerPolicyPriority) => {
+      if (csrfToken === null) return;
+      void runLandingCommand("landing",
+        (revision) => setPowerPolicy(csrfToken, {
+          priority,
+          ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
+        }),
+        () => (priority === "production" ? "已切换为加工优先。" : "已切换为充电优先。"));
+    },
+    [csrfToken, runLandingCommand]
+  );
+
   const handleSelectJob = useCallback((jobId: string) => {
     setSelectedJobId((current) => (current === jobId ? null : jobId));
     setSelectedSiteId(null);
@@ -707,7 +892,8 @@ export function BaseApp({
     snapshot !== null &&
     globalThis.localStorage?.getItem(`base-intro-dismissed:${snapshot.baseId}`) === "1";
   const showIntro =
-    snapshot !== null && snapshot.projects.length === 0 && !introDismissed && !introDismissedForBase;
+    snapshot !== null && snapshot.projects.length === 0 && !introDismissed && !introDismissedForBase &&
+    !isLandingSnapshot(snapshot); // R1 landing：开局引导由固定工作区目标条承担（02 §4）
 
   return (
     <>
@@ -740,6 +926,39 @@ export function BaseApp({
           基地状态刷新失败：{snapshotError}（将自动重试）
         </p>
       ) : null}
+      {isLandingSnapshot(snapshot) ? (
+        <LandingShell
+          key={snapshot.baseId}
+          snapshot={snapshot}
+          isBusy={isActionBusy}
+          canControl={controlToken !== null && snapshot.controlLease.heldByThisSession}
+          selection={landingSelection}
+          onSelect={setLandingSelection}
+          onCreateProject={handleLandingCreateProject}
+          onCancelProject={handleCancelProject}
+          onSurvey={handleSurvey}
+          onCreateMining={handleCreateMining}
+          onExtractionAction={handleExtractionAction}
+          onCreateJob={handleLandingCreateJob}
+          onCancelJob={handleLandingCancelJob}
+          onPauseJob={handlePauseJob}
+          onResumeJob={handleResumeJob}
+          onMaintain={handleMaintain}
+          onPowerPolicy={handlePowerPolicy}
+          onClockCommand={(command, speed) =>
+            handleClockCommand(
+              command === "set_speed" && speed !== undefined
+                ? { command, speed }
+                : { command: command === "set_speed" ? "pause" : command },
+              "clock"
+            )
+          }
+          onAcquireControl={handleAcquireControl}
+          onLogout={() => void handleLogout()}
+          accountEmail={accountEmail}
+          feedback={landingFeedback}
+        />
+      ) : (
       <BaseShell
         key={snapshot.baseId}
         snapshot={snapshot}
@@ -771,6 +990,7 @@ export function BaseApp({
         onLogout={() => void handleLogout()}
         isBusy={isActionBusy}
       />
+      )}
     </>
   );
 }

@@ -13,7 +13,7 @@ const recipeH1: RecipeTemplateDto = {
     { itemId: "power_box", quantity: 1 }
   ],
   workPerUnit: 30,
-  output: { templateStableId: "yd_h1", initialBatteryWh: 12000 }
+  output: { kind: "robot" as const, templateStableId: "yd_h1", initialBatteryWh: 12000 }
 };
 
 const recipeS1: RecipeTemplateDto = {
@@ -25,7 +25,7 @@ const recipeS1: RecipeTemplateDto = {
     { itemId: "anchor", quantity: 3 }
   ],
   workPerUnit: 20,
-  output: { templateStableId: "yd_s1", initialBatteryWh: 6000 }
+  output: { kind: "robot" as const, templateStableId: "yd_s1", initialBatteryWh: 6000 }
 };
 
 // 在途工单持开工时修订（G06）：job-2 的 revision 高于当前模板列表，仍按 stableId 关联工作量。
