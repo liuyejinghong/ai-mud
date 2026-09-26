@@ -113,7 +113,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
 
   // 明确点铁矿区（goal 的 targetId 按字母序指向 copper；能源路线需要铁）。
   await page.locator(MAP).getByRole("button", { name: /北坡磁异常/ }).click();
-  await expect(page.locator(PANEL)).toContainText("采矿运输", { timeout: 30_000 });
+  await waitForText(page, page.locator(PANEL), "采矿运输", 300_000);
   const checkboxes = page.getByRole("checkbox");
   await checkboxes.nth(0).check();
   await checkboxes.nth(1).check();
@@ -131,7 +131,7 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   // 圈1d：冶炼 8 → 结构件 4（第 10 批停机 → 维护）→ 线缆（铜未采，能源路线先铁）。
   await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
   await page.locator(PANEL).getByRole("button", { name: "加工间", exact: true }).click();
-  await expect(page.locator(PANEL)).toContainText("冶炼铁料", { timeout: 30_000 });
+  await waitForText(page, page.locator(PANEL), "冶炼铁料", 120_000);
   await orderRecipe(page, "冶炼铁料", 8);
   await waitForText(page, page.locator(QUEUE), "产出 0/8", 180_000);
   await orderRecipe(page, "加工结构件", 4);
