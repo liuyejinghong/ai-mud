@@ -108,8 +108,8 @@ export interface CooperationDeps {
   robots: CooperationRobotPort;
   gateway: CooperationDecisionPort;
   clock: CooperationClock;
-  // 同一次批量结算内新建的请求，提交前不能因模拟时间跳跃而过期。
-  settlementStart?: Date;
+  // 批量结算的最后一分钟才创建首条玩家请求，确保提交后仍有选择时间。
+  deferFirstCreation?: boolean;
   // DecisionRequestDto 上下文：planRevision 用 base_revision（bases 行），epoch 为基地纪元。
   baseRevision: number;
   epoch: number;
@@ -364,7 +364,6 @@ export async function detectAndResolveCooperation(
   // 先过期，再决定是否建新请求；同一步有任何终态记录都不再重开。
   for (const request of pending) {
     if (lifecycle.closedRequestIds.has(request.requestId)) continue;
-    if (deps.settlementStart && request.createdAt >= deps.settlementStart) continue;
     if (now.getTime() - request.createdAt.getTime() >= COOPERATION_TTL_MS) {
       await repo.expire(tx, request.requestId);
       lifecycle.closedRequestIds.add(request.requestId);
@@ -394,6 +393,7 @@ export async function detectAndResolveCooperation(
     if (request?.status === "accepted") continue;
     if (!request) {
       if (prior) continue;
+      if (firstId === null && deps.deferFirstCreation) continue;
       // helperGroupId：有候选取最高分候选的组；无候选回退与请求组不同的首个固定组
       // （列 notNull 占位，abstain 期间无 helper 语义）。
       const helperGroupId = candidates[0]?.groupId ?? fallbackHelperGroupId(step.groupId);

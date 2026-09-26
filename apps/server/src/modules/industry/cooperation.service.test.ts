@@ -259,6 +259,16 @@ function makeHarness() {
 }
 
 describe("detectAndResolveCooperation", () => {
+  it("批量结算只在最后一分钟创建首条玩家请求", async () => {
+    const { repo, robots, deps, tx } = makeHarness();
+    robots.operators = [makeRobot()];
+    deps.deferFirstCreation = true;
+    expect((await detectAndResolveCooperation(tx, BASE_ID, [STEP], deps)).requestsCreated).toBe(0);
+    deps.deferFirstCreation = false;
+    expect((await detectAndResolveCooperation(tx, BASE_ID, [STEP], deps)).requestsCreated).toBe(1);
+    expect(repo.records[0]?.status).toBe("pending");
+  });
+
   it("首次真实缺工停在 pending，留给玩家选择", async () => {
     const { repo, robots, gateway, deps, tx } = makeHarness();
     robots.operators = [makeRobot()];

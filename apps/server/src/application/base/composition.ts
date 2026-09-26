@@ -314,13 +314,13 @@ export function createBaseOperations(input: { db: Db; config: Env }) {
       tx: Parameters<typeof detectAndResolveCooperation>[0],
       baseId: string,
       needySteps: Parameters<typeof detectAndResolveCooperation>[2],
-      meta: { baseRevision: number; epoch: number; clock: { now(): Date }; settlementStart: Date }
+      meta: { baseRevision: number; epoch: number; clock: { now(): Date }; deferFirstCreation: boolean }
     ) =>
       detectAndResolveCooperation(tx, baseId, needySteps, {
         robots: new RobotRuntimeService(tx),
         gateway: decisionGateway,
         clock: meta.clock,
-        settlementStart: meta.settlementStart,
+        deferFirstCreation: meta.deferFirstCreation,
         baseRevision: meta.baseRevision,
         epoch: meta.epoch,
         openCooperation: (coopTx) => new CooperationRepository(coopTx)
