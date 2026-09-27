@@ -1,5 +1,6 @@
 import type {
   BaseClockCommandInputDto,
+  BaseEventsResponseDto,
   BaseHeartbeatInputDto,
   BaseHeartbeatResultDto,
   BaseSnapshotDto,
@@ -183,6 +184,15 @@ export interface ProvisionUseCase {
 
 export interface SnapshotUseCase {
   execute(principal: BasePrincipal, controlToken?: string): Promise<BaseSnapshotDto>;
+}
+
+// D013 事件历史：鉴权与快照同面；limit 钳制在用例内（1—200，缺省 100）。
+export interface BaseEventsQuery {
+  limit?: number;
+}
+
+export interface EventsUseCase {
+  execute(principal: BasePrincipal, input: BaseEventsQuery): Promise<BaseEventsResponseDto>;
 }
 
 export type ClockHeartbeatResultDto = BaseHeartbeatResultDto;
@@ -385,6 +395,7 @@ export interface BaseSessionRouteDeps {
   provision: ProvisionUseCase;
   snapshot: SnapshotUseCase;
   clock: ClockUseCase;
+  events: EventsUseCase;
 }
 
 export interface BaseProjectsRouteDeps {

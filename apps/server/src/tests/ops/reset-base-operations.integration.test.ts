@@ -72,7 +72,8 @@ const BASE_INSTANCE_TABLES = [
   "base_resource_nodes",
   "base_extraction_jobs",
   "base_extraction_outputs",
-  "base_production_slots"
+  "base_production_slots",
+  "base_events"
 ] as const;
 
 // 部分处理的表：sessions 只吊销（保留行）；command_receipts 只删基地命令收据。
@@ -489,16 +490,18 @@ d("试玩服基地经营重置脚本（真 PostgreSQL）", () => {
 
     // 基地 tick 的唯一入口（生产由世界 tick 参与者调用同一方法）；签名若随 tick 编排调整，只改这里。
     const ops = createBaseOperations({ db, config: env });
-    const settleOnce = () => db.transaction((tx) => ops.settlement.settleBases(tx, new Date()));
+    // 结算终点在每次推进前固定：确认边界不随循环/耗时滴流（D010 后有效租约确认到墙钟）。
+    const settleOnce = (settledAt: Date) => db.transaction((tx) => ops.settlement.settleBases(tx, settledAt));
+    const settleStart = new Date();
     await new Promise((resolve) => setTimeout(resolve, 50));
     // 结算 1：墙钟增量极小，补订单。
-    await settleOnce();
+    await settleOnce(settleStart);
     // 结算 2：模拟 10 分钟墙钟流逝（×4 倍速 = 40 模拟分钟），制造产出并在运输缺工时发起协作。
     await client.query(
       `UPDATE bases SET last_advanced_at = now() - interval '10 minutes' WHERE id = ANY($1::uuid[])`,
       [[playerA.baseId, playerB.baseId]]
     );
-    await settleOnce();
+    await settleOnce(new Date());
 
     // 接单（订单由结算 1 生成）。
     for (const player of [playerA, playerB]) {
@@ -567,6 +570,7 @@ d("试玩服基地经营重置脚本（真 PostgreSQL）", () => {
     await client.query("INSERT INTO base_extraction_jobs (id,base_id,node_id,kind,status,batches_planned,batches_extracted,batches_delivered,phase,builder_operator_ids,hauler_operator_id) VALUES ($1,$2,$3,'mine','stopping',1,1,0,'hauling',$4::jsonb,$5)", [miningId,playerA.baseId,nodeId,JSON.stringify([builder]),hauler]);
     await client.query("INSERT INTO base_extraction_outputs (job_id,ordinal,item_id,quantity,status) VALUES ($1,1,'iron_ore',4,'extracted')", [miningId]);
     await client.query("INSERT INTO base_production_slots (base_id,site_id,slot_index,batches_since_maintenance,maintenance_blocked) VALUES ($1,$2,0,10,true)", [playerA.baseId,siteIdOf(snapA,"array")]);
+    await client.query("INSERT INTO base_events (base_id,type,title,detail,sim_time) VALUES ($1,'project.completed','重置探针','表生命周期探针', now())", [playerA.baseId]);
 
     // 种子完整性：每张基地实例表都有数据（重置断言才有意义）。
     countsBefore = await tableCounts(client, BASE_INSTANCE_TABLES);

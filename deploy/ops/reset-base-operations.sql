@@ -16,7 +16,8 @@
 --   * 守卫：若库里出现本脚本未登记的基地关联表（引用下列任一表的外键，或新的 base_* 表），
 --     整体拒绝执行并列出表名——先按 apps/server/src/db/schema.ts 复核归属再更新本脚本。
 --
--- 清空（20 张基地实例表，全部行；包含 R1 新增资源节点、采矿单/产出及加工槽）：
+-- 清空（21 张基地实例表，全部行；包含 R1 新增资源节点、采矿单/产出及加工槽、
+--     D013 基地事件历史）：
 --   bases                        基地根行（account_id → accounts，账号保留）
 --   base_sites                   建设位（→ bases）
 --   base_control_leases          基地控制租约（→ bases）
@@ -72,7 +73,8 @@ DECLARE
     'robot_operators', 'base_power_state', 'base_projects', 'base_project_steps',
     'base_manufacturing_jobs', 'base_manufacturing_outputs', 'decision_records',
     'cooperation_requests', 'base_weather_schedule', 'base_orders', 'base_purchases',
-    'base_resource_nodes', 'base_extraction_jobs', 'base_extraction_outputs', 'base_production_slots'
+    'base_resource_nodes', 'base_extraction_jobs', 'base_extraction_outputs', 'base_production_slots',
+    'base_events'
   ];
   missing text;
   stray_fk text;
@@ -120,7 +122,8 @@ LOCK TABLE
   robot_operators, base_power_state, base_projects, base_project_steps,
   base_manufacturing_jobs, base_manufacturing_outputs, decision_records,
   cooperation_requests, base_weather_schedule, base_orders, base_purchases,
-  base_resource_nodes, base_extraction_jobs, base_extraction_outputs, base_production_slots
+  base_resource_nodes, base_extraction_jobs, base_extraction_outputs, base_production_slots,
+  base_events
 IN EXCLUSIVE MODE;
 
 -- ---------------------------------------------------------------------------
@@ -144,6 +147,7 @@ DELETE FROM base_weather_schedule;
 DELETE FROM base_orders;
 DELETE FROM base_purchases;
 DELETE FROM base_control_leases;
+DELETE FROM base_events;
 DELETE FROM base_sites;
 DELETE FROM bases;
 
@@ -172,7 +176,8 @@ DECLARE
     'robot_operators', 'base_power_state', 'base_projects', 'base_project_steps',
     'base_manufacturing_jobs', 'base_manufacturing_outputs', 'decision_records',
     'cooperation_requests', 'base_weather_schedule', 'base_orders', 'base_purchases',
-    'base_resource_nodes', 'base_extraction_jobs', 'base_extraction_outputs', 'base_production_slots'
+    'base_resource_nodes', 'base_extraction_jobs', 'base_extraction_outputs', 'base_production_slots',
+    'base_events'
   ];
   t text;
   remaining bigint;

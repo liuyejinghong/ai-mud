@@ -45,14 +45,18 @@ class FakePgClient {
     if (text.startsWith("select")) {
       let rows: Array<Record<string, unknown>> = [];
       if (/from "bases" inner join "base_control_leases"/.test(text)) {
-        // 到期清单：running 且上次确认点晚于结算游标。
+        // 到期清单：running 且（租约未过期 或 上次确认点晚于结算游标）——D010② 后
+        // 有效租约本身即到期依据（acquire 后无需 renew/mode 切换即唤醒）。
+        // drizzle 对 timestamp 列绑定 Date 时序列化为 ISO 字符串。
+        const wallNow = new Date(params[1] as unknown as string);
         rows = this.bases
           .filter((base) => base.time_mode === params[0])
           .filter((base) =>
             this.leases.some(
               (lease) =>
                 lease.base_id === base.id &&
-                (lease.updated_at as Date).getTime() > (base.last_advanced_at as Date).getTime()
+                ((lease.lease_until as Date).getTime() > wallNow.getTime() ||
+                  (lease.updated_at as Date).getTime() > (base.last_advanced_at as Date).getTime())
             )
           )
           .sort((left, right) => String(left.id).localeCompare(String(right.id)));
@@ -109,6 +113,16 @@ class FakePgClient {
       };
       this.sites.push(record);
       return { rows: [[record.id]], rowCount: 1, fields: [] };
+    }
+
+    if (text.startsWith('delete from "base_control_leases"')) {
+      // D010①：TTL 清扫，where lease_until <= $1。
+      const cutoff = new Date(params[0] as unknown as string);
+      const before = this.leases.length;
+      this.leases = this.leases.filter(
+        (lease) => (lease.lease_until as Date).getTime() > cutoff.getTime()
+      );
+      return { rows: [], rowCount: before - this.leases.length, fields: [] };
     }
 
     if (text.startsWith('insert into "base_control_leases"')) {
@@ -448,7 +462,56 @@ describe("BaseRepository per-base tick isolation (车道 C4)", () => {
     expect(listQuery).toContain('inner join "base_control_leases"');
     expect(listQuery).toContain('order by "bases"."id"');
     expect(listQuery).not.toContain("for update");
-    expect(client.queries[0]?.params).toEqual(["running"]);
+    // D010②：新增墙钟参数（租约有效性判断）；过期租约（b-expired）仍因未结清时段到期。
+    expect(client.queries[0]?.params).toEqual(["running", NOW.toISOString()]);
+  });
+
+  it("treats a valid lease as due even when no confirmed segment is pending (wake without renew)", async () => {
+    const { client, repo, tx } = createRepository();
+    // 刚 acquire 的基地：updated_at == last_advanced_at（旧闸门下 updated_at 不严格大于
+    // last_advanced_at → 永不到期 → 只有暂停/恢复能唤醒）；租约仍有效即应到期。
+    client.bases.push(seedBase({ id: "b-fresh", last_advanced_at: NOW }));
+    client.leases.push({
+      base_id: "b-fresh",
+      lease_token: "t",
+      lease_until: new Date(NOW.getTime() + 2 * MINUTE_MS),
+      updated_at: NOW
+    });
+
+    expect(await repo.listAdvanceableBaseIds(tx)).toEqual(["b-fresh"]);
+  });
+});
+
+describe("BaseRepository lease TTL sweep (D010①)", () => {
+  it("deletes only expired lease rows and reports the count", async () => {
+    const { client, repo, tx } = createRepository();
+    client.leases.push(
+      { base_id: "b-ghost", lease_token: "g", lease_until: new Date(NOW.getTime() - MINUTE_MS), updated_at: new Date(NOW.getTime() - 3 * MINUTE_MS) },
+      { base_id: "b-live", lease_token: "l", lease_until: new Date(NOW.getTime() + MINUTE_MS), updated_at: NOW }
+    );
+
+    const released = await repo.sweepExpiredLeases(tx, NOW);
+
+    expect(released).toBe(1);
+    expect(client.leases.map((lease) => lease.base_id)).toEqual(["b-live"]);
+  });
+
+  it("confirms a freshly acquired lease advances on the next tick without renew or mode switch", async () => {
+    const { client, repo, tx } = createRepository();
+    // acquire 后 updated_at == last_advanced_at == NOW-2min，租约 2 分钟后才过期，
+    // 期间无任何 renew：有效租约确认到墙钟，sim 应直接恢复推进。
+    const acquiredAt = new Date(NOW.getTime() - 2 * MINUTE_MS);
+    client.bases.push(seedBase({ id: "b-wake", last_advanced_at: acquiredAt }));
+    client.leases.push({
+      base_id: "b-wake",
+      lease_token: "t",
+      lease_until: new Date(NOW.getTime() + 2 * MINUTE_MS),
+      updated_at: acquiredAt
+    });
+
+    expect(await repo.lockAdvanceableBases(tx, NOW)).toMatchObject([
+      { baseId: "b-wake", deltaSimMs: 2 * MINUTE_MS }
+    ]);
   });
 });
 

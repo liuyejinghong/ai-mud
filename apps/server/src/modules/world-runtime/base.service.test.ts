@@ -459,7 +459,8 @@ describe("BaseService.provision", () => {
     expect(base.name).toBe("余电前哨");
     expect(base.contentRelease).toBe("release-yudian-0.12");
     expect(base.timeMode).toBe("paused");
-    expect(base.speed).toBe(1);
+    // D012：初始倍速默认 ×2（×1 首圈 79 基地分钟超出承诺节奏，见 FIX-PLAN）。
+    expect(base.speed).toBe(2);
     expect(base.simTime).toEqual(T0);
     expect(base.lastAdvancedAt).toEqual(T1);
     const baseId = base.id;
@@ -644,6 +645,30 @@ describe("BaseService foreground control", () => {
       { accountId: ACCOUNT_ID },
       { action: "renew", controlToken: "old-tab" }
     )).rejects.toMatchObject({ code: "CONTROL_EXPIRED" });
+  });
+
+  it("classifies control failures with machine-readable reasons (D010)", async () => {
+    const time = { current: T0, now() { return this.current; } };
+    const fx = createFixture({ clock: time });
+    const base = makeBase({ timeMode: "running" });
+    fx.repo.bases.push(base);
+    const acquired = await fx.service.heartbeat({ accountId: ACCOUNT_ID }, { action: "acquire" });
+    const token = acquired.controlToken!;
+
+    // 本会话令牌但租约过期（心跳断档）→ HEARTBEAT_STALE。
+    time.current = new Date(T0.getTime() + BASE_LEASE_TTL_MS + 60_000);
+    await expect(fx.service.heartbeat(
+      { accountId: ACCOUNT_ID },
+      { action: "renew", controlToken: token }
+    )).rejects.toMatchObject({ code: "CONTROL_EXPIRED", reason: "HEARTBEAT_STALE" });
+
+    // 令牌不匹配（幽灵租约/其他会话占用）→ GHOST_LEASE。
+    time.current = new Date(T0.getTime() + BASE_LEASE_TTL_MS + 120_000);
+    await expect(fx.service.applyCommand(
+      { accountId: ACCOUNT_ID },
+      { command: "resume" },
+      "ghost-token"
+    )).rejects.toMatchObject({ code: "CONTROL_EXPIRED", reason: "GHOST_LEASE" });
   });
 
   it("settles using the old speed before speed change or pause, then resumes without offline time", async () => {
@@ -866,6 +891,9 @@ describe("BaseService.snapshot", () => {
       baseRevision: 7,
       simTime: S0.toISOString(),
       timeMode: "running",
+      // D010 如实运行态：running + 有效租约 → effectiveRunning=true、无暂停原因。
+      effectiveRunning: true,
+      pauseReason: null,
       speed: 2,
       activeContentRelease: "release-yudian-0.12",
       power: {
@@ -1095,7 +1123,7 @@ describe("BaseService.snapshot", () => {
 
   it("marks the control lease as not held when it has expired", async () => {
     const fx = createFixture({ now: T1 });
-    fx.repo.bases.push(makeBase());
+    fx.repo.bases.push(makeBase({ timeMode: "running" }));
     fx.repo.leases.set("base-1", {
       leaseToken: `account:${ACCOUNT_ID}`,
       leaseUntil: new Date(T0.getTime()),
@@ -1109,6 +1137,74 @@ describe("BaseService.snapshot", () => {
       controlActive: false,
       leaseUntil: T0.toISOString()
     });
+    // D010：running 但租约过期 → effectiveRunning=false 且 pauseReason 如实暴露
+    // （sim 实际停摆，等待前台接管），不再单看 timeMode 谎报"运行中"。
+    expect(snapshot.effectiveRunning).toBe(false);
+    expect(snapshot.pauseReason).toBe("foreground-required");
+  });
+
+  it("exposes createdAt on order and purchase history rows (D022)", async () => {
+    const fx = createFixture({ now: T1 });
+    fx.repo.bases.push(makeBase({ timeMode: "paused" }));
+    // 直接替换 economyRead 的两个读口（fixture 缺省恒 []）。
+    const service = fx.service;
+    const deps = (service as unknown as { deps: { economyRead: Record<string, unknown> } }).deps;
+    deps.economyRead.listOrdersForBase = async () => [
+      {
+        id: "order-1",
+        orderDefId: "supply_anchor",
+        orderRevision: 1,
+        status: "delivered",
+        requiredItemId: "anchor",
+        quantity: 5,
+        rewardCredits: 120,
+        deadlineSim: new Date("2026-09-20T00:00:00.000Z"),
+        acceptedAtSim: new Date("2026-09-18T10:00:00.000Z"),
+        createdAt: new Date("2026-09-17T08:30:00.000Z")
+      }
+    ];
+    deps.economyRead.listPurchasesForBase = async () => [
+      {
+        id: "purchase-1",
+        itemId: "spare_parts",
+        quantity: 3,
+        costCredits: 90,
+        status: "in_transit",
+        arrivesAtSim: new Date("2026-09-21T00:00:00.000Z"),
+        createdAt: new Date("2026-09-17T09:15:00.000Z")
+      }
+    ];
+
+    const snapshot = await service.snapshot({ accountId: ACCOUNT_ID });
+
+    expect(snapshot.orders).toEqual([
+      expect.objectContaining({
+        orderId: "order-1",
+        createdAt: "2026-09-17T08:30:00.000Z"
+      })
+    ]);
+    expect(snapshot.purchases).toEqual([
+      expect.objectContaining({
+        purchaseId: "purchase-1",
+        createdAt: "2026-09-17T09:15:00.000Z"
+      })
+    ]);
+  });
+
+  it("reports effectiveRunning=false with no pauseReason when the player paused", async () => {
+    const fx = createFixture({ now: T1 });
+    fx.repo.bases.push(makeBase({ timeMode: "paused" }));
+    fx.repo.leases.set("base-1", {
+      leaseToken: `account:${ACCOUNT_ID}`,
+      leaseUntil: new Date(T1.getTime() + 60_000),
+      updatedAt: T1
+    });
+
+    const snapshot = await fx.service.snapshot({ accountId: ACCOUNT_ID });
+
+    // 玩家主动暂停不是 foreground-required：前端区分"我停的"与"租约停的"。
+    expect(snapshot.effectiveRunning).toBe(false);
+    expect(snapshot.pauseReason).toBeNull();
   });
 
   it("raises BASE_SCOPE_INVALID when the account has no base (S2)", async () => {

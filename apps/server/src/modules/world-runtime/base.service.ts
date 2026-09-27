@@ -288,6 +288,8 @@ export interface BaseServiceDeps {
         rewardCredits: number;
         deadlineSim: Date | null;
         acceptedAtSim: Date | null;
+        // D022：历史记录时间戳（服务端墙钟）。
+        createdAt: Date;
       }>
     >;
     listPurchasesForBase(baseId: string): Promise<
@@ -298,6 +300,8 @@ export interface BaseServiceDeps {
         costCredits: number;
         status: string;
         arrivesAtSim: Date;
+        // D022：历史记录时间戳（服务端墙钟）。
+        createdAt: Date;
       }>
     >;
   };
@@ -368,9 +372,15 @@ const RESERVATION_TERMINAL_PROJECT_STATUSES: ReadonlySet<string> = new Set([
 const RESERVATION_TERMINAL_JOB_STATUSES: ReadonlySet<string> = new Set(["completed", "cancelled"]);
 
 // 领域错误：code 为 shared ErrorCode。transport 不 import 本类，
-// 靠 { code, message } 形状识别（见 base-session.routes.ts）。
+// 靠 { code, message, reason? } 形状识别（见 base-session.routes.ts）。
+// D010：reason 为可选机器可读原因（ControlFailureReason），控制权失效时携带，
+// 供前端区分"幽灵租约可接管收回"与"本会话心跳断档"。
 export class BaseOperationError extends Error {
-  constructor(readonly code: ErrorCode, message: string) {
+  constructor(
+    readonly code: ErrorCode,
+    message: string,
+    readonly reason?: string
+  ) {
     super(message);
     this.name = "BaseOperationError";
   }
@@ -462,7 +472,9 @@ export class BaseService {
         name: seed.baseName,
         contentRelease: seed.releaseId,
         timeMode: "paused",
-        speed: 1,
+        // D012：初始倍速 ×2（首圈"采集→加工→制造→扩建"在 ×1 下 79 基地分钟，
+        // 新手倍感觉卡住；×2 为更平缓的默认档，玩家仍可 1/2/4 任意切换）。
+        speed: 2,
         simTime,
         lastAdvancedAt: now,
         // R1 landing：新档显式 0；旧 release 未声明时保持 DB 默认（旧行为）。
@@ -552,6 +564,8 @@ export class BaseService {
       const sites = await repo.listSites(tx, baseId);
       const inventory = await this.deps.assets.listBaseInventory(tx, baseId);
       const lease = await repo.getControlLease(tx, baseId);
+      // D010：租约有效性以服务端 TTL 为准（lease_until 未过当前墙钟）。
+      const leaseValid = !!lease && lease.leaseUntil.getTime() > now.getTime();
       const powerRecord = await this.deps.industryRead.getPowerState(baseId);
       const projectRecords = await this.deps.industryRead.listProjects(baseId);
       const stepRecords =
@@ -708,6 +722,11 @@ export class BaseService {
         baseRevision: base.baseRevision,
         simTime: base.simTime.toISOString(),
         timeMode: base.timeMode,
+        // D010 如实运行态：timeMode 说"运行"但前台控制租约已失效时，sim 实际停摆，
+        // 快照必须如实携带（前端显示"已暂停：等待前台接管"，不再谎报运行中）。
+        effectiveRunning: base.timeMode === "running" && leaseValid,
+        pauseReason:
+          base.timeMode === "running" && !leaseValid ? "foreground-required" : null,
         speed: base.speed,
         activeContentRelease: base.contentRelease,
         power: {
@@ -848,7 +867,9 @@ export class BaseService {
             quantity: order.quantity,
             rewardCredits: order.rewardCredits,
             deadlineSim: order.deadlineSim?.toISOString() ?? null,
-            acceptedAtSim: order.acceptedAtSim?.toISOString() ?? null
+            acceptedAtSim: order.acceptedAtSim?.toISOString() ?? null,
+            // D022：历史记录时间戳。
+            createdAt: order.createdAt.toISOString()
           };
         }),
         purchases: (await this.deps.economyRead.listPurchasesForBase(baseId)).map((purchase) => ({
@@ -858,7 +879,9 @@ export class BaseService {
           quantity: purchase.quantity,
           costCredits: purchase.costCredits,
           status: purchase.status as "in_transit" | "delivered",
-          arrivesAtSim: purchase.arrivesAtSim.toISOString()
+          arrivesAtSim: purchase.arrivesAtSim.toISOString(),
+          // D022：历史记录时间戳。
+          createdAt: purchase.createdAt.toISOString()
         })),
         cooperationRequests,
         manufacturingJobs: jobRecords.map(
@@ -881,8 +904,8 @@ export class BaseService {
           })
         ),
         controlLease: {
-          heldByThisSession: !!lease && lease.leaseUntil.getTime() > now.getTime() && lease.leaseToken === controlToken,
-          controlActive: !!lease && lease.leaseUntil.getTime() > now.getTime(),
+          heldByThisSession: !!lease && leaseValid && lease.leaseToken === controlToken,
+          controlActive: leaseValid,
           leaseUntil: lease ? lease.leaseUntil.toISOString() : null
         },
         capabilities: [...new Set([
@@ -1058,7 +1081,17 @@ export class BaseService {
   ) {
     const lease = await repo.getControlLease(tx, baseId);
     if (!controlToken || !lease || lease.leaseToken !== controlToken || lease.leaseUntil.getTime() <= now.getTime()) {
-      throw new BaseOperationError("CONTROL_EXPIRED" as ErrorCode, "当前标签已失去基地控制权，请刷新后重试。");
+      // D010：带机器可读原因。本会话令牌匹配但租约过期 = 心跳断档（重新接管即恢复）；
+      // 无令牌/令牌不匹配（含无租约行的幽灵租约残留）= 控制权在他方（接管收回）。
+      const staleHeartbeat =
+        !!controlToken && !!lease && lease.leaseToken === controlToken;
+      throw new BaseOperationError(
+        "CONTROL_EXPIRED" as ErrorCode,
+        staleHeartbeat
+          ? "心跳断档，本标签已失去基地控制权，请重新接管。"
+          : "当前标签已失去基地控制权，请接管基地后重试。",
+        staleHeartbeat ? "HEARTBEAT_STALE" : "GHOST_LEASE"
+      );
     }
     return lease;
   }

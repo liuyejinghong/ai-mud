@@ -43,6 +43,7 @@ import {
   NPC_WORLD_RUNTIME_KEY,
   WorldRuntimeService,
   type WorldRuntimeSettleResult,
+  type WorldTickIsolatedParticipant,
   type WorldTickParticipant
 } from "./modules/world-runtime/world-runtime.service.js";
 
@@ -163,6 +164,18 @@ export async function buildApp(input?: { env?: Env; db?: Db; provisionCatalog?: 
     }
   });
 
+  // D010①：控制租约 TTL 到期真正释放。世界 tick 每步在基地结算之后清扫过期行——
+  // 死会话的幽灵租约不再永久占用控制权（快照 controlActive 归实、接管不再遇残留行）。
+  // 结算在前、清扫在后：过期租约最后一次"结清已确认时段"的机会先行。
+  const leaseSweep: WorldTickIsolatedParticipant = async () => {
+    await db.transaction(async (tx) => {
+      const released = await baseTickRepo.sweepExpiredLeases(tx, systemWorldClock.now());
+      if (released > 0) {
+        app.log.info({ released }, "expired base control leases swept");
+      }
+    });
+  };
+
   const runSettleDue = async (now = systemWorldClock.now()) => {
     const runtime = new WorldRuntimeService({
       repo: new WorldRuntimeRepository(db),
@@ -170,7 +183,7 @@ export async function buildApp(input?: { env?: Env; db?: Db; provisionCatalog?: 
       maxStepsPerRun: config.WORLD_TICK_MAX_STEPS,
       participants: legacyWorldParticipants,
       isolated: {
-        participants: [baseTick],
+        participants: [baseTick, leaseSweep],
         onFailure: ({ tickAt, error }) => {
           app.log.error(
             { err: error, tickAt: tickAt.toISOString() },

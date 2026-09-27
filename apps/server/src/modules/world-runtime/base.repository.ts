@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, lte, or, sql } from "drizzle-orm";
 import type { BaseTimeMode } from "@ai-mud/shared";
 import { BASE_MAX_CATCHUP_MS } from "@ai-mud/shared";
 import type { Db } from "../../db/client.js";
@@ -308,6 +308,9 @@ export class BaseRepository {
   }
 
   // ---------- 控制租约（事实唯一写者 = world.base，A0-04 附注 ii） ----------
+  // D010：租约有服务端 TTL（lease_until）。过期行必须被真正释放（sweepExpiredLeases，
+  // 世界 tick 每步调用），否则死会话的幽灵租约行永久残留，接管/快照/推进闸门
+  // 都要各自防御过期行。
 
   async upsertControlLease(tx: BaseRepoTx, input: {
     baseId: string;
@@ -354,14 +357,29 @@ export class BaseRepository {
     ));
   }
 
+  // D010①：TTL 到期真正释放。删除所有过期的租约行（幂等；返回删除行数）。
+  // 世界 tick 每步在基地结算之后调用：先给过期租约最后一次结清已确认时段的机会，
+  // 再释放行。显式 release 与接管覆盖不受影响。
+  async sweepExpiredLeases(tx: BaseRepoTx, now: Date): Promise<number> {
+    const result = await tx
+      .delete(baseControlLeases)
+      .where(lte(baseControlLeases.leaseUntil, now));
+    return result.rowCount ?? 0;
+  }
+
   // ---------- BaseClockStorePort：只结算已确认的前台时段 ----------
 
   // SELECT … FOR NO KEY UPDATE SKIP LOCKED 锁住 running 基地行（按 id 排序，锁序确定），逐行联
-  // base_control_leases.updatedAt 是最后确认点；租约过期仍结清此前已确认的时段。
+  // base_control_leases 得到前台确认边界。D010②：确认边界跟随租约有效性——
+  //   有效租约（lease_until 未过）确认到 min(tickAt, wallNow)：acquire 建立租约后 sim
+  //   直接恢复推进，不再依赖下一次 renew 严格抬高 updated_at（旧闸门下 acquire 把
+  //   updated_at 与 last_advanced_at 推到同一时刻，若续租断档则基地永久冻结在
+  //   running 态，只有暂停/恢复切换能唤醒——R06 实测症状）；
+  //   过期租约只确认到 updated_at（最后一次续租点），过期即停，不把断档时间当生产时间。
   // 被别的事务（玩家命令/心跳）持锁的基地本次跳过而不排队：lastAdvancedAt 不动，下个 tick
   // 按已确认时段补上；单次上限只推进游标到本次结算终点，不丢剩余时长。
   // 事务句柄经 scopeTickTransactionToBase 绑定过基地时，只锁定/返回那一个基地。
-  // deltaSimMs = clamp(min(tickAt, updatedAt, wallNow) - lastAdvancedAt, 0, 上限) × speed。
+  // deltaSimMs = clamp(confirmedEnd - lastAdvancedAt, 0, 上限) × speed。
   async lockAdvanceableBases(tx: BaseRepoTx, now: Date): Promise<AdvanceableBaseRecord[]> {
     const wallNow = this.wallClock.now();
     const scopedBaseId = tickScopeByTransaction.get(tx);
@@ -386,7 +404,15 @@ export class BaseRepository {
       const lease = await this.getControlLease(tx, row.id);
       if (!lease) continue;
 
-      const confirmedEndMs = Math.min(now.getTime(), lease.updatedAt.getTime(), wallNow.getTime());
+      // 前台确认边界：有效租约（lease_until 未过当前墙钟）确认到当前墙钟——租约本身
+      // 就是服务端发出的前台凭证，TTL 到点自动停；过期租约只确认到最后一次续租点
+      // （updated_at），断档时间不当作生产时间（L004 离开自动暂停语义不变）。
+      const leaseValid = lease.leaseUntil.getTime() > wallNow.getTime();
+      const confirmedEndMs = Math.min(
+        now.getTime(),
+        leaseValid ? wallNow.getTime() : lease.updatedAt.getTime(),
+        wallNow.getTime()
+      );
       const deltaWallMs = Math.min(
         Math.max(confirmedEndMs - row.lastAdvancedAt.getTime(), 0),
         BASE_MAX_CATCHUP_MS
@@ -403,14 +429,26 @@ export class BaseRepository {
     return advanceable;
   }
 
-  // 逐基地 tick 的到期清单：running 且有尚未结清的确认时段；过期租约也可能到期。
-  // 不加锁——每个基地随后在自己的事务里重新锁定并复核时间游标。
+  // 逐基地 tick 的到期清单：running 且（租约有效 或 尚有未结清的已确认时段）。
+  // 有效租约即使 updated_at == last_advanced_at（刚 acquire）也到期——下个 tick
+  // 按 lockAdvanceableBases 的确认边界推进，无需玩家切换 mode 唤醒（D010②）。
+  // 过期租约仍保留"结清最后确认时段"的收尾机会；不加锁——每个基地随后在
+  // 自己的事务里重新锁定并复核时间游标。
   async listAdvanceableBaseIds(tx: BaseRepoTx): Promise<string[]> {
+    const now = this.wallClock.now();
     const rows = await tx
       .select({ id: bases.id })
       .from(bases)
       .innerJoin(baseControlLeases, eq(baseControlLeases.baseId, bases.id))
-      .where(and(eq(bases.timeMode, "running"), gt(baseControlLeases.updatedAt, bases.lastAdvancedAt)))
+      .where(
+        and(
+          eq(bases.timeMode, "running"),
+          or(
+            gt(baseControlLeases.leaseUntil, now),
+            gt(baseControlLeases.updatedAt, bases.lastAdvancedAt)
+          )
+        )
+      )
       .orderBy(asc(bases.id));
     return rows.map((row) => row.id);
   }

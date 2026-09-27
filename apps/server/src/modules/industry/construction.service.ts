@@ -32,7 +32,9 @@ export class BaseOperationError extends Error {
   constructor(
     readonly statusCode: number,
     readonly code: ErrorCode,
-    message: string
+    message: string,
+    // D010：控制权失效时可携带机器可读原因（GHOST_LEASE/HEARTBEAT_STALE）。
+    readonly reason?: string
   ) {
     super(message);
     this.name = "BaseOperationError";
