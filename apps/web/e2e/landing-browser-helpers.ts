@@ -136,6 +136,7 @@ export async function resetBrowserZoom(page: Page): Promise<void> {
 
 export async function checkpoint(page: Page, testInfo: TestInfo, name: string): Promise<BaseSnapshotDto> {
   const snapshot = await readSnapshot(page);
+  console.info(`[landing-checkpoint] ${name} simTime=${snapshot.simTime}`);
   await testInfo.attach(`${name}.json`, {
     body: JSON.stringify(snapshot, null, 2),
     contentType: "application/json"

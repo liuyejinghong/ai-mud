@@ -392,6 +392,7 @@ test("U04+U05 三圈经营：扩建太阳能→自产备件维护→扩建加工
       body: JSON.stringify({ status: "WAITING", minutes: 20, baseline: awayBaseline }, null, 2),
       contentType: "application/json"
     });
+    console.info("[landing-revisit] tab hidden; beginning 20-minute natural absence");
     await away.waitForTimeout(20 * 60_000 + 1_000);
     await away.close();
     await page.bringToFront();
