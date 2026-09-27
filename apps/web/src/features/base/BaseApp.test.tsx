@@ -69,7 +69,7 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
     epoch: 1,
     baseRevision: 1,
     simTime: "2126-01-01T08:00:00.000Z",
-    timeMode: "running",
+    timeMode: "running", effectiveRunning: true, pauseReason: null,
     speed: 1,
     activeContentRelease: "default-release",
     power: {
@@ -148,7 +148,7 @@ describe("BaseApp", () => {
         credits: 485,
         purchases: [{
           purchaseId: "purchase-1", itemId: "anchor", itemName: "地锚", quantity: 1,
-          costCredits: 15, status: "in_transit", arrivesAtSim: "2126-01-01T08:20:00.000Z"
+          costCredits: 15, status: "in_transit", arrivesAtSim: "2126-01-01T08:20:00.000Z", createdAt: "2026-09-27T00:00:00.000Z"
         }]
       }));
     vi.mocked(createPurchase).mockResolvedValue({ purchaseId: "purchase-1", duplicate: false });

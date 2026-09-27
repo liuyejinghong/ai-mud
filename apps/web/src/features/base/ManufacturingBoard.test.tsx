@@ -122,7 +122,7 @@ describe("ManufacturingBoard", () => {
       ],
       purchases: [{
         purchaseId: "purchase-1", itemId: "anchor", itemName: "锚固件", quantity: 3,
-        costCredits: 30, status: "in_transit", arrivesAtSim: "2126-01-01T12:00:00.000Z"
+        costCredits: 30, status: "in_transit", arrivesAtSim: "2126-01-01T12:00:00.000Z", createdAt: "2026-09-27T00:00:00.000Z"
       }]
     });
     fireEvent.change(screen.getByRole("spinbutton", { name: "制造 YD-S1 机器人数量" }), {

@@ -12,7 +12,7 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
     epoch: 1,
     baseRevision: 1,
     simTime: "2126-01-01T08:00:00.000Z",
-    timeMode: "running",
+    timeMode: "running", effectiveRunning: true, pauseReason: null,
     speed: 1,
     activeContentRelease: "default-release",
     power: {
@@ -175,11 +175,11 @@ describe("BaseShell", () => {
       orders: [{
         orderId: "order-1", orderRef: { kind: "order", stableId: "spares", revision: 1 },
         name: "备件采购单", status: "delivered", requiredItemId: "spare_parts", requiredItemName: "备件",
-        quantity: 10, rewardCredits: 450, deadlineSim: null, acceptedAtSim: null
+        quantity: 10, rewardCredits: 450, deadlineSim: null, acceptedAtSim: null, createdAt: "2026-09-27T00:00:00.000Z"
       }],
       purchases: [{
         purchaseId: "purchase-1", itemId: "solar_panel_set", itemName: "太阳能板组", quantity: 6,
-        costCredits: 720, status: "in_transit", arrivesAtSim: "2126-01-01T08:20:00.000Z"
+        costCredits: 720, status: "in_transit", arrivesAtSim: "2126-01-01T08:20:00.000Z", createdAt: "2026-09-27T00:00:00.000Z"
       }]
     }));
 
