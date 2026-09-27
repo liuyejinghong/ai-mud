@@ -1,0 +1,15 @@
+{
+  "returnMapTabPresses": 8,
+  "sceneSelected": "true",
+  "mapVisible": true,
+  "panelVisible": false,
+  "viewport": {
+    "innerWidth": 640,
+    "innerHeight": 400,
+    "devicePixelRatio": 2,
+    "documentScrollWidth": 640,
+    "documentScrollHeight": 400,
+    "shellScrollWidth": 640,
+    "shellScrollHeight": 400
+  }
+}
