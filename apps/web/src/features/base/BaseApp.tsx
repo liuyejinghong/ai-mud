@@ -35,10 +35,14 @@ import { logout } from "../auth/authApi.js";
 import { BaseIntroModal } from "./BaseIntroModal.js";
 import { BaseShell } from "./BaseShell.js";
 import type { BaseActionFeedback } from "./BaseShell.js";
-import { isLandingSnapshot, LandingShell, type LandingSelection } from "./LandingShell.js";
+import { isLandingSnapshot, LandingShell, projectBenefitSummary, type LandingSelection } from "./LandingShell.js";
 
 const SNAPSHOT_POLL_MS = 5_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
+// D011-low：acquire 长时间无响应时不再阻塞快照轮询（轮询只读已提交事实，带 token 亦然）。
+const ACQUIRE_POLL_GUARD_MS = 8_000;
+// D018：完工 toast ≥8s 自动消隐；悬停暂停计时。
+const COMPLETION_BANNER_DISMISS_MS = 10_000;
 
 function isForeground(): boolean {
   return document.visibilityState === "visible" && document.hasFocus();
@@ -203,7 +207,14 @@ export function BaseApp({
   const controlTokenRef = useRef<string | null>(null);
   const controlGenerationRef = useRef(0);
   const acquiringRef = useRef<Promise<string | null> | null>(null);
+  const acquireStartedAtRef = useRef(0);
   const foregroundRef = useRef(false);
+  // D010：接管失败的可见原因（成功即清空）；重试入口是顶栏"接管"按钮。
+  const [controlNotice, setControlNotice] = useState<string | null>(null);
+  // D018：完工横幅自动消隐，悬停暂停计时。
+  const [bannerHover, setBannerHover] = useState(false);
+  // D020：暂停/恢复等时钟命令串行化——上一条完成后再受理下一条，不吞点击。
+  const clockCommandChainRef = useRef<Promise<void>>(Promise.resolve());
 
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -236,6 +247,7 @@ export function BaseApp({
     if (controlTokenRef.current) return Promise.resolve(controlTokenRef.current);
     if (acquiringRef.current) return acquiringRef.current;
     const generation = controlGenerationRef.current;
+    acquireStartedAtRef.current = Date.now();
     const acquiring = heartbeat({ action: "acquire" }, csrf).then((result) => {
       const token = result.controlToken;
       if (!token) return null;
@@ -247,6 +259,7 @@ export function BaseApp({
       setControlToken(token);
       return token;
     }).finally(() => {
+      acquireStartedAtRef.current = 0;
       if (acquiringRef.current === acquiring) acquiringRef.current = null;
     });
     acquiringRef.current = acquiring;
@@ -279,7 +292,13 @@ export function BaseApp({
             project.status === "completed" && !completedSeenRef.current.has(project.projectId)
         );
         if (fresh !== undefined) {
-          setCompletionBanner(`${fresh.name}已完工，基地能力提升。`);
+          // D024：完工横幅写明提升了什么（如"发电 +4.0 kW"），不再只说"能力提升"。
+          const benefit = projectBenefitSummary(next, fresh.definitionRef.stableId);
+          setCompletionBanner(
+            benefit
+              ? `${fresh.name}已完工：${benefit}。`
+              : `${fresh.name}已完工，基地能力提升。`
+          );
         }
       }
       hasPrevSnapshotRef.current = true;
@@ -320,7 +339,9 @@ export function BaseApp({
   // 首次前台快照在 acquire 后读取；轮询只读已提交的服务端事实。
   useEffect(() => {
     const poll = () => {
-      if (document.visibilityState !== "visible" || acquiringRef.current || authenticatingRef.current) return;
+      if (document.visibilityState !== "visible" || authenticatingRef.current) return;
+      // acquire 进行中先让路，但只在短窗内：请求挂死时轮询不能永远停摆（D011 显示滞后波）。
+      if (acquiringRef.current && Date.now() - acquireStartedAtRef.current < ACQUIRE_POLL_GUARD_MS) return;
       void refreshSnapshot();
     };
     void (async () => {
@@ -382,6 +403,13 @@ export function BaseApp({
       void releaseControl(csrfToken);
     };
   }, [csrfToken, acquireControl, refreshSnapshot, releaseControl]);
+
+  // D018：完工 toast 不再永驻——10s（≥8s）自动消隐，鼠标悬停时暂停计时。
+  useEffect(() => {
+    if (completionBanner === null || bannerHover) return;
+    const timer = window.setTimeout(() => setCompletionBanner(null), COMPLETION_BANNER_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [completionBanner, bannerHover]);
 
   const handleAuthSubmit = async () => {
     authenticatingRef.current = true;
@@ -503,14 +531,20 @@ export function BaseApp({
     (input: BaseClockCommandInputDto, area: "base" | "clock" = "clock") => {
       const token = controlTokenRef.current;
       if (csrfToken === null || token === null) return;
-      void runCommand(
-        () => setClock(input, csrfToken, token),
-        area,
-        (result) => result.timeMode === "paused"
-          ? "基地时间已暂停；离开后不会补算。"
-          : `基地已按 ×${result.speed} 计时；当前基地时间 ${result.simTime.slice(11, 16)}。`,
-        token
-      );
+      // D020：暂停/恢复点击串行化。in-flight 期间按钮已禁用，同帧连点等极端竞态下的
+      // 命令排队执行（上一条完成后才受理下一条），不再出现"受理了但状态翻转丢失"。
+      const run = () =>
+        runCommand(
+          () => setClock(input, csrfToken, controlTokenRef.current ?? token),
+          area,
+          (result) => result.timeMode === "paused"
+            ? "基地时间已暂停；离开后不会补算。"
+            : `基地已按 ×${result.speed} 计时；当前基地时间 ${result.simTime.slice(11, 16)}。`,
+          token
+        );
+      clockCommandChainRef.current = clockCommandChainRef.current
+        .then(run)
+        .catch(() => undefined);
     },
     [csrfToken, runCommand]
   );
@@ -531,6 +565,7 @@ export function BaseApp({
       hasPrevSnapshotRef.current = false;
       setCompletionBanner(null);
       setActionFeedback(null);
+      setControlNotice(null);
       setPhase("unauthenticated");
       setIntroDismissed(false);
       setSelectedResourceId(null);
@@ -688,7 +723,7 @@ export function BaseApp({
           ...input,
           ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
         }, controlToken),
-        () => `采矿单已提交：${input.batches} 批，预留 ${input.batches * 4} 矿。`);
+        () => `采矿单已提交：${input.batches} 批，为本工程预留 ${input.batches * 4} 矿。`);
     },
     [csrfToken, runLandingCommand]
   );
@@ -859,9 +894,14 @@ export function BaseApp({
 
   const handleAcquireControl = useCallback(() => {
     if (csrfToken === null) return;
+    setControlNotice(null);
     void acquireControl(csrfToken, true).then(() => {
       void refreshSnapshot();
-    }).catch((error) => setActionFeedback({ area: "clock", kind: "error", message: describeError(error) }));
+    }).catch((error) => {
+      // D010：接管失败给可见原因＋重试入口（顶栏"接管"按钮保留可点），不再静默。
+      setControlNotice(describeError(error));
+      setActionFeedback({ area: "clock", kind: "error", message: describeError(error) });
+    });
   }, [csrfToken, acquireControl, refreshSnapshot]);
 
   if (phase !== "ready" || snapshot === null) {
@@ -931,7 +971,12 @@ export function BaseApp({
         />
       ) : null}
       {completionBanner ? (
-        <div className="base-completion-banner" role="status">
+        <div
+          className="base-completion-banner"
+          role="status"
+          onMouseEnter={() => setBannerHover(true)}
+          onMouseLeave={() => setBannerHover(false)}
+        >
           <span>{completionBanner}</span>
           <button
             type="button"
@@ -978,6 +1023,9 @@ export function BaseApp({
           onLogout={() => void handleLogout()}
           accountEmail={accountEmail}
           feedback={landingFeedback}
+          csrfToken={csrfToken}
+          eventsRefreshKey={snapshot.baseRevision}
+          controlNotice={controlNotice}
         />
       ) : (
       <BaseShell

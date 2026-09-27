@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BaseSnapshotDto } from "@ai-mud/shared";
 import { BaseApp } from "./BaseApp.js";
-import { BaseApiError, createPurchase, decideCooperation, getSnapshot, heartbeat, login, playtestRegister, provision } from "./baseApi.js";
+import { BaseApiError, createPurchase, decideCooperation, getSnapshot, heartbeat, login, playtestRegister, provision, setClock } from "./baseApi.js";
 import { logout } from "../auth/authApi.js";
 
 vi.mock("./baseApi.js", () => ({
@@ -32,18 +32,29 @@ vi.mock("../auth/authApi.js", () => ({
 }));
 
 vi.mock("./BaseShell.js", () => ({
-  BaseShell: ({ snapshot, actionFeedback, hasControl, onPurchase, onCooperationDecision, onLogout }: {
+  BaseShell: ({ snapshot, actionFeedback, hasControl, onPurchase, onCooperationDecision, onLogout, onClockCommand }: {
     snapshot: { baseId: string };
     actionFeedback: { message: string } | null;
     hasControl?: boolean;
     onPurchase: (itemId: string, quantity: number) => void;
     onCooperationDecision?: (requestId: string, action: "support" | "wait", expectedHelperOperatorId?: string) => void;
     onLogout?: () => void;
+    onClockCommand?: (input: { command: "pause" | "resume" | "set_speed"; speed?: number }) => void;
   }) => (
     <div data-testid="base-shell">
       基地 {snapshot.baseId}
       <button type="button" onClick={() => onPurchase("anchor", 1)}>测试采购</button>
       <button type="button" onClick={() => onCooperationDecision?.("request-1", "support", "operator-2")}>测试协作</button>
+      <button
+        type="button"
+        onClick={() => {
+          // 模拟 D020：同一帧内连点暂停→恢复（按钮禁用态尚未渲染）。
+          onClockCommand?.({ command: "pause" });
+          onClockCommand?.({ command: "resume" });
+        }}
+      >
+        测试时钟连点
+      </button>
       <button type="button" onClick={() => onLogout?.()}>退出登录</button>
       <span data-testid="has-control">{String(hasControl)}</span>
       <span data-testid="command-feedback">{actionFeedback?.message}</span>
@@ -58,7 +69,7 @@ function buildSnapshot(overrides: Partial<BaseSnapshotDto> = {}): BaseSnapshotDt
     epoch: 1,
     baseRevision: 1,
     simTime: "2126-01-01T08:00:00.000Z",
-    timeMode: "running",
+    timeMode: "running", effectiveRunning: true, pauseReason: null,
     speed: 1,
     activeContentRelease: "default-release",
     power: {
@@ -137,7 +148,7 @@ describe("BaseApp", () => {
         credits: 485,
         purchases: [{
           purchaseId: "purchase-1", itemId: "anchor", itemName: "地锚", quantity: 1,
-          costCredits: 15, status: "in_transit", arrivesAtSim: "2126-01-01T08:20:00.000Z"
+          costCredits: 15, status: "in_transit", arrivesAtSim: "2126-01-01T08:20:00.000Z", createdAt: "2026-09-27T00:00:00.000Z"
         }]
       }));
     vi.mocked(createPurchase).mockResolvedValue({ purchaseId: "purchase-1", duplicate: false });
@@ -452,6 +463,128 @@ describe("BaseApp", () => {
     await act(async () => { rejectOldRenew?.(new BaseApiError(409, "CONTROL_EXPIRED", "旧控制权失效")); });
     expect(screen.getByTestId("has-control").textContent).toBe("true");
     focus.mockRestore();
+  });
+});
+
+describe("BaseApp > design-review B 线（D011/D018/D020/D024）", () => {
+  it("D020：同一帧连点暂停→恢复时串行化，上一条时钟命令完成前不发出下一条", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    vi.mocked(getSnapshot).mockResolvedValue(buildSnapshot());
+    vi.mocked(heartbeat).mockResolvedValue({
+      controlToken: "control-1", leaseUntil: "2126-01-01T08:02:00.000Z", timeMode: "running"
+    });
+    let releasePause!: () => void;
+    const commands: string[] = [];
+    vi.mocked(setClock).mockImplementation((input) => {
+      commands.push(input.command);
+      if (input.command === "pause") {
+        return new Promise((resolve) => {
+          releasePause = () => resolve({ timeMode: "paused", speed: 1, simTime: "2126-01-01T08:01:00.000Z" });
+        });
+      }
+      return Promise.resolve({ timeMode: "running", speed: 1, simTime: "2126-01-01T08:02:00.000Z" });
+    });
+
+    render(<BaseApp initialCsrfToken="csrf-1" />);
+    await act(async () => {});
+    expect(screen.getByTestId("has-control").textContent).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "测试时钟连点" }));
+    await act(async () => {});
+    expect(commands).toEqual(["pause"]); // 第二条还没发出（串行化，不是丢弃）
+
+    await act(async () => { releasePause(); });
+    expect(commands).toEqual(["pause", "resume"]); // 上一条完成后才受理下一条
+  });
+
+  it("D011：acquire 请求挂起超过守卫窗口后，快照轮询不再被阻塞", async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    vi.mocked(heartbeat).mockImplementation(() => new Promise(() => undefined)); // acquire 永不返回
+    vi.mocked(getSnapshot).mockResolvedValue(buildSnapshot());
+
+    render(<BaseApp initialCsrfToken="csrf-1" />);
+    await act(async () => {});
+    expect(getSnapshot).toHaveBeenCalledTimes(0); // 首拉在 acquire 之后，而 acquire 挂起
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(getSnapshot).toHaveBeenCalledTimes(0); // acquire 短窗内轮询让路
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(getSnapshot).toHaveBeenCalledTimes(1); // 挂死的 acquire 不再拖住轮询
+    focus.mockRestore();
+    visibility.mockRestore();
+  });
+
+  it("D018：完工横幅 10 秒后自动消隐；悬停时暂停计时", async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const active = buildSnapshot({
+      projects: [{
+        projectId: "p-1",
+        definitionRef: { kind: "project", stableId: "install_solar_array", revision: 1 },
+        name: "安装运抵的太阳能设施", status: "active", siteId: "site-a", steps: []
+      }]
+    });
+    const done = buildSnapshot({
+      projects: [{
+        projectId: "p-1",
+        definitionRef: { kind: "project", stableId: "install_solar_array", revision: 1 },
+        name: "安装运抵的太阳能设施", status: "completed", siteId: "site-a", steps: []
+      }]
+    });
+    vi.mocked(getSnapshot).mockResolvedValueOnce(active).mockResolvedValue(done);
+
+    render(<BaseApp />);
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(screen.getByRole("status").textContent).toContain("已完工");
+
+    fireEvent.mouseEnter(screen.getByRole("status"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    expect(screen.getByRole("status").textContent).toContain("已完工"); // 悬停不消隐
+
+    fireEvent.mouseLeave(screen.getByRole("status"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(screen.queryByRole("status")).toBeNull(); // 离开后计时到期消隐
+    visibility.mockRestore();
+  });
+
+  it("D024：完工横幅按目录模板写明提升内容（如 发电 +4.0 kW）", async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const active = buildSnapshot({
+      projects: [{
+        projectId: "p-1",
+        definitionRef: { kind: "project", stableId: "landing-expand-solar", revision: 1 },
+        name: "增建太阳能", status: "active", siteId: "site-a", steps: []
+      }]
+    });
+    const done = buildSnapshot({
+      projects: [{
+        projectId: "p-1",
+        definitionRef: { kind: "project", stableId: "landing-expand-solar", revision: 1 },
+        name: "增建太阳能", status: "completed", siteId: "site-a", steps: []
+      }],
+      buildableProjects: [{
+        definitionRef: { kind: "project", stableId: "landing-expand-solar", revision: 1 },
+        name: "增建太阳能", description: "",
+        outputFacility: {
+          ref: { kind: "facility", stableId: "landing-solar", revision: 1 },
+          name: "太阳能电站", generationWPeak: 4000
+        }
+      }]
+    });
+    vi.mocked(getSnapshot).mockResolvedValueOnce(active).mockResolvedValue(done);
+
+    render(<BaseApp />);
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(screen.getByRole("status").textContent).toContain("增建太阳能已完工：发电 +4.0 kW。");
+    visibility.mockRestore();
   });
 });
 

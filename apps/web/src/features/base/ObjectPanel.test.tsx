@@ -138,12 +138,12 @@ describe("ObjectPanel", () => {
     };
     const purchases = [{
       purchaseId: "purchase-1", itemId: "anchor", itemName: "锚固件", quantity: 3,
-      costCredits: 30, status: "in_transit" as const, arrivesAtSim: "2126-01-01T12:00:00.000Z"
+      costCredits: 30, status: "in_transit" as const, arrivesAtSim: "2126-01-01T12:00:00.000Z", createdAt: "2026-09-27T00:00:00.000Z"
     }];
     const props = {
       sites, projects, devices, resources: [anchor], purchases,
       selectedResourceId: "anchor", selectedSiteId: null, selectedProjectId: null,
-      selectedDeviceId: null, timeMode: "running" as const, isBusy: false,
+      selectedDeviceId: null, timeMode: "running" as const, isBusy: false, effectiveRunning: true, pauseReason: null,
       buildableProjects: [{
         definitionRef: { kind: "project" as const, stableId: "solar", revision: 1 },
         name: "第二太阳能阵列", description: "扩建", inputs: [{ itemId: "anchor", quantity: 3 }]

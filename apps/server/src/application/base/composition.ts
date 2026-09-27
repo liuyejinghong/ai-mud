@@ -56,9 +56,11 @@ import { RobotFactory } from "../../modules/npc/robot-factory.js";
 import { RobotRuntimeService } from "../../modules/npc/robot-runtime.js";
 import { InMemoryRateLimitService } from "../../modules/rate-limit/rate-limit.service.js";
 import { BaseRepository, scopeTickTransactionToBase } from "../../modules/world-runtime/base.repository.js";
+import { BaseEventRepository, type BaseEventTx } from "../../modules/world-runtime/base-event.repository.js";
 import { BaseService } from "../../modules/world-runtime/base.service.js";
 import { systemWorldClock } from "../../modules/world-runtime/world-clock.js";
 import { BaseClockUseCase } from "./base-clock.js";
+import { BaseEventsUseCase } from "./base-events.js";
 import { BaseSnapshotUseCase } from "./base-snapshot.js";
 import { CooperationDecisionCase } from "./cooperation-decision.js";
 import { CancelProjectCase } from "./cancel-project.js";
@@ -120,6 +122,11 @@ export function createBaseOperations(input: {
   const baseAssets = new BaseAssetService(db);
   const robotRuntime = new RobotRuntimeService(db);
   const industryRepo = new IndustryRepository(db);
+
+  // D013 事件历史：world/base-event 是 base_events 唯一写者；各结算点经本工厂
+  // 在自己的事务内追加（与 receipts 的 (tx) => 写口 模式一致）。
+  const openBaseEvents = (tx: BaseEventTx) =>
+    new BaseEventRepository(tx);
 
   const baseService = new BaseService({
     db,
@@ -314,7 +321,13 @@ export function createBaseOperations(input: {
     registration,
     provision: new ProvisionBaseUseCase(baseService),
     snapshot: new BaseSnapshotUseCase(baseService),
-    clock: new BaseClockUseCase(baseService)
+    clock: new BaseClockUseCase(baseService),
+    // D013 事件历史（GET /api/base/events）。
+    events: new BaseEventsUseCase({
+      db,
+      repo: baseRepo,
+      events: (tx) => openBaseEvents(tx as never)
+    })
   };
 
   // 开工只受理，不在请求路径结算（2026-09-25 B008 / ARCH-domain-02）：此前开工成功后另开事务跑
@@ -447,10 +460,17 @@ export function createBaseOperations(input: {
       lease.leaseToken !== controlToken ||
       lease.leaseUntil.getTime() <= now.getTime()
     ) {
+      // D010：带机器可读原因。本会话令牌匹配但租约过期 = 心跳断档；无令牌/令牌
+      // 不匹配（含过期幽灵租约残留）= 控制权在他方，接管基地即可收回。
+      const staleHeartbeat =
+        !!controlToken && !!lease && lease.leaseToken === controlToken;
       throw new RouteBaseOperationError(
         409,
         "CONTROL_EXPIRED",
-        "当前标签已失去基地控制权，请刷新后重试。"
+        staleHeartbeat
+          ? "心跳断档，本标签已失去基地控制权，请重新接管。"
+          : "当前标签已失去基地控制权，请接管基地后重试。",
+        staleHeartbeat ? "HEARTBEAT_STALE" : "GHOST_LEASE"
       );
     }
   };
@@ -482,7 +502,9 @@ export function createBaseOperations(input: {
     db,
     catalog,
     catalogResolver,
-    async (tx, baseId) => (await catalogResolver.forBase(tx, baseId)).capabilities()
+    async (tx, baseId) => (await catalogResolver.forBase(tx, baseId)).capabilities(),
+    // D013：订单交付结算点同事务写事件。
+    (tx) => openBaseEvents(tx as never)
   );
   const economyTick = {
     markExpiredAndRefresh: (tx: IndustryTx, baseId: string, sim: Date) =>
@@ -572,7 +594,9 @@ export function createBaseOperations(input: {
         weather: {
           current: (settleBaseId, simTime) =>
             new WeatherService(db).current(db, settleBaseId, simTime)
-        }
+        },
+        // D013：landing 结算点（工程完工/采矿送达/制造完工）同事务写事件。
+        events: (settleTx) => openBaseEvents(settleTx as never)
       }),
     clock: baseRepo,
     sites: baseRepo,
@@ -604,7 +628,9 @@ export function createBaseOperations(input: {
           },
           openManufacturing: (settleTx) => new ManufacturingRepository(settleTx)
         })
-    }
+    },
+    // D013：legacy 工程完工结算点同事务写事件。
+    events: (settleTx) => openBaseEvents(settleTx as never)
   });
 
 

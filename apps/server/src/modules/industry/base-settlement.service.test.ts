@@ -240,7 +240,8 @@ class FakeManufacturing implements BaseManufacturingSettlePort {
 function makeHarness(
   cooperation?: BaseSettlementDeps["cooperation"],
   manufacturing?: BaseManufacturingSettlePort,
-  weather?: BaseSettlementDeps["weather"]
+  weather?: BaseSettlementDeps["weather"],
+  events?: BaseSettlementDeps["events"]
 ) {
   const clock = new FakeClock();
   const sites = new FakeSites();
@@ -256,6 +257,7 @@ function makeHarness(
     ...(cooperation ? { cooperation } : {}),
     ...(manufacturing ? { manufacturing } : {}),
     ...(weather ? { weather } : {}),
+    ...(events ? { events } : {}),
     openIndustry: () => industry,
     openRobots: () => robots
   });
@@ -514,6 +516,56 @@ describe("BaseSettlementService.settleBases", () => {
         completedAt: new Date(T0.getTime() + TICK_MS)
       }
     ]);
+  });
+
+  it("工程完工在同事务追加 project.completed 事件（D013）", async () => {
+    const appended: Array<{ baseId: string; type: string; title: string; detail: string; simTime: Date }> = [];
+    const harness = makeHarness(undefined, undefined, undefined, (tx) => ({
+      append: async (input) => {
+        expect(tx).toBeDefined();
+        appended.push(input);
+      }
+    }));
+    seedStandardBase(harness, {
+      stepOverrides: {
+        kind: "commissioning",
+        groupId: "survey",
+        workRequired: 20,
+        workDone: 19
+      },
+      robotOverrides: {
+        deviceDefId: "yd-s1",
+        groupId: "survey",
+        batteryWh: 10_000,
+        batteryCapacityWh: 10_000
+      }
+    });
+
+    await harness.service.settleBases({} as IndustryTx, new Date());
+
+    expect(appended).toEqual([
+      {
+        baseId: "base-1",
+        type: "project.completed",
+        title: "架设光伏阵列已完工",
+        detail: "架设光伏阵列全部步骤完成，设施投产并接入基地。",
+        simTime: new Date(T0.getTime() + TICK_MS)
+      }
+    ]);
+  });
+
+  it("未完工时不写事件（D013）", async () => {
+    const appended: Array<{ type: string }> = [];
+    const harness = makeHarness(undefined, undefined, undefined, () => ({
+      append: async (input) => {
+        appended.push(input);
+      }
+    }));
+    seedStandardBase(harness);
+
+    await harness.service.settleBases({} as IndustryTx, new Date());
+
+    expect(appended).toEqual([]);
   });
 
   it("模板 revision 不一致：该项目步骤全 blocked content_missing，不抛、时钟照常推进", async () => {

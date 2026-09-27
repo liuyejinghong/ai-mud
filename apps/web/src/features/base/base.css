@@ -196,6 +196,25 @@
   letter-spacing: 2px;
 }
 
+/* ── D025：倍速档按钮选中态与 aria-pressed 一致 ── */
+.base-speed-row { display: flex; gap: 4px; }
+.base-speed-row button {
+  font: inherit;
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid rgba(53, 182, 255, 0.4);
+  border-radius: 6px;
+  background: transparent;
+  color: #d8ecfa;
+  cursor: pointer;
+}
+.base-speed-row button:disabled { opacity: 0.5; cursor: default; }
+.base-speed-row button[aria-pressed="true"] {
+  border-color: #ffd166;
+  color: #ffd166;
+  background: rgba(255, 209, 102, 0.1);
+}
+
 .base-simtime {
   color: #8fa8ba;
   font-size: 12px;
@@ -1110,6 +1129,109 @@ body:has(.landing-shell) #root,
 .landing-feedback { color: #f0d0a0; font-size: 13px; margin: 0; }
 .landing-copy { color: #b8c6d6; font-size: 13px; margin: 0; }
 .landing-view-switch { display: none; }
+
+/* ── D010：冻结态（等待前台接管） ── */
+.landing-frozen-badge {
+  display: inline-block;
+  border: 1px solid #ffb347;
+  color: #ffb347;
+  background: rgba(255, 179, 71, 0.12);
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.landing-control-notice {
+  color: #ffc4bc;
+  font-size: 12px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.landing-queue-paused {
+  color: #ffb347;
+  font-size: 12px;
+  border: 1px solid rgba(255, 179, 71, 0.5);
+  border-radius: 6px;
+  padding: 0 6px;
+  align-self: flex-start;
+}
+.landing-queue-paused-note {
+  margin: 0;
+  color: #ffb347;
+  font-size: 12px;
+  flex: 0 0 100%;
+}
+
+/* ── D014：就地禁用原因 ── */
+.landing-hint { margin: 0; font-size: 12px; }
+.landing-hint.is-short { color: #f0b0a0; }
+
+/* ── D015：配方级缺料缺口与来源入口 ── */
+.landing-recipe-shortage { display: flex; flex-direction: column; gap: 4px; }
+.landing-recipe-missing { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.landing-recipe-missing .is-short { color: #f0b0a0; }
+
+/* ── D015：地图已建成加工间的"前往加工"入口（卡片=主选择钮＋快捷钮） ── */
+.landing-card.is-composite { padding: 0; }
+.landing-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+.landing-card-goto { align-self: flex-start; margin: 0 10px 10px; }
+
+/* ── D013：事件记录面板 ── */
+.landing-events { border-top: 1px dashed #2a3542; padding-top: 6px; font-size: 13px; }
+.landing-events summary { cursor: pointer; color: #8ea2b8; }
+.landing-event-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.landing-event-list li { display: flex; flex-direction: column; gap: 2px; border-bottom: 1px solid rgba(42, 53, 66, 0.5); padding-bottom: 6px; }
+.landing-event-tag {
+  align-self: flex-start;
+  border: 1px solid #2f6b4f;
+  color: #9fd8bb;
+  border-radius: 6px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+.landing-event-tag.is-other { border-color: #2a3542; color: #8ea2b8; }
+.landing-event-time { font-size: 12px; }
+
+/* ── D016：滚动可供性——可见滚动条＋上下渐隐边（右栏/地图等内部滚动容器） ── */
+.landing-panel.has-overflow-affordance,
+.landing-map {
+  scrollbar-width: thin;
+  scrollbar-color: #3a4a5c rgba(16, 21, 28, 0.6);
+}
+.landing-panel.has-overflow-affordance::-webkit-scrollbar,
+.landing-map::-webkit-scrollbar { width: 10px; }
+.landing-panel.has-overflow-affordance::-webkit-scrollbar-thumb,
+.landing-map::-webkit-scrollbar-thumb {
+  background: #3a4a5c;
+  border-radius: 5px;
+  border: 2px solid #151c26;
+}
+.landing-panel.has-overflow-affordance::-webkit-scrollbar-track,
+.landing-map::-webkit-scrollbar-track { background: rgba(16, 21, 28, 0.6); }
+.landing-panel.has-overflow-affordance {
+  background:
+    linear-gradient(rgba(21, 28, 38, 0.92), rgba(21, 28, 38, 0)) top / 100% 14px no-repeat,
+    linear-gradient(rgba(21, 28, 38, 0), rgba(21, 28, 38, 0.92)) bottom / 100% 14px no-repeat,
+    #151c26;
+}
+@media (max-width: 800px) {
+  .landing-queue-paused { align-self: center; }
+}
 @media (max-width: 800px) {
   .landing-shell {
     grid-template-rows: auto auto 34px minmax(0, 1fr) 52px;

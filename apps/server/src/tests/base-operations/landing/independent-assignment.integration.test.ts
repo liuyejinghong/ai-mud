@@ -125,7 +125,8 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
   async function advanceMinutes(minutes: number, targetBaseId = baseId, targetAccount = accountId, targetToken = leaseToken): Promise<void> {
     const now = new Date();
     await harness.client.query(
-      `UPDATE bases SET time_mode = 'running', last_advanced_at = $1 WHERE id = $2`,
+      // D012：新档默认倍速 ×2；本文件断言按基地分钟计的机械语义，钉回 ×1。
+      `UPDATE bases SET time_mode = 'running', last_advanced_at = $1, speed = 1 WHERE id = $2`,
       [new Date(now.getTime() - minutes * 60_000), targetBaseId]
     );
     await harness.client.query(
@@ -135,8 +136,10 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
       [targetBaseId, new Date(now.getTime() + 300_000), now, targetToken ?? `fix-test-${targetBaseId}`]
     );
     let guard = 0;
+    // 结算终点固定为本轮起点墙钟：确认边界不再随循环内真实时钟滴流推进。
+    const settledAt = new Date();
     while (guard < 400) {
-      const advanced = await harness.db.transaction((tx) => ops.settlement.settleBases(tx, new Date()));
+      const advanced = await harness.db.transaction((tx) => ops.settlement.settleBases(tx, settledAt));
       if (advanced === 0) break;
       guard += 1;
     }

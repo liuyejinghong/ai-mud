@@ -61,6 +61,17 @@ const NULL_ECONOMY_CATALOG: EconomyCatalogPort = {
   capabilities: () => ["external_trade"]
 };
 
+// D013 事件历史写口（composition 绑定 world/base-event 唯一写者；测试省略）。
+export interface EconomyEventsPort {
+  append(input: {
+    baseId: string;
+    type: string;
+    title: string;
+    detail: string;
+    simTime: Date;
+  }): Promise<void>;
+}
+
 export class EconomyUseCases {
   readonly orders: OrderService;
   readonly purchases: PurchaseService;
@@ -72,7 +83,8 @@ export class EconomyUseCases {
     db: Db,
     catalog: EconomyCatalogPort = NULL_ECONOMY_CATALOG,
     catalogResolver?: { forBase(tx: EconomyTx, baseId: string): Promise<EconomyCatalogPort> },
-    purchaseCapabilitiesForBase?: (tx: EconomyTx, baseId: string) => Promise<string[]>
+    purchaseCapabilitiesForBase?: (tx: EconomyTx, baseId: string) => Promise<string[]>,
+    eventsFor?: (tx: EconomyTx) => EconomyEventsPort
   ) {
     const orderRepo = new OrderRepository(db);
     const purchaseRepo = new PurchaseRepository(db);
@@ -88,7 +100,8 @@ export class EconomyUseCases {
       assets: orderRepo,
       store: orderRepo,
       credits: purchaseRepo,
-      receipts: (tx) => new AssetMutationService(tx)
+      receipts: (tx) => new AssetMutationService(tx),
+      ...(eventsFor ? { events: eventsFor } : {})
     });
     this.purchases = new PurchaseService({
       lookup: baseRepo,
@@ -121,7 +134,8 @@ export function createEconomyUseCases(
   db: Db,
   catalog?: EconomyCatalogPort,
   catalogResolver?: { forBase(tx: EconomyTx, baseId: string): Promise<EconomyCatalogPort> },
-  purchaseCapabilitiesForBase?: (tx: EconomyTx, baseId: string) => Promise<string[]>
+  purchaseCapabilitiesForBase?: (tx: EconomyTx, baseId: string) => Promise<string[]>,
+  eventsFor?: (tx: EconomyTx) => EconomyEventsPort
 ): EconomyUseCases {
-  return new EconomyUseCases(db, catalog, catalogResolver, purchaseCapabilitiesForBase);
+  return new EconomyUseCases(db, catalog, catalogResolver, purchaseCapabilitiesForBase, eventsFor);
 }

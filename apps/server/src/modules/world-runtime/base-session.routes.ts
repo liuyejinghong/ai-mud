@@ -48,8 +48,14 @@ const STATUS_BY_CODE: Partial<Record<ErrorCode, number>> = {
   BUDGET_EXCEEDED: 409
 };
 
-function sendError(reply: FastifyReply, statusCode: number, code: ErrorCode, message: string) {
-  return reply.code(statusCode).send({ error: { code, message } });
+function sendError(
+  reply: FastifyReply,
+  statusCode: number,
+  code: ErrorCode,
+  message: string,
+  reason?: string
+) {
+  return reply.code(statusCode).send({ error: { code, message, ...(reason ? { reason } : {}) } });
 }
 
 // 服务层错误按形状识别（错误源不 export 类给 transport）。
@@ -57,7 +63,15 @@ function sendOperationError(reply: FastifyReply, error: unknown) {
   const code = (error as { code?: unknown } | null)?.code;
   if (error instanceof Error && typeof code === "string") {
     const errorCode = code as ErrorCode;
-    return sendError(reply, STATUS_BY_CODE[errorCode] ?? 500, errorCode, error.message);
+    // D010：控制权失效错误可携带机器可读原因（GHOST_LEASE/HEARTBEAT_STALE），供前端展示。
+    const reason = (error as { reason?: unknown }).reason;
+    return sendError(
+      reply,
+      STATUS_BY_CODE[errorCode] ?? 500,
+      errorCode,
+      error.message,
+      typeof reason === "string" ? reason : undefined
+    );
   }
   throw error;
 }
@@ -195,6 +209,25 @@ export async function registerBaseSessionRoutes(app: FastifyInstance, deps: Base
     }
   });
 
+  // D013 事件历史：只读流水，鉴权同快照（会话 Cookie），limit 钳制在用例内。
+  app.get("/base/events", async (request, reply) => {
+    const session = await authenticate(app, request, reply, deps);
+    if (!session) return reply;
+
+    const rawLimit = request.query ? (request.query as Record<string, unknown>).limit : undefined;
+    const parsedLimit =
+      typeof rawLimit === "string" && /^\d+$/.test(rawLimit) ? Number(rawLimit) : undefined;
+
+    try {
+      return await deps.events.execute(
+        session.principal,
+        parsedLimit === undefined ? {} : { limit: parsedLimit }
+      );
+    } catch (error) {
+      return sendOperationError(reply, error);
+    }
+  });
+
   app.post("/base/heartbeat", async (request, reply) => {
     const session = await authenticate(app, request, reply, deps);
     if (!session) return reply;
@@ -221,7 +254,8 @@ export async function registerBaseSessionRoutes(app: FastifyInstance, deps: Base
 
     const controlToken = readControlToken(request);
     if (!controlToken) {
-      return sendError(reply, 409, "CONTROL_EXPIRED", "控制权已失效，请重新进入基地。");
+      // D010：无令牌 = 控制权在他方/已被释放，接管基地即可收回。
+      return sendError(reply, 409, "CONTROL_EXPIRED", "控制权已失效，请重新进入基地。", "GHOST_LEASE");
     }
 
     const parsed = CLOCK_COMMAND_SCHEMA.safeParse(request.body);

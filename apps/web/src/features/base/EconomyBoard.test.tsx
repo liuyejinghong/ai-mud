@@ -14,7 +14,7 @@ const order = {
   quantity: 6,
   rewardCredits: 300,
   deadlineSim: "2126-01-05T18:00:00.000Z",
-  acceptedAtSim: null
+  acceptedAtSim: null, createdAt: "2026-09-27T00:00:00.000Z"
 };
 
 const purchase = {
@@ -24,7 +24,7 @@ const purchase = {
   quantity: 3,
   costCredits: 120,
   status: "in_transit" as const,
-  arrivesAtSim: "2126-01-06T08:00:00.000Z"
+  arrivesAtSim: "2126-01-06T08:00:00.000Z", createdAt: "2026-09-27T00:00:00.000Z"
 };
 
 function renderBoard(overrides: Partial<Parameters<typeof EconomyBoard>[0]> = {}) {

@@ -321,6 +321,9 @@ describe("base construction full chain (real PostgreSQL, controlled clock)", () 
     ops = buildControlledOperations(harness.db, clock);
     const accountId = await insertAccount(harness.client, email);
     const provisioned = await ops.baseService.provision({ accountId }, { commandId: randomUUID() });
+    // D012：新档默认倍速 ×2；本文件断言"每基地分钟"的施工/供电语义（Δsim = 60s × speed 1），
+    // 钉回 ×1 保持断言口径不变。
+    await harness.client.query(`UPDATE bases SET speed = 1 WHERE id = $1`, [provisioned.baseId]);
     controlToken = (await ops.baseService.heartbeat({ accountId }, { action: "acquire" })).controlToken ?? "";
     const siteAId = await siteIdForKey(harness.client, provisioned.baseId, "site_a");
     return { accountId, baseId: provisioned.baseId, siteAId };

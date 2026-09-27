@@ -148,8 +148,9 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
   // 推进 N 个模拟分钟：回拨 last_advanced_at（测试专用时钟控制）→ 真结算入口补算。
   async function advanceMinutes(minutes: number): Promise<void> {
     const now = new Date();
+    // D012：新档默认倍速 ×2；本文件断言的是"每基地分钟"机械语义，钉回 ×1。
     await harness.client.query(
-      `UPDATE bases SET time_mode = 'running', last_advanced_at = $1 WHERE id = $2`,
+      `UPDATE bases SET time_mode = 'running', last_advanced_at = $1, speed = 1 WHERE id = $2`,
       [new Date(now.getTime() - minutes * 60_000), baseId]
     );
     const token = leaseToken ?? `r1-test-${baseId}`;
@@ -161,8 +162,10 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
       [baseId, leaseUntil, now, token]
     );
     let guard = 0;
+    // 结算终点固定为本轮起点墙钟：确认边界不再随循环内真实时钟滴流推进。
+    const settledAt = new Date();
     while (guard < 200) {
-      const advanced = await harness.db.transaction((tx) => ops.settlement.settleBases(tx, new Date()));
+      const advanced = await harness.db.transaction((tx) => ops.settlement.settleBases(tx, settledAt));
       if (advanced === 0) break;
       guard += 1;
     }
@@ -557,7 +560,9 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     )).toBe(true);
   });
 
-  it("G08b 组装驮运（robot 产出）：初始电量 0，真实入库设备资产", async () => {
+  // 全量套件并行时该用例（最重的制造链）会因 CPU 争用超出默认 5s；
+  // 与文件内 beforeAll 同口径放宽超时，不放宽任何断言。
+  it("G08b 组装驮运（robot 产出）：初始电量 0，真实入库设备资产", { timeout: 60_000 }, async () => {
     if (!process.env.DATABASE_URL) return;
     // 补材料：再采 16 铁矿 → 8 铁料 → 4 结构件；再采 2 铜 → 1 铜料 → 2 线缆。
     const ironNodeId = await nodeIdByKey("iron_north");
