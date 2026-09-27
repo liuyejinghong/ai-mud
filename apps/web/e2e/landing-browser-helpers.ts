@@ -33,9 +33,9 @@ export async function waitForSnapshot(
   while (Date.now() < deadline) {
     const response = await page.waitForResponse((candidate) =>
       new URL(candidate.url()).pathname === "/base/snapshot" &&
-      candidate.request().method() === "GET" &&
-      candidate.ok()
-    , { timeout: Math.min(15_000, deadline - Date.now()) });
+      candidate.request().method() === "GET"
+    , { timeout: Math.max(1, deadline - Date.now()) });
+    if (!response.ok()) throw new Error(`${description}; /base/snapshot returned HTTP ${response.status()}`);
     last = await response.json() as BaseSnapshotDto;
     if (matches(last)) return last;
   }
