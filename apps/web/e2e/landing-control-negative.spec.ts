@@ -34,6 +34,10 @@ test("控制租约 HTTP 负例：缺/错 X-Base-Control-Token 拒绝且无副作
   const register = (await (await registerResponse).json()) as { csrfToken: string; baseId: string };
   await expect(page.getByRole("region", { name: "当前目标" })).toContainText("安装首座太阳能");
 
+  // 与真实前台玩家一致：先恢复计时，UI 心跳随即取得控制租约（租约是控制权而非时间模式，
+  // 断连暂停语义不受影响）。
+  await page.getByRole("button", { name: "恢复", exact: true }).click();
+
   // API 在独立端口（VITE_API_BASE）；从 UI 自己的快照轮询响应取真实 origin，
   // 之后页面内 fetch 走与产品前端完全相同的跨端口 HTTP/CORS 通道。
   const snapshotResponse = page.waitForResponse(
@@ -41,18 +45,26 @@ test("控制租约 HTTP 负例：缺/错 X-Base-Control-Token 拒绝且无副作
   );
   await page.bringToFront();
   const api = await page.evaluate(async ({ csrf, snapshotUrl }) => {
-    const response = await fetch(snapshotUrl, {
-      method: "GET",
-      credentials: "include",
-      headers: { "x-csrf-token": csrf }
-    });
-    const snapshot = (await response.json()) as SnapshotShape;
-    return {
-      apiOrigin: new URL(snapshotUrl).origin,
-      nodeId: snapshot.resourceNodes?.find((node) => node.nodeKey === "iron_north")?.nodeId,
-      surveyorId: snapshot.devices?.find((device) => device.groupId === "survey")?.operatorId,
-      controlToken: snapshot.controlLease?.controlToken ?? null
-    };
+    // 轮询至心跳租约可见（心跳与快照轮询相位不同步）。
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const response = await fetch(snapshotUrl, {
+        method: "GET",
+        credentials: "include",
+        headers: { "x-csrf-token": csrf }
+      });
+      const snapshot = (await response.json()) as SnapshotShape;
+      const controlToken = snapshot.controlLease?.controlToken ?? null;
+      if (controlToken) {
+        return {
+          apiOrigin: new URL(snapshotUrl).origin,
+          nodeId: snapshot.resourceNodes?.find((node) => node.nodeKey === "iron_north")?.nodeId,
+          surveyorId: snapshot.devices?.find((device) => device.groupId === "survey")?.operatorId,
+          controlToken
+        };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    throw new Error("10 秒内未见控制租约（心跳未取得）");
   }, { csrf: register.csrfToken, snapshotUrl: (await snapshotResponse).url() });
   expect(api.nodeId, "快照应含铁节点").toBeTruthy();
   expect(api.surveyorId, "快照应含望山操作员").toBeTruthy();
