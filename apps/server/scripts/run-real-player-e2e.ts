@@ -330,9 +330,19 @@ async function main() {
       stdio: "inherit"
     });
     await waitForHealth(apiBase, server);
+    // REAL_E2E_GREP：按用例名过滤（正则），供修复后只重跑受影响场景（05 §6）。
     await runCommand(
       pnpmCommand(),
-      ["exec", "playwright", "test", "-c", "playwright.config.ts", `--project=${process.env.REAL_E2E_PROJECT ?? "real-postgres"}`, "--workers=1"],
+      [
+        "exec",
+        "playwright",
+        "test",
+        "-c",
+        "playwright.config.ts",
+        `--project=${process.env.REAL_E2E_PROJECT ?? "real-postgres"}`,
+        "--workers=1",
+        ...(process.env.REAL_E2E_GREP ? ["--grep", process.env.REAL_E2E_GREP] : [])
+      ],
       { cwd: webRoot, env: runtimeEnv }
     );
   } finally {
