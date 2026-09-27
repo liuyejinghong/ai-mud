@@ -72,6 +72,7 @@ export interface InsertProjectInput {
   siteId: string;
   projectDefId: string;
   templateRevision: number;
+  builderCount?: number | null;
   reservedInputs: Array<{ itemId: string; quantity: number }>;
   steps: ProjectStepSeed[];
 }
@@ -262,6 +263,7 @@ export class IndustryRepository
       status: row.status,
       currentStepIndex: row.currentStepIndex,
       siteId: row.siteId,
+      ...(row.builderCount !== null && row.builderCount !== undefined ? { builderCount: row.builderCount } : {}),
       reservedInputs: parseReservedInputs(row.reservedInputs)
     }));
   }
@@ -284,6 +286,7 @@ export class IndustryRepository
           status: row.status,
           currentStepIndex: row.currentStepIndex,
           siteId: row.siteId,
+          ...(row.builderCount !== null && row.builderCount !== undefined ? { builderCount: row.builderCount } : {}),
           reservedInputs: parseReservedInputs(row.reservedInputs)
         }
       : null;
@@ -327,6 +330,7 @@ export class IndustryRepository
         siteId: input.siteId,
         projectDefId: input.projectDefId,
         templateRevision: input.templateRevision,
+        builderCount: input.builderCount ?? null,
         status: "active",
         currentStepIndex: 0,
         reservedInputs: input.reservedInputs.map((item) => ({

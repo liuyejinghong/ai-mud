@@ -43,7 +43,7 @@ export class BaseOperationError extends Error {
 
 export interface ConstructionLookupPort {
   findBaseIdByAccount(tx: ConstructionTx, accountId: string): Promise<string | null>;
-  getBaseForUpdate(tx: ConstructionTx, baseId: string): Promise<{ id: string } | null>;
+  getBaseForUpdate(tx: ConstructionTx, baseId: string): Promise<{ id: string; baseRevision?: number } | null>;
 }
 
 export interface ConstructionAssetPort {
@@ -81,6 +81,7 @@ export interface ConstructionRobotPort {
 }
 
 export interface ConstructionCatalogPort {
+  rulesProfile?(): "legacy" | "landing-v1";
   getProjectTemplate(stableId: string): ProjectTemplateDto | null;
   listTemplates(): { projects: ProjectTemplateDto[] };
 }
@@ -168,8 +169,15 @@ export class ConstructionService {
     input: CreateProjectInputDto
   ): Promise<CreateProjectResultDto> {
     const baseId = await this.requireBaseId(tx, principal);
-    if (!(await this.deps.lookup.getBaseForUpdate(tx, baseId))) {
+    const base = await this.deps.lookup.getBaseForUpdate(tx, baseId);
+    if (!base) {
       throw new BaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
+    }
+    const catalog = await this.catalogForBase(tx, baseId);
+    const landing = catalog.rulesProfile?.() === "landing-v1";
+    const builderCount = landing ? input.builderCount ?? 2 : null;
+    if (builderCount !== null && builderCount !== 1 && builderCount !== 2) {
+      throw new BaseOperationError(400, "VALIDATION_ERROR", "施工筑垒数量必须为 1 或 2。");
     }
     const actorScope = `base:${baseId}`;
     const requestHash = hashRequest({
@@ -178,7 +186,8 @@ export class ConstructionService {
         stableId: input.definitionRef.stableId,
         revision: input.definitionRef.revision
       },
-      siteId: input.siteId
+      siteId: input.siteId,
+      ...(builderCount !== null ? { builderCount } : {})
     });
     const receipts = this.deps.receipts(tx);
 
@@ -205,7 +214,9 @@ export class ConstructionService {
       throw new BaseOperationError(409, "CONFLICT", "命令幂等登记冲突，请重试。");
     }
 
-    const catalog = await this.catalogForBase(tx, baseId);
+    if (landing && input.expectedBaseRevision !== undefined && input.expectedBaseRevision !== base.baseRevision) {
+      throw new BaseOperationError(409, "REVISION_EXPIRED", "基地状态已变化，请刷新后重试。");
+    }
     const template = catalog.getProjectTemplate(input.definitionRef.stableId);
     if (!template || template.ref.revision !== input.definitionRef.revision) {
       // 旧 revision 不 fallback latest（S4）
@@ -281,6 +292,7 @@ export class ConstructionService {
       siteId: site.id,
       projectDefId: template.ref.stableId,
       templateRevision: template.ref.revision,
+      builderCount,
       reservedInputs: template.inputs.map((item) => ({
         itemId: item.itemId,
         quantity: item.quantity

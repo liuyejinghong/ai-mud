@@ -71,6 +71,7 @@ export interface LandingProjectRecord {
   id: string;
   status: string;
   siteId: string;
+  builderCount?: number | null;
 }
 
 export interface LandingExtractionJobRecord {
@@ -296,6 +297,9 @@ export function computeLandingMinute(
   // ---------- 2) 施工：复核已出工者 + 空闲补位 + 现场负载 ----------
   // 采矿单占用的机器人不参与施工（互斥第一步）。
   for (const robot of robots) {
+    if (robot.status === "charging" && robot.projectId !== null && robot.battery >= drainOf(robot)) {
+      robot.status = "working";
+    }
     if (robot.status !== "working" || robot.projectId === null) continue;
     const list = stepsByProject.get(robot.projectId);
     const target =
@@ -314,18 +318,22 @@ export function computeLandingMinute(
 
   let installationActive = false;
   for (const [projectId, list] of stepsByProject) {
+    const project = activeProjects.find((entry) => entry.id === projectId)!;
     for (const step of list) {
       if (step.status !== "ready" && step.status !== "running") continue;
-      const hasWorker = robots.some(
+      const assigned = robots.filter(
         (robot) =>
           robot.status === "working" &&
           robot.projectId === projectId &&
           robot.stepIndex === step.record.stepIndex
       );
-      if (!hasWorker) {
-        // 该组全部可用设备都加入本步骤（legacy 语义：2 台筑垒 = 2 点/分钟）。
+      const limit = step.record.groupId === "engineering" ? project.builderCount ?? 2 : 1;
+      let vacancies = Math.max(0, limit - assigned.length);
+      if (vacancies > 0) {
         for (const robot of robots) {
+          if (vacancies === 0) break;
           if (robot.extractionJobId !== null) continue;
+          if (robot.projectId !== null) continue;
           if (robot.status !== "idle" && robot.status !== "charging") continue;
           if ((robot.params?.workRate ?? 0) <= 0) continue;
           if (robot.record.groupId !== step.record.groupId) continue;
@@ -333,6 +341,7 @@ export function computeLandingMinute(
           robot.status = "working";
           robot.projectId = projectId;
           robot.stepIndex = step.record.stepIndex;
+          vacancies -= 1;
         }
       }
       if (

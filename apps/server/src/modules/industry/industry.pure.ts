@@ -71,6 +71,7 @@ export interface BaseProjectRecord {
   status: string;
   currentStepIndex: number;
   siteId: string;
+  builderCount?: number | null;
   reservedInputs: Array<{ itemId: string; quantity: number }>;
 }
 

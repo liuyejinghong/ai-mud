@@ -121,7 +121,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
   let haulers: Array<{ operatorId: string; batteryWh: number }>;
   let leaseToken: string | null = null;
 
-  async function advanceMinutes(minutes: number, targetBaseId = baseId, targetAccount = accountId): Promise<void> {
+  async function advanceMinutes(minutes: number, targetBaseId = baseId, targetAccount = accountId, targetToken = leaseToken): Promise<void> {
     const now = new Date();
     await harness.client.query(
       `UPDATE bases SET time_mode = 'running', last_advanced_at = $1 WHERE id = $2`,
@@ -131,7 +131,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
       `INSERT INTO base_control_leases (base_id, lease_token, lease_until, updated_at)
        VALUES ($1, $4, $2, $3)
        ON CONFLICT (base_id) DO UPDATE SET updated_at = $3, lease_until = $2, lease_token = $4`,
-      [targetBaseId, new Date(now.getTime() + 300_000), now, leaseToken ?? `fix-test-${targetBaseId}`]
+      [targetBaseId, new Date(now.getTime() + 300_000), now, targetToken ?? `fix-test-${targetBaseId}`]
     );
     let guard = 0;
     while (guard < 400) {
@@ -167,7 +167,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
       definitionRef: { kind: "project", stableId, revision: template.definitionRef.revision },
       siteId,
       commandId: randomUUID()
-    });
+    }, leaseToken);
   }
 
   async function waitForNodeFree(nodeKey: "iron_north" | "copper_ridge"): Promise<void> {
@@ -328,4 +328,28 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
     expect(await pending).toBe("CONTROL_EXPIRED");
     expect((await snapshot()).power.powerPolicy).toBe(before);
   });
+  it("independent: new projects require control and honor the selected builder count", async () => {
+    if (!process.env.DATABASE_URL) throw new Error("Explicit isolated DATABASE_URL required");
+    const cAccount=await insertAccount(harness.client,"r1-crew@q.test");
+    const c=await ops.session.provision.execute({accountId:cAccount},{commandId:randomUUID()});
+    const token=(await ops.session.clock.heartbeat({accountId:cAccount},{action:"acquire"})).controlToken;
+    const snap=await ops.session.snapshot.execute({accountId:cAccount});
+    const site=snap.sites.find(s=>s.siteKey==="install_solar")!;
+    const input={definitionRef:{kind:"project" as const,stableId:"landing-install-solar",revision:1},siteId:site.siteId,commandId:randomUUID(),builderCount:1};
+    await expect(ops.projects.create.execute({accountId:cAccount},input)).rejects.toMatchObject({code:"CONTROL_EXPIRED"});
+    await expect(ops.projects.create.execute({accountId:cAccount},{...input,builderCount:3},token)).rejects.toMatchObject({code:"VALIDATION_ERROR"});
+    const project=await ops.projects.create.execute({accountId:cAccount},input,token);
+    await expect(ops.projects.create.execute({accountId:cAccount},{...input,builderCount:2},token)).rejects.toMatchObject({code:"IDEMPOTENCY_CONFLICT"});
+    await advanceMinutes(1,c.baseId,cAccount,token);
+    const halfway=await ops.session.snapshot.execute({accountId:cAccount});
+    const current=halfway.projects.find(p=>p.projectId===project.projectId)!;
+    expect(current.builderCount).toBe(1);
+    expect(current.steps[0]!.workDone).toBe(1);
+    expect(halfway.devices.filter(d=>d.currentAssignment?.projectId===project.projectId)).toHaveLength(1);
+    await advanceMinutes(1,c.baseId,cAccount,token);
+    expect((await ops.session.snapshot.execute({accountId:cAccount})).projects.find(p=>p.projectId===project.projectId)?.status).toBe("completed");
+    await expect(ops.projects.cancel.execute({accountId:cAccount},{projectId:project.projectId,commandId:randomUUID()})).rejects.toMatchObject({code:"CONTROL_EXPIRED"});
+    await expect(ops.manufacturingJobs.create.execute({accountId:cAccount},{recipeRef:{kind:"recipe",stableId:"landing-smelt-iron",revision:1},outputsPlanned:1,commandId:randomUUID()})).rejects.toMatchObject({code:"CONTROL_EXPIRED"});
+  });
+
 });

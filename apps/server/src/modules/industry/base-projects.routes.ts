@@ -16,6 +16,8 @@ const createProjectSchema = z.object({
     revision: z.number().int().positive()
   }),
   siteId: z.string().uuid(),
+  builderCount: z.number().int().min(1).max(2).optional(),
+  expectedBaseRevision: z.number().int().positive().optional(),
   commandId: z.string().uuid().optional()
 });
 
@@ -32,6 +34,7 @@ function sendError(reply: FastifyReply, statusCode: number, code: ErrorCode, mes
 interface SessionContext {
   token: string;
   accountId: string;
+  controlToken: string | null;
 }
 
 export async function registerBaseProjectsRoutes(
@@ -58,7 +61,7 @@ export async function registerBaseProjectsRoutes(
       void sendError(reply, 403, "FORBIDDEN", "CSRF 令牌缺失或不有效。");
       return null;
     }
-    return { token, accountId: principal.accountId };
+    return { token, accountId: principal.accountId, controlToken: typeof request.headers["x-base-control-token"] === "string" ? request.headers["x-base-control-token"] : null };
   };
 
   app.post("/base/projects", async (request, reply) => {
@@ -80,8 +83,11 @@ export async function registerBaseProjectsRoutes(
             revision: parsed.data.definitionRef.revision
           },
           siteId: parsed.data.siteId,
+          ...(parsed.data.builderCount !== undefined ? { builderCount: parsed.data.builderCount } : {}),
+          ...(parsed.data.expectedBaseRevision !== undefined ? { expectedBaseRevision: parsed.data.expectedBaseRevision } : {}),
           commandId: parsed.data.commandId ?? randomUUID()
-        }
+        },
+        session.controlToken
       );
       return reply.code(result.duplicate ? 200 : 201).send(result);
     } catch (error) {
@@ -110,7 +116,8 @@ export async function registerBaseProjectsRoutes(
       try {
         const result = await deps.cancel.execute(
           { accountId: session.accountId },
-          { projectId: projectId.data, commandId: parsed.data.commandId ?? randomUUID() }
+          { projectId: projectId.data, commandId: parsed.data.commandId ?? randomUUID() },
+          session.controlToken
         );
         return reply.code(200).send(result);
       } catch (error) {

@@ -15,6 +15,7 @@ import type {
   DefinitionRefDto,
   ManufacturingJobStatus,
   ProjectStatus,
+  ProjectTemplateDto,
   RobotStatus,
   OrderStatus,
   StepKind,
@@ -101,6 +102,7 @@ export interface ProjectTemplateSpec {
   requiresFacilities?: string[];
   expansionSlot?: boolean;
   allowedSiteKeys?: string[];
+  outputFacility?: ProjectTemplateDto["outputFacility"];
 }
 
 export interface RecipeTemplateSpec {
@@ -190,6 +192,7 @@ export interface BaseIndustryReadPort {
       status: string;
       currentStepIndex: number;
       siteId: string;
+      builderCount?: number | null;
       reservedInputs: Array<{ itemId: string; quantity: number }>;
     }>
   >;
@@ -654,6 +657,7 @@ export class BaseService {
         name: catalog.getProjectTemplate(project.projectDefId)?.name ?? project.projectDefId,
         status: project.status as ProjectStatus,
         siteId: project.siteId,
+        ...(project.builderCount != null ? { builderCount: project.builderCount } : {}),
         steps: stepRecords
           .filter((step) => step.projectId === project.id)
           .sort((a, b) => a.stepIndex - b.stepIndex)
@@ -732,6 +736,13 @@ export class BaseService {
             : {})
         },
         resources,
+        ...(isLanding ? { displayNames: {
+          items: Object.fromEntries(Object.entries(itemInfo).map(([id, item]) => [id, item.name])),
+          facilities: Object.fromEntries(catalog.listTemplates().projects.flatMap((project) =>
+            project.outputFacility ? [[project.outputFacility.ref.stableId, project.outputFacility.name]] : []
+          )),
+          robots: Object.fromEntries(catalog.listTemplates().robots.map((robot) => [robot.ref.stableId, robot.name]))
+        } } : {}),
         sites: siteDtos,
         devices,
         projects,
@@ -743,6 +754,7 @@ export class BaseService {
               name: project.name,
               description: project.description,
               inputs: project.inputs.map((input) => ({ itemId: input.itemId, quantity: input.quantity })),
+              ...(project.outputFacility ? { outputFacility: project.outputFacility } : {}),
               ...(project.requiresFacilities
                 ? { requiresFacilities: [...project.requiresFacilities] }
                 : {}),

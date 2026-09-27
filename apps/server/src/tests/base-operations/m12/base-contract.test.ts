@@ -286,6 +286,10 @@ describe("base REST contract negatives (buildApp + inject, temporary PostgreSQL)
     // R1：默认注册已是 landing-1（旧 release 行为由显式 legacy 的 m12 provision 验收覆盖）。
     if (!process.env.DATABASE_URL) return;
 
+    const control = await appOpen.inject({ method: "POST", url: "/base/heartbeat", payload: { action: "acquire" }, headers: { cookie: accountA.cookie, "x-csrf-token": accountA.csrfToken } });
+    expect(control.statusCode).toBe(200);
+    const controlToken = control.json().controlToken as string;
+
     const { rows } = await harness.client.query(
       `SELECT id FROM base_sites WHERE base_id = $1 AND site_key = 'install_solar'`,
       [accountA.baseId]
@@ -299,7 +303,7 @@ describe("base REST contract negatives (buildApp + inject, temporary PostgreSQL)
         definitionRef: { kind: "project", stableId: "landing-install-solar", revision: 999 },
         siteId: siteAId
       },
-      headers: { cookie: accountA.cookie, "x-csrf-token": accountA.csrfToken }
+      headers: { cookie: accountA.cookie, "x-csrf-token": accountA.csrfToken, "x-base-control-token": controlToken }
     });
 
     expect(response.statusCode).toBe(409);
@@ -354,6 +358,10 @@ describe("base REST contract negatives (buildApp + inject, temporary PostgreSQL)
   it("replays a repeated createProject commandId over HTTP (201 then 200 duplicate)", async () => {
     if (!process.env.DATABASE_URL) return;
 
+    const control = await appOpen.inject({ method: "POST", url: "/base/heartbeat", payload: { action: "acquire" }, headers: { cookie: accountA.cookie, "x-csrf-token": accountA.csrfToken } });
+    expect(control.statusCode).toBe(200);
+    const controlToken = control.json().controlToken as string;
+
     const { rows } = await harness.client.query(
       `SELECT id FROM base_sites WHERE base_id = $1 AND site_key = 'install_solar'`,
       [accountA.baseId]
@@ -365,7 +373,7 @@ describe("base REST contract negatives (buildApp + inject, temporary PostgreSQL)
       siteId: siteAId,
       commandId
     };
-    const headers = { cookie: accountA.cookie, "x-csrf-token": accountA.csrfToken };
+    const headers = { cookie: accountA.cookie, "x-csrf-token": accountA.csrfToken, "x-base-control-token": controlToken };
 
     const first = await appOpen.inject({ method: "POST", url: "/base/projects", payload, headers });
     expect(first.statusCode).toBe(201);

@@ -319,16 +319,25 @@ export function createBaseOperations(input: {
   // 反复发起锁住全部 running 基地行的全服事务。结算只由 world tick 按模拟时长推进；
   // 开工后首次进度变化最长约一个 tick（约 60 秒），是预期行为。
   // Directive：不要把请求路径结算加回来；需要“就地反馈”时在前端写明“下次结算时间”。
-  const createCase = new CreateProjectCase(db, construction);
+  const authorizeProfileWrite = async (tx: BaseTx, accountId: string, controlToken?: string | null) => {
+    const baseId = await baseRepo.findBaseIdByAccount(tx, accountId);
+    if (!baseId || !(await baseRepo.getBaseForUpdate(tx, baseId))) {
+      throw new RouteBaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
+    }
+    if ((await catalogResolver.forBase(tx, baseId)).rulesProfile() === "landing-v1") {
+      await requireLandingControl(tx, accountId, controlToken);
+    }
+  };
+  const createCase = new CreateProjectCase(db, construction, authorizeProfileWrite);
   const manufacturingJobs = {
-    create: new CreateManufacturingJobCase(db, manufacturing),
-    cancel: new CancelManufacturingJobCase(db, manufacturing)
+    create: new CreateManufacturingJobCase(db, manufacturing, authorizeProfileWrite),
+    cancel: new CancelManufacturingJobCase(db, manufacturing, authorizeProfileWrite)
   };
 
   const projects: BaseProjectsRouteDeps = {
     auth: authFacade,
     create: createCase,
-    cancel: new CancelProjectCase(db, construction)
+    cancel: new CancelProjectCase(db, construction, authorizeProfileWrite)
   };
 
   const cooperationDecision = {

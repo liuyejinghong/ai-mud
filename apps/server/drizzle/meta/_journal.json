@@ -267,6 +267,13 @@
       "when": 1791000000000,
       "tag": "0038_landing_rebuild",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791000000001,
+      "tag": "0039_landing_builder_count",
+      "breakpoints": true
     }
   ]
 }

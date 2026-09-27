@@ -195,7 +195,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
       definitionRef: { kind: "project", stableId, revision: template.definitionRef.revision },
       siteId,
       commandId
-    });
+    }, leaseToken);
   }
 
   async function siteIdByKey(key: string): Promise<string> {
@@ -250,6 +250,10 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     expect(snap.activeContentRelease).toBe("yudian-landing-1");
     expect(snap.capabilities).toEqual([]);
     expect(snap.credits).toBe(0); // 新档显式 0，不沿用旧默认 1200
+    expect(snap.displayNames?.items.structural_frame).toBe("结构件");
+    expect(snap.displayNames?.items.iron_ingot).toBe("铁料");
+    expect(snap.displayNames?.facilities["landing-warehouse"]).toBe("仓储棚");
+    expect(snap.buildableProjects.find(p => p.definitionRef.stableId === "landing-install-solar")?.outputFacility?.generationWPeak).toBe(4000);
     // 唯一 built 站点是着陆器；常设设施全部未建成。
     const built = snap.sites.filter((site) => site.state === "built").map((site) => site.siteKey);
     expect(built).toEqual(["lander"]);
@@ -470,7 +474,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     const smelt = await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-smelt-iron", revision: 1 },
       outputsPlanned: 8, commandId: randomUUID()
-    });
+    }, leaseToken);
     expect(smelt.duplicate).toBe(false);
     // 全额预留：16 铁矿。
     let inventory = await inventoryMap(harness.client, baseId);
@@ -494,7 +498,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-make-structural", revision: 1 },
       outputsPlanned: 4, commandId: randomUUID()
-    });
+    }, leaseToken);
     await advanceMinutes(2);
     const blockedSnap = await snapshot();
     expect(blockedSnap.productionSlots?.[0]).toMatchObject({
@@ -520,12 +524,12 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-smelt-copper", revision: 1 },
       outputsPlanned: 2, commandId: randomUUID()
-    });
+    }, leaseToken);
     await advanceMinutes(2);
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-make-cable", revision: 1 },
       outputsPlanned: 1, commandId: randomUUID()
-    });
+    }, leaseToken);
     await advanceMinutes(1);
     inventory = await inventoryMap(harness.client, baseId);
     expect(inventory.get("structural_frame")).toMatchObject({ quantity: 4, reserved: 0 });
@@ -572,20 +576,20 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-smelt-iron", revision: 1 },
       outputsPlanned: 8, commandId: randomUUID()
-    });
+    }, leaseToken);
     await advanceWithMaintenance(9);
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-smelt-copper", revision: 1 },
       outputsPlanned: 2, commandId: randomUUID()
-    });
+    }, leaseToken);
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-make-structural", revision: 1 },
       outputsPlanned: 4, commandId: randomUUID()
-    });
+    }, leaseToken);
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-make-cable", revision: 1 },
       outputsPlanned: 1, commandId: randomUUID()
-    });
+    }, leaseToken);
     await advanceWithMaintenance(10);
     inventory = await inventoryMap(harness.client, baseId);
     expect(inventory.get("structural_frame")?.quantity).toBeGreaterThanOrEqual(4);
@@ -593,7 +597,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     const assemble = await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-assemble-hauler", revision: 1 },
       outputsPlanned: 1, commandId: randomUUID()
-    });
+    }, leaseToken);
     // 组装 3 分钟/台（2000W×3 = 6000 W·min）。
     await advanceWithMaintenance(4);
     const { rows: robotOutputs } = await harness.client.query(

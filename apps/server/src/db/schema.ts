@@ -1053,6 +1053,7 @@ export const baseProjects = pgTable(
       .references(() => baseSites.id),
     projectDefId: text("project_def_id").notNull(),
     templateRevision: integer("template_revision").notNull(),
+    builderCount: integer("builder_count"),
     status: text("status").notNull().default("active"),
     currentStepIndex: integer("current_step_index").notNull().default(0),
     reservedInputs: jsonb("reserved_inputs").notNull().default([]),
@@ -1064,6 +1065,7 @@ export const baseProjects = pgTable(
     siteActiveIdx: uniqueIndex("base_projects_one_active_per_site_idx")
       .on(table.siteId)
       .where(sql`${table.status} IN ('planned', 'active', 'paused', 'blocked', 'needs_decision')`),
+    builderCountCheck: check("base_projects_builder_count_check", sql`${table.builderCount} IS NULL OR ${table.builderCount} IN (1, 2)`),
     statusCheck: check(
       "base_projects_status_check",
       sql`${table.status} IN ('planned', 'active', 'paused', 'blocked', 'needs_decision', 'completed', 'cancelled', 'failed')`

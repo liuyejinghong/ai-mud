@@ -490,7 +490,7 @@ export function BaseApp({
   const handleCancelProject = useCallback(
     (projectId: string) => {
       if (csrfToken === null) return;
-      void runCommand(() => cancelProject(projectId, newCommandId(), csrfToken), "base", (result) => {
+      void runCommand(() => cancelProject(projectId, newCommandId(), csrfToken, controlTokenRef.current), "base", (result) => {
         if (result.completed) return "工程已经完工，无法再取消。";
         const returned = result.releasedInputs.reduce((sum, input) => sum + input.quantity, 0);
         return result.cancelled ? `工程已取消，退回未耗材料 ${returned} 件。` : "工程取消请求已记录。";
@@ -647,18 +647,20 @@ export function BaseApp({
   );
 
   const handleLandingCreateProject = useCallback(
-    (stableId: string, siteId: string) => {
+    (stableId: string, siteId: string, builderCount = 2) => {
       if (csrfToken === null || snapshot === null) return;
       const template = snapshot.buildableProjects.find((project) => project.definitionRef.stableId === stableId);
       void runLandingCommand("landing",
-        (revision) => createProject(
+        (revision, controlToken) => createProject(
           {
             definitionRef: { kind: "project", stableId, revision: template?.definitionRef.revision ?? 1 },
             siteId,
+            builderCount,
             commandId: newCommandId(),
             ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
-          } as never,
-          csrfToken
+          },
+          csrfToken,
+          controlToken
         ),
         () => `工程「${template?.name ?? stableId}」已开工，材料已预留。`);
     },
@@ -715,14 +717,15 @@ export function BaseApp({
     (recipe: RecipeTemplateDto, batches: number) => {
       if (csrfToken === null) return;
       void runLandingCommand("landing",
-        (revision) => createManufacturingJob(
+        (revision, controlToken) => createManufacturingJob(
           {
             recipeRef: recipe.ref,
             outputsPlanned: batches,
             commandId: newCommandId(),
             ...(revision !== undefined ? { expectedBaseRevision: revision } : {})
           },
-          csrfToken
+          csrfToken,
+          controlToken
         ),
         () => `加工单「${recipe.name}」× ${batches} 批已提交，材料已预留。`);
     },
@@ -733,7 +736,7 @@ export function BaseApp({
     (jobId: string) => {
       if (csrfToken === null) return;
       void runLandingCommand("landing",
-        () => cancelManufacturingJob(jobId, newCommandId(), csrfToken),
+        (_revision, controlToken) => cancelManufacturingJob(jobId, newCommandId(), csrfToken, controlToken),
         () => "加工单已取消，未耗材料退回仓库。");
     },
     [csrfToken, runLandingCommand]

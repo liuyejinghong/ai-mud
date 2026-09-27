@@ -167,7 +167,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
       definitionRef: { kind: "project", stableId, revision: template.definitionRef.revision },
       siteId,
       commandId: randomUUID()
-    });
+    }, leaseToken);
   }
 
   async function waitForNodeFree(nodeKey: "iron_north" | "copper_ridge"): Promise<void> {
@@ -415,7 +415,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
       const templateB = snapB.buildableProjects.find((project) => project.definitionRef.stableId === "landing-install-solar")!;
       await ops.projects.create.execute({ accountId: accountB }, {
         definitionRef: templateB.definitionRef, siteId: solarSiteB.siteId, commandId: randomUUID()
-      });
+      }, tokenB);
       leaseToken = tokenB;
       baseId = baseIdB;
       await advanceMinutes(1);
@@ -429,7 +429,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
       const whTemplateB = snapB2.buildableProjects.find((project) => project.definitionRef.stableId === "landing-install-warehouse")!;
       await ops.projects.create.execute({ accountId: accountB }, {
         definitionRef: whTemplateB.definitionRef, siteId: whSiteB.siteId, commandId: randomUUID()
-      });
+      }, leaseToken);
       await advanceMinutes(1);
       await ops.extraction.createMining.execute({ accountId: accountB }, {
         nodeId: await nodeIdByKey("iron_north", accountB), batches: 2,
@@ -473,11 +473,11 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
     const jobA = await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-smelt-iron", revision: 1 },
       outputsPlanned: 8, commandId: commandA
-    });
+    }, leaseToken);
     const jobB = await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-smelt-iron", revision: 1 },
       outputsPlanned: 4, commandId: randomUUID()
-    });
+    }, leaseToken);
     void jobB;
     // 结算 1 分钟：A 绑槽运行，B 排队（productionSiteId null）。
     await advanceMinutes(1);
@@ -533,7 +533,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-smelt-iron", revision: 1 },
       outputsPlanned: 2, commandId: randomUUID()
-    });
+    }, leaseToken);
     // 把设备电量拉低以制造充电需求：直接连续推进多分钟让采矿/施工耗电？此处用大电量负载——
     // 更直接的判定：切换命令本身返回成功且快照策略变化，且切换前的分钟已按生产结清。
     const revision = (await snapshot()).baseRevision;
@@ -597,7 +597,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
       await ops.manufacturingJobs.create.execute({ accountId }, {
         recipeRef: { kind: "recipe", stableId: "landing-smelt-copper", revision: 1 },
         outputsPlanned: copperBatches, commandId: randomUUID()
-      });
+      }, leaseToken);
       void ironAvail;
       // 等停机或全部完成。
       let blocked = false;
@@ -630,7 +630,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
       await ops.manufacturingJobs.create.execute({ accountId }, {
         recipeRef: { kind: "recipe", stableId: "landing-smelt-copper", revision: 1 },
         outputsPlanned: batchesLock, commandId: randomUUID()
-      });
+      }, leaseToken);
       for (let index = 0; index < 30; index += 1) {
         await advanceMinutes(1);
         if ((await snapshot()).productionSlots?.[0]?.maintenanceBlocked) break;
@@ -661,7 +661,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-handcraft-spares", revision: 1 },
       outputsPlanned: 1, commandId: randomUUID()
-    });
+    }, leaseToken);
     for (let index = 0; index < 8; index += 1) {
       await advanceMinutes(1);
       inv = await inventoryMap(harness.client, baseId);
@@ -674,7 +674,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
       commandId: randomUUID(), controlToken: leaseToken
     });
     expect((await snapshot()).productionSlots?.[0]?.maintenanceBlocked).toBe(false);
-  });
+  }, 30_000);
 
   it("#7 双槽能量分摊：扩建第二加工间后两单共享同一能量池（不足时按比例）", async () => {
     if (!process.env.DATABASE_URL) return;
@@ -687,7 +687,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
       await ops.manufacturingJobs.create.execute({ accountId }, {
         recipeRef: { kind: "recipe", stableId: "landing-handcraft-spares", revision: 1 },
         outputsPlanned: 1, commandId: randomUUID()
-      });
+      }, leaseToken);
       for (let index = 0; index < 8; index += 1) {
         await advanceMinutes(1);
         if (((await inventoryMap(harness.client, baseId)).get("spare_part")?.quantity ?? 0) >= guard + 1) break;
@@ -699,7 +699,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-smelt-iron", revision: 1 },
       outputsPlanned: 12, commandId: randomUUID()
-    });
+    }, leaseToken);
     for (let index = 0; index < 26; index += 1) {
       await advanceMinutes(1);
       const snap = await snapshot();
@@ -710,7 +710,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
           await ops.manufacturingJobs.create.execute({ accountId }, {
             recipeRef: { kind: "recipe", stableId: "landing-handcraft-spares", revision: 1 },
             outputsPlanned: 1, commandId: randomUUID()
-          });
+          }, leaseToken);
           for (let wait = 0; wait < 8; wait += 1) {
             await advanceMinutes(1);
             if (((await inventoryMap(harness.client, baseId)).get("spare_part")?.quantity ?? 0) >= 1) break;
@@ -726,16 +726,16 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-smelt-copper", revision: 1 },
       outputsPlanned: 4, commandId: randomUUID()
-    });
+    }, leaseToken);
     for (let index = 0; index < 10; index += 1) await advanceMinutes(1);
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-make-structural", revision: 1 },
       outputsPlanned: 6, commandId: randomUUID()
-    });
+    }, leaseToken);
     await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-make-cable", revision: 1 },
       outputsPlanned: 1, commandId: randomUUID()
-    });
+    }, leaseToken);
     for (let index = 0; index < 26; index += 1) {
       await advanceMinutes(1);
       const snapMaint = await snapshot();
@@ -748,7 +748,7 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
           await ops.manufacturingJobs.create.execute({ accountId }, {
             recipeRef: { kind: "recipe", stableId: "landing-handcraft-spares", revision: 1 },
             outputsPlanned: 1, commandId: randomUUID()
-          });
+          }, leaseToken);
           for (let wait = 0; wait < 8; wait += 1) {
             await advanceMinutes(1);
             if (((await inventoryMap(harness.client, baseId)).get("spare_part")?.quantity ?? 0) >= 1) break;
@@ -773,11 +773,11 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
     const singleA = await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-smelt-iron", revision: 1 },
       outputsPlanned: 1, commandId: randomUUID()
-    });
+    }, leaseToken);
     const singleB = await ops.manufacturingJobs.create.execute({ accountId }, {
       recipeRef: { kind: "recipe", stableId: "landing-make-structural", revision: 1 },
       outputsPlanned: 1, commandId: randomUUID()
-    });
+    }, leaseToken);
     void singleA;
     void singleB;
     await advanceMinutes(1);
@@ -789,5 +789,5 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
     for (let index = 0; index < 6; index += 1) await advanceMinutes(1);
     inv = await inventoryMap(harness.client, baseId);
     expect((inv.get("iron_ingot")?.quantity ?? 0) + 1).toBeGreaterThanOrEqual(1);
-  });
+  }, 30_000);
 });

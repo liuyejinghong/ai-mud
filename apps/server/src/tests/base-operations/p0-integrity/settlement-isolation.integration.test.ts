@@ -430,6 +430,7 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
     );
     const siteId = sites[0].id as string;
 
+    const controlToken = (await ops.session.clock.heartbeat({ accountId: actor.accountId }, { action: "acquire" })).controlToken;
     const bystanderBefore = await snapshotBase(bystander.baseId);
     const actorBefore = await snapshotBase(actor.baseId);
     const input = {
@@ -438,7 +439,7 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
       commandId: randomUUID()
     };
 
-    const first = await ops.projects.create.execute({ accountId: actor.accountId }, input);
+    const first = await ops.projects.create.execute({ accountId: actor.accountId }, input, controlToken);
     expect(first.duplicate).toBe(false);
 
     const assertNoSettlement = async () => {
@@ -458,7 +459,7 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
     };
     await assertNoSettlement();
 
-    const replay = await ops.projects.create.execute({ accountId: actor.accountId }, input);
+    const replay = await ops.projects.create.execute({ accountId: actor.accountId }, input, controlToken);
     expect(replay).toEqual({ projectId: first.projectId, duplicate: true });
     await assertNoSettlement();
     const { rows: projects } = await client.query(

@@ -53,7 +53,7 @@ export interface LandingSettlementDeps {
   industry: {
     listProjects(tx: ExtractionTx, baseId: string): Promise<Array<{
       id: string; projectDefId: string; templateRevision: number; status: string;
-      currentStepIndex: number; siteId: string;
+      currentStepIndex: number; siteId: string; builderCount?: number | null;
       reservedInputs: Array<{ itemId: string; quantity: number }>;
     }>>;
     listSteps(tx: ExtractionTx, projectIds: string[]): Promise<Array<{
@@ -297,7 +297,7 @@ export async function settleLandingBaseMinute(
       currentExtractionJobId: robot.currentExtractionJobId ?? null
     })),
     robotParams,
-    projects: activeProjects.map((project) => ({ id: project.id, status: project.status, siteId: project.siteId })),
+    projects: activeProjects.map((project) => ({ id: project.id, status: project.status, siteId: project.siteId, ...(project.builderCount !== undefined ? { builderCount: project.builderCount } : {}) })),
     steps: steps.map((step) => ({
       projectId: step.projectId,
       stepIndex: step.stepIndex,
@@ -330,7 +330,7 @@ interface PersistContext {
   catalog: LandingSettlementCatalogPort;
   projectRecords: Array<{
     id: string; projectDefId: string; templateRevision: number; status: string;
-    siteId: string; reservedInputs: Array<{ itemId: string; quantity: number }>;
+    siteId: string; builderCount?: number | null; reservedInputs: Array<{ itemId: string; quantity: number }>;
     currentStepIndex: number;
   }>;
   steps: Array<{

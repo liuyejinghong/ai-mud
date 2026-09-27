@@ -112,7 +112,7 @@ export function createWorldRuntimeScheduler(input: {
   };
 }
 
-export async function buildApp(input?: { env?: Env; db?: Db }) {
+export async function buildApp(input?: { env?: Env; db?: Db; provisionCatalog?: Parameters<typeof createBaseOperations>[0]["provisionCatalog"] }) {
   const app = Fastify({ logger: true });
   const config = input?.env ?? loadEnv();
   // 第 0 阶段车道 C1–C3（评审 ARCH-boundaries-01/02）：旧西幻世界默认不参与 tick、不注册路由。
@@ -126,7 +126,7 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
     dbConnection = createDb(config.DATABASE_URL, dbPoolOptionsFromEnv(config));
     db = dbConnection.db;
   }
-  const baseOps = createBaseOperations({ db, config });
+  const baseOps = createBaseOperations({ db, config, ...(input?.provisionCatalog ? { provisionCatalog: input.provisionCatalog } : {}) });
 
   // 旧世界参与者：与世界时钟同一事务、全有或全无（沿用 ARCH-02 语义），只在开关开启时存在。
   const legacyWorldParticipants: WorldTickParticipant[] = legacyWorldEnabled

@@ -181,11 +181,13 @@ export function decideCooperation(
 
 export function createProject(
   input: CreateProjectInputDto,
-  csrfToken: string
+  csrfToken: string,
+  controlToken?: string | null
 ): Promise<CreateProjectResultDto> {
   return request<CreateProjectResultDto>("/base/projects", {
     method: "POST",
     csrfToken,
+    ...(controlToken ? { controlToken } : {}),
     body: input
   });
 }
@@ -193,22 +195,26 @@ export function createProject(
 export function cancelProject(
   projectId: string,
   commandId: string,
-  csrfToken: string
+  csrfToken: string,
+  controlToken?: string | null
 ): Promise<CancelProjectResultDto> {
   return request<CancelProjectResultDto>(`/base/projects/${encodeURIComponent(projectId)}/cancel`, {
     method: "POST",
     csrfToken,
+    ...(controlToken ? { controlToken } : {}),
     body: { commandId }
   });
 }
 
 export function createManufacturingJob(
   input: CreateManufacturingJobInputDto,
-  csrfToken: string
+  csrfToken: string,
+  controlToken?: string | null
 ): Promise<CreateManufacturingJobResultDto> {
   return request<CreateManufacturingJobResultDto>("/base/manufacturing", {
     method: "POST",
     csrfToken,
+    ...(controlToken ? { controlToken } : {}),
     body: input
   });
 }
@@ -216,13 +222,15 @@ export function createManufacturingJob(
 export function cancelManufacturingJob(
   jobId: string,
   commandId: string,
-  csrfToken: string
+  csrfToken: string,
+  controlToken?: string | null
 ): Promise<CancelManufacturingJobResultDto> {
   return request<CancelManufacturingJobResultDto>(
     `/base/manufacturing/${encodeURIComponent(jobId)}/cancel`,
     {
       method: "POST",
       csrfToken,
+      ...(controlToken ? { controlToken } : {}),
       body: { commandId }
     }
   );

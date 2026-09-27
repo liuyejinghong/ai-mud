@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 《余电》试玩服：重置全部基地经营实例数据（保留账号），并吊销全部会话。
 --
--- 授权：2026-09-25 用户确认内测数据不重要，第 0 阶段修复上线后重置基地经营数据、保留账号。
+-- 历史维护脚本，每次实际执行均须另行取得数据重置授权；不属于 R1 部署步骤。
 -- 操作手册：docs/deployment/phase0-deploy-and-reset.md（第 ⑥ 步）。
 --
 -- 执行（先停 server 容器，只在 ai-mud 的 postgres 容器内执行）：
@@ -16,7 +16,7 @@
 --   * 守卫：若库里出现本脚本未登记的基地关联表（引用下列任一表的外键，或新的 base_* 表），
 --     整体拒绝执行并列出表名——先按 apps/server/src/db/schema.ts 复核归属再更新本脚本。
 --
--- 清空（16 张基地实例表，全部行；依据 schema.ts 与迁移 0029—0035 的外键逐表核对）：
+-- 清空（20 张基地实例表，全部行；包含 R1 新增资源节点、采矿单/产出及加工槽）：
 --   bases                        基地根行（account_id → accounts，账号保留）
 --   base_sites                   建设位（→ bases）
 --   base_control_leases          基地控制租约（→ bases）
@@ -71,7 +71,8 @@ DECLARE
     'bases', 'base_sites', 'base_control_leases', 'base_inventory', 'base_devices',
     'robot_operators', 'base_power_state', 'base_projects', 'base_project_steps',
     'base_manufacturing_jobs', 'base_manufacturing_outputs', 'decision_records',
-    'cooperation_requests', 'base_weather_schedule', 'base_orders', 'base_purchases'
+    'cooperation_requests', 'base_weather_schedule', 'base_orders', 'base_purchases',
+    'base_resource_nodes', 'base_extraction_jobs', 'base_extraction_outputs', 'base_production_slots'
   ];
   missing text;
   stray_fk text;
@@ -118,12 +119,17 @@ LOCK TABLE
   bases, base_sites, base_control_leases, base_inventory, base_devices,
   robot_operators, base_power_state, base_projects, base_project_steps,
   base_manufacturing_jobs, base_manufacturing_outputs, decision_records,
-  cooperation_requests, base_weather_schedule, base_orders, base_purchases
+  cooperation_requests, base_weather_schedule, base_orders, base_purchases,
+  base_resource_nodes, base_extraction_jobs, base_extraction_outputs, base_production_slots
 IN EXCLUSIVE MODE;
 
 -- ---------------------------------------------------------------------------
 -- 1. 基地实例表：按外键从子到父删除（全部外键均为 ON DELETE RESTRICT）。
 -- ---------------------------------------------------------------------------
+DELETE FROM base_extraction_outputs;
+DELETE FROM base_extraction_jobs;
+DELETE FROM base_production_slots;
+DELETE FROM base_resource_nodes;
 DELETE FROM base_manufacturing_outputs;
 DELETE FROM cooperation_requests;
 DELETE FROM decision_records;
@@ -165,7 +171,8 @@ DECLARE
     'bases', 'base_sites', 'base_control_leases', 'base_inventory', 'base_devices',
     'robot_operators', 'base_power_state', 'base_projects', 'base_project_steps',
     'base_manufacturing_jobs', 'base_manufacturing_outputs', 'decision_records',
-    'cooperation_requests', 'base_weather_schedule', 'base_orders', 'base_purchases'
+    'cooperation_requests', 'base_weather_schedule', 'base_orders', 'base_purchases',
+    'base_resource_nodes', 'base_extraction_jobs', 'base_extraction_outputs', 'base_production_slots'
   ];
   t text;
   remaining bigint;

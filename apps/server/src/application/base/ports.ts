@@ -22,6 +22,7 @@ import type { Db } from "../../db/client.js";
 // （ACP-B01 边），方法必须在调用方事务内执行，实现自身不得开启或提交事务。
 
 export type BaseTx = Pick<Db, "delete" | "insert" | "select" | "update">;
+export type BaseWriteGuard = (tx: BaseTx, accountId: string, controlToken?: string | null) => Promise<void>;
 
 export interface BasePrincipal {
   accountId: string;
@@ -367,13 +368,14 @@ export interface CancelProjectResultDto {
 }
 
 export interface CreateProjectUseCase {
-  execute(principal: BasePrincipal, input: CreateProjectInputDto): Promise<CreateProjectResultDto>;
+  execute(principal: BasePrincipal, input: CreateProjectInputDto, controlToken?: string | null): Promise<CreateProjectResultDto>;
 }
 
 export interface CancelProjectUseCase {
   execute(
     principal: BasePrincipal,
-    input: { projectId: string; commandId: string }
+    input: { projectId: string; commandId: string },
+    controlToken?: string | null
   ): Promise<CancelProjectResultDto>;
 }
 
