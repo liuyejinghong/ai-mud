@@ -531,6 +531,50 @@ test("U07 独立同档回访：在途工单离开20分钟不补算", async ({ pa
   snapshot = await waitForSnapshot(page, (current) => current.timeMode === "running" && current.speed === 4,
     "U07 could not set the new base to ×4", 30_000);
 
+  const bootstrapFacilities = [
+    {
+      title: "安装首座太阳能",
+      siteName: "太阳能安装位",
+      projectName: "安装首座太阳能",
+      stableId: "landing-install-solar"
+    },
+    {
+      title: "安装仓储棚",
+      siteName: "仓储棚安装位",
+      projectName: "安装仓储棚",
+      stableId: "landing-install-warehouse",
+      capability: "warehouse"
+    }
+  ] as const;
+  for (const facility of bootstrapFacilities) {
+    await expect(goal).toContainText(facility.title);
+    const nextAction = goal.getByRole("button", { name: "前往处理", exact: true });
+    await expect(nextAction).toHaveCount(1);
+    await nextAction.click();
+    const projectAction = panel.getByRole("button", { name: facility.projectName, exact: true });
+    await expect(projectAction).toHaveCount(1);
+    const projectId = await clickForId(page, "/base/projects", "projectId", () => projectAction.click());
+    snapshot = await waitForSnapshot(page, (current) =>
+      current.projects.some((project) => project.projectId === projectId && project.status === "completed"),
+    `U07 ${facility.projectName} project ${projectId} did not complete`, 600_000);
+    const project = snapshot.projects.find((candidate) => candidate.projectId === projectId);
+    const site = snapshot.sites.find((candidate) => candidate.siteId === project?.siteId);
+    expect(project?.definitionRef.stableId).toBe(facility.stableId);
+    expect(site?.name).toBe(facility.siteName);
+    expect(site?.state).toBe("built");
+    if ("capability" in facility) expect(snapshot.capabilities).toContain(facility.capability);
+    await attachEvidence(`U07-${facility.stableId}-complete`, {
+      projectId,
+      stableId: project?.definitionRef.stableId,
+      projectStatus: project?.status,
+      siteId: site?.siteId,
+      siteName: site?.name,
+      siteState: site?.state,
+      capabilities: snapshot.capabilities
+    });
+  }
+  expect(snapshot.capabilities).toContain("warehouse");
+
   const surveyor = snapshot.devices.find((device) =>
     device.groupId === "survey" && !device.currentAssignment && !device.currentExtractionJobId && device.batteryWh >= 2
   );
@@ -671,10 +715,28 @@ test("U07 独立同档回访：在途工单离开20分钟不补算", async ({ pa
   });
 
   const awayStartedAt = Date.now();
+  console.info("[landing-revisit] away-start", JSON.stringify({
+    baseId: awayBaseline.baseId,
+    jobId: miningJobId,
+    startedAt: new Date(awayStartedAt).toISOString(),
+    simTime: awayBaseline.simTime,
+    timeMode: awayBaseline.timeMode,
+    controlActive: awayBaseline.controlLease.controlActive
+  }));
   await page.waitForTimeout(20 * 60_000 + 1_000);
   const awayMilliseconds = Date.now() - awayStartedAt;
   const afterTwentyMinutes = await readSnapshotFromPublicGet(page);
   const afterTwentyFacts = continuityFacts(afterTwentyMinutes);
+  console.info("[landing-revisit] away-end", JSON.stringify({
+    baseId: afterTwentyMinutes.baseId,
+    jobId: miningJobId,
+    endedAt: new Date().toISOString(),
+    awayMilliseconds,
+    simTime: afterTwentyMinutes.simTime,
+    timeMode: afterTwentyMinutes.timeMode,
+    controlActive: afterTwentyMinutes.controlLease.controlActive,
+    continuityUnchanged: JSON.stringify(afterTwentyFacts) === JSON.stringify(baselineFacts)
+  }));
   await attachEvidence("U07-after-20-minute-away", {
     status: "OBSERVED",
     awayMilliseconds,
