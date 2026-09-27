@@ -18,7 +18,7 @@
 
 三圈报告来源 `9852919`，回访 `0dce610`，恢复/桌面 `f7313cf`，控制负例 `f1c64d2`；全部产品源码均与 `b65281d` 一致。之后只有测试拆分、归属登记及文档归档。具体完整 SHA 与原始报告目录在 acceptance.json。三圈历史 U07 `NOT_RUN` 留存，不用它替代独立回访结果。
 
-工程门槛：构建、类型、显式 E2E strict 类型检查通过；[架构检查](verification/delivery-arch-check.log) 0 uncovered、[12项架构自检](verification/delivery-arch-test.log)通过。完整1180项测试最终使用2个文件worker全部通过；同候选默认并发曾出现5秒超时及26项连锁失败，原日志保留在 `/private/tmp/yudian-r1-review/delivery-full-tests.log`，受控重跑为 `delivery-full-tests-bounded.log`。没有删除断言或加大超时。
+工程门槛：构建、类型、显式 E2E strict 类型检查通过；[架构检查](verification/delivery-arch-check.txt) 0 uncovered、[12项架构自检](verification/delivery-arch-test.txt)通过。完整1180项测试最终使用2个文件worker全部通过；同候选默认并发曾出现5秒超时及26项连锁失败，原日志保留在 `/private/tmp/yudian-r1-review/delivery-full-tests.log`，受控重跑为 `delivery-full-tests-bounded.log`。没有删除断言或加大超时。
 
 复现本地受控回归：先核实一次性测试 PostgreSQL，再显式传入其 DATABASE_URL；执行 `CI=true pnpm -r run test --maxWorkers=2 --minWorkers=1`。浏览器用 `REAL_E2E_HEADED=true REAL_E2E_WORLD_TICK=true REAL_E2E_PROJECT=landing-postgres` 运行 `apps/server/scripts/run-real-player-e2e.ts`；运行前显式传入已核实隔离库的 DATABASE_URL，勿使用读取未知 .env 的旧入口。单项可用 REAL_E2E_GREP。每次新浏览器运行前归档 test-results（含 report.json）。
 
