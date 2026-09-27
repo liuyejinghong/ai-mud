@@ -2875,6 +2875,34 @@
       "layer": "test",
       "scope": "test",
       "note": "主控独立 UI 回归（MOCK；预期来自合同，不改期望迎合实现）"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/landing/independent-review.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "独立设备归属与取消收尾回归"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/landing/independent-assignment.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "独立设备归属与取消收尾回归"
+    },
+    {
+      "path": "apps/web/e2e/landing-alt-route.real.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 真实浏览器替代路线与控制租约验收"
+    },
+    {
+      "path": "apps/web/e2e/landing-control-negative.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 真实浏览器替代路线与控制租约验收"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",

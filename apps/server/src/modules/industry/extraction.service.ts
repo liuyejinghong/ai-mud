@@ -392,13 +392,21 @@ export class ExtractionService {
     if (job.status === "completed" || job.status === "cancelled") {
       throw new BaseOperationError(409, "CONFLICT", "作业已结束，无法取消。");
     }
+    if (job.status === "stopping") {
+      const result: ActionResultPayload = { jobId: job.id, status: "stopping", duplicate: false, releasedOre: 0 };
+      await this.save(tx, baseId, CANCEL_COMMAND_KIND, input.commandId, result);
+      return result;
+    }
 
     let releasedOre = 0;
     if (job.kind === "mine") {
       // 未采部分立即释放；已采现场货物送完最后一趟再结案（stopping）。
       releasedOre = (job.batchesPlanned - job.batchesExtracted) * LANDING_ORE_PER_BATCH;
       if (releasedOre > 0) {
-        await this.deps.nodes.releaseReservation(tx, baseId, job.nodeId, releasedOre);
+        const released = await this.deps.nodes.releaseReservation(tx, baseId, job.nodeId, releasedOre);
+        if (!released) {
+          throw new BaseOperationError(409, "CONFLICT", "矿量预留状态已变化，取消未生效。");
+        }
       }
       if (job.batchesDelivered < job.batchesExtracted) {
         await this.deps.store.saveJob(tx, {

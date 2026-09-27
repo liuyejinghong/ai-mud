@@ -21,6 +21,7 @@ export const LANDING_SLOT_EARLY_MAINTENANCE_FROM = 8;
 
 export const LANDING_POWER_BLOCK = "insufficient_power";
 export const LANDING_BATTERY_BLOCK = "device_low_battery";
+export const LANDING_DEVICE_BLOCK = "device_unavailable";
 export const LANDING_MAINTENANCE_BLOCK = "maintenance_required";
 export const LANDING_CONTENT_BLOCK = "content_missing";
 
@@ -261,6 +262,13 @@ export function computeLandingMinute(
   }));
   const robotById = new Map(robots.map((robot) => [robot.record.operatorId, robot]));
   const drainOf = (robot: RobotState): number => robot.params?.workDrainWh ?? 0;
+  const workedThisMinute = new Set<string>();
+  const ownsExtraction = (robot: RobotState, jobId: string): boolean =>
+    robot.extractionJobId === jobId && robot.projectId === null;
+  const canWorkExtraction = (robot: RobotState, jobId: string): boolean =>
+    ownsExtraction(robot, jobId) &&
+    robot.status !== "offline" &&
+    !workedThisMinute.has(robot.record.operatorId);
 
   // ---------- 步骤状态（只看活动项目） ----------
   const activeProjects = input.projects.filter((project) => project.status === "active");
@@ -400,6 +408,7 @@ export function computeLandingMinute(
       let contribution = 0;
       for (const robot of workers) {
         robot.battery -= drainOf(robot);
+        workedThisMinute.add(robot.record.operatorId);
         contribution += robot.params?.workRate ?? 0;
       }
       step.workDone = Math.min(step.record.workRequired, step.workDone + contribution);
@@ -427,9 +436,6 @@ export function computeLandingMinute(
   // ---------- 4) 勘探 / 采矿工序（自身电池；分派保留：充电足够即复工） ----------
   const extractionUpdates: LandingExtractionUpdate[] = [];
   const nodeUpdates: LandingNodeUpdate[] = [];
-  const extractionJobById = new Map(input.extractionJobs.map((job) => [job.id, job]));
-  void extractionJobById;
-
   for (const job of input.extractionJobs) {
     if (job.status !== "active" && job.status !== "stopping") continue;
     const update: LandingExtractionUpdate = {
@@ -451,7 +457,7 @@ export function computeLandingMinute(
         ...(job.surveyorOperatorId ? [job.surveyorOperatorId] : [])
       ]) {
         const robot = robotById.get(operatorId);
-        if (!robot) continue;
+        if (!robot || !ownsExtraction(robot, job.id)) continue;
         robot.status = "idle";
         robot.extractionJobId = null;
         update.releaseOperators.push(operatorId);
@@ -461,6 +467,11 @@ export function computeLandingMinute(
     if (job.kind === "survey") {
       const surveyor = job.surveyorOperatorId ? robotById.get(job.surveyorOperatorId) : undefined;
       const drain = surveyor ? drainOf(surveyor) : 0;
+      if (!surveyor || !canWorkExtraction(surveyor, job.id)) {
+        update.blockedReason = LANDING_DEVICE_BLOCK;
+        extractionUpdates.push(update);
+        continue;
+      }
       if (!surveyor || drain <= 0 || surveyor.battery < drain) {
         update.blockedReason = LANDING_BATTERY_BLOCK;
         if (surveyor && surveyor.status === "working") surveyor.status = "charging";
@@ -469,6 +480,7 @@ export function computeLandingMinute(
       }
       surveyor.status = "working";
       surveyor.battery -= drain;
+      workedThisMinute.add(surveyor.record.operatorId);
       update.phaseWorkDone = job.phaseWorkDone + 1;
       if (update.phaseWorkDone >= LANDING_SURVEY_POINTS) {
         update.status = "completed";
@@ -484,23 +496,36 @@ export function computeLandingMinute(
     let phaseWorkDone = job.phaseWorkDone;
     let batchesExtracted = job.batchesExtracted;
     let batchesDelivered = job.batchesDelivered;
-    let lowBattery = false;
+    let blockedReason: string | null = null;
     const builders = job.builderOperatorIds
       .map((operatorId) => robotById.get(operatorId))
       .filter((robot): robot is RobotState => robot !== undefined);
     const hauler = job.haulerOperatorId ? robotById.get(job.haulerOperatorId) : undefined;
 
+    // 暂停已释放设备；取消收尾只能重新认领空闲的原驮运，不能抢走别单设备。
+    // 分配与工单进度由同一个基地事务经 npc 写入。
+    if (
+      job.status === "stopping" && batchesDelivered < batchesExtracted &&
+      hauler && hauler.projectId === null && hauler.extractionJobId === null &&
+      (hauler.status === "idle" || hauler.status === "charging") &&
+      !workedThisMinute.has(hauler.record.operatorId)
+    ) {
+      hauler.extractionJobId = job.id;
+    }
+
     if (phase === "mining" && job.status === "active") {
-      const ready = builders.filter((robot) => drainOf(robot) > 0 && robot.battery >= drainOf(robot));
+      const assigned = builders.filter((robot) => canWorkExtraction(robot, job.id));
+      const ready = assigned.filter((robot) => drainOf(robot) > 0 && robot.battery >= drainOf(robot));
       if (ready.length === 0) {
-        lowBattery = true;
-        for (const robot of builders) {
+        blockedReason = assigned.length > 0 ? LANDING_BATTERY_BLOCK : LANDING_DEVICE_BLOCK;
+        for (const robot of assigned) {
           if (robot.status === "working") robot.status = "charging";
         }
       } else {
         for (const robot of ready) {
           robot.status = "working";
           robot.battery -= drainOf(robot);
+          workedThisMinute.add(robot.record.operatorId);
           phaseWorkDone += robot.params?.workRate ?? 0;
         }
       }
@@ -509,7 +534,7 @@ export function computeLandingMinute(
     // 采出即转 hauling，但本分钟不再推进运输——每分钟只走一个工序
     // （01 §2：当前批有多余工作预算也不能提前推进到下一工序）。
     if (
-      !lowBattery &&
+      blockedReason === null &&
       phase === "mining" &&
       phaseWorkDone >= LANDING_MINING_POINTS_PER_BATCH &&
       job.status === "active"
@@ -519,7 +544,6 @@ export function computeLandingMinute(
       nodeUpdates.push({ nodeId: job.nodeId, extractedQuantity: LANDING_ORE_PER_BATCH, discovered: false });
       phase = "hauling";
       phaseWorkDone = 0;
-      lowBattery = false;
       // 结束本分钟的采矿单推进（进入下一分钟才开始运输）。
       update.phase = phase;
       update.phaseWorkDone = phaseWorkDone;
@@ -529,14 +553,17 @@ export function computeLandingMinute(
       continue;
     }
 
-    if (phase === "hauling" && !lowBattery) {
+    if (phase === "hauling" && blockedReason === null) {
       const drain = hauler ? drainOf(hauler) : 0;
-      if (!hauler || drain <= 0 || hauler.battery < drain) {
-        lowBattery = true;
-        if (hauler && hauler.status === "working") hauler.status = "charging";
+      if (!hauler || !canWorkExtraction(hauler, job.id)) {
+        blockedReason = LANDING_DEVICE_BLOCK;
+      } else if (drain <= 0 || hauler.battery < drain) {
+        blockedReason = LANDING_BATTERY_BLOCK;
+        if (hauler.status === "working") hauler.status = "charging";
       } else {
         hauler.status = "working";
         hauler.battery -= drain;
+        workedThisMinute.add(hauler.record.operatorId);
         phaseWorkDone += hauler.params?.workRate ?? 0;
         if (phaseWorkDone >= LANDING_HAULING_POINTS_PER_BATCH) {
           batchesDelivered += 1;
@@ -554,7 +581,7 @@ export function computeLandingMinute(
       update.status = "completed";
       releaseAll();
     } else {
-      update.blockedReason = lowBattery ? LANDING_BATTERY_BLOCK : null;
+      update.blockedReason = blockedReason;
     }
 
     update.phase = phase;
@@ -674,6 +701,7 @@ export function computeLandingMinute(
     .filter(
       (robot) =>
         (robot.status === "idle" || robot.status === "charging") &&
+        !workedThisMinute.has(robot.record.operatorId) &&
         (robot.params?.chargeRateW ?? 0) > 0 &&
         robot.battery < robot.record.batteryCapacityWh
     )

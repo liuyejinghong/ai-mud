@@ -423,6 +423,10 @@ export function createBaseOperations(input: {
     if (!baseId) {
       throw new RouteBaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
     }
+    // 与接管操作使用同一基地锁，防止租约校验后、命令落盘前控制权被替换。
+    if (!(await baseRepo.getBaseForUpdate(tx, baseId))) {
+      throw new RouteBaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
+    }
     const lease = await baseRepo.getControlLease(tx, baseId);
     const now = systemWorldClock.now();
     if (

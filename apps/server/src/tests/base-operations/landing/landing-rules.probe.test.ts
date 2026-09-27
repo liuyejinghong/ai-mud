@@ -180,12 +180,10 @@ describe("P01 着陆器自举：不借任何已安装设施完成首太阳能", 
     const result = step(sim);
     // 2 台筑垒 × 1 点 = 工序完成 → 项目完成。
     expect(result.projectCompletions).toEqual([{ projectId: "p1", siteId: "solar" }]);
-    // 电力账目：发电 1000 = 基础 200 + 现场 200 + 完工后两台筑垒充电 360 + 盈余 240 入储能。
-    // （安装在该分钟内完成，机器人转 idle 后即可在本分钟充电。）
-    expect(result.power.lastLoadW).toBe(760);
-    expect(result.power.storageWm).toBe(60_000 + 240);
-    // 筑垒耗自身电池 6 Wh；同分钟内先完工转 idle 的设备可再获充电（预算内）。
-    expect(Math.min(sim.robots[0]!.batteryWh, sim.robots[1]!.batteryWh)).toBe(102);
+    // 本分钟出工者不能再充电：发电 1000 = 基础 200 + 现场 200 + 储能 600。
+    expect(result.power.lastLoadW).toBe(400);
+    expect(result.power.storageWm).toBe(60_000 + 600);
+    expect(sim.robots.map((entry) => entry.batteryWh)).toEqual([102, 102]);
   });
 
   it("单台筑垒两分钟完成（1 点/分钟），电池不足一分钟工作电即不出工", () => {
@@ -312,8 +310,8 @@ describe("P04 勘探→采矿→送达与低电恢复", () => {
   it("全队低电不软锁：应急充电 400 W 上限内活动工序低电设备优先，充满即复工", () => {
     const sim = simulate({
       robots: [
-        robot("b1", "landing-builder", 3),  // 低于 6 Wh 工作电
-        robot("h1", "landing-hauler", 2)
+        { ...robot("b1", "landing-builder", 3), status: "charging", currentExtractionJobId: "mine-1" },
+        { ...robot("h1", "landing-hauler", 2), status: "charging", currentExtractionJobId: "mine-1" }
       ],
       extractionJobs: [{
         id: "mine-1", kind: "mine", status: "active", nodeId: "iron",
@@ -328,10 +326,12 @@ describe("P04 勘探→采矿→送达与低电恢复", () => {
     // 低电活动设备优先充电：筑垒 360/240→本轮充电受 400 W·min 上限约束（builder 优先）。
     expect(sim.robots[0]!.batteryWh).toBe(3 + Math.floor(400 / 60)); // +6
     // 充电不超出电池容量；多轮后可复工。
-    for (let index = 0; index < 20 && sim.extractionJobs[0]!.blockedReason !== null; index += 1) {
+    for (let index = 0; index < 20 && sim.extractionJobs[0]!.status !== "completed"; index += 1) {
       step(sim);
     }
     expect(sim.extractionJobs[0]!.blockedReason).toBeNull();
+    expect(sim.extractionJobs[0]!.status).toBe("completed");
+    expect(sim.oreDelivered).toBe(4);
   });
 
   it("单台筑垒采矿：2 分钟采出（2 工作点），当前批多余预算不提前进下一工序", () => {

@@ -283,5 +283,49 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
     expect(new Set(delivered.map(x=>x.hauler_operator_id)).size).toBe(delivered.length);
     const {rows:owners}=await harness.client.query("SELECT current_extraction_job_id FROM robot_operators WHERE id=$1",[haulers[0]!.operatorId]);
     expect(owners[0]!.current_extraction_job_id).toBe(b.jobId);
+    expect((await snapshot()).extractionJobs!.find(j=>j.jobId===a.jobId)?.blockedReason).toBe("device_unavailable");
+    const repeatedCancel = await ops.extraction.cancel.execute({accountId},{jobId:a.jobId,commandId:randomUUID(),controlToken:leaseToken});
+    expect(repeatedCancel.releasedOre).toBe(0);
+    await advanceMinutes(6);
+    const after = await snapshot();
+    expect(after.extractionJobs!.find(j=>j.jobId===a.jobId)).toMatchObject({status:"cancelled",batchesDelivered:1});
+    expect(after.extractionJobs!.find(j=>j.jobId===b.jobId)).toMatchObject({status:"completed",batchesDelivered:2});
+    const inventory = await inventoryMap(harness.client,baseId);
+    expect(inventory.get("iron_ore")?.quantity).toBe(4);
+    expect(inventory.get("copper_ore")?.quantity).toBe(8);
+    const {rows:nodes}=await harness.client.query("SELECT item_id,remaining_quantity,reserved_quantity FROM base_resource_nodes WHERE base_id=$1 ORDER BY item_id",[baseId]);
+    expect(nodes).toEqual([
+      {item_id:"copper_ore",remaining_quantity:192,reserved_quantity:0},
+      {item_id:"iron_ore",remaining_quantity:196,reserved_quantity:0}
+    ]);
+  });
+
+  it("independent: a lease replacement while a command waits for the base lock rejects the old token", async () => {
+    if (!process.env.DATABASE_URL) throw new Error("Explicit isolated DATABASE_URL required");
+    const before = (await snapshot()).power.powerPolicy;
+    await harness.client.query("BEGIN");
+    await harness.client.query("SELECT id FROM bases WHERE id=$1 FOR UPDATE", [baseId]);
+    const pending = ops.production.powerPolicy.execute({accountId}, {
+      priority: "charging", commandId: randomUUID(), controlToken: leaseToken
+    }).then(() => "accepted", (error: {code?: string}) => error.code);
+    try {
+      let blocked = false;
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const {rows} = await harness.client.query(
+          "SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND wait_event_type='Lock'"
+        );
+        if (rows.length > 0) { blocked = true; break; }
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      expect(blocked).toBe(true);
+      await harness.client.query(
+        "UPDATE base_control_leases SET lease_token=$1 WHERE base_id=$2", [randomUUID(), baseId]
+      );
+      await harness.client.query("COMMIT");
+    } finally {
+      await harness.client.query("ROLLBACK");
+    }
+    expect(await pending).toBe("CONTROL_EXPIRED");
+    expect((await snapshot()).power.powerPolicy).toBe(before);
   });
 });

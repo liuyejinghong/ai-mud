@@ -268,6 +268,7 @@ function describeBlockedReason(reason: string | null): string {
   switch (reason) {
     case "insufficient_power": return "供电不足";
     case "device_low_battery": return "设备电量不足（等待充电或换人）";
+    case "device_unavailable": return "原设备暂不可用，等待其空闲后继续";
     case "maintenance_required": return "加工槽待维护";
     case "content_missing": return "内容缺失";
     default: return reason ?? "";
