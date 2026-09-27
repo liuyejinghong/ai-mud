@@ -357,8 +357,15 @@ export interface LandingShellProps {
 export function LandingShell(props: LandingShellProps) {
   const { snapshot } = props;
   const goal = useMemo(() => deriveGoal(snapshot), [snapshot]);
+  const [mobileView, setMobileView] = useState<"scene" | "operation">(
+    props.selection.kind === "none" ? "scene" : "operation"
+  );
   // 缺料来源导航的返回上下文：从某工程进入来源链后，任意面板可一步回到原工程。
   const [sourceOriginSiteId, setSourceOriginSiteId] = useState<string | null>(null);
+  const selectForOperation = (selection: LandingSelection) => {
+    setMobileView("operation");
+    props.onSelect(selection);
+  };
   const originSite = sourceOriginSiteId
     ? snapshot.sites.find((site) => site.siteId === sourceOriginSiteId) ?? null
     : null;
@@ -417,7 +424,7 @@ export function LandingShell(props: LandingShellProps) {
             className="landing-primary"
             disabled={props.isBusy}
             onClick={() =>
-              props.onSelect(
+              selectForOperation(
                 goal.action === "site" && goal.targetId
                   ? { kind: "site", siteId: goal.targetId }
                   : goal.action === "node" && goal.targetId
@@ -433,35 +440,46 @@ export function LandingShell(props: LandingShellProps) {
         ) : null}
       </section>
 
-      <section className="landing-main">
+      <div className="landing-view-switch" role="group" aria-label="基地视图">
+        <button type="button" aria-pressed={mobileView === "scene"}
+          onClick={() => setMobileView("scene")}>场景</button>
+        <button type="button" aria-pressed={mobileView === "operation"}
+          onClick={() => setMobileView("operation")}>操作</button>
+      </div>
+
+      <section className={`landing-main is-${mobileView}`}>
         <div className="landing-map" aria-label="基地地图">
           <h2 className="landing-map-title">着陆场</h2>
           <div className="landing-map-grid">
             {sites.map((site) => (
-              <SiteCard key={site.siteId} site={site} onSelect={props.onSelect} selected={props.selection} />
+              <SiteCard key={site.siteId} site={site} onSelect={selectForOperation} selected={props.selection} />
             ))}
           </div>
           <h2 className="landing-map-title">矿点</h2>
           <div className="landing-map-grid">
             {nodes.map((node) => (
-              <NodeCard key={node.nodeId} node={node} snapshot={snapshot} onSelect={props.onSelect} selected={props.selection} />
+              <NodeCard key={node.nodeId} node={node} snapshot={snapshot} onSelect={selectForOperation} selected={props.selection} />
             ))}
           </div>
           <div className="landing-fleet" aria-label="设备队">
             {snapshot.devices.map((device) => (
-              <DeviceChip key={device.deviceId} device={device} onSelect={props.onSelect} selected={props.selection} />
+              <DeviceChip key={device.deviceId} device={device} onSelect={selectForOperation} selected={props.selection} />
             ))}
           </div>
         </div>
         <aside className="landing-panel" aria-label="对象操作">
-          <button type="button" className="landing-back" onClick={() => { setSourceOriginSiteId(null); props.onSelect({ kind: "none" }); }}>
+          <button type="button" className="landing-back" onClick={() => {
+            setSourceOriginSiteId(null);
+            props.onSelect({ kind: "none" });
+            setMobileView("scene");
+          }}>
             返回地图
           </button>
           {originSite && !(props.selection.kind === "site" && props.selection.siteId === originSite.siteId) ? (
             <button
               type="button"
               className="landing-back"
-              onClick={() => props.onSelect({ kind: "site", siteId: originSite.siteId })}
+              onClick={() => selectForOperation({ kind: "site", siteId: originSite.siteId })}
             >
               返回原工程（{originSite.name}）
             </button>
@@ -469,7 +487,7 @@ export function LandingShell(props: LandingShellProps) {
           {props.feedback ? (
             <p className="landing-feedback" role="status">{props.feedback}</p>
           ) : null}
-          <LandingPanel {...props} onOpenSource={setSourceOriginSiteId} />
+          <LandingPanel {...props} onSelect={selectForOperation} onOpenSource={setSourceOriginSiteId} />
         </aside>
       </section>
 

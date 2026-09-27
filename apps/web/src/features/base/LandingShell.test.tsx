@@ -148,6 +148,33 @@ describe("LandingShell", () => {
     expect(screen.getByText(/太阳能套件 可用 1/)).toBeTruthy();
   });
 
+  it("窄屏场景和操作可切换，目标与地图对象进入操作，库存可从操作入口独立打开", () => {
+    const onSelect = vi.fn();
+    render(<LandingShell {...props({ onSelect })} />);
+    const scene = screen.getByRole("button", { name: "场景" });
+    const operation = screen.getByRole("button", { name: "操作" });
+
+    expect(scene.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "前往处理" }));
+    expect(onSelect).toHaveBeenLastCalledWith({ kind: "site", siteId: "s-solar" });
+    expect(operation.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(scene);
+    fireEvent.click(screen.getByRole("button", { name: /北坡磁异常/ }));
+    expect(onSelect).toHaveBeenLastCalledWith({ kind: "node", nodeId: "n-1" });
+    expect(operation.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(scene);
+    fireEvent.click(operation);
+    fireEvent.click(screen.getByRole("button", { name: /太阳能套件 可用 1/ }));
+    expect(onSelect).toHaveBeenLastCalledWith({ kind: "resource", itemId: "solar_kit" });
+    expect(operation.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "返回地图" }));
+    expect(onSelect).toHaveBeenLastCalledWith({ kind: "none" });
+    expect(scene.getAttribute("aria-pressed")).toBe("true");
+  });
+
   it("缺料：扩建显示净缺口与结构化 blocker，主按钮禁用", () => {
     render(<LandingShell {...props({ selection: { kind: "site", siteId: "s-solar" } })} />);
     const expand = screen.getByRole("button", { name: "增建太阳能" });

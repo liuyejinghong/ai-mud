@@ -1099,7 +1099,118 @@
 .landing-recipe-head { display: flex; flex-direction: column; gap: 2px; }
 .landing-feedback { color: #f0d0a0; font-size: 13px; margin: 0; }
 .landing-copy { color: #b8c6d6; font-size: 13px; margin: 0; }
+.landing-view-switch { display: none; }
 @media (max-width: 800px) {
-  .landing-main { grid-template-columns: 1fr; }
-  .landing-panel { max-height: 46dvh; }
+  .landing-shell {
+    grid-template-rows: auto auto 34px minmax(0, 1fr) 52px;
+    gap: 6px;
+    padding: 6px;
+  }
+  .landing-topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "name account" "power power" "clock clock";
+    align-content: center;
+    gap: 3px 8px;
+    padding: 4px 8px;
+  }
+  .landing-topbar > * { min-width: 0; }
+  .landing-base-name {
+    grid-area: name;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .landing-account {
+    grid-area: account;
+    justify-self: end;
+    max-width: 100%;
+  }
+  .landing-account .landing-dim {
+    max-width: clamp(6ch, 20vw, 16ch);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .landing-power-summary {
+    grid-area: power;
+    gap: 2px 8px;
+  }
+  .landing-clock {
+    grid-area: clock;
+    flex-wrap: wrap;
+    gap: 3px 5px;
+    margin-left: 0;
+  }
+  .landing-clock .landing-chip-button { padding: 1px 6px; }
+  .landing-goal {
+    min-width: 0;
+    gap: 6px;
+    padding: 4px 8px;
+  }
+  .landing-goal > div { min-width: 0; }
+  .landing-goal-title { font-size: 14px; }
+  .landing-goal-reason { line-height: 1.25; }
+  .landing-goal .landing-primary { flex: 0 0 auto; padding: 6px 8px; }
+  .landing-view-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .landing-view-switch button {
+    min-width: 0;
+    min-height: 34px;
+    border: 1px solid #2a3542;
+    border-radius: 8px;
+    background: #18212e;
+    color: inherit;
+    cursor: pointer;
+  }
+  .landing-view-switch button[aria-pressed="true"] {
+    border-color: #6aa9ff;
+    color: #9cc6ff;
+  }
+  .landing-main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
+  }
+  .landing-main.is-scene .landing-panel,
+  .landing-main.is-operation .landing-map { display: none; }
+  .landing-map,
+  .landing-panel { width: auto; max-height: none; }
+  .landing-queue {
+    max-height: none;
+    padding: 4px;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .landing-queue-card {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    min-width: max-content;
+    max-width: none;
+    padding: 4px 6px;
+    font-size: 13px;
+  }
+  .landing-queue-card > span { white-space: nowrap; }
+  .landing-queue > p { margin: 0; }
+}
+@media (max-width: 800px) and (max-height: 500px) {
+  .landing-shell {
+    grid-template-rows: auto auto 30px minmax(0, 1fr) 44px;
+    gap: 4px;
+    padding: 4px;
+  }
+  .landing-topbar { gap: 1px 6px; padding: 2px 6px; }
+  .landing-base-name { font-size: 14px; }
+  .landing-power-summary { gap: 1px 6px; }
+  .landing-clock { gap: 2px 4px; }
+  .landing-goal { gap: 4px; padding: 2px 6px; }
+  .landing-goal-title { font-size: 14px; }
+  .landing-goal .landing-primary { padding: 4px 6px; }
+  .landing-view-switch { gap: 4px; }
+  .landing-view-switch button { min-height: 30px; }
+  .landing-queue { padding: 2px; }
 }
