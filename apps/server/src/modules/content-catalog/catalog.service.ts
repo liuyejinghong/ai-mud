@@ -15,7 +15,8 @@ import {
   type ContentBaseRelease,
   type ContentProjectTemplate,
   type ContentProvisionSeed,
-  type ContentRobotTemplate
+  type ContentRobotTemplate,
+  type ContentRulesProfile
 } from "@ai-mud/content";
 import type { OrderTemplateDto, ProjectTemplateDto, RecipeTemplateDto, RobotTemplateDto } from "@ai-mud/shared";
 // 结构等价镜像 application/base/ports.ts 的 ContentCatalogPort（content-catalog 不允许
@@ -30,7 +31,15 @@ interface ProvisionSeedSiteDto {
 interface ProvisionSeedDto {
   releaseId: string;
   baseName: string;
-  power: { generationWPeak: number; storageCapacityWh: number; initialStorageWh: number };
+  power: {
+    generationWPeak: number;
+    storageCapacityWh: number;
+    initialStorageWh: number;
+    emergencyGenerationW?: number;
+    baseLoadW?: number;
+    chargeLimitW?: number;
+    initialDustLevel?: number;
+  };
   sites: ProvisionSeedSiteDto[];
   inventory: Array<{ itemId: string; quantity: number }>;
   devices: Array<{
@@ -39,6 +48,8 @@ interface ProvisionSeedDto {
     count: number;
     initialBatteryWh: number;
   }>;
+  initialCredits?: number;
+  resourceNodes?: Array<{ nodeKey: string; name: string; itemId: string; initialQuantity: number }>;
 }
 
 export interface ContentCatalogPort {
@@ -58,6 +69,9 @@ export interface ContentCatalogPort {
   getProjectTemplate(stableId: string): ProjectTemplateDto | null;
   listTemplates(): { robots: RobotTemplateDto[]; projects: ProjectTemplateDto[] };
   getProvisionSeed(): ProvisionSeedDto;
+  // R1：规则档位与能力位（缺省 legacy / ["external_trade"]）。
+  rulesProfile(): ContentRulesProfile;
+  capabilities(): string[];
 }
 
 function toRobotTemplateDto(template: ContentRobotTemplate): RobotTemplateDto {
@@ -68,7 +82,10 @@ function toRobotTemplateDto(template: ContentRobotTemplate): RobotTemplateDto {
     description: template.description,
     batteryCapacityWh: template.batteryCapacityWh,
     chargeRateW: template.chargeRateW,
-    workRatePerTick: template.workRatePerTick
+    workRatePerTick: template.workRatePerTick,
+    ...(template.workDrainWhPerTick !== undefined
+      ? { workDrainWhPerTick: template.workDrainWhPerTick }
+      : {})
   };
 }
 
@@ -82,8 +99,18 @@ function toProjectTemplateDto(template: ContentProjectTemplate): ProjectTemplate
     outputFacility: {
       ref: { ...template.outputFacility.ref },
       name: template.outputFacility.name,
-      generationWPeak: template.outputFacility.generationWPeak
-    }
+      ...(template.outputFacility.generationWPeak !== undefined
+        ? { generationWPeak: template.outputFacility.generationWPeak }
+        : {}),
+      ...(template.outputFacility.effects !== undefined
+        ? { effects: { ...template.outputFacility.effects } }
+        : {})
+    },
+    ...(template.requiresFacilities !== undefined
+      ? { requiresFacilities: [...template.requiresFacilities] }
+      : {}),
+    ...(template.expansionSlot !== undefined ? { expansionSlot: template.expansionSlot } : {}),
+    ...(template.allowedSiteKeys !== undefined ? { allowedSiteKeys: [...template.allowedSiteKeys] } : {})
   };
 }
 
@@ -105,18 +132,42 @@ function toProvisionSeedDto(seed: ContentProvisionSeed): ProvisionSeedDto {
     power: { ...seed.power },
     sites,
     inventory: seed.inventory.map((entry) => ({ ...entry })),
-    devices: seed.devices.map((device) => ({ ...device }))
+    devices: seed.devices.map((device) => ({ ...device })),
+    ...(seed.initialCredits !== undefined ? { initialCredits: seed.initialCredits } : {}),
+    ...(seed.resourceNodes !== undefined
+      ? { resourceNodes: seed.resourceNodes.map((node) => ({ ...node })) }
+      : {})
   };
 }
 
 function toRecipeTemplateDto(recipe: ContentRecipeTemplate): RecipeTemplateDto {
+  // 目录边界规范化：旧机器人输出（无 kind）补 kind:"robot"；item 输出原样。
+  const rawOutput = recipe.output;
+  const output =
+    "itemId" in rawOutput
+      ? { kind: "item" as const, itemId: rawOutput.itemId, quantity: rawOutput.quantity }
+      : {
+          kind: "robot" as const,
+          templateStableId: rawOutput.templateStableId,
+          initialBatteryWh: rawOutput.initialBatteryWh
+        };
   return {
     ref: { ...recipe.ref },
     name: recipe.name,
     description: recipe.description,
     inputs: recipe.inputs.map((input) => ({ ...input })),
     workPerUnit: recipe.workPerUnit,
-    output: { ...recipe.output }
+    output,
+    ...(recipe.ratedW !== undefined ? { ratedW: recipe.ratedW } : {}),
+    ...(recipe.workMinutesPerBatch !== undefined
+      ? { workMinutesPerBatch: recipe.workMinutesPerBatch }
+      : {}),
+    ...(recipe.requiredCapability !== undefined
+      ? { requiredCapability: recipe.requiredCapability }
+      : {}),
+    ...(recipe.countsSlotMaintenance !== undefined
+      ? { countsSlotMaintenance: recipe.countsSlotMaintenance }
+      : {})
   };
 }
 
@@ -165,7 +216,8 @@ function assertReleaseValid(release: ContentBaseRelease): void {
   const seedErrors = validateProvisionSeed(
     release.provisionSeed,
     release.robots,
-    release.projects
+    release.projects,
+    release.itemNames
   );
   if (seedErrors.length > 0) {
     failures.push(`provision seed: ${seedErrors.join("; ")}`);
@@ -211,6 +263,8 @@ export function createContentCatalog(
 
   return {
     releaseId: () => release.releaseId,
+    rulesProfile: () => release.rulesProfile ?? "legacy",
+    capabilities: () => [...(release.capabilities ?? ["external_trade"])],
     getRobotTemplate: (stableId: string): RobotTemplateDto | null => {
       const robot = robotsByStableId.get(stableId);
       return robot === undefined ? null : toRobotTemplateDto(robot);
@@ -245,7 +299,7 @@ export function createContentCatalog(
     getItemInfo: (): Record<string, ContentItemInfo> =>
       Object.fromEntries(Object.entries(release.itemNames).map(([id, info]) => [id, { ...info }])),
     getFacilityInfo: (stableId: string) => {
-      const info = FACILITY_INFO[stableId];
+      const info = release.facilityInfo?.[stableId] ?? FACILITY_INFO[stableId];
       return info ? { ...info, attributes: info.attributes.map((a) => ({ ...a })) } : null;
     }
   };

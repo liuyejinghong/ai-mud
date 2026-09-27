@@ -13,6 +13,8 @@ import { AuthRepository } from "./modules/auth/auth.repository.js";
 import { registerAuthRoutes } from "./modules/auth/auth.routes.js";
 import { AuthService } from "./modules/auth/auth.service.js";
 import { registerBaseManufacturingRoutes } from "./modules/industry/base-manufacturing.routes.js";
+import { registerBaseExtractionRoutes } from "./modules/industry/base-extraction.routes.js";
+import { registerBaseProductionRoutes } from "./modules/industry/base-production.routes.js";
 import { registerBaseEconomyRoutes } from "./modules/economy/base-economy.routes.js";
 import { registerBaseProjectsRoutes } from "./modules/industry/base-projects.routes.js";
 import { registerBaseSessionRoutes } from "./modules/world-runtime/base-session.routes.js";
@@ -110,7 +112,7 @@ export function createWorldRuntimeScheduler(input: {
   };
 }
 
-export async function buildApp(input?: { env?: Env; db?: Db }) {
+export async function buildApp(input?: { env?: Env; db?: Db; provisionCatalog?: Parameters<typeof createBaseOperations>[0]["provisionCatalog"] }) {
   const app = Fastify({ logger: true });
   const config = input?.env ?? loadEnv();
   // 第 0 阶段车道 C1–C3（评审 ARCH-boundaries-01/02）：旧西幻世界默认不参与 tick、不注册路由。
@@ -124,7 +126,7 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
     dbConnection = createDb(config.DATABASE_URL, dbPoolOptionsFromEnv(config));
     db = dbConnection.db;
   }
-  const baseOps = createBaseOperations({ db, config });
+  const baseOps = createBaseOperations({ db, config, ...(input?.provisionCatalog ? { provisionCatalog: input.provisionCatalog } : {}) });
 
   // 旧世界参与者：与世界时钟同一事务、全有或全无（沿用 ARCH-02 语义），只在开关开启时存在。
   const legacyWorldParticipants: WorldTickParticipant[] = legacyWorldEnabled
@@ -280,6 +282,25 @@ export async function buildApp(input?: { env?: Env; db?: Db }) {
       auth: baseOps.session.auth,
       create: baseOps.manufacturingJobs.create,
       cancel: baseOps.manufacturingJobs.cancel
+    })
+  );
+  await app.register((instance) =>
+    registerBaseExtractionRoutes(instance, {
+      auth: baseOps.session.auth,
+      survey: baseOps.extraction.survey,
+      createMining: baseOps.extraction.createMining,
+      pause: baseOps.extraction.pause,
+      resume: baseOps.extraction.resume,
+      cancel: baseOps.extraction.cancel
+    })
+  );
+  await app.register((instance) =>
+    registerBaseProductionRoutes(instance, {
+      auth: baseOps.session.auth,
+      maintain: baseOps.production.maintain,
+      powerPolicy: baseOps.production.powerPolicy,
+      pauseJob: baseOps.production.pauseJob,
+      resumeJob: baseOps.production.resumeJob
     })
   );
   await app.register((instance) =>

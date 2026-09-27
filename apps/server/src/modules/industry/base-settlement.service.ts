@@ -65,6 +65,8 @@ export interface SettlementAssetPort {
 export interface SettlementCatalogPort {
   getRobotTemplate(stableId: string): RobotTemplateDto | null;
   getProjectTemplate(stableId: string): ProjectTemplateDto | null;
+  // R1 landing：目录声明规则档位；缺省 legacy（旧目录实现不带）。
+  rulesProfile?(): "legacy" | "landing-v1";
 }
 
 // 作业者读 + 状态写（npc 唯一写者 robot-runtime 的结构面）
@@ -74,6 +76,8 @@ export interface SettlementRobotPort {
 }
 
 export interface BaseSettlementDeps {
+  // R1 landing：profile=landing-v1 的基地走 landing 结算（每基地分钟一次，返回是否已处理）。
+  landing?: (tx: IndustryTx, baseId: string, simTime: Date) => Promise<boolean>;
   clock: SettlementClockPort;
   catalogResolver?: { forBase(tx: IndustryTx, baseId: string): Promise<SettlementCatalogPort> };
   // M13-C 制造结算（可选：未绑定时跳过，v0.12 行为不变）。
@@ -193,6 +197,12 @@ export class BaseSettlementService {
     const robots = this.deps.openRobots(tx);
     const power = await industry.getPowerState(baseId);
     if (!power) return; // 电力行缺失（provision 未完成）：不结算，仅由调用方推进时钟
+
+    // R1 分流：landing-v1 基地整分钟走 landing 结算；旧 computeBaseTick 不再触碰。
+    if (catalog.rulesProfile?.() === "landing-v1" && this.deps.landing) {
+      await this.deps.landing(tx, baseId, simTime);
+      return;
+    }
 
     const projects = await industry.listProjects(baseId);
     const activeProjects = projects.filter((project) => project.status === "active");
@@ -425,7 +435,8 @@ export class BaseSettlementService {
         definitionRefKey(template.outputFacility.ref)
       );
       // 设施投产：供能上限并入基地（m12-p-contract §3.3，G03「投产后供能改变」）。
-      await industry.addGenerationWPeak(tx, baseId, template.outputFacility.generationWPeak);
+      // landing 模板纯效果设施无发电字段（effects-only）；legacy 模板恒有值。
+      await industry.addGenerationWPeak(tx, baseId, template.outputFacility.generationWPeak ?? 0);
     }
   }
 }

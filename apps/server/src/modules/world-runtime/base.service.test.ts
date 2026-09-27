@@ -246,8 +246,10 @@ class FakeIndustryInit implements Pick<BaseServiceDeps["industryInit"], "ensureP
   }
 }
 
-class FakeCatalog implements Pick<ContentCatalogPort, "getProvisionSeed" | "getRobotTemplate" | "getProjectTemplate" | "listTemplates" | "getRecipeTemplate" | "listRecipes" | "getOrderTemplate" | "listOrderTemplates"> {
+class FakeCatalog implements Pick<ContentCatalogPort, "getProvisionSeed" | "getRobotTemplate" | "getProjectTemplate" | "listTemplates" | "getRecipeTemplate" | "listRecipes" | "getOrderTemplate" | "listOrderTemplates" | "rulesProfile" | "capabilities"> {
   seed: ProvisionSeedSpec;
+  rulesProfile() { return "legacy" as const; }
+  capabilities() { return ["external_trade"]; }
   robots = new Map<string, RobotTemplateSpec>();
   projects = new Map<string, ProjectTemplateSpec>();
 
@@ -841,7 +843,7 @@ describe("BaseService.snapshot", () => {
       description: "用备件组装一台轻量勘测巡检机器人。",
       inputs: [{ itemId: "spare_parts", quantity: 3 }],
       workPerUnit: 20,
-      output: { templateStableId: "yd-s1", initialBatteryWh: 6000 }
+      output: { kind: "robot" as const, templateStableId: "yd-s1", initialBatteryWh: 6000 }
     });
     fx.manufacturingJobs.push({
       id: "job-1",
@@ -871,7 +873,10 @@ describe("BaseService.snapshot", () => {
         availableW: 15000,
         storageWh: 100000,
         storageCapacityWh: 200000,
-        loadW: 1000
+        loadW: 1000,
+        emergencyGenerationW: 0,
+        chargeLimitW: null,
+        powerPolicy: "production"
       },
       resources: [
         {
@@ -923,7 +928,8 @@ describe("BaseService.snapshot", () => {
           status: "working",
           batteryWh: 12000,
           batteryCapacityWh: 20000,
-          currentAssignment: { projectId: "p-1", stepIndex: 1 }
+          currentAssignment: { projectId: "p-1", stepIndex: 1 },
+          currentExtractionJobId: null
         },
         {
           deviceId: "dev-2",
@@ -934,7 +940,8 @@ describe("BaseService.snapshot", () => {
           status: "idle",
           batteryWh: 30000,
           batteryCapacityWh: 30000,
-          currentAssignment: null
+          currentAssignment: null,
+          currentExtractionJobId: null
         }
       ],
       projects: [
@@ -977,7 +984,8 @@ describe("BaseService.snapshot", () => {
           outputsPlanned: 2,
           outputsDone: 0,
           currentUnitWorkDone: 0,
-          blockedReason: null
+          blockedReason: null,
+          productionSiteId: null
         }
       ],
       cooperationRequests: [],
@@ -991,6 +999,7 @@ describe("BaseService.snapshot", () => {
         nextChangeAt: "2026-09-19T02:00:00.000Z", // fallback：无天气绑定 → base.simTime
         nextWeather: "clear"
       },
+      capabilities: ["external_trade"],
       controlLease: {
         heldByThisSession: true,
         controlActive: true,

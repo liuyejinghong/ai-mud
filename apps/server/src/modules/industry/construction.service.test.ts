@@ -90,6 +90,9 @@ interface FakeSite {
 }
 
 class FakeSites implements ConstructionSitePort {
+  async listSites(_tx: ConstructionTx, _baseId: string): Promise<Array<{ id: string; siteKey: string; state: string; builtFacilityRef: string | null }>> {
+    return [];
+  }
   sites = new Map<string, FakeSite>([
     ["site-1", { id: "site-1", state: "free" }],
     ["site-2", { id: "site-2", state: "free" }]
@@ -118,6 +121,9 @@ class FakeRobots implements ConstructionRobotPort {
 }
 
 class FakeCatalog implements ConstructionCatalogPort {
+  listTemplates() {
+    return { projects: [] };
+  }
   templates = new Map<string, ProjectTemplateDto | null>([
     [TEMPLATE.ref.stableId, TEMPLATE]
   ]);

@@ -598,6 +598,7 @@ describe("BaseRepository base and site rows", () => {
     expect(await repo.findBaseIdByAccount(tx, "acc-none")).toBeNull();
 
     const base = await repo.getBaseByAccount(tx, "acc-1");
+    expect(client.queries.at(-1)?.text).toContain("for share");
     expect(base).toMatchObject({
       id: baseId,
       accountId: "acc-1",

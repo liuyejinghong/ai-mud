@@ -115,7 +115,8 @@ const projectTemplates = new Map<string, ProjectTemplateDto>(
 );
 const catalog = {
   getRobotTemplate: (stableId: string) => robotTemplates.get(stableId) ?? null,
-  getProjectTemplate: (stableId: string) => projectTemplates.get(stableId) ?? null
+  getProjectTemplate: (stableId: string) => projectTemplates.get(stableId) ?? null,
+  listTemplates: () => ({ projects: [...projectTemplates.values()] })
 };
 
 // npc robot-runtime 同结构读写（tx 内读，保证结算事务内写入对协作检测可见）。
@@ -292,11 +293,22 @@ function makeConstruction(db: Db, receipts: MemoryReceipts) {
       },
       releaseSite: async (tx: ConstructionTx, siteId: string) => {
         await tx.update(schema.baseSites).set({ state: "free" }).where(eq(schema.baseSites.id, siteId));
-      }
+      },
+      listSites: async (tx: ConstructionTx, baseId: string) =>
+        tx
+          .select({
+            id: schema.baseSites.id,
+            siteKey: schema.baseSites.siteKey,
+            state: schema.baseSites.state,
+            builtFacilityRef: schema.baseSites.builtFacilityRef
+          })
+          .from(schema.baseSites)
+          .where(eq(schema.baseSites.baseId, baseId))
     },
     robots: new RobotRuntimeService(db),
     catalog,
     store: new IndustryRepository(db),
+
     receipts: () => receipts
   });
 }

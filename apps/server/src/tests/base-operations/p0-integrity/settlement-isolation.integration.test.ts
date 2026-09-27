@@ -425,20 +425,21 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
     const actor = await provisionAccount("a6-actor");
     const bystander = await provisionAccount("a6-bystander");
     const { rows: sites } = await client.query(
-      `SELECT id FROM base_sites WHERE base_id = $1 AND site_key = 'site_a'`,
+      `SELECT id FROM base_sites WHERE base_id = $1 AND site_key = 'install_solar'`,
       [actor.baseId]
     );
     const siteId = sites[0].id as string;
 
+    const controlToken = (await ops.session.clock.heartbeat({ accountId: actor.accountId }, { action: "acquire" })).controlToken;
     const bystanderBefore = await snapshotBase(bystander.baseId);
     const actorBefore = await snapshotBase(actor.baseId);
     const input = {
-      definitionRef: { kind: "project" as const, stableId: "install-solar-array", revision: 1 },
+      definitionRef: { kind: "project" as const, stableId: "landing-install-solar", revision: 1 },
       siteId,
       commandId: randomUUID()
     };
 
-    const first = await ops.projects.create.execute({ accountId: actor.accountId }, input);
+    const first = await ops.projects.create.execute({ accountId: actor.accountId }, input, controlToken);
     expect(first.duplicate).toBe(false);
 
     const assertNoSettlement = async () => {
@@ -451,16 +452,14 @@ d("P0 车道 A：结算完整性（真 PostgreSQL）", () => {
       expect(baseRow?.sim_time).toEqual(baseRowBefore?.sim_time);
       expect(baseRow?.last_advanced_at).toEqual(baseRowBefore?.last_advanced_at);
       const steps = actorAfter.steps as Array<{ step_index: number; status: string; work_done: number }>;
+      // R1 landing 安装工程只有一个 installation 工序。
       expect(steps.map((step) => [step.step_index, step.status, step.work_done])).toEqual([
-        [0, "ready", 0],
-        [1, "pending", 0],
-        [2, "pending", 0],
-        [3, "pending", 0]
+        [0, "ready", 0]
       ]);
     };
     await assertNoSettlement();
 
-    const replay = await ops.projects.create.execute({ accountId: actor.accountId }, input);
+    const replay = await ops.projects.create.execute({ accountId: actor.accountId }, input, controlToken);
     expect(replay).toEqual({ projectId: first.projectId, duplicate: true });
     await assertNoSettlement();
     const { rows: projects } = await client.query(

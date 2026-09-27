@@ -57,7 +57,8 @@ export interface CreatePurchaseUseCase {
 // catalog 占位：M16-A/B 不接 content-catalog（见文件头 I 绑定说明）。
 const NULL_ECONOMY_CATALOG: EconomyCatalogPort = {
   getOrderTemplate: () => null,
-  listOrderTemplates: () => []
+  listOrderTemplates: () => [],
+  capabilities: () => ["external_trade"]
 };
 
 export class EconomyUseCases {
@@ -70,7 +71,8 @@ export class EconomyUseCases {
   constructor(
     db: Db,
     catalog: EconomyCatalogPort = NULL_ECONOMY_CATALOG,
-    catalogResolver?: { forBase(tx: EconomyTx, baseId: string): Promise<EconomyCatalogPort> }
+    catalogResolver?: { forBase(tx: EconomyTx, baseId: string): Promise<EconomyCatalogPort> },
+    purchaseCapabilitiesForBase?: (tx: EconomyTx, baseId: string) => Promise<string[]>
   ) {
     const orderRepo = new OrderRepository(db);
     const purchaseRepo = new PurchaseRepository(db);
@@ -94,7 +96,10 @@ export class EconomyUseCases {
       credits: purchaseRepo,
       inventory: purchaseRepo,
       store: purchaseRepo,
-      receipts: (tx) => new AssetMutationService(tx)
+      receipts: (tx) => new AssetMutationService(tx),
+      ...(purchaseCapabilitiesForBase
+        ? { capabilitiesForBase: purchaseCapabilitiesForBase }
+        : {})
     });
 
     this.accept = {
@@ -115,7 +120,8 @@ export class EconomyUseCases {
 export function createEconomyUseCases(
   db: Db,
   catalog?: EconomyCatalogPort,
-  catalogResolver?: { forBase(tx: EconomyTx, baseId: string): Promise<EconomyCatalogPort> }
+  catalogResolver?: { forBase(tx: EconomyTx, baseId: string): Promise<EconomyCatalogPort> },
+  purchaseCapabilitiesForBase?: (tx: EconomyTx, baseId: string) => Promise<string[]>
 ): EconomyUseCases {
-  return new EconomyUseCases(db, catalog, catalogResolver);
+  return new EconomyUseCases(db, catalog, catalogResolver, purchaseCapabilitiesForBase);
 }

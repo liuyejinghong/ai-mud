@@ -289,7 +289,8 @@
         "tooling": 0,
         "config": 0
       }
-    }
+    },
+    "files": 363
   },
   "files": [
     {
@@ -2674,7 +2675,9 @@
       "module": "application",
       "layer": "test",
       "scope": "test",
-      "flags": ["infra_exception"],
+      "flags": [
+        "infra_exception"
+      ],
       "note": "第 0 阶段 C：旧世界重置时钟回归"
     },
     {
@@ -2690,6 +2693,230 @@
       "layer": "test",
       "scope": "test",
       "note": "第 0 阶段 E：隔离测试库内的基地数据重置脚本回归"
+    },
+    {
+      "path": "packages/content/src/base/landing-release.ts",
+      "module": "content",
+      "layer": "content",
+      "scope": "production",
+      "note": "R1 landing-v1 内容包（yudian-landing-1）"
+    },
+    {
+      "path": "packages/content/src/base/landing-release.test.ts",
+      "module": "content",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 C 黄金数值与来源可达性"
+    },
+    {
+      "path": "apps/server/src/modules/industry/landing-rules.ts",
+      "module": "industry",
+      "layer": "domain",
+      "scope": "production",
+      "note": "R1 landing-v1 每基地分钟纯规则（W·min 定点）"
+    },
+    {
+      "path": "apps/server/src/modules/industry/landing-rules.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 landing 纯规则探针"
+    },
+    {
+      "path": "apps/server/src/modules/industry/landing-settlement.ts",
+      "module": "industry",
+      "layer": "domain",
+      "scope": "production",
+      "note": "R1 landing 结算编排（读参与端口落盘）"
+    },
+    {
+      "path": "apps/server/src/modules/industry/facility-effects.ts",
+      "module": "industry",
+      "layer": "domain",
+      "scope": "production",
+      "note": "R1 设施完工 typed 效果应用"
+    },
+    {
+      "path": "apps/server/src/modules/industry/facility-effects.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 设施效果"
+    },
+    {
+      "path": "apps/server/src/modules/industry/extraction.repository.ts",
+      "module": "industry",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "R1 base_extraction_jobs/outputs 唯一写者"
+    },
+    {
+      "path": "apps/server/src/modules/industry/extraction.service.ts",
+      "module": "industry",
+      "layer": "domain",
+      "scope": "production",
+      "note": "R1 勘探/采矿单命令"
+    },
+    {
+      "path": "apps/server/src/modules/industry/extraction.service.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 采矿命令"
+    },
+    {
+      "path": "apps/server/src/modules/industry/production-slot.repository.ts",
+      "module": "industry",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "R1 base_production_slots 唯一写者"
+    },
+    {
+      "path": "apps/server/src/modules/industry/production-slot.service.ts",
+      "module": "industry",
+      "layer": "domain",
+      "scope": "production",
+      "note": "R1 加工槽维护 + 电力策略命令"
+    },
+    {
+      "path": "apps/server/src/modules/industry/production-slot.service.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 维护/策略"
+    },
+    {
+      "path": "apps/server/src/modules/industry/base-extraction.routes.ts",
+      "module": "transport",
+      "layer": "transport",
+      "scope": "production",
+      "note": "R1 landing 勘探/采矿/维护/策略路由；仅 import application"
+    },
+    {
+      "path": "apps/server/src/modules/industry/base-production.routes.ts",
+      "module": "transport",
+      "layer": "transport",
+      "scope": "production",
+      "note": "R1 landing 勘探/采矿/维护/策略路由；仅 import application"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/resource-node.repository.ts",
+      "module": "world",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "R1 base_resource_nodes 唯一写者（world）"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/resource-node.repository.test.ts",
+      "module": "world",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 资源节点"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/landing/landing-rules.probe.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 P 数值探针（纯计算）"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/landing/landing.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 真 PG 全链验收（组合根集成；G01–G13 子集）"
+    },
+    {
+      "path": "apps/web/e2e/landing-real.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 真浏览器验收（playwright landing-postgres）"
+    },
+    {
+      "path": "apps/web/src/features/base/LandingShell.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "R1 landing 固定工作区（legacy BaseShell 分支保留）"
+    },
+    {
+      "path": "apps/web/src/features/base/LandingShell.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 landing 工作区状态测试（MOCK fixture）"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/landing/landing-fix.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 返工回归（#4-#7/stopping/隔离/手工恢复/双槽）"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/landing/landing-upgrade.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "G13 旧schema升级"
+    },
+    {
+      "path": "apps/web/e2e/landing-loop.real.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 U04/U05 全循环真浏览器验收（playwright landing-postgres）"
+    },
+    {
+      "path": "apps/web/src/features/base/LandingShell.acceptance-review.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "主控独立 UI 回归（MOCK；预期来自合同，不改期望迎合实现）"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/landing/independent-review.test.ts",
+      "module": "industry",
+      "layer": "test",
+      "scope": "test",
+      "note": "独立设备归属与取消收尾回归"
+    },
+    {
+      "path": "apps/server/src/tests/base-operations/landing/independent-assignment.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "独立设备归属与取消收尾回归"
+    },
+    {
+      "path": "apps/web/e2e/landing-alt-route.real.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 真实浏览器替代路线与控制租约验收"
+    },
+    {
+      "path": "apps/web/e2e/landing-control-negative.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 真实浏览器替代路线与控制租约验收"
+    },
+    {
+      "path": "apps/web/e2e/landing-recovery.real.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 U08 低电与零备件真实浏览器恢复验收"
+    },
+    {
+      "path": "apps/web/e2e/landing-browser-helpers.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "真实浏览器按实体ID读取事实与归档证据"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",

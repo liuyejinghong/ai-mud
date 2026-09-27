@@ -17,7 +17,9 @@ export type ErrorCode =
   | "SITE_OCCUPIED"
   | "REQUIREMENTS_NOT_MET"
   | "BUDGET_EXCEEDED"
-  | "IDEMPOTENCY_CONFLICT";
+  | "IDEMPOTENCY_CONFLICT"
+  | "DEVICE_BUSY"
+  | "CAPABILITY_UNAVAILABLE";
 
 export interface ApiErrorBody {
   error: {

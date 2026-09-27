@@ -19,7 +19,8 @@ describe("RobotRuntimeService.listOperators", () => {
         batteryCapacityWh: 30_000,
         status: "idle",
         currentProjectId: null,
-        currentStepIndex: null
+        currentStepIndex: null,
+        currentExtractionJobId: null
       }
     ];
     const db = {
@@ -45,7 +46,8 @@ describe("RobotRuntimeService.listOperators", () => {
         batteryCapacityWh: 30_000,
         status: "idle",
         currentProjectId: null,
-        currentStepIndex: null
+        currentStepIndex: null,
+        currentExtractionJobId: null
       }
     ];
     expect(operators).toEqual(expected);
@@ -73,14 +75,16 @@ describe("RobotRuntimeService.applyRobotUpdates", () => {
         batteryWh: 29_500,
         status: "working",
         currentProjectId: "p1",
-        currentStepIndex: 0
+        currentStepIndex: 0,
+        currentExtractionJobId: null
       },
       {
         operatorId: "op-2",
         batteryWh: 20_000,
         status: "charging",
         currentProjectId: "p1",
-        currentStepIndex: 1
+        currentStepIndex: 1,
+        currentExtractionJobId: null
       }
     ];
     await service.applyRobotUpdates(tx, updates);
@@ -91,6 +95,7 @@ describe("RobotRuntimeService.applyRobotUpdates", () => {
         status: "working",
         currentProjectId: "p1",
         currentStepIndex: 0,
+        currentExtractionJobId: null,
         updatedAt: expect.any(Date)
       },
       {
@@ -98,6 +103,7 @@ describe("RobotRuntimeService.applyRobotUpdates", () => {
         status: "charging",
         currentProjectId: "p1",
         currentStepIndex: 1,
+        currentExtractionJobId: null,
         updatedAt: expect.any(Date)
       }
     ]);

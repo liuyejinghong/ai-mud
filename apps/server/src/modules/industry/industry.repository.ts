@@ -29,6 +29,10 @@ export interface PowerStateSeed {
   generationWPeak: number;
   storageCapacityWh: number;
   initialStorageWh: number;
+  // R1 landing（缺省 = 旧行为）；基础负载是 release 规则参数，不落库。
+  emergencyGenerationW?: number;
+  chargeLimitW?: number | null;
+  initialDustLevel?: number;
 }
 
 export interface IndustryInitPort {
@@ -68,6 +72,7 @@ export interface InsertProjectInput {
   siteId: string;
   projectDefId: string;
   templateRevision: number;
+  builderCount?: number | null;
   reservedInputs: Array<{ itemId: string; quantity: number }>;
   steps: ProjectStepSeed[];
 }
@@ -112,8 +117,104 @@ export class IndustryRepository
       baseId,
       generationWPeak: seed.generationWPeak,
       storageWh: seed.initialStorageWh,
-      storageCapacityWh: seed.storageCapacityWh
+      storageCapacityWh: seed.storageCapacityWh,
+      ...(seed.emergencyGenerationW !== undefined
+        ? { emergencyGenerationW: seed.emergencyGenerationW }
+        : {}),
+      ...(seed.chargeLimitW !== undefined ? { chargeLimitW: seed.chargeLimitW } : {}),
+      ...(seed.initialDustLevel !== undefined ? { dustLevel: seed.initialDustLevel } : {})
     });
+  }
+
+  // ---------- R1 landing 电力读写（W·min 定点；本模块仍是 base_power_state 唯一写者） ----------
+
+  async getLandingPower(baseId: string): Promise<{
+    solarWPeak: number;
+    emergencyW: number;
+    chargeLimitW: number | null;
+    storageWm: number;
+    storageCapacityWm: number;
+    dustLevel: number;
+    genRemainderWm: number;
+    policy: "production" | "charging";
+  } | null> {
+    const [row] = await this.db
+      .select()
+      .from(basePowerState)
+      .where(eq(basePowerState.baseId, baseId))
+      .limit(1);
+    if (!row) return null;
+    return {
+      solarWPeak: row.generationWPeak,
+      emergencyW: row.emergencyGenerationW,
+      chargeLimitW: row.chargeLimitW,
+      storageWm: row.storageWh * 60 + row.storageExcessWm,
+      storageCapacityWm: row.storageCapacityWh * 60,
+      dustLevel: row.dustLevel,
+      genRemainderWm: row.genRemainderWm,
+      policy: row.powerPolicy as "production" | "charging"
+    };
+  }
+
+  async saveLandingPower(
+    tx: IndustryTx,
+    baseId: string,
+    patch: { storageWm: number; genRemainderWm: number; lastLoadW: number; dustLevel: number }
+  ): Promise<void> {
+    const storageWh = Math.floor(patch.storageWm / 60);
+    const storageExcessWm = patch.storageWm - storageWh * 60;
+    await tx
+      .update(basePowerState)
+      .set({
+        storageWh,
+        storageExcessWm,
+        genRemainderWm: patch.genRemainderWm,
+        lastLoadW: patch.lastLoadW,
+        dustLevel: patch.dustLevel,
+        updatedAt: new Date()
+      })
+      .where(eq(basePowerState.baseId, baseId));
+  }
+
+  async addStorageCapacityWh(tx: IndustryTx, baseId: string, deltaWh: number): Promise<void> {
+    await tx
+      .update(basePowerState)
+      .set({
+        storageCapacityWh: sql`${basePowerState.storageCapacityWh} + ${deltaWh}`,
+        updatedAt: new Date()
+      })
+      .where(eq(basePowerState.baseId, baseId));
+  }
+
+  async addChargeLimitW(tx: IndustryTx, baseId: string, deltaW: number): Promise<void> {
+    // landing 行必有 charge_limit_w；NULL（旧档误用）按 0 起算，不改变旧行为面。
+    await tx
+      .update(basePowerState)
+      .set({
+        chargeLimitW: sql`COALESCE(${basePowerState.chargeLimitW}, 0) + ${deltaW}`,
+        updatedAt: new Date()
+      })
+      .where(eq(basePowerState.baseId, baseId));
+  }
+
+  async savePowerPolicy(
+    tx: IndustryTx,
+    baseId: string,
+    priority: "production" | "charging"
+  ): Promise<void> {
+    await tx
+      .update(basePowerState)
+      .set({ powerPolicy: priority, updatedAt: new Date() })
+      .where(eq(basePowerState.baseId, baseId));
+  }
+
+  async getPowerPolicy(baseId: string): Promise<"production" | "charging" | null> {
+    const [row] = await this.db
+      .select({ policy: basePowerState.powerPolicy })
+      .from(basePowerState)
+      .where(eq(basePowerState.baseId, baseId))
+      .limit(1);
+    return row ? (row.policy as "production" | "charging") : null;
   }
 
   async getPowerState(baseId: string): Promise<BasePowerRecord | null> {
@@ -128,7 +229,10 @@ export class IndustryRepository
           storageWh: row.storageWh,
           storageCapacityWh: row.storageCapacityWh,
           lastLoadW: row.lastLoadW,
-          dustLevel: row.dustLevel
+          dustLevel: row.dustLevel,
+          emergencyGenerationW: row.emergencyGenerationW,
+          chargeLimitW: row.chargeLimitW,
+          powerPolicy: row.powerPolicy as "production" | "charging"
         }
       : null;
   }
@@ -159,6 +263,7 @@ export class IndustryRepository
       status: row.status,
       currentStepIndex: row.currentStepIndex,
       siteId: row.siteId,
+      ...(row.builderCount !== null && row.builderCount !== undefined ? { builderCount: row.builderCount } : {}),
       reservedInputs: parseReservedInputs(row.reservedInputs)
     }));
   }
@@ -181,9 +286,24 @@ export class IndustryRepository
           status: row.status,
           currentStepIndex: row.currentStepIndex,
           siteId: row.siteId,
+          ...(row.builderCount !== null && row.builderCount !== undefined ? { builderCount: row.builderCount } : {}),
           reservedInputs: parseReservedInputs(row.reservedInputs)
         }
       : null;
+  }
+
+  // R1 landing：非取消扩建工程计数（四种套件安装一次、扩建模板共享 4 个扩建位配额）。
+  async countExpansionProjects(tx: IndustryTx, baseId: string, projectDefIds: string[]): Promise<number> {
+    if (projectDefIds.length === 0) return 0;
+    const [row] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(baseProjects)
+      .where(and(
+        eq(baseProjects.baseId, baseId),
+        inArray(baseProjects.projectDefId, projectDefIds),
+        notInArray(baseProjects.status, ["cancelled"])
+      ));
+    return row?.count ?? 0;
   }
 
   async hasLiveOrCompletedProject(tx: IndustryTx, baseId: string, projectDefId: string): Promise<boolean> {
@@ -210,6 +330,7 @@ export class IndustryRepository
         siteId: input.siteId,
         projectDefId: input.projectDefId,
         templateRevision: input.templateRevision,
+        builderCount: input.builderCount ?? null,
         status: "active",
         currentStepIndex: 0,
         reservedInputs: input.reservedInputs.map((item) => ({

@@ -1,0 +1,81 @@
+{
+  "status": "browser-evidence",
+  "email": "r1-loop-1790481517537-6556@example.test",
+  "elapsedWallMs": 2520739,
+  "route": "initial-solar-bootstrap-then-solar-expansion-then-processing-expansion",
+  "origin": {
+    "baseId": "cb523cb1-e2a7-40d7-88f7-05dccb5d3b46",
+    "contentRelease": "yudian-landing-1",
+    "weather": {
+      "current": "clear",
+      "lightFactor": 1,
+      "nextChangeAt": "2026-09-27T08:00:00.000Z",
+      "nextWeather": "clear",
+      "dustLevel": 0
+    },
+    "resources": [
+      {
+        "itemId": "charging_kit",
+        "quantity": 1,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "controller",
+        "quantity": 12,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "maintenance_kit",
+        "quantity": 1,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "processing_kit",
+        "quantity": 1,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "pv_cell",
+        "quantity": 12,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "solar_kit",
+        "quantity": 1,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "spare_part",
+        "quantity": 6,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "storage_kit",
+        "quantity": 1,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "warehouse_kit",
+        "quantity": 1,
+        "reservedQuantity": 0
+      }
+    ]
+  },
+  "final": {
+    "baseId": "cb523cb1-e2a7-40d7-88f7-05dccb5d3b46",
+    "simTime": "2026-09-27T10:38:49.337Z",
+    "generationWPeak": 8000,
+    "productionSlots": 2,
+    "completedExpansions": [
+      "89269525-2f0b-492d-99bd-08d507aeb1e5",
+      "a59c15e2-9fca-4f56-a222-4acd429290eb"
+    ],
+    "weather": {
+      "current": "clear",
+      "lightFactor": 1,
+      "nextChangeAt": "2026-09-27T10:38:49.337Z",
+      "nextWeather": "clear",
+      "dustLevel": 0
+    }
+  }
+}

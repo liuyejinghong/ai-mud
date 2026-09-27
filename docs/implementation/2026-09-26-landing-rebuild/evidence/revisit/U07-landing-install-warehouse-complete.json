@@ -1,0 +1,11 @@
+{
+  "projectId": "0b133fbe-1da6-471e-8fd8-823a0d0d0de9",
+  "stableId": "landing-install-warehouse",
+  "projectStatus": "completed",
+  "siteId": "e4b69aad-5e04-4ddc-bda2-5dbd2e377f70",
+  "siteName": "仓储棚安装位",
+  "siteState": "built",
+  "capabilities": [
+    "warehouse"
+  ]
+}

@@ -1,0 +1,9 @@
+
+> ai-mud@0.4.0 arch:check /private/tmp/yudian-r1-independent-review
+> node scripts/architecture/arch-check.mjs
+
+------------------------------------------------------------------------
+arch:check  root=.
+files on disk: 359  classified: 369  debt-matched: 87 (of 28 debt entries)  UNCOVERED violations: 0
+------------------------------------------------------------------------
+RESULT: PASS (baseline clean, debts accounted)

@@ -30,7 +30,7 @@ const RECIPE: RecipeTemplateDto = {
     { itemId: "power_box", quantity: 1 }
   ],
   workPerUnit: 30,
-  output: { templateStableId: "yd-h1", initialBatteryWh: 12000 }
+  output: { kind: "robot" as const, templateStableId: "yd-h1", initialBatteryWh: 12000 }
 };
 
 const CREATE_INPUT = {
@@ -52,9 +52,12 @@ class FakeLookup implements ManufacturingLookupPort {
   async findBaseIdByAccount(_tx: ManufacturingTx, accountId: string): Promise<string | null> {
     return this.baseByAccount.get(accountId) ?? null;
   }
-  async getBaseForUpdate(_tx: ManufacturingTx, baseId: string): Promise<{ id: string } | null> {
+  async getBaseForUpdate(
+    _tx: ManufacturingTx,
+    baseId: string
+  ): Promise<{ id: string; baseRevision: number } | null> {
     this.locked.push(baseId);
-    return [...this.baseByAccount.values()].includes(baseId) ? { id: baseId } : null;
+    return [...this.baseByAccount.values()].includes(baseId) ? { id: baseId, baseRevision: 1 } : null;
   }
 }
 
@@ -91,9 +94,22 @@ class FakeCatalog implements ManufacturingCatalogPort {
   getRecipeTemplate(stableId: string): RecipeTemplateDto | null {
     return this.recipes.get(stableId) ?? null;
   }
+  rulesProfile() {
+    return "legacy" as const;
+  }
+  listTemplates() {
+    return { projects: [] };
+  }
 }
 
 class FakeStore implements ManufacturingJobStore {
+  bindings: Array<{ jobId: string; productionSiteId: string | null }> = [];
+  async saveLandingBinding(
+    _tx: RepoTx,
+    patch: { jobId: string; productionSiteId: string | null }
+  ): Promise<void> {
+    this.bindings.push({ jobId: patch.jobId, productionSiteId: patch.productionSiteId });
+  }
   inserted: Array<{ baseId: string; outputsPlanned: number; reservedInputs: Array<{ itemId: string; quantity: number }> }> = [];
   jobs = new Map<string, ManufacturingJobRecord>();
   statusCalls: Array<{ jobId: string; status: string }> = [];
@@ -119,6 +135,10 @@ class FakeStore implements ManufacturingJobStore {
       outputsPlanned: input.outputsPlanned,
       outputsDone: 0,
       currentUnitWorkDone: 0,
+      productionSiteId: null,
+      energyWmPerBatch: null,
+      currentBatchEnergyWm: 0,
+      createdAt: new Date("2026-09-26T00:00:00Z"),
       reservedInputs: input.reservedInputs.map((item) => ({ ...item })),
       blockedReason: null
     });
@@ -227,7 +247,13 @@ describe("ManufacturingService.create", () => {
   it("按基地当前目录创建 @2 工单，不从旧默认目录误取 @1", async () => {
     const recipe = { ...RECIPE, ref: { ...RECIPE.ref, revision: 2 }, output: { ...RECIPE.output, initialBatteryWh: 1000 } };
     const { service, store } = makeService({
-      catalogResolver: { forBase: async () => ({ getRecipeTemplate: () => recipe }) }
+      catalogResolver: {
+        forBase: async () => ({
+          getRecipeTemplate: () => recipe,
+          rulesProfile: () => "legacy" as const,
+          listTemplates: () => ({ projects: [] })
+        })
+      }
     });
     const result = await service.create(tx, principal, {
       ...CREATE_INPUT,

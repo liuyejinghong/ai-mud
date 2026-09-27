@@ -1,0 +1,19 @@
+
+> ai-mud@0.4.0 arch:test /private/tmp/yudian-r1-independent-review
+> node scripts/architecture/arch-test.mjs
+
+fixture root: /var/folders/14/5s225v_91m7dfmkt32zcl6v40000gq/T/aimud-arch-fixtures-2Knm2l
+PASS  NEG-01  expect=fail  got=red  ruleSeen=true  — npc deep-imports quests internal repository
+PASS  NEG-02  expect=fail  got=red  ruleSeen=true  — same deep import via type-only statement
+PASS  NEG-03  expect=fail  got=red  ruleSeen=true  — public.ts wildcard re-exports internals
+PASS  NEG-04  expect=fail  got=red  ruleSeen=true  — economy <-> npc direct cycle (no debt)
+PASS  NEG-05  expect=fail  got=red  ruleSeen=true  — React client imports server db schema
+PASS  NEG-06  expect=fail  got=red  ruleSeen=true  — ai provider grabs db schema
+PASS  NEG-07  expect=fail  got=red  ruleSeen=true  — characters repository writes copperBalance (owned by assets), no debt
+PASS  NEG-08  expect=fail  got=red  ruleSeen=true  — a new production file with no boundary entry
+PASS  NEG-09  expect=fail  got=red  ruleSeen=true  — second unregistered cross-domain symbol in a legacy file (only first edge has debt)
+PASS  NEG-10  expect=fail  got=red  ruleSeen=true  — dynamic non-literal import in business code
+PASS  NEG-11  expect=fail  got=red  ruleSeen=true  — pure rules module calls Date.now/Math.random
+PASS  NEG-12  expect=pass  got=green  — normal consumer of public API + own-module whitebox test both pass
+------------------------------------------------------------------------
+arch:test PASS (12 fixtures)

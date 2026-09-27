@@ -43,7 +43,7 @@ export class BaseOperationError extends Error {
 
 export interface ConstructionLookupPort {
   findBaseIdByAccount(tx: ConstructionTx, accountId: string): Promise<string | null>;
-  getBaseForUpdate(tx: ConstructionTx, baseId: string): Promise<{ id: string } | null>;
+  getBaseForUpdate(tx: ConstructionTx, baseId: string): Promise<{ id: string; baseRevision?: number } | null>;
 }
 
 export interface ConstructionAssetPort {
@@ -66,9 +66,14 @@ export interface ConstructionSitePort {
     tx: ConstructionTx,
     baseId: string,
     siteId: string
-  ): Promise<{ id: string; state: "free" | "reserved" | "built" } | null>;
+  ): Promise<{ id: string; state: "free" | "reserved" | "built"; siteKey?: string } | null>;
+  getSiteKey?(tx: ConstructionTx, baseId: string, siteId: string): Promise<string | null>;
   markSiteReserved(tx: ConstructionTx, siteId: string): Promise<void>;
   releaseSite(tx: ConstructionTx, siteId: string): Promise<void>;
+  listSites(
+    tx: ConstructionTx,
+    baseId: string
+  ): Promise<Array<{ id: string; siteKey: string; state: string; builtFacilityRef: string | null }>>;
 }
 
 export interface ConstructionRobotPort {
@@ -76,7 +81,9 @@ export interface ConstructionRobotPort {
 }
 
 export interface ConstructionCatalogPort {
+  rulesProfile?(): "legacy" | "landing-v1";
   getProjectTemplate(stableId: string): ProjectTemplateDto | null;
+  listTemplates(): { projects: ProjectTemplateDto[] };
 }
 
 export type ConstructionReceiptsPort = Pick<
@@ -95,6 +102,8 @@ export interface ConstructionServiceDeps {
   catalog: ConstructionCatalogPort;
   catalogResolver?: { forBase(tx: ConstructionTx, baseId: string): Promise<ConstructionCatalogPort> };
   store: IndustryProjectStore;
+  // R1 landing：扩建配额计数（缺省 = 无配额检查，旧 release 行为）。
+  countExpansionProjects?: (tx: ConstructionTx, baseId: string, projectDefIds: string[]) => Promise<number>;
   // 生产绑定：(tx) => new AssetMutationService(tx)。测试注入内存替身。
   receipts: (tx: ConstructionTx) => ConstructionReceiptsPort;
   // B005 取消项目同事务结案协作请求。缺省 = (tx) => new CooperationRepository(tx)（同模块仓库，
@@ -160,8 +169,15 @@ export class ConstructionService {
     input: CreateProjectInputDto
   ): Promise<CreateProjectResultDto> {
     const baseId = await this.requireBaseId(tx, principal);
-    if (!(await this.deps.lookup.getBaseForUpdate(tx, baseId))) {
+    const base = await this.deps.lookup.getBaseForUpdate(tx, baseId);
+    if (!base) {
       throw new BaseOperationError(403, "BASE_SCOPE_INVALID", "账号没有可操作的基地。");
+    }
+    const catalog = await this.catalogForBase(tx, baseId);
+    const landing = catalog.rulesProfile?.() === "landing-v1";
+    const builderCount = landing ? input.builderCount ?? 2 : null;
+    if (builderCount !== null && builderCount !== 1 && builderCount !== 2) {
+      throw new BaseOperationError(400, "VALIDATION_ERROR", "施工筑垒数量必须为 1 或 2。");
     }
     const actorScope = `base:${baseId}`;
     const requestHash = hashRequest({
@@ -170,7 +186,8 @@ export class ConstructionService {
         stableId: input.definitionRef.stableId,
         revision: input.definitionRef.revision
       },
-      siteId: input.siteId
+      siteId: input.siteId,
+      ...(builderCount !== null ? { builderCount } : {})
     });
     const receipts = this.deps.receipts(tx);
 
@@ -197,15 +214,46 @@ export class ConstructionService {
       throw new BaseOperationError(409, "CONFLICT", "命令幂等登记冲突，请重试。");
     }
 
-    const catalog = await this.catalogForBase(tx, baseId);
+    if (landing && input.expectedBaseRevision !== undefined && input.expectedBaseRevision !== base.baseRevision) {
+      throw new BaseOperationError(409, "REVISION_EXPIRED", "基地状态已变化，请刷新后重试。");
+    }
     const template = catalog.getProjectTemplate(input.definitionRef.stableId);
     if (!template || template.ref.revision !== input.definitionRef.revision) {
       // 旧 revision 不 fallback latest（S4）
       throw new BaseOperationError(409, "CONTENT_INCOMPATIBLE", "项目模板不存在或修订不匹配。");
     }
 
-    if (await this.deps.store.hasLiveOrCompletedProject(tx, baseId, template.ref.stableId)) {
-      throw new BaseOperationError(409, "CONFLICT", "这项工程已在建设或已完成。");
+    // R1 landing：扩建模板可重复，共享 4 个扩建位配额；套件安装仍一次建成。
+    const isExpansion = template.expansionSlot === true;
+    if (!isExpansion) {
+      if (await this.deps.store.hasLiveOrCompletedProject(tx, baseId, template.ref.stableId)) {
+        throw new BaseOperationError(409, "CONFLICT", "这项工程已在建设或已完成。");
+      }
+    } else if (this.deps.countExpansionProjects) {
+      const expansionTemplateIds = this.deps.catalog === (await this.catalogForBase(tx, baseId))
+        ? this.deps.catalog.listTemplates().projects
+            .filter((project) => project.expansionSlot)
+            .map((project) => project.ref.stableId)
+        : (await this.catalogForBase(tx, baseId)).listTemplates().projects
+            .filter((project) => project.expansionSlot)
+            .map((project) => project.ref.stableId);
+      const used = await this.deps.countExpansionProjects(tx, baseId, expansionTemplateIds);
+      if (used >= 4) {
+        throw new BaseOperationError(409, "CONFLICT", "四个扩建位已用完。");
+      }
+    }
+
+    // R1 landing：投产前置（requiresFacilities 必须已建成）。
+    for (const facilityId of template.requiresFacilities ?? []) {
+      const sites = await this.deps.sites.listSites(tx, baseId);
+      const built = sites.some(
+        (site) =>
+          site.state === "built" &&
+          (site.builtFacilityRef?.split(":")[1]?.split("@")[0] ?? "") === facilityId
+      );
+      if (!built) {
+        throw new BaseOperationError(409, "REQUIREMENTS_NOT_MET", "投产前置设施尚未建成。");
+      }
     }
 
     const site = await this.deps.sites.getSite(tx, baseId, input.siteId);
@@ -214,6 +262,16 @@ export class ConstructionService {
     }
     if (site.state !== "free") {
       throw new BaseOperationError(409, "SITE_OCCUPIED", "建设位已被占用。");
+    }
+    // R1 位置合法性（服务端强制）：套件安装/扩建模板只能开在内容声明的命名位置上，
+    // 不能在扩建位装首太阳能或在安装位建扩建——不靠前端隐藏。
+    const siteKey = await this.deps.sites.getSiteKey?.(tx, baseId, site.id);
+    if (template.allowedSiteKeys && siteKey && !template.allowedSiteKeys.includes(siteKey)) {
+      throw new BaseOperationError(
+        409,
+        "REQUIREMENTS_NOT_MET",
+        `该工程只能开在：${template.allowedSiteKeys.join("、")}。`
+      );
     }
 
     for (const required of template.inputs) {
@@ -234,6 +292,7 @@ export class ConstructionService {
       siteId: site.id,
       projectDefId: template.ref.stableId,
       templateRevision: template.ref.revision,
+      builderCount,
       reservedInputs: template.inputs.map((item) => ({
         itemId: item.itemId,
         quantity: item.quantity

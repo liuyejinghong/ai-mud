@@ -283,10 +283,15 @@ describe("base REST contract negatives (buildApp + inject, temporary PostgreSQL)
   }, 60_000);
 
   it("rejects a stale revision definitionRef with CONTENT_INCOMPATIBLE and leaves the site free", async () => {
+    // R1：默认注册已是 landing-1（旧 release 行为由显式 legacy 的 m12 provision 验收覆盖）。
     if (!process.env.DATABASE_URL) return;
 
+    const control = await appOpen.inject({ method: "POST", url: "/base/heartbeat", payload: { action: "acquire" }, headers: { cookie: accountA.cookie, "x-csrf-token": accountA.csrfToken } });
+    expect(control.statusCode).toBe(200);
+    const controlToken = control.json().controlToken as string;
+
     const { rows } = await harness.client.query(
-      `SELECT id FROM base_sites WHERE base_id = $1 AND site_key = 'site_a'`,
+      `SELECT id FROM base_sites WHERE base_id = $1 AND site_key = 'install_solar'`,
       [accountA.baseId]
     );
     const siteAId = rows[0]!.id as string;
@@ -295,16 +300,16 @@ describe("base REST contract negatives (buildApp + inject, temporary PostgreSQL)
       method: "POST",
       url: "/base/projects",
       payload: {
-        definitionRef: { kind: "project", stableId: "install-solar-array", revision: 999 },
+        definitionRef: { kind: "project", stableId: "landing-install-solar", revision: 999 },
         siteId: siteAId
       },
-      headers: { cookie: accountA.cookie, "x-csrf-token": accountA.csrfToken }
+      headers: { cookie: accountA.cookie, "x-csrf-token": accountA.csrfToken, "x-base-control-token": controlToken }
     });
 
     expect(response.statusCode).toBe(409);
     expect(response.json().error.code).toBe("CONTENT_INCOMPATIBLE");
 
-    // 不 fallback latest：无项目、site_a 仍 free。
+    // 不 fallback latest：无项目、安装位仍 free。
     const { rows: projects } = await harness.client.query(
       `SELECT COUNT(*)::int AS n FROM base_projects WHERE base_id = $1`,
       [accountA.baseId]
@@ -337,34 +342,38 @@ describe("base REST contract negatives (buildApp + inject, temporary PostgreSQL)
     }
     expect(typeof body.simTime).toBe("string");
     expect(body.timeMode).toBe("paused");
-    expect(body.power.storageWh).toBe(100000);
-    expect(body.power.storageCapacityWh).toBe(200000);
-    expect(body.power.generationWPeak).toBe(15000);
+    expect(body.power.storageWh).toBe(1000); // R1 landing 种子：随船储电 1000/2000 Wh
+    expect(body.power.storageCapacityWh).toBe(2000); // R1 landing 种子容量
+    expect(body.power.generationWPeak).toBe(0); // R1 landing：太阳能峰值 0（着陆器应急 1000W 另列）
     expect(Array.isArray(body.projects)).toBe(true);
     expect(body.projects).toHaveLength(0);
     expect(body.devices).toHaveLength(12);
-    // 教程发布版新基地：驮运设备初始电量 5500/20000。
+    // R1 landing 新基地：驮运初始电量 72/120（教程版 5500/20000 由显式 legacy 验收覆盖）。
     const transports = body.devices.filter((device: { groupId: string }) => device.groupId === "transport");
     expect(transports).toHaveLength(4);
-    expect(transports[0].batteryWh).toBe(5500);
-    expect(transports[0].batteryCapacityWh).toBe(20000);
+    expect(transports[0].batteryWh).toBe(72);
+    expect(transports[0].batteryCapacityWh).toBe(120);
   }, 60_000);
 
   it("replays a repeated createProject commandId over HTTP (201 then 200 duplicate)", async () => {
     if (!process.env.DATABASE_URL) return;
 
+    const control = await appOpen.inject({ method: "POST", url: "/base/heartbeat", payload: { action: "acquire" }, headers: { cookie: accountA.cookie, "x-csrf-token": accountA.csrfToken } });
+    expect(control.statusCode).toBe(200);
+    const controlToken = control.json().controlToken as string;
+
     const { rows } = await harness.client.query(
-      `SELECT id FROM base_sites WHERE base_id = $1 AND site_key = 'site_a'`,
+      `SELECT id FROM base_sites WHERE base_id = $1 AND site_key = 'install_solar'`,
       [accountA.baseId]
     );
     const siteAId = rows[0]!.id as string;
     const commandId = randomUUID();
     const payload = {
-      definitionRef: { kind: "project", stableId: "install-solar-array", revision: 1 },
+      definitionRef: { kind: "project", stableId: "landing-install-solar", revision: 1 },
       siteId: siteAId,
       commandId
     };
-    const headers = { cookie: accountA.cookie, "x-csrf-token": accountA.csrfToken };
+    const headers = { cookie: accountA.cookie, "x-csrf-token": accountA.csrfToken, "x-base-control-token": controlToken };
 
     const first = await appOpen.inject({ method: "POST", url: "/base/projects", payload, headers });
     expect(first.statusCode).toBe(201);

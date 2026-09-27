@@ -1,0 +1,16 @@
+{
+  "status": "POST_ACCEPTED_AND_UI_ACKNOWLEDGED",
+  "projectId": "bfcfc95f-7ee3-4e8f-90d3-c0a92d334c79",
+  "responseStatus": 201,
+  "receiptText": "工程「安装首座太阳能」已开工，材料已预留。",
+  "queueText": "安装首座太阳能\n安装 0/2\n取消",
+  "finalViewport": {
+    "innerWidth": 640,
+    "innerHeight": 400,
+    "devicePixelRatio": 2,
+    "documentScrollWidth": 640,
+    "documentScrollHeight": 400,
+    "shellScrollWidth": 640,
+    "shellScrollHeight": 400
+  }
+}

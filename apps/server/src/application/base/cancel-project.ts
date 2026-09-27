@@ -6,17 +6,23 @@ import type {
   CancelProjectResultDto,
   CancelProjectUseCase
 } from "./ports.js";
+import type { BaseWriteGuard } from "./ports.js";
 
 export class CancelProjectCase implements CancelProjectUseCase {
   constructor(
     private readonly db: Db,
-    private readonly service: ConstructionService
+    private readonly service: ConstructionService,
+    private readonly authorize?: BaseWriteGuard
   ) {}
 
   execute(
     principal: BasePrincipal,
-    input: { projectId: string; commandId: string }
+    input: { projectId: string; commandId: string },
+    controlToken?: string | null
   ): Promise<CancelProjectResultDto> {
-    return this.db.transaction((tx) => this.service.cancel(tx, principal, input));
+    return this.db.transaction(async (tx) => {
+      await this.authorize?.(tx, principal.accountId, controlToken);
+      return this.service.cancel(tx, principal, input);
+    });
   }
 }

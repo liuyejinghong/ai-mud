@@ -6,6 +6,7 @@ import type {
   CreateManufacturingJobResultDto
 } from "@ai-mud/shared";
 import type { Db } from "../../db/client.js";
+import type { BaseWriteGuard } from "../base/ports.js";
 import {
   BaseOperationError,
   ManufacturingService
@@ -20,20 +21,26 @@ export interface ManufacturingPrincipal {
 export interface CreateManufacturingJobUseCase {
   execute(
     principal: ManufacturingPrincipal,
-    input: CreateManufacturingJobInputDto
+    input: CreateManufacturingJobInputDto,
+    controlToken?: string | null
   ): Promise<CreateManufacturingJobResultDto>;
 }
 
 export class CreateManufacturingJobCase implements CreateManufacturingJobUseCase {
   constructor(
     private readonly db: Db,
-    private readonly service: ManufacturingService
+    private readonly service: ManufacturingService,
+    private readonly authorize?: BaseWriteGuard
   ) {}
 
   execute(
     principal: ManufacturingPrincipal,
-    input: CreateManufacturingJobInputDto
+    input: CreateManufacturingJobInputDto,
+    controlToken?: string | null
   ): Promise<CreateManufacturingJobResultDto> {
-    return this.db.transaction((tx) => this.service.create(tx, principal, input));
+    return this.db.transaction(async (tx) => {
+      await this.authorize?.(tx, principal.accountId, controlToken);
+      return this.service.create(tx, principal, input);
+    });
   }
 }

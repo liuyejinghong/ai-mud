@@ -4,7 +4,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { TUTORIAL_BASE_CONTENT_RELEASE } from "@ai-mud/content";
 import { createBaseOperations } from "../../../application/base/composition.js";
+import { createContentCatalog } from "../../../modules/content-catalog/catalog.service.js";
 import { loadEnv } from "../../../config/env.js";
 import { createDb } from "../../../db/client.js";
 import { systemWorldClock } from "../../../modules/world-runtime/world-clock.js";
@@ -159,12 +161,14 @@ d("tutorial integrated contract (isolated PostgreSQL)", () => {
     ))).join("\n--> statement-breakpoint\n");
     await client.query(sql);
     connection = createDb(urlFor(dbName));
+    // R1：默认注册已是 landing-1；本合同按 05 §5 显式钉住旧教程 profile。
     ops = createBaseOperations({
       db: connection.db,
       config: loadEnv({
         DATABASE_URL: urlFor(dbName), NODE_ENV: "test",
         SESSION_SECRET: "test-secret-that-is-at-least-32-bytes"
-      })
+      }),
+      provisionCatalog: createContentCatalog(TUTORIAL_BASE_CONTENT_RELEASE)
     });
   }, 120_000);
 

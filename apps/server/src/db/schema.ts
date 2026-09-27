@@ -975,6 +975,8 @@ export const robotOperators = pgTable(
     status: text("status").notNull().default("idle"),
     currentProjectId: uuid("current_project_id"),
     currentStepIndex: integer("current_step_index"),
+    // R1 landing：当前勘探/采矿单（与 current_project_id 互斥，见下方 CHECK）。
+    currentExtractionJobId: uuid("current_extraction_job_id"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
@@ -991,6 +993,11 @@ export const robotOperators = pgTable(
     statusCheck: check(
       "robot_operators_status_check",
       sql`${table.status} IN ('idle', 'charging', 'working', 'offline')`
+    ),
+    // 施工与采矿互斥：同一台设备不能同时挂项目工序与采矿单。
+    assignmentExclusiveCheck: check(
+      "robot_operators_assignment_exclusive_check",
+      sql`(${table.currentProjectId} IS NULL) OR (${table.currentExtractionJobId} IS NULL)`
     )
   })
 );
@@ -1007,12 +1014,29 @@ export const basePowerState = pgTable(
     lastLoadW: integer("last_load_w").notNull().default(0),
     // 积尘等级 0—100；保留每分钟的小数变化，避免按调用次数取整。
     dustLevel: doublePrecision("dust_level").notNull().default(30),
+    // ---------- R1 landing（旧档缺省 = 旧行为：无临时电源、充电不受限、生产优先） ----------
+    emergencyGenerationW: integer("emergency_generation_w").notNull().default(0),
+    chargeLimitW: integer("charge_limit_w"),
+    powerPolicy: text("power_policy").notNull().default("production"),
+    // 站内能量固定点余数：storage_excess_wm ∈ [0,60) 为 W·min 余数
+    // （storageWh + excess/60 = 精确存量，不因舍入丢能量）；gen_remainder_wm 承载
+    // 发电端（光照/积尘系数）的小数 W·min 结转。
+    storageExcessWm: integer("storage_excess_wm").notNull().default(0),
+    genRemainderWm: doublePrecision("gen_remainder_wm").notNull().default(0),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
     storageCheck: check(
       "base_power_storage_bounded_check",
       sql`${table.storageWh} >= 0 AND ${table.storageWh} <= ${table.storageCapacityWh}`
+    ),
+    storageExcessCheck: check(
+      "base_power_storage_excess_bounded_check",
+      sql`${table.storageExcessWm} >= 0 AND ${table.storageExcessWm} < 60`
+    ),
+    powerPolicyCheck: check(
+      "base_power_policy_check",
+      sql`${table.powerPolicy} IN ('production', 'charging')`
     )
   })
 );
@@ -1029,6 +1053,7 @@ export const baseProjects = pgTable(
       .references(() => baseSites.id),
     projectDefId: text("project_def_id").notNull(),
     templateRevision: integer("template_revision").notNull(),
+    builderCount: integer("builder_count"),
     status: text("status").notNull().default("active"),
     currentStepIndex: integer("current_step_index").notNull().default(0),
     reservedInputs: jsonb("reserved_inputs").notNull().default([]),
@@ -1040,6 +1065,7 @@ export const baseProjects = pgTable(
     siteActiveIdx: uniqueIndex("base_projects_one_active_per_site_idx")
       .on(table.siteId)
       .where(sql`${table.status} IN ('planned', 'active', 'paused', 'blocked', 'needs_decision')`),
+    builderCountCheck: check("base_projects_builder_count_check", sql`${table.builderCount} IS NULL OR ${table.builderCount} IN (1, 2)`),
     statusCheck: check(
       "base_projects_status_check",
       sql`${table.status} IN ('planned', 'active', 'paused', 'blocked', 'needs_decision', 'completed', 'cancelled', 'failed')`
@@ -1152,6 +1178,13 @@ export const baseManufacturingJobs = pgTable(
     currentUnitWorkDone: doublePrecision("current_unit_work_done").notNull().default(0),
     reservedInputs: jsonb("reserved_inputs").notNull().default([]),
     blockedReason: text("blocked_reason"),
+    // ---------- R1 landing（旧单全部 NULL：继续走旧结算语义） ----------
+    // 新单指向已建成加工间站点（手工配方 = 着陆器站点）。
+    productionSiteId: uuid("production_site_id"),
+    // 每批能量（W·min，开工时按配方额定冻结）；旧单 NULL。
+    energyWmPerBatch: integer("energy_wm_per_batch"),
+    // 当前批已获能量（W·min 定点，整批原子完成）。
+    currentBatchEnergyWm: integer("current_batch_energy_wm").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true })
   },
@@ -1168,6 +1201,10 @@ export const baseManufacturingJobs = pgTable(
     doneCheck: check(
       "base_manufacturing_jobs_outputs_bounded_check",
       sql`${table.outputsDone} >= 0 AND ${table.outputsDone} <= ${table.outputsPlanned}`
+    ),
+    batchEnergyCheck: check(
+      "base_manufacturing_jobs_batch_energy_check",
+      sql`(${table.energyWmPerBatch} IS NULL AND ${table.currentBatchEnergyWm} = 0) OR (${table.energyWmPerBatch} IS NOT NULL AND ${table.currentBatchEnergyWm} >= 0 AND ${table.currentBatchEnergyWm} <= ${table.energyWmPerBatch})`
     )
   })
 );
@@ -1180,18 +1217,164 @@ export const baseManufacturingOutputs = pgTable(
       .notNull()
       .references(() => baseManufacturingJobs.id),
     ordinal: integer("ordinal").notNull(),
-    deviceId: uuid("device_id")
-      .notNull()
-      .references(() => baseDevices.id),
-    operatorId: uuid("operator_id")
-      .notNull()
-      .references(() => robotOperators.id),
+    // R1：robot（旧默认）或 item（材料产出）。
+    outputKind: text("output_kind").notNull().default("robot"),
+    deviceId: uuid("device_id").references(() => baseDevices.id),
+    operatorId: uuid("operator_id").references(() => robotOperators.id),
+    itemId: text("item_id"),
+    quantity: integer("quantity"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => ({
     jobOrdinalIdx: uniqueIndex("base_manufacturing_outputs_job_ordinal_idx").on(
       table.jobId,
       table.ordinal
+    ),
+    outputKindCheck: check(
+      "base_manufacturing_outputs_kind_check",
+      sql`(${table.outputKind} = 'robot' AND ${table.deviceId} IS NOT NULL AND ${table.operatorId} IS NOT NULL AND ${table.itemId} IS NULL AND ${table.quantity} IS NULL) OR (${table.outputKind} = 'item' AND ${table.deviceId} IS NULL AND ${table.operatorId} IS NULL AND ${table.itemId} IS NOT NULL AND ${table.quantity} IS NOT NULL)`
+    )
+  })
+);
+
+// ---------------------------------------------------------------------------
+// R1 landing（2026-09-26）：资源节点（world 写者）、勘探/采矿单与现场货物
+// （industry 写者）、加工槽（industry 写者，设施完成同事务创建）。
+// ---------------------------------------------------------------------------
+
+export const baseResourceNodes = pgTable(
+  "base_resource_nodes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    baseId: uuid("base_id")
+      .notNull()
+      .references(() => bases.id),
+    nodeKey: text("node_key").notNull(),
+    name: text("name").notNull(),
+    itemId: text("item_id").notNull(),
+    discovered: boolean("discovered").notNull().default(false),
+    remainingQuantity: integer("remaining_quantity").notNull(),
+    reservedQuantity: integer("reserved_quantity").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    baseNodeIdx: uniqueIndex("base_resource_nodes_base_node_idx").on(table.baseId, table.nodeKey),
+    quantityCheck: check(
+      "base_resource_nodes_quantity_bounded_check",
+      sql`${table.remainingQuantity} >= 0 AND ${table.reservedQuantity} >= 0 AND ${table.reservedQuantity} <= ${table.remainingQuantity}`
+    )
+  })
+);
+
+export const baseExtractionJobs = pgTable(
+  "base_extraction_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    baseId: uuid("base_id")
+      .notNull()
+      .references(() => bases.id),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references(() => baseResourceNodes.id),
+    kind: text("kind").notNull(),
+    status: text("status").notNull().default("active"),
+    batchesPlanned: integer("batches_planned").notNull().default(1),
+    batchesExtracted: integer("batches_extracted").notNull().default(0),
+    batchesDelivered: integer("batches_delivered").notNull().default(0),
+    // mine：当前工序（mining 用筑垒点 / hauling 用驮运点）；survey 无 phase。
+    phase: text("phase"),
+    phaseWorkDone: integer("phase_work_done").notNull().default(0),
+    builderOperatorIds: jsonb("builder_operator_ids").$type<string[]>().notNull().default([]),
+    haulerOperatorId: uuid("hauler_operator_id"),
+    surveyorOperatorId: uuid("surveyor_operator_id"),
+    blockedReason: text("blocked_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    baseStatusIdx: index("base_extraction_jobs_base_status_idx").on(table.baseId, table.status),
+    nodeActiveIdx: uniqueIndex("base_extraction_jobs_one_active_per_node_idx")
+      .on(table.nodeId)
+      .where(sql`${table.status} IN ('active', 'paused', 'stopping')`),
+    kindCheck: check(
+      "base_extraction_jobs_kind_check",
+      sql`${table.kind} IN ('survey', 'mine')`
+    ),
+    statusCheck: check(
+      "base_extraction_jobs_status_check",
+      sql`${table.status} IN ('active', 'paused', 'stopping', 'completed', 'cancelled')`
+    ),
+    phaseCheck: check(
+      "base_extraction_jobs_phase_check",
+      sql`(${table.kind} = 'survey' AND ${table.phase} IS NULL) OR (${table.kind} = 'mine' AND ${table.phase} IN ('mining', 'hauling'))`
+    ),
+    batchesCheck: check(
+      "base_extraction_jobs_batches_bounded_check",
+      sql`${table.batchesPlanned} >= 1 AND ${table.batchesPlanned} <= 10 AND ${table.batchesExtracted} >= 0 AND ${table.batchesExtracted} <= ${table.batchesPlanned} AND ${table.batchesDelivered} >= 0 AND ${table.batchesDelivered} <= ${table.batchesExtracted}`
+    ),
+    operatorShapeCheck: check(
+      "base_extraction_jobs_operator_shape_check",
+      sql`(${table.kind} = 'survey' AND ${table.surveyorOperatorId} IS NOT NULL AND ${table.haulerOperatorId} IS NULL) OR (${table.kind} = 'mine' AND ${table.surveyorOperatorId} IS NULL AND ${table.haulerOperatorId} IS NOT NULL AND jsonb_array_length(${table.builderOperatorIds}) BETWEEN 1 AND 2)`
+    )
+  })
+);
+
+export const baseExtractionOutputs = pgTable(
+  "base_extraction_outputs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    jobId: uuid("job_id")
+      .notNull()
+      .references(() => baseExtractionJobs.id),
+    ordinal: integer("ordinal").notNull(),
+    itemId: text("item_id").notNull(),
+    quantity: integer("quantity").notNull(),
+    // extracted = 已采出、运输中（现场货物，不算仓库库存）；delivered = 已送达入库。
+    status: text("status").notNull().default("extracted"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    jobOrdinalIdx: uniqueIndex("base_extraction_outputs_job_ordinal_idx").on(
+      table.jobId,
+      table.ordinal
+    ),
+    statusCheck: check(
+      "base_extraction_outputs_status_check",
+      sql`${table.status} IN ('extracted', 'delivered')`
+    ),
+    quantityCheck: check(
+      "base_extraction_outputs_quantity_positive_check",
+      sql`${table.quantity} > 0`
+    )
+  })
+);
+
+export const baseProductionSlots = pgTable(
+  "base_production_slots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    baseId: uuid("base_id")
+      .notNull()
+      .references(() => bases.id),
+    siteId: uuid("site_id")
+      .notNull()
+      .references(() => baseSites.id),
+    slotIndex: integer("slot_index").notNull().default(0),
+    batchesSinceMaintenance: integer("batches_since_maintenance").notNull().default(0),
+    maintenanceBlocked: boolean("maintenance_blocked").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    baseSiteSlotIdx: uniqueIndex("base_production_slots_base_site_slot_idx").on(
+      table.baseId,
+      table.siteId,
+      table.slotIndex
+    ),
+    batchesCheck: check(
+      "base_production_slots_batches_bounded_check",
+      sql`${table.batchesSinceMaintenance} >= 0 AND ${table.batchesSinceMaintenance} <= 10`
     )
   })
 );

@@ -52,19 +52,34 @@ export interface ActivateContentReleaseInputDto {
 
 // ---------- 制造（玩家侧） ----------
 
-export interface RecipeOutputDto {
+// R1：产出二选一——robot（旧形态，目录边界补 kind）或 item（材料配方）。
+export interface RobotRecipeOutputDto {
+  kind: "robot";
   templateStableId: string;
   initialBatteryWh: number;
 }
+
+export interface ItemRecipeOutputDto {
+  kind: "item";
+  itemId: string;
+  quantity: number;
+}
+
+export type RecipeOutputDto = RobotRecipeOutputDto | ItemRecipeOutputDto;
 
 export interface RecipeTemplateDto {
   ref: DefinitionRefDto;
   name: string;
   description: string;
   inputs: ProjectInputDto[];
-  // 每台的工作量（industry 结算按电力推进）。
+  // 每台的工作量（industry 结算按电力推进；legacy 1Wh=1 点）。
   workPerUnit: number;
   output: RecipeOutputDto;
+  // R1 landing（缺省 = 旧语义）。
+  ratedW?: number;
+  workMinutesPerBatch?: number;
+  requiredCapability?: string;
+  countsSlotMaintenance?: boolean;
 }
 
 export const MANUFACTURING_JOB_STATUSES = [
@@ -85,12 +100,19 @@ export interface ManufacturingJobDto {
   outputsDone: number;
   currentUnitWorkDone: number;
   blockedReason: string | null;
+  // R1 landing（旧档 null/省略）。
+  productionSiteId?: string | null;
+  energyWmPerBatch?: number | null;
+  currentBatchEnergyWm?: number | null;
 }
 
 export interface CreateManufacturingJobInputDto {
   recipeRef: DefinitionRefDto;
   outputsPlanned: number;
   commandId: string;
+  // R1 landing（缺省自动槽位；手工配方固定着陆器）。
+  slotId?: string;
+  expectedBaseRevision?: number;
 }
 
 export interface CreateManufacturingJobResultDto {

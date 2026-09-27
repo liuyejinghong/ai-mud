@@ -200,6 +200,7 @@ export class BaseRepository {
     return row?.id ?? null;
   }
 
+  // 快照的各模块读口共用基地读锁，避免一次投影跨过结算或命令提交。
   async getBaseByAccount(tx: BaseRepoTx, accountId: string): Promise<BaseRecord | null> {
     const [row] = await tx
       .select({
@@ -217,7 +218,8 @@ export class BaseRepository {
       })
       .from(bases)
       .where(eq(bases.accountId, accountId))
-      .limit(1);
+      .limit(1)
+      .for("share");
     return row ? mapBaseRow(row) : null;
   }
 
@@ -261,6 +263,7 @@ export class BaseRepository {
     speed: number;
     simTime: Date;
     lastAdvancedAt: Date;
+    credits?: number;
   }): Promise<string> {
     const [row] = await tx
       .insert(bases)
@@ -271,7 +274,8 @@ export class BaseRepository {
         timeMode: input.timeMode,
         speed: input.speed,
         simTime: input.simTime,
-        lastAdvancedAt: input.lastAdvancedAt
+        lastAdvancedAt: input.lastAdvancedAt,
+        ...(input.credits !== undefined ? { credits: input.credits } : {})
       })
       .returning({ id: bases.id });
     if (!row) throw new Error("bases insert returned no row");

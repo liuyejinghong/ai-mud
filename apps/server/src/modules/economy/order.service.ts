@@ -42,6 +42,8 @@ export interface EconomyClockPort {
 export interface EconomyCatalogPort {
   getOrderTemplate(stableId: string): OrderTemplateDto | null;
   listOrderTemplates(): OrderTemplateDto[];
+  // R1：能力位（landing 新档不含 external_trade，订单/采购整体拒绝）。
+  capabilities(): string[];
 }
 
 // base_inventory 交付消耗写口（economy OrderRepository 实现；见 order.repository 文件头裁决注释）。
@@ -149,6 +151,7 @@ export class OrderService {
     input: { orderId: string; commandId: string }
   ): Promise<AcceptOrderResultPayload> {
     const baseId = await this.requireBaseId(tx, principal);
+    await this.requireExternalTrade(tx, baseId);
     const actorScope = `base:${baseId}`;
     const requestHash = hashRequest({ orderId: input.orderId });
     const receipts = this.deps.receipts(tx);
@@ -204,6 +207,7 @@ export class OrderService {
     input: { orderId: string; commandId: string }
   ): Promise<DeliverOrderResultPayload> {
     const baseId = await this.requireBaseId(tx, principal);
+    await this.requireExternalTrade(tx, baseId);
     const actorScope = `base:${baseId}`;
     const requestHash = hashRequest({ orderId: input.orderId });
     const receipts = this.deps.receipts(tx);
@@ -269,11 +273,13 @@ export class OrderService {
 
   // 订单刷新只看基地 simTime；在途不补，结案后至少等 24 基地小时。
   async ensureOrders(tx: EconomyTx, baseId: string, sim: Date): Promise<EnsureOrdersResult> {
+    // R1：landing 新档不生成旧回购订单（无 external_trade 能力即整档跳过）。
+    const catalog = await this.catalogForBase(tx, baseId);
+    if (!catalog.capabilities().includes("external_trade")) return { created: 0 };
     const orders = await this.deps.store.listOrdersForBase(tx, baseId);
     const openCount = orders.filter((order) => order.status === "open").length;
     if (openCount >= ORDER_OPEN_TARGET) return { created: 0 };
 
-    const catalog = await this.catalogForBase(tx, baseId);
     let created = 0;
     for (const template of catalog.listOrderTemplates()) {
       if (openCount + created >= ORDER_OPEN_TARGET) break;
@@ -293,6 +299,18 @@ export class OrderService {
   }
 
   // ---------- 内部 ----------
+
+  // R1：新档（landing-v1，无 external_trade）显式拒绝旧订单主循环——不能只靠 UI 隐藏。
+  private async requireExternalTrade(tx: EconomyTx, baseId: string): Promise<void> {
+    const catalog = await this.catalogForBase(tx, baseId);
+    if (!catalog.capabilities().includes("external_trade")) {
+      throw new BaseOperationError(
+        409,
+        "CAPABILITY_UNAVAILABLE",
+        "当前存档没有外部补给渠道（着陆重建内容）。",
+      );
+    }
+  }
 
   private catalogForBase(tx: EconomyTx, baseId: string): Promise<EconomyCatalogPort> {
     return this.deps.catalogResolver?.forBase(tx, baseId) ?? Promise.resolve(this.deps.catalog);

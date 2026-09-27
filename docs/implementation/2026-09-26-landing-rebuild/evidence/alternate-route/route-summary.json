@@ -1,0 +1,121 @@
+{
+  "status": "browser-evidence",
+  "email": "r1-alt-1790484222175-9827@example.test",
+  "elapsedWallMs": 1445662,
+  "route": "initial-solar-bootstrap-then-first-expansion-processing",
+  "origin": {
+    "baseId": "fcc56edc-3250-4796-b72a-2778bc22d3bb",
+    "contentRelease": "yudian-landing-1",
+    "weather": {
+      "current": "clear",
+      "lightFactor": 1,
+      "nextChangeAt": "2026-09-27T08:00:00.000Z",
+      "nextWeather": "clear",
+      "dustLevel": 0
+    },
+    "resources": [
+      {
+        "itemId": "charging_kit",
+        "quantity": 1,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "controller",
+        "quantity": 12,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "maintenance_kit",
+        "quantity": 1,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "processing_kit",
+        "quantity": 1,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "pv_cell",
+        "quantity": 12,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "solar_kit",
+        "quantity": 1,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "spare_part",
+        "quantity": 6,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "storage_kit",
+        "quantity": 1,
+        "reservedQuantity": 0
+      },
+      {
+        "itemId": "warehouse_kit",
+        "quantity": 1,
+        "reservedQuantity": 0
+      }
+    ]
+  },
+  "maintenanceCount": 2,
+  "final": {
+    "baseId": "fcc56edc-3250-4796-b72a-2778bc22d3bb",
+    "simTime": "2026-09-27T09:32:26.922Z",
+    "generationWPeak": 4000,
+    "productionSlots": 2,
+    "completedExpansion": "8cbd258d-7bf7-488d-ae9a-52c9229bfde5",
+    "weather": {
+      "current": "clear",
+      "lightFactor": 1,
+      "nextChangeAt": "2026-09-27T09:32:26.922Z",
+      "nextWeather": "clear",
+      "dustLevel": 0
+    }
+  },
+  "milestones": [
+    {
+      "step": "注册完成",
+      "wallMs": 10576,
+      "simTime": "2026-09-27T08:00:00.000Z"
+    },
+    {
+      "step": "首座太阳能完成",
+      "wallMs": 120566,
+      "simTime": "2026-09-27T08:04:26.922Z"
+    },
+    {
+      "step": "太阳能、仓储、储能、充电、加工与维护均建成",
+      "wallMs": 425597,
+      "simTime": "2026-09-27T08:24:26.922Z"
+    },
+    {
+      "step": "24 铁矿送达",
+      "wallMs": 780599,
+      "simTime": "2026-09-27T08:48:26.922Z"
+    },
+    {
+      "step": "4 铜矿送达",
+      "wallMs": 900604,
+      "simTime": "2026-09-27T08:56:26.922Z"
+    },
+    {
+      "step": "12 批铁料完成",
+      "wallMs": 1150601,
+      "simTime": "2026-09-27T09:12:26.922Z"
+    },
+    {
+      "step": "自产 6 结构件与 2 线缆，维护两次",
+      "wallMs": 1385598,
+      "simTime": "2026-09-27T09:28:26.922Z"
+    },
+    {
+      "step": "首次扩建加工间完成",
+      "wallMs": 1440574,
+      "simTime": "2026-09-27T09:32:26.922Z"
+    }
+  ]
+}

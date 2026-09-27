@@ -22,6 +22,7 @@ import type { Db } from "../../db/client.js";
 // （ACP-B01 边），方法必须在调用方事务内执行，实现自身不得开启或提交事务。
 
 export type BaseTx = Pick<Db, "delete" | "insert" | "select" | "update">;
+export type BaseWriteGuard = (tx: BaseTx, accountId: string, controlToken?: string | null) => Promise<void>;
 
 export interface BasePrincipal {
   accountId: string;
@@ -48,6 +49,13 @@ export interface ProvisionSeedSiteDto {
   facilityRef?: DefinitionRefDto;
 }
 
+export interface ProvisionSeedResourceNodeDto {
+  nodeKey: string;
+  name: string;
+  itemId: string;
+  initialQuantity: number;
+}
+
 export interface ProvisionSeedDto {
   releaseId: string;
   baseName: string;
@@ -55,10 +63,15 @@ export interface ProvisionSeedDto {
     generationWPeak: number;
     storageCapacityWh: number;
     initialStorageWh: number;
+    emergencyGenerationW?: number;
+    chargeLimitW?: number;
+    initialDustLevel?: number;
   };
   sites: ProvisionSeedSiteDto[];
   inventory: ProvisionSeedInputDto[];
   devices: ProvisionSeedDeviceDto[];
+  initialCredits?: number;
+  resourceNodes?: ProvisionSeedResourceNodeDto[];
 }
 
 export interface BaseFacilityInfoDto {
@@ -70,6 +83,8 @@ export interface BaseFacilityInfoDto {
 
 export interface ContentCatalogPort {
   releaseId(): string;
+  rulesProfile(): "legacy" | "landing-v1";
+  capabilities(): string[];
   getItemInfo(): Record<string, { name: string; description: string }>;
   getRecipeTemplate(stableId: string, revision?: number): RecipeTemplateDto | null;
   listRecipes(): RecipeTemplateDto[];
@@ -224,7 +239,15 @@ export interface BaseIndustryInitPort {
   ensurePowerState(
     tx: BaseTx,
     baseId: string,
-    seed: { generationWPeak: number; storageCapacityWh: number; initialStorageWh: number }
+    seed: {
+      generationWPeak: number;
+      storageCapacityWh: number;
+      initialStorageWh: number;
+      emergencyGenerationW?: number;
+      baseLoadW?: number;
+      chargeLimitW?: number;
+      initialDustLevel?: number;
+    }
   ): Promise<void>;
 }
 
@@ -273,6 +296,64 @@ export interface BaseRobotRecordDto {
   status: string;
   currentProjectId: string | null;
   currentStepIndex: number | null;
+  currentExtractionJobId?: string | null;
+}
+
+// R1 landing：资源节点/采矿单/加工槽读面（快照与能力校验用；写面在各模块仓库）。
+export interface BaseResourceNodeReadPort {
+  listResourceNodes(
+    tx: BaseTx,
+    baseId: string
+  ): Promise<Array<{
+    id: string;
+    nodeKey: string;
+    name: string;
+    itemId: string;
+    discovered: boolean;
+    remainingQuantity: number;
+    reservedQuantity: number;
+  }>>;
+}
+
+export interface BaseExtractionJobReadPort {
+  listExtractionJobs(
+    tx: BaseTx,
+    baseId: string
+  ): Promise<Array<{
+    id: string;
+    kind: "survey" | "mine";
+    status: "active" | "paused" | "stopping" | "completed" | "cancelled";
+    nodeId: string;
+    batchesPlanned: number;
+    batchesExtracted: number;
+    batchesDelivered: number;
+    phase: "mining" | "hauling" | null;
+    phaseWorkDone: number;
+    builderOperatorIds: string[];
+    haulerOperatorId: string | null;
+    surveyorOperatorId: string | null;
+    blockedReason: string | null;
+  }>>;
+}
+
+export interface BaseProductionSlotReadPort {
+  listProductionSlots(
+    tx: BaseTx,
+    baseId: string
+  ): Promise<Array<{
+    id: string;
+    siteId: string;
+    slotIndex: number;
+    batchesSinceMaintenance: number;
+    maintenanceBlocked: boolean;
+  }>>;
+}
+
+export interface BaseNodeSeedPort {
+  insertResourceNode(
+    tx: BaseTx,
+    input: { baseId: string; nodeKey: string; name: string; itemId: string; initialQuantity: number }
+  ): Promise<void>;
 }
 
 export interface BaseRobotReadPort {
@@ -287,13 +368,14 @@ export interface CancelProjectResultDto {
 }
 
 export interface CreateProjectUseCase {
-  execute(principal: BasePrincipal, input: CreateProjectInputDto): Promise<CreateProjectResultDto>;
+  execute(principal: BasePrincipal, input: CreateProjectInputDto, controlToken?: string | null): Promise<CreateProjectResultDto>;
 }
 
 export interface CancelProjectUseCase {
   execute(
     principal: BasePrincipal,
-    input: { projectId: string; commandId: string }
+    input: { projectId: string; commandId: string },
+    controlToken?: string | null
   ): Promise<CancelProjectResultDto>;
 }
 

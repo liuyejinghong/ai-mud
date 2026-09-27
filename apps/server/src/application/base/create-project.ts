@@ -7,15 +7,19 @@ import type {
 import type { Db } from "../../db/client.js";
 import type { ConstructionService } from "../../modules/industry/construction.service.js";
 export { BaseOperationError } from "../../modules/industry/construction.service.js";
-import type { BasePrincipal, CreateProjectUseCase } from "./ports.js";
+import type { BasePrincipal, CreateProjectUseCase, BaseWriteGuard } from "./ports.js";
 
 export class CreateProjectCase implements CreateProjectUseCase {
   constructor(
     private readonly db: Db,
-    private readonly service: ConstructionService
+    private readonly service: ConstructionService,
+    private readonly authorize?: BaseWriteGuard
   ) {}
 
-  execute(principal: BasePrincipal, input: CreateProjectInputDto): Promise<CreateProjectResultDto> {
-    return this.db.transaction((tx) => this.service.create(tx, principal, input));
+  execute(principal: BasePrincipal, input: CreateProjectInputDto, controlToken?: string | null): Promise<CreateProjectResultDto> {
+    return this.db.transaction(async (tx) => {
+      await this.authorize?.(tx, principal.accountId, controlToken);
+      return this.service.create(tx, principal, input);
+    });
   }
 }

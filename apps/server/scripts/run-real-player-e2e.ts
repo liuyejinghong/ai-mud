@@ -16,6 +16,10 @@ import { NpcRepository } from "../src/modules/npc/npc.repository.js";
 import { NpcService } from "../src/modules/npc/npc.service.js";
 import { GameRepository } from "../src/modules/game/game.repository.js";
 import { GameService } from "../src/modules/game/game.service.js";
+import { randomUUID } from "node:crypto";
+import { TUTORIAL_BASE_CONTENT_RELEASE } from "@ai-mud/content";
+import { createBaseOperations } from "../src/application/base/composition.js";
+import { createContentCatalog } from "../src/modules/content-catalog/catalog.service.js";
 
 interface Journal {
   entries: Array<{ idx: number; tag: string }>;
@@ -33,6 +37,9 @@ const playerEmail = "real-e2e-player@example.test";
 const playerPassword = "real-e2e-player-password";
 const returningPlayerEmail = "real-e2e-returning@example.test";
 const returningPlayerPassword = "real-e2e-returning-password";
+// R1：旧教程 e2e 不再走默认注册（已是 landing-1）；预置一个显式 legacy 基地做回归。
+const tutorialPlayerEmail = "real-e2e-tutorial@example.test";
+const tutorialPlayerPassword = "real-e2e-tutorial-password";
 const sessionSecret = "real-e2e-session-secret-that-is-at-least-32-characters";
 
 function quoteIdentifier(value: string) {
@@ -208,6 +215,41 @@ async function seedWorldAndActivationCode(databaseUrl: string) {
       hunger: 0,
       lastHungerSettledAt: new Date()
     });
+    const tutorialAccount = await accounts.createAccount({
+      email: tutorialPlayerEmail,
+      passwordHash: await auth.hashPassword(tutorialPlayerPassword)
+    });
+    const baseOps = createBaseOperations({
+      db: connection.db,
+      config: {
+        NODE_ENV: "test",
+        PLAYTEST_REGISTRATION_ENABLED: false,
+        SERVER_HOST: "127.0.0.1",
+        SERVER_PORT: 3000,
+        DATABASE_URL: databaseUrl,
+        SESSION_COOKIE_NAME: "ai_mud_session",
+        SESSION_SECRET: sessionSecret,
+        WEB_ORIGINS: ["http://127.0.0.1:5173"],
+        WORLD_TICK_ENABLED: false,
+        WORLD_TICK_INTERVAL_MS: 60_000,
+        WORLD_TICK_MAX_STEPS: 60,
+        AI_NPC_DIALOGUE_ENABLED: false,
+        AI_PROVIDER: "template",
+        DEEPSEEK_BASE_URL: "https://api.deepseek.com",
+        DEEPSEEK_MODEL: "deepseek-v4-flash",
+        AI_DIALOGUE_TIMEOUT_MS: 8_000,
+        AI_DIALOGUE_MAX_OUTPUT_TOKENS: 400,
+        TYPE_SAFE_DECISION_MODE: "off",
+        TYPE_SAFE_MODEL: "jev-latest",
+        TYPE_SAFE_BASE_URL: "https://openrouter.ai/v1",
+        AI_DAILY_TOKEN_BUDGET: null
+      },
+      provisionCatalog: createContentCatalog(TUTORIAL_BASE_CONTENT_RELEASE)
+    });
+    await baseOps.session.provision.execute(
+      { accountId: tutorialAccount.id },
+      { commandId: randomUUID() }
+    );
     return activation;
   } finally {
     await connection.close();
@@ -250,7 +292,7 @@ async function main() {
       WEB_ORIGINS: `http://127.0.0.1:${webPort}`,
       ADMIN_BOOTSTRAP_EMAIL: adminEmail,
       ADMIN_BOOTSTRAP_PASSWORD: adminPassword,
-      WORLD_TICK_ENABLED: "false",
+      WORLD_TICK_ENABLED: process.env.REAL_E2E_WORLD_TICK ?? "false",
       PLAYTEST_REGISTRATION_ENABLED: "true",
       AI_NPC_DIALOGUE_ENABLED: "false",
       TEST_GATHERING_CYCLE_MS: "200",
@@ -260,7 +302,9 @@ async function main() {
       REAL_E2E_PLAYER_EMAIL: playerEmail,
       REAL_E2E_PLAYER_PASSWORD: playerPassword,
       REAL_E2E_RETURNING_PLAYER_EMAIL: returningPlayerEmail,
-      REAL_E2E_RETURNING_PLAYER_PASSWORD: returningPlayerPassword
+      REAL_E2E_RETURNING_PLAYER_PASSWORD: returningPlayerPassword,
+      TUTORIAL_E2E_PLAYER_EMAIL: tutorialPlayerEmail,
+      TUTORIAL_E2E_PLAYER_PASSWORD: tutorialPlayerPassword
     };
 
     await runCommand(pnpmCommand(), ["--filter", "@ai-mud/shared", "build"], {
@@ -286,9 +330,20 @@ async function main() {
       stdio: "inherit"
     });
     await waitForHealth(apiBase, server);
+    // REAL_E2E_GREP：按用例名过滤（正则），供修复后只重跑受影响场景（05 §6）。
     await runCommand(
       pnpmCommand(),
-      ["exec", "playwright", "test", "-c", "playwright.config.ts", `--project=${process.env.REAL_E2E_PROJECT ?? "real-postgres"}`, "--workers=1"],
+      [
+        "exec",
+        "playwright",
+        "test",
+        "-c",
+        "playwright.config.ts",
+        `--project=${process.env.REAL_E2E_PROJECT ?? "real-postgres"}`,
+        "--workers=1",
+        ...(process.env.REAL_E2E_HEADED === "true" ? ["--headed"] : []),
+        ...(process.env.REAL_E2E_GREP ? ["--grep", process.env.REAL_E2E_GREP] : [])
+      ],
       { cwd: webRoot, env: runtimeEnv }
     );
   } finally {
