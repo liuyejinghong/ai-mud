@@ -14,6 +14,9 @@ import type {
   PowerPolicyPriority,
   RecipeTemplateDto
 } from "@ai-mud/shared";
+import { resolveRuntimeState } from "./runtimeState.js";
+import { formatSimClock, useSimClock } from "./useSimClock.js";
+import { EventsPanel } from "./EventsPanel.js";
 import "./base.css";
 
 const LANDING_RELEASE = "yudian-landing-1";
@@ -53,6 +56,27 @@ interface SourceStep {
   detail: string;
   targetNodeId?: string;
   targetRecipeId?: string;
+}
+
+// 就地展开的获取路径（D017：跨面板往返后保留展开态，状态挂在 Shell 而不是面板）。
+export interface SourceChainRef {
+  // 定位展开位置：安装位 `${siteId}:${stableId}` 或加工行 `processing:${stableId}:${itemId}`。
+  buildKey: string;
+  itemId: string;
+}
+
+// 仓库已知名目：现有库存 ＋ 配方/工程引用到的物料（可用 0 也显示芯片，D015）。
+export function knownItemIds(snapshot: BaseSnapshotDto): string[] {
+  const ids = new Set<string>();
+  for (const resource of snapshot.resources) ids.add(resource.itemId);
+  for (const recipe of snapshot.availableRecipes) {
+    for (const input of recipe.inputs) ids.add(input.itemId);
+    if (recipe.output.kind === "item") ids.add(recipe.output.itemId);
+  }
+  for (const project of snapshot.buildableProjects) {
+    for (const input of project.inputs ?? []) ids.add(input.itemId);
+  }
+  return [...ids];
 }
 
 export function deriveSourceSteps(
@@ -120,6 +144,8 @@ function describeRecipeOutput(recipe: RecipeTemplateDto, snapshot: BaseSnapshotD
   return `1 台 ${robotName(snapshot, recipe.output.templateStableId)}`;
 }
 
+// D024：投产收益行——数值收益照实显示；仓储棚/维护工位这类"解锁类"设施补一行用途，
+// 让六个安装面板的比较维度齐平（其余四个面板均有投产收益行）。
 function describeProjectBenefits(
   output: BaseSnapshotDto["buildableProjects"][number]["outputFacility"]
 ): string[] {
@@ -131,7 +157,38 @@ function describeProjectBenefits(
   }
   if (output.effects?.chargeLimitW !== undefined) benefits.push(`充电上限 +${kw(output.effects.chargeLimitW)} kW`);
   if (output.effects?.processingSlots !== undefined) benefits.push(`加工槽 +${output.effects.processingSlots}`);
+  if (benefits.length === 0) {
+    if (output.ref.stableId.includes("warehouse")) benefits.push("矿石入库与加工前置");
+    if (output.effects?.capabilities?.includes("maintenance")) {
+      benefits.push("解锁加工槽维护（每 10 批消耗 1 备件）");
+    } else if (output.effects?.capabilities?.length) {
+      benefits.push(`解锁能力：${output.effects.capabilities.join("、")}`);
+    }
+  }
   return benefits;
+}
+
+// 完工横幅用：说明"提升何物"（D024），模板不在目录里时返回 null 由调用方兜底。
+export function projectBenefitSummary(snapshot: BaseSnapshotDto, stableId: string): string | null {
+  const template = snapshot.buildableProjects.find(
+    (project) => project.definitionRef.stableId === stableId
+  );
+  if (!template?.outputFacility) return null;
+  const benefits = describeProjectBenefits(template.outputFacility);
+  return benefits.length > 0 ? benefits.join("、") : null;
+}
+
+// D014：维护动作前置（服务端 REQUIREMENTS_NOT_MET 的两条件，就地预告而非事后报错）。
+export function maintenanceReadiness(snapshot: BaseSnapshotDto): { ok: boolean; reason: string | null } {
+  const spare = snapshot.resources.find((resource) => resource.itemId === "spare_part");
+  const spareAvailable = (spare?.quantity ?? 0) - (spare?.reservedQuantity ?? 0);
+  if (!(snapshot.capabilities ?? []).includes("maintenance")) {
+    return { ok: false, reason: "需要先建成维护工位（先在维护工位安装位开工）" };
+  }
+  if (spareAvailable < 1) {
+    return { ok: false, reason: `缺 1 备件（可用 ${Math.max(0, spareAvailable)}），先加工备件` };
+  }
+  return { ok: true, reason: null };
 }
 
 // ---------- 教程目标派生（01 §5：进度由服务端真实事实派生，非线性不判退步） ----------
@@ -352,16 +409,31 @@ export interface LandingShellProps {
   onLogout: () => void;
   accountEmail: string | null;
   feedback: string | null;
+  // D013 事件记录：会话 CSRF（null 时面板不挂载）；快照事实变化时刷新。
+  csrfToken?: string | null;
+  eventsRefreshKey?: number | string;
+  // D010：接管失败的可见原因（null=无）；重试入口即顶栏"接管"按钮。
+  controlNotice?: string | null;
 }
+
+// 充电吞吐的实测口径（D021/R03-F05：单机实测 ≈0.26–0.33 kW，总上限是电路能力不是实际吞吐）。
+const PER_DEVICE_CHARGE_KW = 0.3;
 
 export function LandingShell(props: LandingShellProps) {
   const { snapshot } = props;
   const goal = useMemo(() => deriveGoal(snapshot), [snapshot]);
+  const runtime = resolveRuntimeState(snapshot);
+  const frozen = runtime.frozenAwaitingForeground;
+  const maintenance = maintenanceReadiness(snapshot);
+  // D011-low：运行态时钟本地插值（按当前 speed 走字，快照到达即校准）。
+  const clock = useSimClock(snapshot.simTime, snapshot.speed, runtime.effectivelyRunning);
   const [mobileView, setMobileView] = useState<"scene" | "operation">(
     props.selection.kind === "none" ? "scene" : "operation"
   );
   // 缺料来源导航的返回上下文：从某工程进入来源链后，任意面板可一步回到原工程。
   const [sourceOriginSiteId, setSourceOriginSiteId] = useState<string | null>(null);
+  // D017：获取路径展开态挂在 Shell 层，"返回原工程"后不再收起。
+  const [sourceChain, setSourceChain] = useState<SourceChainRef | null>(null);
   const selectForOperation = (selection: LandingSelection) => {
     setMobileView("operation");
     props.onSelect(selection);
@@ -369,11 +441,14 @@ export function LandingShell(props: LandingShellProps) {
   const originSite = sourceOriginSiteId
     ? snapshot.sites.find((site) => site.siteId === sourceOriginSiteId) ?? null
     : null;
-  const isPaused = snapshot.timeMode === "paused";
+  const isPaused = runtime.timePaused;
   const sites = snapshot.sites;
   const nodes = snapshot.resourceNodes ?? [];
   const extractionJobs = snapshot.extractionJobs ?? [];
   const slots = snapshot.productionSlots ?? [];
+  const chargeableDevices = snapshot.devices.filter(
+    (device) => device.status === "idle" || device.status === "charging"
+  ).length;
 
   return (
     <main className="landing-shell">
@@ -389,22 +464,31 @@ export function LandingShell(props: LandingShellProps) {
           <span className="landing-dim">负载 {kw(snapshot.power.loadW)} kW</span>
         </div>
         <div className="landing-clock" aria-label="基地时间">
-          <span>{isPaused ? "暂停 · " : ""}{formatSimClock(snapshot.simTime)}</span>
-          {isPaused ? (
+          {isPaused ? <span className="landing-dim">暂停 · </span> : null}
+          {frozen ? (
+            <strong className="landing-frozen-badge" role="status">已暂停：等待前台接管</strong>
+          ) : null}
+          <span>{formatSimClock(clock)}</span>
+          {isPaused || (frozen && props.canControl) ? (
             <button type="button" className="landing-chip-button" disabled={props.isBusy || !props.canControl}
               onClick={() => props.onClockCommand("resume")}>恢复</button>
-          ) : (
+          ) : !frozen ? (
             <button type="button" className="landing-chip-button" disabled={props.isBusy || !props.canControl}
               onClick={() => props.onClockCommand("pause")}>暂停</button>
-          )}
+          ) : null}
           {[1, 2, 4].map((speed) => (
             <button key={speed} type="button" className="landing-chip-button"
-              aria-pressed={!isPaused && snapshot.speed === speed}
-              disabled={props.isBusy || !props.canControl || isPaused}
+              aria-pressed={runtime.effectivelyRunning && snapshot.speed === speed}
+              disabled={props.isBusy || !props.canControl || !runtime.effectivelyRunning}
               onClick={() => props.onClockCommand("set_speed", speed)}>×{speed}</button>
           ))}
           {!props.canControl ? (
             <button type="button" className="landing-chip-button" onClick={props.onAcquireControl}>接管</button>
+          ) : null}
+          {props.controlNotice ? (
+            <span className="landing-control-notice" role="alert" title={props.controlNotice}>
+              接管失败：{props.controlNotice}；可再点一次「接管」重试。
+            </span>
           ) : null}
         </div>
         <div className="landing-account">
@@ -452,7 +536,13 @@ export function LandingShell(props: LandingShellProps) {
           <h2 className="landing-map-title">着陆场</h2>
           <div className="landing-map-grid">
             {sites.map((site) => (
-              <SiteCard key={site.siteId} site={site} onSelect={selectForOperation} selected={props.selection} />
+              <SiteCard
+                key={site.siteId}
+                site={site}
+                goToProcessing={site.state === "built" && site.siteKey === "install_processing"}
+                onSelect={selectForOperation}
+                selected={props.selection}
+              />
             ))}
           </div>
           <h2 className="landing-map-title">矿点</h2>
@@ -463,13 +553,14 @@ export function LandingShell(props: LandingShellProps) {
           </div>
           <div className="landing-fleet" aria-label="设备队">
             {snapshot.devices.map((device) => (
-              <DeviceChip key={device.deviceId} device={device} onSelect={selectForOperation} selected={props.selection} />
+              <DeviceChip key={device.deviceId} device={device} frozen={frozen} onSelect={selectForOperation} selected={props.selection} />
             ))}
           </div>
         </div>
-        <aside className="landing-panel" aria-label="对象操作">
+        <aside className="landing-panel has-overflow-affordance" aria-label="对象操作">
           <button type="button" className="landing-back" onClick={() => {
             setSourceOriginSiteId(null);
+            setSourceChain(null);
             props.onSelect({ kind: "none" });
             setMobileView("scene");
           }}>
@@ -487,11 +578,21 @@ export function LandingShell(props: LandingShellProps) {
           {props.feedback ? (
             <p className="landing-feedback" role="status">{props.feedback}</p>
           ) : null}
-          <LandingPanel {...props} onSelect={selectForOperation} onOpenSource={setSourceOriginSiteId} />
+          <LandingPanel
+            {...props}
+            onSelect={selectForOperation}
+            onOpenSource={setSourceOriginSiteId}
+            sourceChain={sourceChain}
+            onToggleSource={setSourceChain}
+          />
+          <EventsPanel csrfToken={props.csrfToken ?? null} refreshKey={props.eventsRefreshKey} />
         </aside>
       </section>
 
       <footer className="landing-queue" aria-label="进行中的工作">
+        {frozen ? (
+          <p className="landing-queue-paused-note" role="status">基地时间已暂停（等待前台接管），以下工作全部挂起。</p>
+        ) : null}
         {snapshot.projects
           .filter((project) => project.status === "active" || project.status === "blocked" || project.status === "paused")
           .map((project) => {
@@ -505,6 +606,7 @@ export function LandingShell(props: LandingShellProps) {
                     : "收尾中"}
                   {currentStep?.blockedReason ? ` · ${describeBlockedReason(currentStep.blockedReason)}` : ""}
                 </span>
+                {frozen ? <span className="landing-queue-paused">已暂停</span> : null}
                 <button type="button" className="landing-chip-button" disabled={props.isBusy}
                   onClick={() => props.onCancelProject(project.projectId)}>取消</button>
               </div>
@@ -521,6 +623,7 @@ export function LandingShell(props: LandingShellProps) {
                   : `勘察 ${job.phaseWorkDone}/2`}
                 {job.blockedReason ? ` · ${describeBlockedReason(job.blockedReason)}` : ""}
               </span>
+              {frozen ? <span className="landing-queue-paused">已暂停</span> : null}
               {job.status === "active" ? (
                 <>
                   <button type="button" className="landing-chip-button" disabled={props.isBusy}
@@ -550,6 +653,7 @@ export function LandingShell(props: LandingShellProps) {
                 产出 {job.outputsDone}/{job.outputsPlanned}
                 {job.blockedReason ? ` · ${describeBlockedReason(job.blockedReason)}` : ""}
               </span>
+              {frozen ? <span className="landing-queue-paused">已暂停</span> : null}
               {job.status === "active" || job.status === "blocked" ? (
                 <button type="button" className="landing-chip-button" disabled={props.isBusy}
                   onClick={() => props.onPauseJob(job.jobId)}>暂停</button>
@@ -565,8 +669,11 @@ export function LandingShell(props: LandingShellProps) {
           <div key={slot.slotId} className="landing-queue-card">
             <span className="landing-queue-title">{slot.siteName} · 维护窗口</span>
             <span className="landing-dim">第 {slot.batchesSinceMaintenance}/10 批{slot.maintenanceBlocked ? "，已停机" : ""}</span>
-            <button type="button" className="landing-chip-button" disabled={props.isBusy}
+            {frozen ? <span className="landing-queue-paused">已暂停</span> : null}
+            <button type="button" className="landing-chip-button"
+              disabled={props.isBusy || !maintenance.ok}
               onClick={() => props.onMaintain(slot.siteId)}>维护（1 备件）</button>
+            {!maintenance.ok ? <span className="landing-hint is-short">{maintenance.reason}</span> : null}
           </div>
         ))}
         {queueEmpty(props.snapshot) ? (
@@ -607,13 +714,38 @@ const GROUP_LABELS: Record<string, string> = {
 function SiteCard({
   site,
   selected,
-  onSelect
+  onSelect,
+  goToProcessing
 }: {
   site: BaseSiteDto;
   selected: LandingSelection;
   onSelect: (selection: LandingSelection) => void;
+  goToProcessing?: boolean;
 }) {
   const isSel = selected.kind === "site" && selected.siteId === site.siteId;
+  if (goToProcessing) {
+    // D015：已建成的加工间在地图行直接给"前往加工"入口（不再只有设施信息面板）。
+    return (
+      <div className={`landing-card is-composite landing-site-built${isSel ? " is-selected" : ""}`}>
+        <button
+          type="button"
+          className="landing-card-main"
+          aria-pressed={isSel}
+          onClick={() => onSelect({ kind: "site", siteId: site.siteId })}
+        >
+          <span className="landing-card-title">{site.name}</span>
+          <span className="landing-dim">{site.note ?? "已运行"}</span>
+        </button>
+        <button
+          type="button"
+          className="landing-chip-button landing-card-goto"
+          onClick={() => onSelect({ kind: "processing" })}
+        >
+          前往加工
+        </button>
+      </div>
+    );
+  }
   return (
     <button
       type="button"
@@ -665,14 +797,18 @@ function NodeCard({
 function DeviceChip({
   device,
   selected,
-  onSelect
+  onSelect,
+  frozen
 }: {
   device: BaseDeviceDto;
   selected: LandingSelection;
   onSelect: (selection: LandingSelection) => void;
+  frozen?: boolean;
 }) {
   const isSel = selected.kind === "device" && selected.deviceId === device.deviceId;
   const busy = device.currentAssignment !== null || device.currentExtractionJobId != null;
+  // D010：基地冻结时不出工——机组状态如实显示"已暂停"，不再与"运行中"矛盾。
+  const statusLabel = frozen && busy ? "已暂停" : STATUS_LABELS[device.status];
   return (
     <button
       type="button"
@@ -680,8 +816,8 @@ function DeviceChip({
       aria-pressed={isSel}
       onClick={() => onSelect({ kind: "device", deviceId: device.deviceId })}
     >
-      {GROUP_LABELS[device.groupId] ?? device.groupId} · {STATUS_LABELS[device.status]}
-      {busy ? " · 出工中" : ""} · {device.batteryWh}Wh
+      {GROUP_LABELS[device.groupId] ?? device.groupId} · {statusLabel}
+      {busy && !frozen ? " · 出工中" : ""} · {device.batteryWh}Wh
     </button>
   );
 }
@@ -695,9 +831,14 @@ const STATUS_LABELS: Record<string, string> = {
 
 // ---------- 右侧操作面板 ----------
 
-function LandingPanel(
-  props: LandingShellProps & { onOpenSource?: ((siteId: string) => void) | undefined }
-) {
+interface PanelExtras {
+  onOpenSource?: ((siteId: string) => void) | undefined;
+  // D017：获取路径展开态由 Shell 持有，往返后保留。
+  sourceChain?: SourceChainRef | null;
+  onToggleSource?: ((next: SourceChainRef | null) => void) | undefined;
+}
+
+function LandingPanel(props: LandingShellProps & PanelExtras) {
   const { selection, snapshot } = props;
   switch (selection.kind) {
     case "site":
@@ -706,6 +847,8 @@ function LandingPanel(
           {...props}
           site={snapshot.sites.find((site) => site.siteId === selection.siteId) ?? null}
           onOpenSource={props.onOpenSource}
+          sourceChain={props.sourceChain ?? null}
+          onToggleSource={props.onToggleSource}
         />
       );
     case "node": {
@@ -747,25 +890,30 @@ function NoSelectionPanel({ snapshot, onSelect }: { snapshot: BaseSnapshotDto; o
         </button>
       </div>
       <h3>仓库</h3>
+      {/* D023：术语首现注释——"已占用"与下单时的"预留"是同一件事。 */}
+      <p className="landing-dim landing-hint">可用＝总量−已占用；已占用＝已为进行中的工程或工单预留。</p>
       <ul className="landing-inventory">
-        {snapshot.resources.map((resource) => (
-          <li key={resource.itemId}>
-            <button type="button" className="landing-chip" onClick={() => onSelect({ kind: "resource", itemId: resource.itemId })}>
-              {itemName(snapshot, resource.itemId, resource.name)} 可用 {resource.quantity - resource.reservedQuantity}
-              {resource.reservedQuantity > 0 ? `（总量 ${resource.quantity}，占用 ${resource.reservedQuantity}）` : ""}
-            </button>
-          </li>
-        ))}
+        {knownItemIds(snapshot).map((itemId) => {
+          const resource = snapshot.resources.find((entry) => entry.itemId === itemId);
+          const available = (resource?.quantity ?? 0) - (resource?.reservedQuantity ?? 0);
+          return (
+            <li key={itemId}>
+              <button type="button" className="landing-chip" onClick={() => onSelect({ kind: "resource", itemId })}>
+                {itemName(snapshot, itemId, resource?.name)} 可用 {available}
+                {resource && resource.reservedQuantity > 0
+                  ? `（总量 ${resource.quantity}，已占用 ${resource.reservedQuantity}）`
+                  : ""}
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
 }
 
-function SitePanel(
-  props: LandingShellProps & { site: BaseSiteDto | null; onOpenSource?: ((siteId: string) => void) | undefined }
-) {
-  const { site, snapshot } = props;
-  const [sourceFor, setSourceFor] = useState<{ buildKey: string; itemId: string } | null>(null);
+function SitePanel(props: LandingShellProps & PanelExtras & { site: BaseSiteDto | null }) {
+  const { site, snapshot, sourceChain, onToggleSource } = props;
   const [builderCounts, setBuilderCounts] = useState<Record<string, 1 | 2>>({});
   if (!site) {
     return <div className="landing-panel-body"><p className="landing-dim">站点不存在。</p></div>;
@@ -866,8 +1014,8 @@ function SitePanel(
                         type="button"
                         className="landing-chip-button"
                         onClick={() => {
-                          const close = sourceFor?.buildKey === buildKey && sourceFor.itemId === input.itemId;
-                          setSourceFor(close ? null : { buildKey, itemId: input.itemId });
+                          const close = sourceChain?.buildKey === buildKey && sourceChain.itemId === input.itemId;
+                          onToggleSource?.(close ? null : { buildKey, itemId: input.itemId });
                           if (!close) props.onOpenSource?.(site.siteId);
                         }}
                       >
@@ -883,7 +1031,9 @@ function SitePanel(
                   <li key={index} className="is-short">{BLOCKER_LABELS[blocker.type]}{blocker.facilityId ? `：${facilityName(snapshot, blocker.facilityId)}` : ""}</li>
                 ))}
             </ul>
-            {sourceFor?.buildKey === buildKey ? <SourceChain itemId={sourceFor.itemId} snapshot={snapshot} onSelect={props.onSelect} /> : null}
+            {sourceChain?.buildKey === buildKey ? (
+              <SourceChain itemId={sourceChain.itemId} snapshot={snapshot} onSelect={props.onSelect} />
+            ) : null}
           </div>
         );
       })}
@@ -975,6 +1125,9 @@ function NodePanel(props: LandingShellProps & { node: BaseResourceNodeDto | null
               onClick={() => props.onSurvey(node.nodeId, surveyorId)}>
               开始勘探
             </button>
+            {surveyorId === "" && !props.isBusy ? (
+              <p className="landing-hint is-short" role="status">先在上方选一台空闲望山。</p>
+            ) : null}
           </>
         )}
       </div>
@@ -1052,6 +1205,20 @@ function NodePanel(props: LandingShellProps & { node: BaseResourceNodeDto | null
     );
   }
   const maxBatches = Math.min(10, Math.floor((node.remainingQuantity ?? 0) / 4));
+  // D014：下单按钮就地禁用时要给出现场原因与下一步（不再让玩家猜为什么点不动）。
+  const selectedBuilders = builderIds ?? [];
+  const miningSubmitReason =
+    maxBatches < 1
+      ? "矿点余量不足一批（每批 4 矿）。"
+      : builders.length === 0
+        ? "还没有可出工的筑垒。"
+        : selectedBuilders.length === 0
+          ? "先勾选 1–2 台空闲筑垒。"
+          : haulerId === ""
+            ? "再选 1 台驮运负责运回。"
+            : null;
+  const miningSubmitDisabled =
+    props.isBusy || selectedBuilders.length === 0 || selectedBuilders.length > 2 || haulerId === "" || maxBatches < 1;
   return (
     <div className="landing-panel-body">
       <h3>{node.itemId ? itemName(snapshot, node.itemId, node.itemName ?? undefined) : "未知物料"} · 采矿运输</h3>
@@ -1093,7 +1260,7 @@ function NodePanel(props: LandingShellProps & { node: BaseResourceNodeDto | null
       <button
         type="button"
         className="landing-primary"
-        disabled={props.isBusy || (builderIds ?? []).length === 0 || (builderIds ?? []).length > 2 || haulerId === "" || maxBatches < 1}
+        disabled={miningSubmitDisabled}
         onClick={() =>
           props.onCreateMining({
             nodeId: node.nodeId,
@@ -1103,8 +1270,11 @@ function NodePanel(props: LandingShellProps & { node: BaseResourceNodeDto | null
           })
         }
       >
-        下采矿单（预留 {batches * 4} 矿）
+        下采矿单（为本工程预留 {batches * 4} 矿）
       </button>
+      {!miningSubmitDisabled || miningSubmitReason === null ? null : (
+        <p className="landing-hint is-short" role="status">{miningSubmitReason}</p>
+      )}
     </div>
   );
 }
@@ -1129,19 +1299,26 @@ function DevicePanel({ device }: { device: BaseDeviceDto | null }) {
 function ResourcePanel(props: LandingShellProps & { itemId: string }) {
   const resource = props.snapshot.resources.find((entry) => entry.itemId === props.itemId);
   if (!resource) {
-    return <div className="landing-panel-body"><p className="landing-dim">物资不存在。</p></div>;
+    // D015：可用 0 的已知名目（配方/工程引用但仓库没有）也能打开详情并看到获取路径。
+    return (
+      <div className="landing-panel-body">
+        <h3>{itemName(props.snapshot, props.itemId)}</h3>
+        <p className="landing-dim">可用 0（仓库当前没有库存）。</p>
+        <SourceChain itemId={props.itemId} snapshot={props.snapshot} onSelect={props.onSelect} />
+      </div>
+    );
   }
   return (
     <div className="landing-panel-body">
       <h3>{itemName(props.snapshot, resource.itemId, resource.name)}</h3>
       <p className="landing-dim">
-        可用 {resource.quantity - resource.reservedQuantity}（总量 {resource.quantity}，工程占用 {resource.reservedQuantity}）
+        可用 {resource.quantity - resource.reservedQuantity}（总量 {resource.quantity}，已占用 {resource.reservedQuantity}）
       </p>
       <p className="landing-copy">{resource.description}</p>
       {resource.reservedQuantity > 0 ? (
         <ul className="landing-attrs">
           {resource.reservationSources.map((source) => (
-            <li key={source.id}><span className="landing-dim">{source.name}</span> 占用 {source.quantity}</li>
+            <li key={source.id}><span className="landing-dim">{source.name}</span> 预留 {source.quantity}</li>
           ))}
         </ul>
       ) : null}
@@ -1150,8 +1327,8 @@ function ResourcePanel(props: LandingShellProps & { itemId: string }) {
   );
 }
 
-function ProcessingPanel(props: LandingShellProps) {
-  const { snapshot } = props;
+function ProcessingPanel(props: LandingShellProps & PanelExtras) {
+  const { snapshot, sourceChain, onToggleSource } = props;
   const [batches, setBatches] = useState<Record<string, number>>({});
   const processingRecipes = snapshot.availableRecipes.filter(
     (recipe) => recipe.requiredCapability === "processing"
@@ -1161,13 +1338,20 @@ function ProcessingPanel(props: LandingShellProps) {
   );
   const slots = snapshot.productionSlots ?? [];
   const processingBuilt = slots.length > 0 || snapshot.sites.some((site) => site.siteKey === "install_processing" && site.state === "built");
+  const maintenance = maintenanceReadiness(snapshot);
 
   const renderRecipe = (recipe: RecipeTemplateDto) => {
     const count = batches[recipe.ref.stableId] ?? 1;
-    const shortage = recipe.inputs.some((input) => {
+    // D015：配方级缺料就地给出"可用 N · 缺 M ＋来源链接"，与项目级"准备材料"同一套组件。
+    const inputs = recipe.inputs.map((input) => {
       const resource = snapshot.resources.find((entry) => entry.itemId === input.itemId);
-      return (resource?.quantity ?? 0) - (resource?.reservedQuantity ?? 0) < input.quantity * count;
+      const available = Math.max(0, (resource?.quantity ?? 0) - (resource?.reservedQuantity ?? 0));
+      const need = input.quantity * count;
+      return { itemId: input.itemId, available, need, short: available < need };
     });
+    const shortage = inputs.some((input) => input.short);
+    const missing = inputs.filter((input) => input.short);
+    const sourceKeyFor = (itemId: string) => `processing:${recipe.ref.stableId}:${itemId}`;
     return (
       <div key={recipe.ref.stableId} className="landing-build-option">
         <div className="landing-recipe-head">
@@ -1202,6 +1386,36 @@ function ProcessingPanel(props: LandingShellProps) {
             {shortage ? "缺料" : "下单"}
           </button>
         </div>
+        {shortage ? (
+          <div className="landing-recipe-shortage">
+            {missing.map((input) => {
+              const key = sourceKeyFor(input.itemId);
+              const open = sourceChain?.buildKey === key;
+              return (
+                <div key={input.itemId} className="landing-recipe-missing">
+                  <span className="is-short">
+                    {itemName(snapshot, input.itemId)} 可用 {input.available} · 缺 {input.need - input.available}
+                  </span>
+                  <button
+                    type="button"
+                    className="landing-chip-button"
+                    aria-expanded={open}
+                    onClick={() => onToggleSource?.(open ? null : { buildKey: key, itemId: input.itemId })}
+                  >
+                    准备材料
+                  </button>
+                </div>
+              );
+            })}
+            {missing.some((input) => sourceChain?.buildKey === sourceKeyFor(input.itemId)) ? (
+              <SourceChain
+                itemId={sourceChain!.itemId}
+                snapshot={snapshot}
+                onSelect={props.onSelect}
+              />
+            ) : null}
+          </div>
+        ) : null}
       </div>
     );
   };
@@ -1215,10 +1429,16 @@ function ProcessingPanel(props: LandingShellProps) {
           {slot.maintenanceBlocked ? " · 待维护停机" : ""}
           {slot.batchesSinceMaintenance >= 8 && !slot.maintenanceBlocked ? " · 可维护" : ""}
           {(slot.batchesSinceMaintenance >= 8 || slot.maintenanceBlocked) ? (
-            <button type="button" className="landing-chip-button" disabled={props.isBusy}
+            <button type="button" className="landing-chip-button"
+              disabled={props.isBusy || !maintenance.ok}
+              aria-disabled={!maintenance.ok}
+              title={!maintenance.ok ? maintenance.reason ?? undefined : undefined}
               onClick={() => props.onMaintain(slot.siteId)}>
               维护（1 备件）
             </button>
+          ) : null}
+          {(slot.batchesSinceMaintenance >= 8 || slot.maintenanceBlocked) && !maintenance.ok ? (
+            <span className="landing-hint is-short">{maintenance.reason}</span>
           ) : null}
         </p>
       ))}
@@ -1229,7 +1449,7 @@ function ProcessingPanel(props: LandingShellProps) {
       {manualRecipes.length > 0 ? (
         <>
           <h3>着陆器手工恢复</h3>
-          <p className="landing-dim">不需要加工间；加工槽全部停机且无备件时的公开恢复路径。</p>
+          <p className="landing-dim">不需要加工间；加工槽全部停机且无备件时的恢复路径。</p>
           {manualRecipes.map(renderRecipe)}
         </>
       ) : null}
@@ -1240,6 +1460,10 @@ function ProcessingPanel(props: LandingShellProps) {
 function OverviewPanel(props: LandingShellProps) {
   const { snapshot } = props;
   const power = snapshot.power;
+  // D021：充电吞吐按实测口径显示（每机约 0.3 kW × 可充台数），不再只标总上限造成高估。
+  const chargeable = snapshot.devices.filter(
+    (device) => device.status === "idle" || device.status === "charging"
+  ).length;
   return (
     <div className="landing-panel-body">
       <h3>生产总览</h3>
@@ -1247,7 +1471,10 @@ function OverviewPanel(props: LandingShellProps) {
         <li><span className="landing-dim">太阳能峰值</span> {kw(power.generationWPeak)} kW</li>
         <li><span className="landing-dim">应急电源</span> {kw(power.emergencyGenerationW ?? 0)} kW</li>
         <li><span className="landing-dim">储电</span> {kwh(power.storageWh)}/{kwh(power.storageCapacityWh)} kWh</li>
-        <li><span className="landing-dim">充电上限</span> {kw(power.chargeLimitW ?? 0)} kW</li>
+        <li>
+          <span className="landing-dim">充电吞吐</span> 每机约 {PER_DEVICE_CHARGE_KW} kW × 可充 {chargeable} 台
+          （电路上限 {kw(power.chargeLimitW ?? 0)} kW）
+        </li>
       </ul>
       <div className="landing-panel-actions">
         <span className="landing-dim">优先级</span>
@@ -1275,13 +1502,4 @@ function OverviewPanel(props: LandingShellProps) {
       </p>
     </div>
   );
-}
-
-function formatSimClock(simTime: string): string {
-  const date = new Date(simTime);
-  if (Number.isNaN(date.getTime())) return simTime;
-  const hh = String(date.getUTCHours()).padStart(2, "0");
-  const mm = String(date.getUTCMinutes()).padStart(2, "0");
-  const phase = date.getUTCHours() >= 6 && date.getUTCHours() < 18 ? "昼间" : "夜间";
-  return `${hh}:${mm} · ${phase}`;
 }

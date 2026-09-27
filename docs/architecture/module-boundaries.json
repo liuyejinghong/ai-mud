@@ -2938,6 +2938,41 @@
       "layer": "test",
       "scope": "test",
       "note": "D010/D013 真 PG 集成（buildApp 组合根）：幽灵租约 TTL 释放、接管唤醒无需 mode 切换、409 原因、事件端点（fix/design-review-20260927-a）"
+    },
+    {
+      "path": "apps/web/src/features/base/runtimeState.ts",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "D010 冻结契约 2：effectiveRunning/pauseReason 消费与回退语义（字段缺失回退 timeMode）"
+    },
+    {
+      "path": "apps/web/src/features/base/useSimClock.ts",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "D011-low：运行态时钟本地插值显示（纯显示层，不改快照协议）"
+    },
+    {
+      "path": "apps/web/src/features/base/EventsPanel.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "D013-ui：事件记录面板（消费 GET /base/events 契约 1；404/失败时隐藏面板）"
+    },
+    {
+      "path": "apps/web/src/features/base/runtimeState.test.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "D010 运行态回退语义测试（MOCK fixture）"
+    },
+    {
+      "path": "apps/web/src/features/base/EventsPanel.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "D013 事件面板契约/降级测试（mock 端点）"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",

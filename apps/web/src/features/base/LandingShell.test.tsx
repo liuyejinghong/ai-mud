@@ -1,6 +1,7 @@
 // R1 D 包：LandingShell 关键状态（02 §3/§5）：开局货单视图、缺料来源链、
 // 目标派生的事实依据、采矿表单门控。数据用 fixture 快照（纯 UI 行为，标 MOCK）。
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+// design-review-20260927 B 线：D010/D011/D013/D014/D015/D017/D021/D023/D024/D025 行为锁定。
+import { act, render, screen, fireEvent, cleanup, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BaseSnapshotDto } from "@ai-mud/shared";
 import { deriveGoal, deriveSourceSteps, LandingShell, type LandingShellProps } from "./LandingShell.js";
@@ -417,4 +418,272 @@ describe("LandingShell", () => {
     expect(screen.getAllByText(/获取路径/)).toHaveLength(1);
   });
 
+});
+
+// ---------- design-review-20260927 B 线修复（FIX-PLAN B 线任务） ----------
+describe("LandingShell > design-review B 线", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("D010：冻结期顶栏如实显示『已暂停：等待前台接管』，机组/队列不再写作业中", () => {
+    const snap = snapshot({
+      timeMode: "running",
+      speed: 2,
+      // 冻结契约 2 字段（A 线下发；本地按契约 mock）：
+      effectiveRunning: false,
+      pauseReason: "foreground-required"
+    } as Partial<BaseSnapshotDto>);
+    snap.extractionJobs = [{
+      jobId: "job-1", kind: "mine", status: "active", nodeId: "n-1", nodeName: "北坡磁异常",
+      batchesPlanned: 1, batchesExtracted: 0, batchesDelivered: 0, phase: "mining",
+      phaseWorkDone: 1, phaseWorkRequired: 2, builderOperatorIds: ["o-1"],
+      haulerOperatorId: null, surveyorOperatorId: null, blockedReason: null
+    }];
+    snap.devices = [{
+      deviceId: "d-1", operatorId: "o-1", name: "筑垒", groupId: "engineering", description: "",
+      status: "working", batteryWh: 108, batteryCapacityWh: 180,
+      currentAssignment: null, currentExtractionJobId: "job-1"
+    }];
+    render(<LandingShell {...props({ snapshot: snap, canControl: true })} />);
+    expect(screen.getByText("已暂停：等待前台接管")).toBeTruthy();
+    // 顶栏时钟区不再提供"暂停"（冻结期只能恢复/接管）；队列卡上的单任务"暂停"不受影响。
+    const clockArea = screen.getByLabelText("基地时间");
+    expect(within(clockArea).queryByRole("button", { name: "暂停" })).toBeNull();
+    expect(within(clockArea).getByRole("button", { name: "恢复" })).toBeTruthy();
+    expect((within(clockArea).getByRole("button", { name: "×2" }) as HTMLButtonElement).disabled).toBe(true);
+    // 机组状态与队列卡不再矛盾：显示"已暂停"而非"作业 · 出工中"。
+    expect(screen.getByText("筑垒 · 已暂停 · 108Wh")).toBeTruthy();
+    expect(screen.getByText("已暂停")).toBeTruthy(); // 队列卡标记
+  });
+
+  it("D010：快照缺 effectiveRunning 字段时回退现有行为（running 显示暂停按钮）", () => {
+    const snap = snapshot({ timeMode: "running", speed: 1 });
+    render(<LandingShell {...props({ snapshot: snap, canControl: true })} />);
+    expect(screen.queryByText(/等待前台接管/)).toBeNull();
+    expect(screen.getByRole("button", { name: "暂停" })).toBeTruthy();
+    const speed1 = screen.getByRole("button", { name: "×1" }) as HTMLButtonElement;
+    expect(speed1.disabled).toBe(false);
+    expect(speed1.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("D010：接管失败显示可见原因，接管按钮保留可重试", () => {
+    const snap = snapshot({ timeMode: "running", speed: 1 });
+    render(<LandingShell {...props({ snapshot: snap, canControl: false, controlNotice: "已有其他前台会话" })} />);
+    expect(screen.getByRole("alert").textContent).toContain("接管失败：已有其他前台会话");
+    expect(screen.getByRole("button", { name: "接管" })).toBeTruthy();
+  });
+
+  it("D011：运行态时钟本地插值——×4 下每 15 秒走 1 基地分钟，不依赖快照到达", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-27T00:00:00.000Z"));
+    const snap = snapshot({ timeMode: "running", speed: 4 });
+    render(<LandingShell {...props({ snapshot: snap, canControl: true })} />);
+    expect(screen.getByText("08:00 · 昼间")).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    expect(screen.getByText("08:01 · 昼间")).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    expect(screen.getByText("08:02 · 昼间")).toBeTruthy();
+  });
+
+  it("D011：暂停态时钟停针，不插值", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-27T00:00:00.000Z"));
+    const snap = snapshot({ timeMode: "paused", speed: 4 });
+    render(<LandingShell {...props({ snapshot: snap, canControl: true })} />);
+    expect(screen.getByText("08:00 · 昼间")).toBeTruthy();
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(screen.getByText("08:00 · 昼间")).toBeTruthy();
+  });
+
+  it("D014：维护窗口前置就地可见——未建维护工位时按钮禁用并给出原因与下一步", () => {
+    const snap = snapshot({
+      productionSlots: [{
+        slotId: "slot-1", siteId: "s-processing", siteName: "加工间", slotIndex: 0,
+        batchesSinceMaintenance: 9, maintenanceBlocked: true, activeJobId: null
+      }],
+      resources: [{ itemId: "spare_part", name: "备件", quantity: 0, reservedQuantity: 0, reservationSources: [], description: "" }],
+      capabilities: []
+    });
+    render(<LandingShell {...props({ snapshot: snap })} />);
+    const maintain = screen.getAllByRole("button", { name: "维护（1 备件）" })[0] as HTMLButtonElement;
+    expect(maintain.disabled).toBe(true);
+    expect(screen.getByText(/需要先建成维护工位/)).toBeTruthy();
+  });
+
+  it("D014：有维护工位但缺备件时同样就地禁用＋缺口数值", () => {
+    const snap = snapshot({
+      productionSlots: [{
+        slotId: "slot-1", siteId: "s-processing", siteName: "加工间", slotIndex: 0,
+        batchesSinceMaintenance: 9, maintenanceBlocked: true, activeJobId: null
+      }],
+      resources: [{ itemId: "spare_part", name: "备件", quantity: 0, reservedQuantity: 0, reservationSources: [], description: "" }],
+      capabilities: ["maintenance"]
+    });
+    render(<LandingShell {...props({ snapshot: snap })} />);
+    const maintain = screen.getAllByRole("button", { name: "维护（1 备件）" })[0] as HTMLButtonElement;
+    expect(maintain.disabled).toBe(true);
+    expect(screen.getByText(/缺 1 备件（可用 0）/)).toBeTruthy();
+  });
+
+  it("D014：维护条件齐备时按钮可用", () => {
+    const snap = snapshot({
+      productionSlots: [{
+        slotId: "slot-1", siteId: "s-processing", siteName: "加工间", slotIndex: 0,
+        batchesSinceMaintenance: 9, maintenanceBlocked: true, activeJobId: null
+      }],
+      resources: [{ itemId: "spare_part", name: "备件", quantity: 2, reservedQuantity: 0, reservationSources: [], description: "" }],
+      capabilities: ["maintenance"]
+    });
+    render(<LandingShell {...props({ snapshot: snap })} />);
+    const maintain = screen.getAllByRole("button", { name: "维护（1 备件）" })[0] as HTMLButtonElement;
+    expect(maintain.disabled).toBe(false);
+  });
+
+  it("D014：下采矿单条件不满足时现场给出原因（先选筑垒/驮运）", () => {
+    const snap = snapshot({
+      resourceNodes: [{
+        nodeId: "n-1", nodeKey: "iron_north", name: "北坡磁异常", discovered: true,
+        itemId: "iron_ore", itemName: "铁矿", remainingQuantity: 200, reservedQuantity: 0
+      }],
+      devices: [
+        { deviceId: "d-1", operatorId: "o-1", name: "筑垒", groupId: "engineering", description: "", status: "idle", batteryWh: 108, batteryCapacityWh: 180, currentAssignment: null, currentExtractionJobId: null },
+        { deviceId: "d-2", operatorId: "o-2", name: "驮运", groupId: "transport", description: "", status: "idle", batteryWh: 72, batteryCapacityWh: 120, currentAssignment: null, currentExtractionJobId: null }
+      ]
+    });
+    render(<LandingShell {...props({ snapshot: snap, selection: { kind: "node", nodeId: "n-1" } })} />);
+    expect((screen.getByText(/下采矿单/) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("先勾选 1–2 台空闲筑垒。")).toBeTruthy();
+  });
+
+  it("D015：配方行缺料就地显示可用/缺 N，准备材料展开获取路径（复用项目级组件）", () => {
+    const snap = snapshot({
+      sites: [
+        { siteId: "s-lander", siteKey: "lander", name: "着陆器", state: "built", note: null, description: null, attributes: [] },
+        { siteId: "s-processing", siteKey: "install_processing", name: "加工间", state: "built", note: "冶炼与材料制造", description: null, attributes: [] }
+      ],
+      productionSlots: [{
+        slotId: "slot-1", siteId: "s-processing", siteName: "加工间", slotIndex: 0,
+        batchesSinceMaintenance: 0, maintenanceBlocked: false, activeJobId: null
+      }],
+      resources: [{ itemId: "iron_ore", name: "铁矿", quantity: 0, reservedQuantity: 0, reservationSources: [], description: "" }],
+      displayNames: { items: { iron_ingot: "铁料" }, facilities: {}, robots: {} }
+    });
+    render(<LandingShell {...props({ snapshot: snap, selection: { kind: "processing" } })} />);
+    const smelt = screen.getByText("冶炼铁料").closest(".landing-build-option") as HTMLElement;
+    expect(smelt.textContent).toContain("缺料");
+    expect(smelt.textContent).toContain("铁矿 可用 0 · 缺 2");
+    fireEvent.click(screen.getAllByRole("button", { name: "准备材料" })[0]!);
+    expect(screen.getByText(/获取路径/)).toBeTruthy();
+  });
+
+  it("D015：仓库对已知名目显示可用 0，详情面板给获取路径", () => {
+    const snap = snapshot({
+      displayNames: { items: { iron_ingot: "铁料" }, facilities: {}, robots: {} }
+    });
+    render(<LandingShell {...props({ snapshot: snap })} />);
+    expect(screen.getByText("铁料 可用 0")).toBeTruthy(); // 配方产出但库存为 0 的已知名目
+    cleanup();
+    render(<LandingShell {...props({ snapshot: snap, selection: { kind: "resource", itemId: "iron_ingot" } })} />);
+    expect(screen.getByText(/可用 0（仓库当前没有库存）/)).toBeTruthy();
+    expect(screen.getByText(/获取路径/)).toBeTruthy();
+  });
+
+  it("D015：地图上已建成的加工间直接提供『前往加工』入口", () => {
+    const snap = snapshot({
+      sites: [
+        { siteId: "s-lander", siteKey: "lander", name: "着陆器", state: "built", note: "应急供电", description: null, attributes: [] },
+        { siteId: "s-processing", siteKey: "install_processing", name: "加工间", state: "built", note: "冶炼与材料制造", description: null, attributes: [] }
+      ]
+    });
+    const onSelect = vi.fn();
+    render(<LandingShell {...props({ snapshot: snap, onSelect })} />);
+    fireEvent.click(screen.getByRole("button", { name: "前往加工" }));
+    expect(onSelect).toHaveBeenLastCalledWith({ kind: "processing" });
+  });
+
+  it("D017：『返回原工程』保留获取路径展开态", () => {
+    const { rerender } = render(
+      <LandingShell {...props({ selection: { kind: "site", siteId: "s-solar" } })} />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "准备材料" }));
+    expect(screen.getByText(/获取路径/)).toBeTruthy();
+    // 经"前往加工"深链离开原工程（选择态受控，由测试模拟跳转结果）。
+    fireEvent.click(screen.getAllByRole("button", { name: /前往加工/ })[0]!);
+    rerender(<LandingShell {...props({ selection: { kind: "processing" } })} />);
+    expect(screen.getByRole("button", { name: /返回原工程（太阳能安装位）/ })).toBeTruthy();
+    // 返回原工程后获取路径仍展开，不需要再点一次"准备材料"。
+    rerender(<LandingShell {...props({ selection: { kind: "site", siteId: "s-solar" } })} />);
+    expect(screen.getByText(/获取路径/)).toBeTruthy();
+  });
+
+  it("D021：充电吞吐按实测口径显示（每机约 0.3 kW × 可充台数）", () => {
+    render(<LandingShell {...props({ selection: { kind: "overview" } })} />);
+    expect(screen.getByText(/每机约 0\.3 kW × 可充 1 台/)).toBeTruthy();
+    expect(screen.getByText(/电路上限 0\.4 kW/)).toBeTruthy();
+    expect(screen.queryByText(/^充电上限/)).toBeNull();
+  });
+
+  it("D023：预留/占用术语统一为『已占用』，并在仓库首现处给一句注释", () => {
+    const snap = snapshot({
+      resources: [{
+        itemId: "solar_kit", name: "太阳能套件", quantity: 1, reservedQuantity: 1,
+        reservationSources: [{ kind: "project", id: "p-1", name: "安装首座太阳能", quantity: 1 }],
+        description: ""
+      }]
+    });
+    render(<LandingShell {...props({ snapshot: snap })} />);
+    expect(screen.getByText(/可用＝总量−已占用；已占用＝已为进行中的工程或工单预留。/)).toBeTruthy();
+    expect(screen.getByText(/可用 0（总量 1，已占用 1）/)).toBeTruthy();
+    cleanup();
+    render(<LandingShell {...props({
+      snapshot: snap, selection: { kind: "resource", itemId: "solar_kit" }
+    })} />);
+    expect(screen.getByText(/总量 1，已占用 1/)).toBeTruthy();
+    expect(screen.getByText("预留 1")).toBeTruthy();
+  });
+
+  it("D024：仓储棚/维护工位安装面板补投产收益行", () => {
+    const snap = snapshot({
+      sites: [
+        { siteId: "s-lander", siteKey: "lander", name: "着陆器", state: "built", note: "应急供电", description: null, attributes: [] },
+        { siteId: "s-wh", siteKey: "install_warehouse", name: "仓储棚安装位", state: "free", note: null, description: null, attributes: [] },
+        { siteId: "s-maint", siteKey: "install_maintenance", name: "维护工位安装位", state: "free", note: null, description: null, attributes: [] }
+      ],
+      buildableProjects: [
+        {
+          definitionRef: { kind: "project", stableId: "landing-install-warehouse", revision: 1 },
+          name: "安装仓储棚", description: "", inputs: [{ itemId: "warehouse_kit", quantity: 1 }],
+          allowedSiteKeys: ["install_warehouse"], canStart: true, blockers: [],
+          outputFacility: { ref: { kind: "facility", stableId: "landing-warehouse", revision: 1 }, name: "仓储棚" }
+        },
+        {
+          definitionRef: { kind: "project", stableId: "landing-install-maintenance", revision: 1 },
+          name: "安装维护工位", description: "", inputs: [{ itemId: "maintenance_kit", quantity: 1 }],
+          allowedSiteKeys: ["install_maintenance"], canStart: true, blockers: [],
+          outputFacility: {
+            ref: { kind: "facility", stableId: "landing-maintenance", revision: 1 }, name: "维护工位",
+            effects: { capabilities: ["maintenance"] }
+          }
+        }
+      ]
+    });
+    const { unmount } = render(<LandingShell {...props({ snapshot: snap, selection: { kind: "site", siteId: "s-wh" } })} />);
+    expect(screen.getByText("投产收益：矿石入库与加工前置")).toBeTruthy();
+    unmount();
+    render(<LandingShell {...props({ snapshot: snap, selection: { kind: "site", siteId: "s-maint" } })} />);
+    expect(screen.getByText("投产收益：解锁加工槽维护（每 10 批消耗 1 备件）")).toBeTruthy();
+  });
+
+  it("D025：运行中倍速档 aria-pressed 与选中一致", () => {
+    const snap = snapshot({ timeMode: "running", speed: 4 });
+    render(<LandingShell {...props({ snapshot: snap, canControl: true })} />);
+    expect(screen.getByRole("button", { name: "×4" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "×1" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("D013：未传 csrfToken 时事件面板不渲染（集成端点由 BaseApp 接线）", () => {
+    render(<LandingShell {...props()} />);
+    expect(screen.queryByText(/事件记录/)).toBeNull();
+  });
 });

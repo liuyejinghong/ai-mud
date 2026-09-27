@@ -128,6 +128,28 @@ export function getSnapshot(controlToken?: string): Promise<BaseSnapshotDto> {
   return request<BaseSnapshotDto>("/base/snapshot", { ...(controlToken ? { controlToken } : {}) });
 }
 
+// ---------- 事件历史（FIX-PLAN design-review-20260927 冻结契约 1） ----------
+// GET /api/base/events?limit=100（鉴权同其他 base 端点），按 createdAt 降序。
+// B 线本地声明契约类型，不 import A 线新类型；集成时按 shared DTO 对齐。
+export interface BaseEventDto {
+  id: string;
+  type: string;
+  title: string;
+  detail: string;
+  simTime: string;
+  createdAt: string;
+}
+
+export interface BaseEventsResultDto {
+  events: BaseEventDto[];
+}
+
+export function getBaseEvents(csrfToken: string, limit = 100): Promise<BaseEventsResultDto> {
+  return request<BaseEventsResultDto>(`/base/events?limit=${encodeURIComponent(String(limit))}`, {
+    csrfToken
+  });
+}
+
 export function provision(csrfToken: string, commandId?: string): Promise<ProvisionResultDto> {
   return request<ProvisionResultDto>("/base/provision", {
     method: "POST",
