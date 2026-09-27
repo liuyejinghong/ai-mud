@@ -207,6 +207,7 @@ test("U04+U05 三圈经营：扩建太阳能→自产备件维护→扩建加工
   expect(solarProject?.definitionRef.stableId).toBe("landing-install-solar");
   expect(snapshot.sites.find((site) => site.siteId === solarProject?.siteId)?.state).toBe("built");
   expect(snapshot.power.generationWPeak).toBe(4000);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)).toBeLessThanOrEqual(1);
   await checkpoint(page, testInfo, "01-first-solar-720");
 
   // 720×450 的库存面板必须局部滚动，不能把列表裁在视口外。

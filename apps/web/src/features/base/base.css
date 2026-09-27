@@ -918,7 +918,17 @@
 }
 
 /* ---------- R1 landing 固定工作区（02-ui-contract §1） ---------- */
+body:has(.landing-shell) { margin: 0; }
+body:has(.landing-shell) #root,
+.workspace-layout:has(.landing-shell) {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+}
 .landing-shell {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-rows: 56px 64px minmax(0, 1fr) auto;
   grid-template-columns: 100%;
