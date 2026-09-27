@@ -2903,6 +2903,13 @@
       "layer": "test",
       "scope": "test",
       "note": "R1 真实浏览器替代路线与控制租约验收"
+    },
+    {
+      "path": "apps/web/e2e/landing-browser-helpers.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "真实浏览器按实体ID读取事实与归档证据"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",

@@ -341,6 +341,7 @@ async function main() {
         "playwright.config.ts",
         `--project=${process.env.REAL_E2E_PROJECT ?? "real-postgres"}`,
         "--workers=1",
+        ...(process.env.REAL_E2E_HEADED === "true" ? ["--headed"] : []),
         ...(process.env.REAL_E2E_GREP ? ["--grep", process.env.REAL_E2E_GREP] : [])
       ],
       { cwd: webRoot, env: runtimeEnv }
