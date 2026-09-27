@@ -190,6 +190,7 @@ export interface BaseProjectDto {
   name: string;
   status: ProjectStatus;
   siteId: string;
+  builderCount?: number;
   steps: BaseProjectStepDto[];
 }
 
@@ -225,6 +226,11 @@ export interface BaseSnapshotDto {
   activeContentRelease: string;
   power: BasePowerDto;
   resources: BaseResourceDto[];
+  displayNames?: {
+    items: Record<string, string>;
+    facilities: Record<string, string>;
+    robots: Record<string, string>;
+  };
   sites: BaseSiteDto[];
   devices: BaseDeviceDto[];
   projects: BaseProjectDto[];
@@ -241,6 +247,7 @@ export interface BaseSnapshotDto {
     allowedSiteKeys?: string[];
     canStart?: boolean;
     blockers?: BaseActionBlockerDto[];
+    outputFacility?: ProjectTemplateDto["outputFacility"];
   }>;
   manufacturingJobs: ManufacturingJobDto[];
   availableRecipes: RecipeTemplateDto[];
@@ -399,6 +406,8 @@ export interface CreateProjectInputDto {
   definitionRef: DefinitionRefDto;
   siteId: string;
   commandId: string;
+  builderCount?: number;
+  expectedBaseRevision?: number;
 }
 
 export interface CreateProjectResultDto {
