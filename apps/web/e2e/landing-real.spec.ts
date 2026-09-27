@@ -7,8 +7,14 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, expect, test, type Locator } from "@playwright/test";
-import type { BaseSnapshotDto } from "@ai-mud/shared";
-import { readSnapshot } from "./landing-browser-helpers.js";
+import { BASE_LEASE_TTL_MS, type BaseSnapshotDto } from "@ai-mud/shared";
+import {
+  clickForId,
+  quantity,
+  readSnapshot,
+  readSnapshotFromPublicGet,
+  waitForSnapshot
+} from "./landing-browser-helpers.js";
 
 const runId = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
 const email = `r1-e2e-${runId}@example.test`;
@@ -418,5 +424,322 @@ test("U03/U08 缺料来源导航与断网恢复", async ({ page }, testInfo) => 
   } finally {
     await page.context().setOffline(false);
   }
+  expect(pageErrors).toEqual([]);
+});
+
+test("U07 独立同档回访：在途工单离开20分钟不补算", async ({ page }, testInfo) => {
+  test.setTimeout(60 * 60_000);
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  const email = `r1-u07-${runId}@example.test`;
+  const map = page.getByLabel("基地地图");
+  const panel = page.getByLabel("对象操作");
+  const goal = page.getByLabel("当前目标");
+  const clock = page.getByLabel("基地时间");
+  const queue = page.getByLabel("进行中的工作");
+  const attachEvidence = async (name: string, facts: unknown) => {
+    await testInfo.attach(`${name}.json`, {
+      body: JSON.stringify(facts, null, 2),
+      contentType: "application/json"
+    });
+    await testInfo.attach(`${name}.png`, {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: "image/png"
+    });
+  };
+  const ensureControl = async () => {
+    const takeover = page.getByRole("button", { name: "接管", exact: true });
+    if (await takeover.isVisible().catch(() => false)) await takeover.click();
+    await expect(takeover).toHaveCount(0, { timeout: 30_000 });
+  };
+  const continuityFacts = (snapshot: BaseSnapshotDto) => ({
+    baseId: snapshot.baseId,
+    simTime: snapshot.simTime,
+    timeMode: snapshot.timeMode,
+    speed: snapshot.speed,
+    resources: snapshot.resources.map((resource) => ({
+      itemId: resource.itemId,
+      quantity: resource.quantity,
+      reservedQuantity: resource.reservedQuantity,
+      reservationSources: [...resource.reservationSources]
+        .sort((left, right) => `${left.kind}:${left.id}`.localeCompare(`${right.kind}:${right.id}`))
+    })).sort((left, right) => left.itemId.localeCompare(right.itemId)),
+    resourceNodes: (snapshot.resourceNodes ?? []).map((node) => ({
+      nodeId: node.nodeId,
+      discovered: node.discovered,
+      remainingQuantity: node.remainingQuantity,
+      reservedQuantity: node.reservedQuantity
+    })).sort((left, right) => left.nodeId.localeCompare(right.nodeId)),
+    projects: snapshot.projects.map((project) => ({
+      projectId: project.projectId,
+      status: project.status,
+      steps: project.steps.map((step) => ({
+        index: step.index,
+        status: step.status,
+        workDone: step.workDone,
+        blockedReason: step.blockedReason
+      }))
+    })).sort((left, right) => left.projectId.localeCompare(right.projectId)),
+    manufacturingJobs: snapshot.manufacturingJobs.map((job) => ({
+      jobId: job.jobId,
+      status: job.status,
+      outputsDone: job.outputsDone,
+      outputsPlanned: job.outputsPlanned,
+      currentUnitWorkDone: job.currentUnitWorkDone,
+      blockedReason: job.blockedReason,
+      productionSiteId: job.productionSiteId ?? null
+    })).sort((left, right) => left.jobId.localeCompare(right.jobId)),
+    extractionJobs: (snapshot.extractionJobs ?? []).map((job) => ({
+      jobId: job.jobId,
+      kind: job.kind,
+      status: job.status,
+      nodeId: job.nodeId,
+      batchesPlanned: job.batchesPlanned,
+      batchesExtracted: job.batchesExtracted,
+      batchesDelivered: job.batchesDelivered,
+      phase: job.phase,
+      phaseWorkDone: job.phaseWorkDone,
+      blockedReason: job.blockedReason
+    })).sort((left, right) => left.jobId.localeCompare(right.jobId))
+  });
+  const snapshotResponse = (response: import("@playwright/test").Response) =>
+    new URL(response.url()).pathname === "/base/snapshot" && response.request().method() === "GET";
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  await page.getByLabel("邮箱").fill(email);
+  await page.getByLabel("密码").fill(password);
+  await page.getByRole("button", { name: "领取试玩基地", exact: true }).click();
+  await expect(goal).toBeVisible();
+  await ensureControl();
+
+  let snapshot = await readSnapshot(page);
+  const northernNode = snapshot.resourceNodes?.find((node) => node.name === "北坡磁异常");
+  if (!northernNode || northernNode.discovered) {
+    await attachEvidence("U07-NOT_RUN-north-node-precondition", {
+      status: "NOT_RUN",
+      baseId: snapshot.baseId,
+      northernNode,
+      resourceNodes: snapshot.resourceNodes
+    });
+    throw new Error("U07 precondition failed: fresh save has no undiscovered 北坡磁异常");
+  }
+
+  const resumeClock = clock.getByRole("button", { name: "恢复", exact: true });
+  if (await resumeClock.isVisible().catch(() => false)) await resumeClock.click();
+  await clock.getByRole("button", { name: "×4", exact: true }).click();
+  snapshot = await waitForSnapshot(page, (current) => current.timeMode === "running" && current.speed === 4,
+    "U07 could not set the new base to ×4", 30_000);
+
+  const surveyor = snapshot.devices.find((device) =>
+    device.groupId === "survey" && !device.currentAssignment && !device.currentExtractionJobId && device.batteryWh >= 2
+  );
+  if (!surveyor) throw new Error("U07 precondition failed: no available 望山");
+  await map.getByRole("button", { name: "北坡磁异常" }).click();
+  await page.getByLabel("望山").selectOption(surveyor.operatorId);
+  const surveyJobId = await clickForId(
+    page,
+    `/base/resource-nodes/${northernNode.nodeId}/survey`,
+    "jobId",
+    () => panel.getByRole("button", { name: "开始勘探", exact: true }).click()
+  );
+  snapshot = await waitForSnapshot(page, (current) =>
+    current.extractionJobs?.some((job) => job.jobId === surveyJobId && job.status === "completed") === true &&
+    current.resourceNodes?.some((node) => node.nodeId === northernNode.nodeId && node.discovered) === true,
+  "U07 survey did not complete", 180_000);
+
+  const discoveredNode = snapshot.resourceNodes?.find((node) => node.nodeId === northernNode.nodeId);
+  if (!discoveredNode?.discovered || !discoveredNode.itemId) throw new Error("U07 survey revealed no resource");
+  const oreName = discoveredNode.itemName ?? snapshot.displayNames?.items[discoveredNode.itemId] ?? discoveredNode.itemId;
+  const nodeCard = map.locator(".landing-node").filter({ hasText: oreName });
+  await expect(nodeCard).toHaveCount(1);
+  const builders = snapshot.devices.filter((device) => device.groupId === "engineering");
+  const builderIndex = builders.findIndex((device) =>
+    !device.currentAssignment && !device.currentExtractionJobId && device.batteryWh >= 6
+  );
+  const hauler = snapshot.devices.find((device) =>
+    device.groupId === "transport" && !device.currentAssignment && !device.currentExtractionJobId && device.batteryWh >= 3
+  );
+  if (builderIndex < 0 || !hauler) throw new Error("U07 precondition failed: no available mining builder and hauler");
+
+  await clock.getByRole("button", { name: "×1", exact: true }).click();
+  snapshot = await waitForSnapshot(page, (current) => current.timeMode === "running" && current.speed === 1,
+    "U07 could not set the transit setup to ×1", 30_000);
+  await nodeCard.click();
+  await expect(panel).toContainText(`${oreName} · 采矿运输`);
+  const builderChecks = panel.getByRole("checkbox");
+  await expect(builderChecks).toHaveCount(builders.length);
+  await builderChecks.nth(builderIndex).check();
+  await page.getByLabel("驮运").selectOption(hauler.operatorId);
+  await page.getByLabel(/批数/).fill("3");
+  const beforeOre = quantity(snapshot, discoveredNode.itemId);
+  const miningJobId = await clickForId(
+    page,
+    "/base/extraction-jobs",
+    "jobId",
+    () => panel.getByRole("button", { name: /^下采矿单/ }).click()
+  );
+
+  let transitSnapshot: BaseSnapshotDto;
+  try {
+    transitSnapshot = await waitForSnapshot(page, (current) => {
+      const job = current.extractionJobs?.find((candidate) => candidate.jobId === miningJobId);
+      return job?.status === "active" && job.phase === "hauling" && job.batchesExtracted > job.batchesDelivered;
+    }, "U07 mining job never reached an in-transit batch", 600_000);
+  } catch (error) {
+    const last = await readSnapshotFromPublicGet(page);
+    await attachEvidence("U07-NOT_RUN-no-in-transit-job", {
+      status: "NOT_RUN",
+      baseId: last.baseId,
+      jobId: miningJobId,
+      job: last.extractionJobs?.find((job) => job.jobId === miningJobId),
+      error: error instanceof Error ? error.message : String(error)
+    });
+    throw error;
+  }
+  const transitJob = transitSnapshot.extractionJobs?.find((job) => job.jobId === miningJobId);
+  expect(transitJob).toMatchObject({
+    jobId: miningJobId,
+    kind: "mine",
+    status: "active",
+    nodeId: northernNode.nodeId,
+    phase: "hauling"
+  });
+  expect(transitJob?.batchesExtracted).toBeGreaterThan(transitJob?.batchesDelivered ?? 0);
+  const savedUrl = page.url();
+  const savedGoal = await goal.innerText();
+  await attachEvidence("U07-before-leaving-in-transit", {
+    baseId: transitSnapshot.baseId,
+    savedUrl,
+    savedGoal,
+    jobId: miningJobId,
+    job: transitJob,
+    timeMode: transitSnapshot.timeMode,
+    speed: transitSnapshot.speed,
+    controlLease: transitSnapshot.controlLease,
+    facts: continuityFacts(transitSnapshot)
+  });
+
+  await page.goto("about:blank");
+  await expect(page).toHaveURL("about:blank");
+  await expect(page.locator(".landing-shell")).toHaveCount(0);
+  await attachEvidence("U07-left-game-page", {
+    status: "AWAY",
+    savedUrl,
+    currentUrl: page.url(),
+    gameShellCount: await page.locator(".landing-shell").count()
+  });
+
+  // 离开后推进门槛是有效控制租约；timeMode 是玩家选择，记录但不要求它改写成 paused。
+  const leaseDeadline = Date.now() + BASE_LEASE_TTL_MS + 30_000;
+  let awayBaseline = await readSnapshotFromPublicGet(page);
+  while (awayBaseline.controlLease.controlActive && Date.now() < leaseDeadline) {
+    await page.waitForTimeout(5_000);
+    awayBaseline = await readSnapshotFromPublicGet(page);
+  }
+  if (awayBaseline.controlLease.controlActive) {
+    await attachEvidence("U07-NOT_RUN-control-lease-active", {
+      status: "NOT_RUN",
+      baseId: awayBaseline.baseId,
+      timeMode: awayBaseline.timeMode,
+      simTime: awayBaseline.simTime,
+      controlLease: awayBaseline.controlLease,
+      waitedMs: BASE_LEASE_TTL_MS + 30_000
+    });
+    throw new Error("U07 could not observe release or natural expiry of the foreground lease");
+  }
+  expect(awayBaseline.baseId).toBe(transitSnapshot.baseId);
+  const baselineJob = awayBaseline.extractionJobs?.find((job) => job.jobId === miningJobId);
+  if (!baselineJob || baselineJob.status !== "active" || baselineJob.phase !== "hauling" ||
+      baselineJob.batchesExtracted <= baselineJob.batchesDelivered) {
+    await attachEvidence("U07-NOT_RUN-transit-ended-before-baseline", {
+      status: "NOT_RUN",
+      timeMode: awayBaseline.timeMode,
+      controlLease: awayBaseline.controlLease,
+      job: baselineJob,
+      facts: continuityFacts(awayBaseline)
+    });
+    throw new Error("U07 mining job left the in-transit state before the no-lease baseline");
+  }
+  const baselineFacts = continuityFacts(awayBaseline);
+  await attachEvidence("U07-away-baseline", {
+    status: "AWAY_BASELINE",
+    timeMode: awayBaseline.timeMode,
+    speed: awayBaseline.speed,
+    controlLease: awayBaseline.controlLease,
+    facts: baselineFacts
+  });
+
+  const awayStartedAt = Date.now();
+  await page.waitForTimeout(20 * 60_000 + 1_000);
+  const awayMilliseconds = Date.now() - awayStartedAt;
+  const afterTwentyMinutes = await readSnapshotFromPublicGet(page);
+  const afterTwentyFacts = continuityFacts(afterTwentyMinutes);
+  await attachEvidence("U07-after-20-minute-away", {
+    status: "OBSERVED",
+    awayMilliseconds,
+    timeMode: afterTwentyMinutes.timeMode,
+    speed: afterTwentyMinutes.speed,
+    controlLease: afterTwentyMinutes.controlLease,
+    facts: afterTwentyFacts
+  });
+  expect(awayMilliseconds).toBeGreaterThanOrEqual(20 * 60_000);
+  expect(afterTwentyMinutes.controlLease.controlActive).toBe(false);
+  expect(afterTwentyFacts).toEqual(baselineFacts);
+
+  const firstReturnResponsePromise = page.waitForResponse(snapshotResponse, { timeout: 30_000 });
+  await page.goto(savedUrl);
+  const firstReturnResponse = await firstReturnResponsePromise;
+  if (!firstReturnResponse.ok()) {
+    const body = await firstReturnResponse.text();
+    await attachEvidence("U07-NOT_RUN-return-snapshot-failed", {
+      status: "NOT_RUN",
+      responseStatus: firstReturnResponse.status(),
+      body,
+      savedUrl
+    });
+    throw new Error(`U07 first return snapshot returned HTTP ${firstReturnResponse.status()}`);
+  }
+  const firstReturn = await firstReturnResponse.json() as BaseSnapshotDto;
+  expect(firstReturn.baseId).toBe(transitSnapshot.baseId);
+  const firstReturnFacts = continuityFacts(firstReturn);
+  await attachEvidence("U07-first-return-read", {
+    responseStatus: firstReturnResponse.status(),
+    timeMode: firstReturn.timeMode,
+    speed: firstReturn.speed,
+    controlLease: firstReturn.controlLease,
+    facts: firstReturnFacts
+  });
+  expect(firstReturnFacts).toEqual(baselineFacts);
+  await expect(goal).toBeVisible();
+  expect(await goal.innerText()).toBe(savedGoal);
+  await expect(queue).toContainText("采矿 · 北坡磁异常");
+
+  await ensureControl();
+  const resumeAfterReturn = clock.getByRole("button", { name: "恢复", exact: true });
+  if (await resumeAfterReturn.isVisible().catch(() => false)) await resumeAfterReturn.click();
+  await clock.getByRole("button", { name: "×4", exact: true }).click();
+  snapshot = await waitForSnapshot(page, (current) =>
+    current.timeMode === "running" && current.speed === 4 && current.controlLease.heldByThisSession,
+  "U07 did not resume visible UI at ×4", 30_000);
+  snapshot = await waitForSnapshot(page, (current) =>
+    current.extractionJobs?.some((job) =>
+      job.jobId === miningJobId && job.status === "completed" && job.batchesDelivered === 3
+    ) === true,
+  `U07 mining job ${miningJobId} did not finish after return`, 900_000);
+  expect(quantity(snapshot, discoveredNode.itemId)).toBe(beforeOre + 12);
+  await expect(queue).not.toContainText("采矿 · 北坡磁异常");
+  await attachEvidence("U07-returned-job-complete", {
+    status: "PASS",
+    baseId: snapshot.baseId,
+    jobId: miningJobId,
+    timeMode: snapshot.timeMode,
+    speed: snapshot.speed,
+    delivered: snapshot.extractionJobs?.find((job) => job.jobId === miningJobId)?.batchesDelivered,
+    itemId: discoveredNode.itemId,
+    inventory: quantity(snapshot, discoveredNode.itemId),
+    expectedInventory: beforeOre + 12,
+    goal: await goal.innerText()
+  });
   expect(pageErrors).toEqual([]);
 });
