@@ -87,7 +87,8 @@ async function startMining(page: Page, nodeName: string, batches: number) {
     !device.currentExtractionJobId && device.batteryWh >= 3
   );
   if (!hauler) throw new Error(`no available hauler for ${nodeName}`);
-  const card = page.locator(MAP).getByRole("button", { name: nodeName });
+  const cardName = snapshot.displayNames?.items[node.itemId] ?? node.itemName ?? nodeName;
+  const card = page.locator(MAP).getByRole("button", { name: cardName });
   await expect(card).toHaveCount(1);
   await ensureControl(page);
   await card.click();
