@@ -375,7 +375,7 @@ test("U03/U08 缺料来源导航与断网恢复", async ({ page }, testInfo) => 
   await returnToExpansion.click();
   await expect(panel).toContainText("扩建位 A · 开工");
   await expect(panel).toContainText("增建太阳能");
-  await expect(sourceChain).toBeVisible();
+  await expect(missingFrame).toBeVisible();
   const expansionCard = map.getByRole("button", { name: /扩建位 A/ });
   await expect(expansionCard).toHaveAttribute("aria-pressed", "true");
 
@@ -404,7 +404,7 @@ test("U03/U08 缺料来源导航与断网恢复", async ({ page }, testInfo) => 
     expect(recovered.baseId).toBe(initial.baseId);
     expect(recovered.extractionJobs?.some((job) => job.jobId === surveyJobId)).toBe(true);
     await expect(panel).toContainText("扩建位 A · 开工");
-    await expect(sourceChain).toBeVisible();
+    await expect(missingFrame).toBeVisible();
     await expect(expansionCard).toHaveAttribute("aria-pressed", "true");
     await attachEvidence("U08-network-recovered", {
       snapshotStatus: recoveryResponse.status(),
