@@ -1,4 +1,4 @@
-// G13：旧 schema（至 0037）代表性旧档 → 应用 0038 → 旧数据可读、在途义务可结。
+// G13：旧 schema（至 0037）代表性旧档 → 应用当前迁移 journal → 旧数据可读、在途义务可结。
 // 无生产数据授权：在一次性隔离 PG 上构造代表性旧档（两种内容版本 + 在途订单/工单/机器人分配）。
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -74,7 +74,7 @@ async function applyJournal(client: pg.Client, throughTag: string | null): Promi
   }
 }
 
-describe("G13 旧 schema 0037 → 0038 升级（隔离 PG 代表性旧档）", () => {
+describe("G13 旧 schema 0037 → 当前 journal 升级（隔离 PG 代表性旧档）", () => {
   let admin: pg.Client;
   let client: pg.Client;
   let db: Db;
@@ -149,7 +149,7 @@ describe("G13 旧 schema 0037 → 0038 升级（隔离 PG 代表性旧档）", (
       [baseId]
     );
 
-    // 3) 应用 0038（含此前全部缺失项——0037 之后只有 0038）。
+    // 3) 应用 0037 之后的全部迁移，包括 0038 着陆重建与 0039 施工人数。
     const journal = JSON.parse(
       await readFile(join(drizzleDir, "meta", "_journal.json"), "utf8")
     ) as { entries: Array<{ idx: number; tag: string }> };

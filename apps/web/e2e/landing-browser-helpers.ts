@@ -102,38 +102,6 @@ export async function maintainProcessingSlot(page: Page): Promise<void> {
   await expect(page.locator(PANEL)).toContainText("维护完成", { timeout: 20_000 });
 }
 
-export async function setBrowserZoom200(page: Page): Promise<{
-  supported: boolean;
-  beforeWidth: number;
-  afterWidth: number;
-  beforeDpr: number;
-  afterDpr: number;
-}> {
-  const modifier = process.platform === "darwin" ? "Meta" : "Control";
-  await page.bringToFront();
-  await page.keyboard.press(`${modifier}+0`);
-  const before = await page.evaluate(() => ({ width: window.innerWidth, dpr: window.devicePixelRatio }));
-  let after = before;
-  for (let step = 0; step < 8; step += 1) {
-    await page.keyboard.press(`${modifier}+Shift+Equal`);
-    await page.waitForTimeout(150);
-    after = await page.evaluate(() => ({ width: window.innerWidth, dpr: window.devicePixelRatio }));
-    const widthRatio = before.width / after.width;
-    const dprRatio = after.dpr / before.dpr;
-    if (Math.abs(widthRatio - 2) < 0.1 && Math.abs(dprRatio - 2) < 0.1) {
-      return { supported: true, beforeWidth: before.width, afterWidth: after.width, beforeDpr: before.dpr, afterDpr: after.dpr };
-    }
-    if (widthRatio > 2.2 || dprRatio > 2.2) break;
-  }
-  await page.keyboard.press(`${modifier}+0`);
-  return { supported: false, beforeWidth: before.width, afterWidth: after.width, beforeDpr: before.dpr, afterDpr: after.dpr };
-}
-
-export async function resetBrowserZoom(page: Page): Promise<void> {
-  const modifier = process.platform === "darwin" ? "Meta" : "Control";
-  await page.keyboard.press(`${modifier}+0`);
-}
-
 export async function checkpoint(page: Page, testInfo: TestInfo, name: string): Promise<BaseSnapshotDto> {
   const snapshot = await readSnapshot(page);
   console.info(`[landing-checkpoint] ${name} simTime=${snapshot.simTime}`);

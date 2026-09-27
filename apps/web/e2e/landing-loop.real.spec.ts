@@ -1,6 +1,6 @@
 // 三圈都要有真实产出和用途：先建太阳能扩建，再用自产备件恢复停机加工槽，最后建加工扩建。
 // 所有写操作都经真实 UI；GET 快照只读核对精确工单、库存和设施终态。
-// U07 只在浏览器确实失焦后等待20分钟；U09只在真实浏览器缩放可测时记录200%。
+// 回访与原生缩放在 landing-real.spec.ts 的独立 U07/U09 中验证。
 import { expect, test } from "@playwright/test";
 import {
   checkpoint,
@@ -9,9 +9,6 @@ import {
   maintainProcessingSlot,
   quantity,
   readSnapshot,
-  readSnapshotFromPublicGet,
-  resetBrowserZoom,
-  setBrowserZoom200,
   waitForSnapshot
 } from "./landing-browser-helpers.js";
 
@@ -158,7 +155,7 @@ async function openProcessing(page: import("@playwright/test").Page) {
   await processing.click();
 }
 
-test("U04+U05 三圈经营：扩建太阳能→自产备件维护→扩建加工间；附 U07/U09 证据", async ({ page }, testInfo) => {
+test("U04+U05 三圈经营：扩建太阳能→自产备件维护→扩建加工间", async ({ page }, testInfo) => {
   test.setTimeout(120 * 60_000);
   const startedAt = Date.now();
   const pageErrors: string[] = [];
@@ -226,42 +223,9 @@ test("U04+U05 三圈经营：扩建太阳能→自产备件维护→扩建加工
   await expect(lastInventoryItem).toBeInViewport();
   await checkpoint(page, testInfo, "02-720-local-scroll");
 
-  // 浏览器快捷键能实测到 200% 才把 U09 记为已测；不以 CSS zoom 代替。
   await page.setViewportSize({ width: 1280, height: 800 });
-  const zoom = await setBrowserZoom200(page);
-  if (zoom.supported) {
-    try {
-      const warehouseGoal = page.locator(GOAL).getByRole("button", { name: "前往处理", exact: true });
-      await expect(warehouseGoal).toBeInViewport();
-      await warehouseGoal.click();
-      const warehouseAction = page.locator(PANEL).getByRole("button", { name: "安装仓储棚", exact: true });
-      await expect(warehouseAction).toHaveCount(1);
-      await expect(warehouseAction).toBeInViewport();
-      const warehouseId = await clickForId(page, "/base/projects", "projectId", () => warehouseAction.click());
-      snapshot = await waitForSnapshot(page, (current) =>
-        current.projects.some((project) => project.projectId === warehouseId && project.status === "completed")
-      , "warehouse installation did not complete at browser zoom 200%");
-      await checkpoint(page, testInfo, "03-real-browser-zoom-200");
-    } finally {
-      await resetBrowserZoom(page);
-    }
-    await testInfo.attach("U09-real-browser-zoom", {
-      body: JSON.stringify({ status: "MEASURED_200_PERCENT", ...zoom }),
-      contentType: "application/json"
-    });
-  } else {
-    await testInfo.attach("U09-real-browser-zoom", {
-      body: JSON.stringify({ status: "NOT_RUN", reason: "browser zoom shortcut did not produce a measured 2x viewport and DPR", ...zoom }),
-      contentType: "application/json"
-    });
-  }
-
-  await page.setViewportSize({ width: 1280, height: 800 });
-  snapshot = await readSnapshot(page);
-  if (snapshot.sites.find((site) => site.siteKey === "install_warehouse")?.state !== "built") {
-    snapshot = await installAt(page, "仓储棚安装位", "安装仓储棚", "landing-install-warehouse", "矿石入库与加工前置");
-    await checkpoint(page, testInfo, "04-bootstrap-warehouse-complete");
-  }
+  await installAt(page, "仓储棚安装位", "安装仓储棚", "landing-install-warehouse", "矿石入库与加工前置");
+  await checkpoint(page, testInfo, "04-bootstrap-warehouse-complete");
   await installAt(page, "储能间安装位", "安装储能间", "landing-install-storage", "扩大储电容量");
   await checkpoint(page, testInfo, "05-bootstrap-storage-complete");
   await installAt(page, "充电区安装位", "安装充电区", "landing-install-charging", "提高充电上限");
@@ -323,101 +287,7 @@ test("U04+U05 三圈经营：扩建太阳能→自产备件维护→扩建加工
   expect(quantity(snapshot, "wire_cable")).toBe(0);
   await checkpoint(page, testInfo, "13-circle-1-solar-expansion-complete");
 
-  // U07: a real visible tab change releases normal foreground control; do not pause or reload.
-  // Keep an exact mining job in progress so its reservation, queue, inventory and save can be compared.
-  await page.getByLabel("基地时间").getByRole("button", { name: "×1", exact: true }).click();
   const circle2Mine = await startMining(page, "北坡磁异常", 3);
-  snapshot = await waitForSnapshot(page, (current) => current.extractionJobs?.some((job) =>
-    job.jobId === circle2Mine.jobId && job.status === "active" && job.phase === "hauling" &&
-    job.batchesExtracted > job.batchesDelivered
-  ) === true, "circle 2 mining job never held an in-transit batch", 600_000);
-  expect(snapshot.extractionJobs?.find((job) => job.jobId === circle2Mine.jobId)?.batchesExtracted).toBeGreaterThan(
-    snapshot.extractionJobs?.find((job) => job.jobId === circle2Mine.jobId)?.batchesDelivered ?? 0
-  );
-  await testInfo.attach("10-circle-2-mining-in-transit.json", {
-    body: JSON.stringify(snapshot, null, 2),
-    contentType: "application/json"
-  });
-  await testInfo.attach("10-circle-2-mining-in-transit.png", {
-    body: await page.screenshot({ fullPage: true }),
-    contentType: "image/png"
-  });
-  const goalBeforeLeave = await page.locator(GOAL).innerText();
-  const urlBeforeLeave = page.url();
-  const away = await page.context().newPage();
-  await away.goto("about:blank");
-  await away.bringToFront();
-  const lostFocus = await page.waitForFunction(
-    () => document.visibilityState === "hidden" && !document.hasFocus(),
-    undefined,
-    { polling: 100, timeout: 10_000 }
-  ).then(() => true).catch(() => false);
-  if (!lostFocus) {
-    await testInfo.attach("U07-real-revisit", {
-      body: JSON.stringify({ status: "NOT_RUN", reason: "browser did not expose a hidden and unfocused original tab after switching to a blank tab" }),
-      contentType: "application/json"
-    });
-    await away.close();
-    await page.bringToFront();
-  } else {
-    const readAwaySnapshot = async () => readSnapshotFromPublicGet(page);
-    const pauseDeadline = Date.now() + 20_000;
-    let beforeAway = await readAwaySnapshot();
-    while (beforeAway.timeMode !== "paused" && Date.now() < pauseDeadline) {
-      await page.waitForTimeout(1_000);
-      beforeAway = await readAwaySnapshot();
-    }
-    expect(beforeAway.baseId).toBe(initial.baseId);
-    expect(beforeAway.timeMode).toBe("paused");
-    const awayMine = beforeAway.extractionJobs?.find((job) => job.jobId === circle2Mine.jobId);
-    expect(awayMine?.status).toBe("active");
-    expect(awayMine?.phase).toBe("hauling");
-    expect(awayMine?.batchesExtracted).toBeGreaterThan(awayMine?.batchesDelivered ?? 0);
-    const goalAtLeave = goalBeforeLeave;
-    const revisitFacts = (current: typeof beforeAway) => ({
-      baseId: current.baseId,
-      simTime: current.simTime,
-      timeMode: current.timeMode,
-      resources: current.resources.map(({ itemId, quantity, reservedQuantity }) => ({ itemId, quantity, reservedQuantity }))
-        .sort((left, right) => left.itemId.localeCompare(right.itemId)),
-      projects: current.projects.map(({ projectId, status }) => ({ projectId, status }))
-        .sort((left, right) => left.projectId.localeCompare(right.projectId)),
-      manufacturingJobs: current.manufacturingJobs.map(({ jobId, status, outputsDone, outputsPlanned }) => ({
-        jobId, status, outputsDone, outputsPlanned
-      })).sort((left, right) => left.jobId.localeCompare(right.jobId)),
-      extractionJobs: current.extractionJobs?.map(({ jobId, status, batchesExtracted, batchesDelivered, phase, phaseWorkDone }) => ({
-        jobId, status, batchesExtracted, batchesDelivered, phase, phaseWorkDone
-      })).sort((left, right) => left.jobId.localeCompare(right.jobId)) ?? []
-    });
-    const awayBaseline = revisitFacts(beforeAway);
-    await testInfo.attach("U07-real-revisit-start", {
-      body: JSON.stringify({ status: "WAITING", minutes: 20, baseline: awayBaseline }, null, 2),
-      contentType: "application/json"
-    });
-    console.info("[landing-revisit] tab hidden; beginning 20-minute natural absence");
-    await away.waitForTimeout(20 * 60_000 + 1_000);
-    await away.close();
-    await page.bringToFront();
-    await page.waitForFunction(
-      () => document.visibilityState === "visible" && document.hasFocus(),
-      undefined,
-      { timeout: 15_000 }
-    );
-    snapshot = await readSnapshotFromPublicGet(page);
-    expect(page.url()).toBe(urlBeforeLeave);
-    expect(revisitFacts(snapshot)).toEqual(awayBaseline);
-    await ensureControl(page);
-    expect(await page.locator(GOAL).innerText()).toBe(goalAtLeave);
-    await testInfo.attach("U07-real-revisit", {
-      body: JSON.stringify({ status: "PASS", awayMilliseconds: 20 * 60_000 + 1_000, sameBaseAndFacts: true }, null, 2),
-      contentType: "application/json"
-    });
-  await checkpoint(page, testInfo, "14-after-real-revisit");
-  }
-  await ensureControl(page);
-  const resumeClock = page.getByLabel("基地时间").getByRole("button", { name: "恢复", exact: true });
-  if (await resumeClock.isVisible().catch(() => false)) await resumeClock.click();
-  await page.getByLabel("基地时间").getByRole("button", { name: "×4", exact: true }).click();
 
   // 圈2：用这笔精确采矿单取得 12 铁矿，再制造出会被下一步维护消耗的备件。
   snapshot = await finishMining(page, circle2Mine, 3);
