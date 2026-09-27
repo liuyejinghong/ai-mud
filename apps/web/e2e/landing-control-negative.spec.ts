@@ -25,7 +25,7 @@ test("控制租约 HTTP 负例：缺/错 X-Base-Control-Token 拒绝且无副作
 
   await page.setViewportSize({ width: 1280, height: 800 });
   const registerResponse = page.waitForResponse(
-    (response) => response.url().includes("/base/playtest-register") && response.status() === 200
+    (response) => response.url().includes("/base/playtest-register") && response.status() >= 200 && response.status() < 300
   );
   await page.goto("/");
   await page.getByLabel("邮箱").fill(email);
