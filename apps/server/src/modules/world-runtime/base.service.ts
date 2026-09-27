@@ -242,6 +242,7 @@ export interface BaseServiceDeps {
   };
   industryRead: BaseIndustryReadPort;
   robotRead: BaseRobotReadPort;
+  facilityCapabilities?: (builtFacilityRefs: string[], projects: ProjectTemplateSpec[]) => string[];
   // R1 landing：实际当期供电投影（与结算同源公式；composition 绑定 landing-rules helper）。
   powerProjection?: (input: {
     simTime: Date;
@@ -884,8 +885,14 @@ export class BaseService {
           controlActive: !!lease && lease.leaseUntil.getTime() > now.getTime(),
           leaseUntil: lease ? lease.leaseUntil.toISOString() : null
         },
-        // R1 landing：能力位（旧档为 ["external_trade"]）。
-        capabilities: catalog.capabilities()
+        capabilities: [...new Set([
+          ...catalog.capabilities(),
+          ...(this.deps.facilityCapabilities?.(
+            sites.filter((site) => site.state === "built" && site.builtFacilityRef)
+              .map((site) => site.builtFacilityRef!),
+            catalog.listTemplates().projects
+          ) ?? [])
+        ])]
       } as BaseSnapshotDto;
 
       // R1 landing 投影：资源节点 / 采矿单 / 加工槽（只在 landing 档携带）。

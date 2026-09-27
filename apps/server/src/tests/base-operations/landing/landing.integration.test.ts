@@ -334,6 +334,8 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     await advanceMinutes(1);
     const withWarehouse = await snapshot();
     expect(withWarehouse.sites.find((site) => site.siteKey === "install_warehouse")?.state).toBe("built");
+    expect(withWarehouse.capabilities).toContain("warehouse");
+    expect(withWarehouse.capabilities).not.toContain("processing");
     // 储能间：容量 2000→7000，但存量不凭空增加。
     const storageBefore = withWarehouse.power.storageWh;
     await createProject("landing-install-storage", await siteIdByKey("install_storage"));
@@ -465,6 +467,7 @@ describe("R1 landing 全链验收（真实 PostgreSQL）", () => {
     await createProject("landing-install-maintenance", await siteIdByKey("install_maintenance"));
     await advanceMinutes(1);
     const snapWithSlots = await snapshot();
+    expect(snapWithSlots.capabilities).toEqual(expect.arrayContaining(["warehouse", "processing", "maintenance"]));
     expect(snapWithSlots.productionSlots?.length).toBe(1); // 设施完成同事务建槽
     expect(snapWithSlots.productionSlots?.[0]).toMatchObject({
       batchesSinceMaintenance: 0, maintenanceBlocked: false

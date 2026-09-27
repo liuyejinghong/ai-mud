@@ -138,6 +138,9 @@ export function createBaseOperations(input: {
     },
     industryRead: industryRepo,
     robotRead: robotRuntime,
+    facilityCapabilities: (refs, projects) =>
+      [...collectCapabilities(new Set(refs.map(facilityStableIdFromRef)),
+        projects.flatMap((project) => project.outputFacility ? [{ outputFacility: project.outputFacility }] : []))],
     nodeSeeds: {
       insertResourceNode: (tx, input) => new ResourceNodeRepository(tx).insertNode(tx, input)
     },
