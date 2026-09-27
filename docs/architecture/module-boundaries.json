@@ -2905,6 +2905,13 @@
       "note": "R1 真实浏览器替代路线与控制租约验收"
     },
     {
+      "path": "apps/web/e2e/landing-recovery.real.spec.ts",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "R1 U08 低电与零备件真实浏览器恢复验收"
+    },
+    {
       "path": "apps/web/e2e/landing-browser-helpers.ts",
       "module": "client_text",
       "layer": "test",
