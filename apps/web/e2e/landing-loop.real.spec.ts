@@ -176,7 +176,9 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await waitForText(page, page.getByLabel("电力概览"), "峰值 8.0 kW", 120_000);
   await page.screenshot({ path: testInfo.outputPath("05-expansion-done-8kW.png"), fullPage: true });
 
-  // 圈2：备件生产 + 维护（采矿补充 → 制造备件）。
+  // 圈2：备件生产 + 维护（采矿补充 → 冶炼 → 制造备件）。
+  // 圈1 结束铁料为 0（16 矿→8 料→4 结构件全被扩建消耗）；下单即全额预留、缺料被拒，
+  // 必须先冶炼出备件输入再下备件单（铜料圈1 余 1，恰好够 1 批）。
   await waitForText(page, page.locator(PANEL), "返回地图", 10_000).catch(() => undefined);
   await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
   await page.locator(MAP).getByRole("button", { name: /铁矿|北坡磁异常/ }).click();
@@ -186,6 +188,14 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await page.getByRole("button", { name: /下采矿单/ }).click();
   await page.locator(PANEL).getByRole("button", { name: "返回地图" }).click();
   await page.locator(PANEL).getByRole("button", { name: "加工间", exact: true }).click();
+  await waitForText(page, page.locator(PANEL), "冶炼铁料", 120_000);
+  await orderRecipe(page, "冶炼铁料", 2); // 8 矿 → 2 铁料（备件输入）
+  await waitForText(page, page.locator(QUEUE), "冶炼铁料", 120_000);
+  for (let index = 0; index < 40; index += 1) {
+    await page.waitForTimeout(5_000);
+    const done = await page.locator(QUEUE).textContent().catch(() => "");
+    if (!done?.includes("冶炼铁料")) break; // 完成即从队列消失
+  }
   await orderRecipe(page, "制造备件", 1);
   await waitForText(page, page.locator(QUEUE), "制造备件", 120_000);
 
