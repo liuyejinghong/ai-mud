@@ -1,7 +1,7 @@
 // R1 D 包：LandingShell 关键状态（02 §3/§5）：开局货单视图、缺料来源链、
 // 目标派生的事实依据、采矿表单门控。数据用 fixture 快照（纯 UI 行为，标 MOCK）。
-import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BaseSnapshotDto } from "@ai-mud/shared";
 import { deriveGoal, deriveSourceSteps, LandingShell, type LandingShellProps } from "./LandingShell.js";
 
@@ -135,6 +135,8 @@ function props(overrides: Partial<LandingShellProps> = {}): LandingShellProps {
   };
 }
 
+afterEach(cleanup);
+
 describe("LandingShell", () => {
   it("开局：只看页面能说出运抵与未安装的东西（U01 可读性）", () => {
     render(<LandingShell {...props()} />);
@@ -148,10 +150,85 @@ describe("LandingShell", () => {
 
   it("缺料：扩建显示净缺口与结构化 blocker，主按钮禁用", () => {
     render(<LandingShell {...props({ selection: { kind: "site", siteId: "s-solar" } })} />);
-    const expand = screen.getByText("增建太阳能");
+    const expand = screen.getByRole("button", { name: "增建太阳能" });
     expect(expand).toBeTruthy();
+    expect((expand as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/结构件 需要 4 · 可用 0/)).toBeTruthy();
     expect(screen.getByText("准备材料")).toBeTruthy(); // 净缺口给出来源入口
+  });
+
+  it("施工人数随项目卡选择提交，默认 2 台并可改为 1 台", () => {
+    const onCreateProject = vi.fn();
+    render(<LandingShell {...props({ onCreateProject, selection: { kind: "site", siteId: "s-solar" } })} />);
+    const count = screen.getByLabelText("安装首座太阳能施工筑垒数量") as HTMLSelectElement;
+    expect(count.value).toBe("2");
+    fireEvent.change(count, { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "安装首座太阳能" }));
+    expect(onCreateProject).toHaveBeenLastCalledWith("landing-install-solar", "s-solar", 1);
+    fireEvent.change(count, { target: { value: "2" } });
+    fireEvent.click(screen.getByRole("button", { name: "安装首座太阳能" }));
+    expect(onCreateProject).toHaveBeenLastCalledWith("landing-install-solar", "s-solar", 2);
+  });
+
+  it("缺料用目录中文名展示，项目卡列出实际投产收益", () => {
+    const base = snapshot();
+    const noStockProject = {
+      ...base.buildableProjects[1]!,
+      name: "增建加工设施",
+      inputs: [{ itemId: "iron_ingot", quantity: 8 }],
+      requiresFacilities: ["solar_array"],
+      blockers: [
+        { type: "material" as const, itemId: "iron_ingot", required: 8, available: 0, inTransit: 0 },
+        { type: "facility" as const, facilityId: "solar_array" }
+      ],
+      outputFacility: {
+        ref: { kind: "facility" as const, stableId: "test_facility", revision: 1 },
+        name: "测试设施",
+        generationWPeak: 4000,
+        effects: { storageCapacityWh: 5000, chargeLimitW: 1600, processingSlots: 1 }
+      }
+    };
+    const snap = snapshot({
+      displayNames: {
+        items: { iron_ingot: "铁料" },
+        facilities: { solar_array: "太阳能阵列" },
+        robots: { "landing-hauler": "驮运机器人" }
+      },
+      buildableProjects: [noStockProject],
+      availableRecipes: [
+        ...base.availableRecipes,
+        {
+          ref: { kind: "recipe", stableId: "landing-build-hauler", revision: 1 },
+          name: "组装驮运",
+          description: "",
+          inputs: [{ itemId: "structural_frame", quantity: 4 }],
+          workPerUnit: 1,
+          output: { kind: "robot", templateStableId: "landing-hauler", initialBatteryWh: 0 },
+          ratedW: 2000,
+          workMinutesPerBatch: 3,
+          requiredCapability: "processing"
+        }
+      ]
+    });
+    const { rerender } = render(<LandingShell {...props({ snapshot: snap, selection: { kind: "site", siteId: "s-solar" } })} />);
+    expect(screen.getByText(/铁料 需要 8 · 可用 0/)).toBeTruthy();
+    expect(screen.getByText(/^设施前置：太阳能阵列$/)).toBeTruthy();
+    expect(screen.getByText(/缺设施前置：太阳能阵列/)).toBeTruthy();
+    expect(screen.getByText(/发电 \+4\.0 kW/)).toBeTruthy();
+    expect(screen.getByText(/储能容量 \+5\.0 kWh（新增容量为空）/)).toBeTruthy();
+    expect(screen.getByText(/充电上限 \+1\.6 kW/)).toBeTruthy();
+    expect(screen.getByText(/加工槽 \+1/)).toBeTruthy();
+    expect(screen.queryByText(/iron_ingot|solar_array/)).toBeNull();
+    const processingSnap = snapshot({
+      ...snap,
+      sites: [...snap.sites, {
+        siteId: "s-processing", siteKey: "install_processing", name: "加工间",
+        state: "built", note: null, description: null, attributes: []
+      }]
+    });
+    rerender(<LandingShell {...props({ snapshot: processingSnap, selection: { kind: "processing" } })} />);
+    expect(screen.getByText(/铁矿×2 → 1 铁料×1/)).toBeTruthy();
+    expect(screen.getByText(/1 台 驮运机器人×1/)).toBeTruthy();
   });
 
   it("来源链：结构件 → 加工结构件 → 冶炼铁料 → 铁矿采矿，逐层可达且可点回矿点", () => {
@@ -224,5 +301,79 @@ describe("LandingShell", () => {
       builderOperatorIds: ["o-1"],
       haulerOperatorId: "o-2"
     });
+  });
+
+  it("暂停采矿可取消勾选当前已被占用的原矿工，清空后禁用恢复", () => {
+    const base = snapshot();
+    const snap = snapshot({
+      devices: [{
+        ...base.devices[0]!,
+        status: "working",
+        currentAssignment: { projectId: "p-1", stepIndex: 0 }
+      }],
+      resourceNodes: [{
+        nodeId: "n-1", nodeKey: "iron_north", name: "北坡磁异常", discovered: true,
+        itemId: "iron_ore", itemName: "铁矿", remainingQuantity: 200, reservedQuantity: 4
+      }],
+      extractionJobs: [{
+        jobId: "mine-1", kind: "mine", status: "paused", nodeId: "n-1", nodeName: "北坡磁异常",
+        batchesPlanned: 1, batchesExtracted: 0, batchesDelivered: 0, phase: "mining",
+        phaseWorkDone: 0, phaseWorkRequired: 2, builderOperatorIds: ["o-1"],
+        haulerOperatorId: "o-2", surveyorOperatorId: null, blockedReason: "device_unavailable"
+      }]
+    });
+    render(<LandingShell {...props({ snapshot: snap, selection: { kind: "node", nodeId: "n-1" } })} />);
+    const originalBuilder = screen.getByRole("checkbox", { name: /筑垒.*占用/ }) as HTMLInputElement;
+    expect(originalBuilder.disabled).toBe(false);
+    expect(originalBuilder.checked).toBe(true);
+    fireEvent.click(originalBuilder);
+    expect(originalBuilder.checked).toBe(false);
+    expect((screen.getByRole("button", { name: "换设备并恢复" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("切换矿点或同矿点的新作业时不沿用旧设备选择", () => {
+    const base = snapshot();
+    const twoNodes = snapshot({
+      devices: [
+        base.devices[0]!,
+        { deviceId: "d-3", operatorId: "o-3", name: "筑垒", groupId: "engineering", description: "", status: "idle", batteryWh: 150, batteryCapacityWh: 180, currentAssignment: null, currentExtractionJobId: null },
+        { deviceId: "d-2", operatorId: "o-2", name: "驮运", groupId: "transport", description: "", status: "idle", batteryWh: 72, batteryCapacityWh: 120, currentAssignment: null, currentExtractionJobId: null }
+      ],
+      resourceNodes: [
+        { nodeId: "n-1", nodeKey: "iron_north", name: "北坡磁异常", discovered: true, itemId: "iron_ore", itemName: "铁矿", remainingQuantity: 200, reservedQuantity: 0 },
+        { nodeId: "n-2", nodeKey: "copper_ridge", name: "脊线氧化带", discovered: true, itemId: "copper_ore", itemName: "铜矿", remainingQuantity: 200, reservedQuantity: 0 }
+      ]
+    });
+    const { rerender } = render(
+      <LandingShell {...props({ snapshot: twoNodes, selection: { kind: "node", nodeId: "n-1" } })} />
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: /筑垒.*108Wh/ }));
+    fireEvent.change(screen.getByLabelText("驮运"), { target: { value: "o-2" } });
+    rerender(<LandingShell {...props({ snapshot: twoNodes, selection: { kind: "node", nodeId: "n-2" } })} />);
+    expect((screen.getByRole("checkbox", { name: /筑垒.*108Wh/ }) as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByLabelText("驮运") as HTMLSelectElement).value).toBe("");
+
+    const pausedJob = (jobId: string, builderOperatorIds: string[]) => ({
+      jobId, kind: "mine" as const, status: "paused" as const, nodeId: "n-2", nodeName: "脊线氧化带",
+      batchesPlanned: 1, batchesExtracted: 0, batchesDelivered: 0, phase: "mining" as const,
+      phaseWorkDone: 0, phaseWorkRequired: 2, builderOperatorIds, haulerOperatorId: "o-2",
+      surveyorOperatorId: null, blockedReason: "device_unavailable"
+    });
+    rerender(
+      <LandingShell {...props({
+        snapshot: snapshot({ ...twoNodes, extractionJobs: [pausedJob("mine-1", ["o-1"])] }),
+        selection: { kind: "node", nodeId: "n-2" }
+      })} />
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: /筑垒.*108Wh/ }));
+    rerender(
+      <LandingShell {...props({
+        snapshot: snapshot({ ...twoNodes, extractionJobs: [pausedJob("mine-2", ["o-3"])] }),
+        selection: { kind: "node", nodeId: "n-2" }
+      })} />
+    );
+    const checkboxes = screen.getAllByRole("checkbox", { name: /筑垒/ }) as HTMLInputElement[];
+    expect(checkboxes[0]!.checked).toBe(false);
+    expect(checkboxes[1]!.checked).toBe(true);
   });
 });

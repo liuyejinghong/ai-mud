@@ -29,6 +29,23 @@ function kwh(value: number): string {
   return (value / 1000).toFixed(1);
 }
 
+function itemName(snapshot: BaseSnapshotDto, id: string, fallback?: string): string {
+  return snapshot.displayNames?.items[id] ||
+    snapshot.resources.find((resource) => resource.itemId === id)?.name ||
+    fallback ||
+    "未知物料";
+}
+
+function facilityName(snapshot: BaseSnapshotDto, id: string): string {
+  return snapshot.displayNames?.facilities[id] ||
+    snapshot.sites.find((site) => site.siteKey === id || site.siteId === id)?.name ||
+    "未知设施";
+}
+
+function robotName(snapshot: BaseSnapshotDto, id: string): string {
+  return snapshot.displayNames?.robots[id] || "未知设备";
+}
+
 // ---------- 缺料来源链：材料 → 产出它的配方/矿点，逐层可返回 ----------
 interface SourceStep {
   kind: "node" | "recipe";
@@ -51,7 +68,7 @@ export function deriveSourceSteps(
     if (node) {
       steps.push({
         kind: "node",
-        label: `${node.itemName ?? node.name} · 采矿运输`,
+        label: `${itemName(snapshot, current, node.itemName ?? undefined)} · 采矿运输`,
         detail: "派筑垒开采、驮运送回仓库",
         targetNodeId: node.nodeId
       });
@@ -63,12 +80,12 @@ export function deriveSourceSteps(
     if (!recipe) break;
     steps.push({
       kind: "recipe",
-      label: `${recipe.name}：${describeRecipeOutput(recipe)}`,
+      label: `${recipe.name}：${describeRecipeOutput(recipe, snapshot)}`,
       detail: recipe.inputs
         .map((input) => {
           const resource = snapshot.resources.find((entry) => entry.itemId === input.itemId);
           const available = (resource?.quantity ?? 0) - (resource?.reservedQuantity ?? 0);
-          return `${resource?.name ?? input.itemId} ${available}/${input.quantity}`;
+          return `${itemName(snapshot, input.itemId)} ${available}/${input.quantity}`;
         })
         .join("、"),
       targetRecipeId: recipe.ref.stableId
@@ -84,11 +101,25 @@ export function deriveSourceSteps(
   return steps;
 }
 
-function describeRecipeOutput(recipe: RecipeTemplateDto): string {
+function describeRecipeOutput(recipe: RecipeTemplateDto, snapshot: BaseSnapshotDto): string {
   if (recipe.output.kind === "item") {
-    return `${recipe.output.quantity} ${recipe.output.itemId}`;
+    return `${recipe.output.quantity} ${itemName(snapshot, recipe.output.itemId)}`;
   }
-  return `1 台 ${recipe.output.templateStableId}`;
+  return `1 台 ${robotName(snapshot, recipe.output.templateStableId)}`;
+}
+
+function describeProjectBenefits(
+  output: BaseSnapshotDto["buildableProjects"][number]["outputFacility"]
+): string[] {
+  if (!output) return [];
+  const benefits: string[] = [];
+  if (output.generationWPeak !== undefined) benefits.push(`发电 +${kw(output.generationWPeak)} kW`);
+  if (output.effects?.storageCapacityWh !== undefined) {
+    benefits.push(`储能容量 +${kwh(output.effects.storageCapacityWh)} kWh（新增容量为空）`);
+  }
+  if (output.effects?.chargeLimitW !== undefined) benefits.push(`充电上限 +${kw(output.effects.chargeLimitW)} kW`);
+  if (output.effects?.processingSlots !== undefined) benefits.push(`加工槽 +${output.effects.processingSlots}`);
+  return benefits;
 }
 
 // ---------- 教程目标派生（01 §5：进度由服务端真实事实派生，非线性不判退步） ----------
@@ -126,8 +157,7 @@ export function deriveGoal(snapshot: BaseSnapshotDto): GoalState {
     const resource = snapshot.resources.find((entry) => entry.itemId === itemId);
     return (resource?.quantity ?? 0) - (resource?.reservedQuantity ?? 0);
   };
-  const name = (itemId: string) =>
-    snapshot.resources.find((entry) => entry.itemId === itemId)?.name ?? itemId;
+  const name = (itemId: string) => itemName(snapshot, itemId);
   // 扩建就绪 = 某个具体扩建模板的全部输入都够（不是任一材料 >0）。
   const expansionTemplates = snapshot.buildableProjects.filter(
     (project) => project.definitionRef.stableId.startsWith("landing-expand")
@@ -290,7 +320,7 @@ export interface LandingShellProps {
   canControl: boolean;
   selection: LandingSelection;
   onSelect: (selection: LandingSelection) => void;
-  onCreateProject: (stableId: string, siteId: string) => void;
+  onCreateProject: (stableId: string, siteId: string, builderCount?: number) => void;
   onCancelProject: (projectId: string) => void;
   onSurvey: (nodeId: string, operatorId: string) => void;
   onCreateMining: (input: Omit<CreateExtractionJobInputDto, "commandId" | "expectedBaseRevision">) => void;
@@ -402,7 +432,7 @@ export function LandingShell(props: LandingShellProps) {
           <h2 className="landing-map-title">矿点</h2>
           <div className="landing-map-grid">
             {nodes.map((node) => (
-              <NodeCard key={node.nodeId} node={node} onSelect={props.onSelect} selected={props.selection} />
+              <NodeCard key={node.nodeId} node={node} snapshot={snapshot} onSelect={props.onSelect} selected={props.selection} />
             ))}
           </div>
           <div className="landing-fleet" aria-label="设备队">
@@ -571,10 +601,12 @@ function SiteCard({
 
 function NodeCard({
   node,
+  snapshot,
   selected,
   onSelect
 }: {
   node: BaseResourceNodeDto;
+  snapshot: BaseSnapshotDto;
   selected: LandingSelection;
   onSelect: (selection: LandingSelection) => void;
 }) {
@@ -586,7 +618,11 @@ function NodeCard({
       aria-pressed={isSel}
       onClick={() => onSelect({ kind: "node", nodeId: node.nodeId })}
     >
-      <span className="landing-card-title">{node.discovered ? (node.itemName ?? node.name) : node.name}</span>
+      <span className="landing-card-title">
+        {node.discovered
+          ? node.itemId ? itemName(snapshot, node.itemId, node.itemName ?? undefined) : "未知物料"
+          : node.name}
+      </span>
       <span className="landing-dim">
         {node.discovered
           ? `余 ${node.remainingQuantity}${node.reservedQuantity ? `（预留 ${node.reservedQuantity}）` : ""}`
@@ -642,8 +678,18 @@ function LandingPanel(
           onOpenSource={props.onOpenSource}
         />
       );
-    case "node":
-      return <NodePanel {...props} node={(snapshot.resourceNodes ?? []).find((node) => node.nodeId === selection.nodeId) ?? null} />;
+    case "node": {
+      const activeJob = (snapshot.extractionJobs ?? []).find(
+        (job) => job.nodeId === selection.nodeId && job.status !== "completed" && job.status !== "cancelled"
+      );
+      return (
+        <NodePanel
+          key={`${selection.nodeId}:${activeJob?.jobId ?? "new"}`}
+          {...props}
+          node={(snapshot.resourceNodes ?? []).find((node) => node.nodeId === selection.nodeId) ?? null}
+        />
+      );
+    }
     case "device":
       return <DevicePanel device={snapshot.devices.find((device) => device.deviceId === selection.deviceId) ?? null} />;
     case "resource":
@@ -675,7 +721,7 @@ function NoSelectionPanel({ snapshot, onSelect }: { snapshot: BaseSnapshotDto; o
         {snapshot.resources.map((resource) => (
           <li key={resource.itemId}>
             <button type="button" className="landing-chip" onClick={() => onSelect({ kind: "resource", itemId: resource.itemId })}>
-              {resource.name} 可用 {resource.quantity - resource.reservedQuantity}
+              {itemName(snapshot, resource.itemId, resource.name)} 可用 {resource.quantity - resource.reservedQuantity}
               {resource.reservedQuantity > 0 ? `（总量 ${resource.quantity}，占用 ${resource.reservedQuantity}）` : ""}
             </button>
           </li>
@@ -690,6 +736,7 @@ function SitePanel(
 ) {
   const { site, snapshot } = props;
   const [sourceFor, setSourceFor] = useState<string | null>(null);
+  const [builderCounts, setBuilderCounts] = useState<Record<string, 1 | 2>>({});
   if (!site) {
     return <div className="landing-panel-body"><p className="landing-dim">站点不存在。</p></div>;
   }
@@ -743,24 +790,47 @@ function SitePanel(
       <h3>{site.name} · 开工</h3>
       {candidates.map((project) => {
         const blockers = project.blockers ?? [];
+        const buildKey = `${site.siteId}:${project.definitionRef.stableId}`;
+        const builderCount = builderCounts[buildKey] ?? 2;
+        const benefits = describeProjectBenefits(project.outputFacility);
         return (
           <div key={project.definitionRef.stableId} className="landing-build-option">
+            <label className="landing-field">
+              施工筑垒数量
+              <select
+                aria-label={`${project.name}施工筑垒数量`}
+                value={builderCount}
+                onChange={(event) => setBuilderCounts((current) => ({
+                  ...current,
+                  [buildKey]: Number(event.target.value) as 1 | 2
+                }))}
+              >
+                <option value={1}>1 台</option>
+                <option value={2}>2 台</option>
+              </select>
+            </label>
             <button
               type="button"
               className="landing-primary"
               disabled={props.isBusy || !(project.canStart ?? true)}
-              onClick={() => props.onCreateProject(project.definitionRef.stableId, site.siteId)}
+              onClick={() => props.onCreateProject(project.definitionRef.stableId, site.siteId, builderCount)}
             >
               {project.name}
             </button>
+            {benefits.length > 0 ? (
+              <p className="landing-dim">投产收益：{benefits.join(" · ")}</p>
+            ) : null}
             <ul className="landing-build-details">
+              {project.requiresFacilities?.length ? (
+                <li>设施前置：{project.requiresFacilities.map((id) => facilityName(snapshot, id)).join("、")}</li>
+              ) : null}
               {(project.inputs ?? []).map((input) => {
                 const resource = snapshot.resources.find((entry) => entry.itemId === input.itemId);
                 const available = (resource?.quantity ?? 0) - (resource?.reservedQuantity ?? 0);
                 const short = available < input.quantity;
                 return (
                   <li key={input.itemId} className={short ? "is-short" : undefined}>
-                    <span>{resource?.name ?? input.itemId} 需要 {input.quantity} · 可用 {Math.max(0, available)}</span>
+                    <span>{itemName(snapshot, input.itemId)} 需要 {input.quantity} · 可用 {Math.max(0, available)}</span>
                     {short ? (
                       <button
                         type="button"
@@ -779,7 +849,7 @@ function SitePanel(
               {blockers
                 .filter((blocker) => blocker.type !== "material")
                 .map((blocker, index) => (
-                  <li key={index} className="is-short">{BLOCKER_LABELS[blocker.type]}{blocker.facilityId ? `：${blocker.facilityId}` : ""}</li>
+                  <li key={index} className="is-short">{BLOCKER_LABELS[blocker.type]}{blocker.facilityId ? `：${facilityName(snapshot, blocker.facilityId)}` : ""}</li>
                 ))}
             </ul>
             {sourceFor ? <SourceChain itemId={sourceFor} snapshot={snapshot} onSelect={props.onSelect} /> : null}
@@ -802,7 +872,7 @@ function SourceChain({
   const steps = deriveSourceSteps(itemId, snapshot);
   const noSource = steps.length === 1 && steps[0]!.label === "当前版本无获取方式";
   return (
-    <div className="landing-source-chain" aria-label={`${itemId} 的获取来源`}>
+    <div className="landing-source-chain" aria-label={`${itemName(snapshot, itemId)} 的获取来源`}>
       <p className="landing-dim">获取路径（可进入对应生产，返回原工程不丢上下文）：</p>
       <ol>
         {steps.map((step, index) => (
@@ -837,7 +907,7 @@ function NodePanel(props: LandingShellProps & { node: BaseResourceNodeDto | null
   const builders = snapshot.devices.filter((device) => device.groupId === "engineering");
   const haulers = snapshot.devices.filter((device) => device.groupId === "transport");
   const [surveyorId, setSurveyorId] = useState<string>("");
-  const [builderIds, setBuilderIds] = useState<string[]>([]);
+  const [builderIds, setBuilderIds] = useState<string[] | null>(null);
   const [haulerId, setHaulerId] = useState<string>("");
   const [batches, setBatches] = useState(4);
 
@@ -886,11 +956,11 @@ function NodePanel(props: LandingShellProps & { node: BaseResourceNodeDto | null
   if (activeMine) {
     if (activeMine.status === "paused") {
       // 恢复时重验设备：默认沿用原设备，玩家可换被占用/低电的设备。
-      const resumeBuilders = builderIds.length > 0 ? builderIds : activeMine.builderOperatorIds;
+      const resumeBuilders = builderIds ?? activeMine.builderOperatorIds;
       const resumeHauler = haulerId || activeMine.haulerOperatorId || "";
       return (
         <div className="landing-panel-body">
-          <h3>{node.itemName ?? node.itemId} · 恢复采矿</h3>
+          <h3>{node.itemId ? itemName(snapshot, node.itemId, node.itemName ?? undefined) : "未知物料"} · 恢复采矿</h3>
           <p className="landing-dim">
             已送 {activeMine.batchesDelivered}/{activeMine.batchesPlanned} 批；工序进度与矿量预留保留。
             选择设备后恢复（原设备被占用或低电时可换人）。
@@ -902,7 +972,7 @@ function NodePanel(props: LandingShellProps & { node: BaseResourceNodeDto | null
                 <input
                   type="checkbox"
                   checked={resumeBuilders.includes(device.operatorId)}
-                  disabled={deviceBusy(device) || (resumeBuilders.length >= 2 && !resumeBuilders.includes(device.operatorId))}
+                  disabled={(deviceBusy(device) && !resumeBuilders.includes(device.operatorId)) || (resumeBuilders.length >= 2 && !resumeBuilders.includes(device.operatorId))}
                   onChange={(event) =>
                     setBuilderIds(event.target.checked
                       ? [...resumeBuilders, device.operatorId]
@@ -942,7 +1012,7 @@ function NodePanel(props: LandingShellProps & { node: BaseResourceNodeDto | null
     }
     return (
       <div className="landing-panel-body">
-        <h3>{node.itemName ?? node.itemId} · 采矿中</h3>
+        <h3>{node.itemId ? itemName(snapshot, node.itemId, node.itemName ?? undefined) : "未知物料"} · 采矿中</h3>
         <p className="landing-dim">
           已送 {activeMine.batchesDelivered}/{activeMine.batchesPlanned} 批（每批 4 矿）。
           {activeMine.blockedReason ? `受阻：${describeBlockedReason(activeMine.blockedReason)}` : ""}
@@ -953,7 +1023,7 @@ function NodePanel(props: LandingShellProps & { node: BaseResourceNodeDto | null
   const maxBatches = Math.min(10, Math.floor((node.remainingQuantity ?? 0) / 4));
   return (
     <div className="landing-panel-body">
-      <h3>{node.itemName ?? node.itemId} · 采矿运输</h3>
+      <h3>{node.itemId ? itemName(snapshot, node.itemId, node.itemName ?? undefined) : "未知物料"} · 采矿运输</h3>
       <p className="landing-dim">余 {node.remainingQuantity}，每批 4 矿：开采 2 筑垒点＋运输 1 驮运点，送达才入仓。</p>
       <label className="landing-field">
         批数（1–{maxBatches}）
@@ -966,12 +1036,12 @@ function NodePanel(props: LandingShellProps & { node: BaseResourceNodeDto | null
           <label key={device.operatorId} className="landing-check">
             <input
               type="checkbox"
-              checked={builderIds.includes(device.operatorId)}
-              disabled={deviceBusy(device) || (builderIds.length >= 2 && !builderIds.includes(device.operatorId))}
+              checked={(builderIds ?? []).includes(device.operatorId)}
+              disabled={deviceBusy(device) || ((builderIds ?? []).length >= 2 && !(builderIds ?? []).includes(device.operatorId))}
               onChange={(event) =>
                 setBuilderIds(event.target.checked
-                  ? [...builderIds, device.operatorId]
-                  : builderIds.filter((id) => id !== device.operatorId))
+                  ? [...(builderIds ?? []), device.operatorId]
+                  : (builderIds ?? []).filter((id) => id !== device.operatorId))
               }
             />
             筑垒 · {STATUS_LABELS[device.status]} · {device.batteryWh}Wh{deviceBusy(device) ? "（占用）" : ""}
@@ -992,12 +1062,12 @@ function NodePanel(props: LandingShellProps & { node: BaseResourceNodeDto | null
       <button
         type="button"
         className="landing-primary"
-        disabled={props.isBusy || builderIds.length === 0 || builderIds.length > 2 || haulerId === "" || maxBatches < 1}
+        disabled={props.isBusy || (builderIds ?? []).length === 0 || (builderIds ?? []).length > 2 || haulerId === "" || maxBatches < 1}
         onClick={() =>
           props.onCreateMining({
             nodeId: node.nodeId,
             batches,
-            builderOperatorIds: builderIds,
+            builderOperatorIds: builderIds ?? [],
             haulerOperatorId: haulerId
           })
         }
@@ -1032,7 +1102,7 @@ function ResourcePanel(props: LandingShellProps & { itemId: string }) {
   }
   return (
     <div className="landing-panel-body">
-      <h3>{resource.name}</h3>
+      <h3>{itemName(props.snapshot, resource.itemId, resource.name)}</h3>
       <p className="landing-dim">
         可用 {resource.quantity - resource.reservedQuantity}（总量 {resource.quantity}，工程占用 {resource.reservedQuantity}）
       </p>
@@ -1073,9 +1143,8 @@ function ProcessingPanel(props: LandingShellProps) {
           <span className="landing-card-title">{recipe.name}</span>
           <span className="landing-dim">
             {recipe.inputs.map((input) => {
-              const resource = snapshot.resources.find((entry) => entry.itemId === input.itemId);
-              return `${resource?.name ?? input.itemId}×${input.quantity * count}`;
-            }).join("、")} → {describeRecipeOutput(recipe)}×{count}
+              return `${itemName(snapshot, input.itemId)}×${input.quantity * count}`;
+            }).join("、")} → {describeRecipeOutput(recipe, snapshot)}×{count}
             {recipe.ratedW ? ` · 约 ${kw(recipe.ratedW)} kW` : ""}
           </span>
         </div>
