@@ -6,6 +6,7 @@ const baseURL = `http://127.0.0.1:${webPort}`;
 
 export default defineConfig({
   testDir: "./e2e",
+  reporter: [["list"], ["json", { outputFile: "test-results/report.json" }]],
   use: {
     baseURL,
     screenshot: "only-on-failure",

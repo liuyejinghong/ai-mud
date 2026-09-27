@@ -7,7 +7,8 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { BaseRepository } from "../../../modules/world-runtime/base.repository.js";
 import { createBaseOperations } from "../../../application/base/composition.js";
 import type { Env } from "../../../config/env.js";
 import { createDb, type Db } from "../../../db/client.js";
@@ -328,6 +329,58 @@ describe("R1 返工回归（真实 PostgreSQL）", () => {
     expect(await pending).toBe("CONTROL_EXPIRED");
     expect((await snapshot()).power.powerPolicy).toBe(before);
   });
+  it("independent: a snapshot cannot mix sites before cancellation with projects after cancellation", async () => {
+    const readerAccount = await insertAccount(harness.client, "r1-snapshot@q.test");
+    const { baseId: readerBase } = await ops.session.provision.execute({ accountId: readerAccount }, { commandId: randomUUID() });
+    const token = (await ops.session.clock.heartbeat({ accountId: readerAccount }, { action: "acquire" })).controlToken;
+    const initial = await snapshot(readerAccount);
+    const site = initial.sites.find((entry) => entry.siteKey === "install_solar")!;
+    const { projectId } = await ops.projects.create.execute({ accountId: readerAccount }, {
+      definitionRef: { kind: "project", stableId: "landing-install-solar", revision: 1 },
+      siteId: site.siteId, commandId: randomUUID()
+    }, token);
+
+    let markSitesRead!: () => void;
+    let releaseSnapshot!: () => void;
+    const sitesRead = new Promise<void>((resolve) => { markSitesRead = resolve; });
+    const readerGate = new Promise<void>((resolve) => { releaseSnapshot = resolve; });
+    const listSites = BaseRepository.prototype.listSites;
+    const probe = vi.spyOn(BaseRepository.prototype, "listSites").mockImplementation(async function (this: BaseRepository, tx, targetBase) {
+      const rows = await listSites.call(this, tx, targetBase);
+      if (targetBase === readerBase) {
+        markSitesRead();
+        await readerGate;
+      }
+      return rows;
+    });
+    const reading = snapshot(readerAccount);
+    await sitesRead;
+    let writerDone = false;
+    const cancelling = ops.projects.cancel.execute({ accountId: readerAccount }, {
+      projectId, commandId: randomUUID()
+    }, token).finally(() => { writerDone = true; });
+    let writerBlocked = false;
+    try {
+      for (let attempt = 0; attempt < 100 && !writerDone; attempt += 1) {
+        const { rows } = await harness.client.query(
+          "SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid() AND wait_event_type='Lock'"
+        );
+        if (rows.length > 0) { writerBlocked = true; break; }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    } finally {
+      releaseSnapshot();
+      probe.mockRestore();
+    }
+    const [during] = await Promise.all([reading, cancelling]);
+    expect(during.sites.find((entry) => entry.siteId === site.siteId)?.state).toBe("reserved");
+    expect(during.projects.find((entry) => entry.projectId === projectId)?.status).toBe("active");
+    expect(writerBlocked).toBe(true);
+    const after = await snapshot(readerAccount);
+    expect(after.sites.find((entry) => entry.siteId === site.siteId)?.state).toBe("free");
+    expect(after.projects.find((entry) => entry.projectId === projectId)?.status).toBe("cancelled");
+  });
+
   it("independent: new projects require control and honor the selected builder count", async () => {
     if (!process.env.DATABASE_URL) throw new Error("Explicit isolated DATABASE_URL required");
     const cAccount=await insertAccount(harness.client,"r1-crew@q.test");
