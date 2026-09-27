@@ -130,6 +130,16 @@ export interface BaseSettlementDeps {
   weather?: {
     current(baseId: string, simTime: Date): Promise<{ lightFactor: number }>;
   };
+  // D013 事件历史：结算点同事务追加（composition 绑定 world/base-event 唯一写者）。
+  events?: (tx: IndustryTx) => {
+    append(input: {
+      baseId: string;
+      type: string;
+      title: string;
+      detail: string;
+      simTime: Date;
+    }): Promise<void>;
+  };
 }
 
 // 制造结算端口：一律按基地（B001）。先 measure 给电力池报需求，再用电力池实际分给制造的能量 settle。
@@ -437,6 +447,14 @@ export class BaseSettlementService {
       // 设施投产：供能上限并入基地（m12-p-contract §3.3，G03「投产后供能改变」）。
       // landing 模板纯效果设施无发电字段（effects-only）；legacy 模板恒有值。
       await industry.addGenerationWPeak(tx, baseId, template.outputFacility.generationWPeak ?? 0);
+      // D013：工程完工事件（与完工事实同一事务）。
+      await this.deps.events?.(tx).append({
+        baseId,
+        type: "project.completed",
+        title: `${template.name}已完工`,
+        detail: `${template.name}全部步骤完成，设施投产并接入基地。`,
+        simTime: nextSimTime
+      });
     }
   }
 }

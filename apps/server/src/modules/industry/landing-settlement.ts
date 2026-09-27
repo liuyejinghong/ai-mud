@@ -41,6 +41,8 @@ export interface LandingSettlementCatalogPort {
     };
   } | null;
   getRecipeTemplate(stableId: string, revision?: number): RecipeTemplateDto | null;
+  // D013 事件文案用（可选：缺省退回 itemId）。
+  getItemInfo?(): Record<string, { name: string; description: string }>;
   getProvisionSeed(): {
     power: { baseLoadW?: number };
     sites: Array<{ siteKey: string }>;
@@ -150,6 +152,17 @@ export interface LandingSettlementDeps {
     }>>;
   };
   weather?: { current(baseId: string, simTime: Date): Promise<{ lightFactor: number }> };
+  // D013 事件历史：结算点同事务追加（composition 绑定 world/base-event 唯一写者，
+  // 与 receipts 的 (tx) => 写口 模式一致）。可选：未绑定时静默跳过（事件不是事实前提）。
+  events?: (tx: ExtractionTx) => {
+    append(input: {
+      baseId: string;
+      type: string;
+      title: string;
+      detail: string;
+      simTime: Date;
+    }): Promise<void>;
+  };
 }
 
 // 一个基地分钟的 landing 结算。返回是否处理（电力行缺失 = provision 未完成 → false）。
@@ -424,6 +437,14 @@ async function persistLandingMinute(
       },
       assets: deps.assets
     });
+    // D013：工程完工事件（与完工事实同一事务，回滚一致）。
+    await deps.events?.(tx).append({
+      baseId,
+      type: "project.completed",
+      title: `${template.name}已完工`,
+      detail: `${template.name}全部步骤完成，设施投产并接入基地。`,
+      simTime
+    });
   }
 
   // ---------- 资源节点 / 采矿单 / 现场货物 ----------
@@ -461,6 +482,16 @@ async function persistLandingMinute(
       const marked = await deps.extraction.markOutputDelivered(tx, job.id, ordinal);
       if (!marked) continue; // 已送达（重放）：不重复入库
       await deps.assets.creditBaseInventory(tx, baseId, node.itemId, LANDING_ORE_PER_BATCH);
+      // D013：采矿送达事件（送达标记 + 入库 + 事件同一事务；重放不再触发）。
+      const itemName =
+        context.catalog.getItemInfo?.()[node.itemId]?.name ?? node.itemId;
+      await deps.events?.(tx).append({
+        baseId,
+        type: "extraction.delivered",
+        title: `${itemName}运抵仓库`,
+        detail: `采矿第 ${ordinal} 批送达，+${LANDING_ORE_PER_BATCH} ${itemName} 入库。`,
+        simTime
+      });
     }
     await deps.extraction.saveJob(tx, {
       jobId: job.id,
@@ -549,6 +580,21 @@ async function persistLandingMinute(
       reservedInputs,
       completedAt: production.status === "completed" ? simTime : null
     });
+    // D013：制造工单完工事件（与完工状态同一事务；重放不触发——完成后不再进 live 集）。
+    if (production.status === "completed") {
+      const itemInfo = context.catalog.getItemInfo?.();
+      const outputLabel =
+        recipe.output.kind === "item"
+          ? `${recipe.output.quantity} × ${itemInfo?.[recipe.output.itemId]?.name ?? recipe.output.itemId}`
+          : `${context.catalog.getRobotTemplate(recipe.output.templateStableId)?.name ?? recipe.output.templateStableId}`;
+      await deps.events?.(tx).append({
+        baseId,
+        type: "manufacturing.completed",
+        title: `${recipe.name}制造完成`,
+        detail: `工单 ${job.id.slice(0, 8)} 产出 ${outputLabel}（共 ${outputsDone} 件）。`,
+        simTime
+      });
+    }
   }
 }
 

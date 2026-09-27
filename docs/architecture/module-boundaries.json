@@ -2917,6 +2917,27 @@
       "layer": "test",
       "scope": "test",
       "note": "真实浏览器按实体ID读取事实与归档证据"
+    },
+    {
+      "path": "apps/server/src/modules/world-runtime/base-event.repository.ts",
+      "module": "world",
+      "layer": "persistence",
+      "scope": "production",
+      "note": "D013 base_events 唯一写者（world）：结算点同事务追加 + 事件历史只读（fix/design-review-20260927-a）"
+    },
+    {
+      "path": "apps/server/src/application/base/base-events.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "D013 事件历史用例薄壳：账号作用域钳制 limit、投影 BaseEventsResponseDto（fix/design-review-20260927-a）"
+    },
+    {
+      "path": "apps/server/src/app.base-lease-recovery.integration.test.ts",
+      "module": "composition",
+      "layer": "test",
+      "scope": "test",
+      "note": "D010/D013 真 PG 集成（buildApp 组合根）：幽灵租约 TTL 释放、接管唤醒无需 mode 切换、409 原因、事件端点（fix/design-review-20260927-a）"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",

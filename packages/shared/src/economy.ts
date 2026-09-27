@@ -34,6 +34,8 @@ export interface BaseOrderDto {
   rewardCredits: number;
   deadlineSim: string | null;
   acceptedAtSim: string | null;
+  // D022：记录创建时刻（服务端墙钟，ISO 8601）；历史记录据此显示时间戳。
+  createdAt: string;
 }
 
 export interface PurchaseOrderDto {
@@ -44,6 +46,8 @@ export interface PurchaseOrderDto {
   costCredits: number;
   status: "in_transit" | "delivered";
   arrivesAtSim: string;
+  // D022：记录创建时刻（服务端墙钟，ISO 8601）；历史记录据此显示时间戳。
+  createdAt: string;
 }
 
 export interface AcceptOrderInputDto {

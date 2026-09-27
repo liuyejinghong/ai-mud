@@ -915,6 +915,25 @@ export const baseControlLeases = pgTable("base_control_leases", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });
 
+// D013 事件历史：结算点同事务追加的只读流水（迁移 0040；唯一写者 world/base-event）。
+export const baseEvents = pgTable(
+  "base_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    baseId: uuid("base_id")
+      .notNull()
+      .references(() => bases.id),
+    type: text("type").notNull(),
+    title: text("title").notNull(),
+    detail: text("detail").notNull().default(""),
+    simTime: timestamp("sim_time", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    baseCreatedIdx: index("base_events_base_created_idx").on(table.baseId, table.createdAt)
+  })
+);
+
 export const baseInventory = pgTable(
   "base_inventory",
   {

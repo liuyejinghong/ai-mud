@@ -199,7 +199,6 @@ export interface BaseControlLeaseDto {
   controlActive: boolean;
   leaseUntil: string | null;
 }
-
 // ---------- 天气（M15，确定性循环序列，无随机） ----------
 export const WEATHER_TYPES = ["clear", "warning", "storm"] as const;
 export type WeatherType = (typeof WEATHER_TYPES)[number];
@@ -222,6 +221,12 @@ export interface BaseSnapshotDto {
   baseRevision: number;
   simTime: string;
   timeMode: BaseTimeMode;
+  // D010 如实运行态：effectiveRunning = timeMode==='running' 且前台控制租约有效；
+  // pauseReason = timeMode 为 running 但租约失效时为 'foreground-required'
+  // （sim 实际停摆，等待前台接管），其余为 null。前端应以此字段为准展示，
+  // 不再单看 timeMode 谎报"运行中"。
+  effectiveRunning: boolean;
+  pauseReason: BasePauseReason | null;
   speed: number;
   activeContentRelease: string;
   power: BasePowerDto;
@@ -439,3 +444,31 @@ export const BASE_LEASE_TTL_MS = 120_000;
 export const BASE_MAX_CATCHUP_MS = 10 * 60_000;
 export const BASE_SPEEDS = [1, 2, 4] as const;
 export type BaseSpeed = (typeof BASE_SPEEDS)[number];
+
+// ---------- D010 如实运行态：timeMode 之外的真实推进语义 ----------
+
+// 前台控制租约失效导致 sim 实际停摆时的暂停原因（与玩家主动 pause 区分）。
+export type BasePauseReason = "foreground-required";
+
+// 控制权失效（409 CONTROL_EXPIRED）的机器可读原因，供前端区分恢复路径：
+// GHOST_LEASE = 租约被其他（可能已死的）会话/过期租约占用，接管即可收回；
+// HEARTBEAT_STALE = 本会话租约因心跳断档过期，重新接管即可恢复。
+export type ControlFailureReason = "GHOST_LEASE" | "HEARTBEAT_STALE";
+
+// ---------- D013 事件历史（GET /api/base/events） ----------
+
+// 基地事件：结算点（工程完工/制造完工/采矿送达/订单交付）同事务写入的只读流水。
+export interface BaseEventDto {
+  id: string;
+  type: string;
+  title: string;
+  detail: string;
+  // 事件发生的基地模拟时间（ISO 8601）。
+  simTime: string;
+  // 服务端写入时刻（ISO 8601，降序排序键）。
+  createdAt: string;
+}
+
+export interface BaseEventsResponseDto {
+  events: BaseEventDto[];
+}

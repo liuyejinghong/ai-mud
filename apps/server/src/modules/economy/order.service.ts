@@ -44,6 +44,8 @@ export interface EconomyCatalogPort {
   listOrderTemplates(): OrderTemplateDto[];
   // R1：能力位（landing 新档不含 external_trade，订单/采购整体拒绝）。
   capabilities(): string[];
+  // D013 事件文案用（可选：缺省退回 itemId）。
+  getItemInfo?(): Record<string, { name: string; description: string }>;
 }
 
 // base_inventory 交付消耗写口（economy OrderRepository 实现；见 order.repository 文件头裁决注释）。
@@ -89,6 +91,17 @@ export interface OrderServiceDeps {
   credits: OrderCreditsPort;
   // 生产绑定：(tx) => new AssetMutationService(tx)。测试注入内存替身。
   receipts: (tx: EconomyTx) => EconomyReceiptsPort;
+  // D013 事件历史：交付结算点同事务追加（composition 绑定 world/base-event 唯一写者）。
+  // 可选：未绑定时静默跳过（事件不是交付事实的前提）。
+  events?: (tx: EconomyTx) => {
+    append(input: {
+      baseId: string;
+      type: string;
+      title: string;
+      detail: string;
+      simTime: Date;
+    }): Promise<void>;
+  };
 }
 
 export interface EconomyPrincipal {
@@ -256,6 +269,20 @@ export class OrderService {
 
     await this.deps.credits.creditBaseCredits(tx, baseId, order.rewardCredits);
     await this.deps.store.saveOrderDelivered(tx, order.id, sim);
+
+    // D013：订单交付事件（扣料/加钱/落状态/事件同一事务；命令幂等回执保证重放不重复写）。
+    if (this.deps.events) {
+      const catalog = await this.catalogForBase(tx, baseId);
+      const template = catalog.getOrderTemplate(order.orderDefId);
+      const itemName = catalog.getItemInfo?.()[order.requiredItemId]?.name ?? order.requiredItemId;
+      await this.deps.events(tx).append({
+        baseId,
+        type: "order.delivered",
+        title: `${template?.name ?? order.orderDefId}交付完成`,
+        detail: `交付 ${order.quantity} × ${itemName}，取得 ${order.rewardCredits} credits。`,
+        simTime: sim
+      });
+    }
 
     const result: DeliverOrderResultPayload = {
       orderId: order.id,
