@@ -56,11 +56,12 @@ export function describeIdleStep(
   project: BaseProjectDto,
   step: BaseProjectStepDto,
   devices: BaseDeviceDto[],
-  timeMode: BaseTimeMode
+  timeMode: BaseTimeMode,
+  frozen = false
 ): string | null {
   if (["completed", "cancelled", "failed"].includes(project.status) ||
     workingCrew(project.projectId, step.index, devices) > 0) return null;
-  if (timeMode === "paused" || project.status === "paused") return "当前 0 台作业中：基地时间已暂停。";
+  if (timeMode === "paused" || frozen || project.status === "paused") return "当前 0 台作业中：基地时间已暂停。";
   if (step.blockedReason) return `当前 0 台作业中：${describeBlockedReason(step.blockedReason)}。`;
   const group = devices.filter((device) => device.groupId === step.groupId);
   if (group.length === 0) return `当前 0 台作业中：没有${BASE_ROBOT_GROUP_NAMES[step.groupId]}设备。`;
@@ -76,6 +77,8 @@ export interface ProjectBoardProps {
   onSelectProject: (projectId: string) => void;
   devices: BaseDeviceDto[];
   timeMode: BaseTimeMode;
+  // D010：timeMode=running 但服务端实际冻结（等前台接管）时，机组不再写"作业中"。
+  frozen?: boolean;
 }
 
 export function ProjectBoard({
@@ -84,7 +87,8 @@ export function ProjectBoard({
   selectedProjectId,
   onSelectProject,
   devices,
-  timeMode
+  timeMode,
+  frozen = false
 }: ProjectBoardProps) {
   return (
     <section className="base-panel base-board" aria-label="项目清单">
@@ -124,7 +128,7 @@ export function ProjectBoard({
                   )
                 : null;
             const crew = currentStep ? workingCrew(project.projectId, currentStep.index, devices) : 0;
-            const idleNote = currentStep ? describeIdleStep(project, currentStep, devices, timeMode) : null;
+            const idleNote = currentStep ? describeIdleStep(project, currentStep, devices, timeMode, frozen) : null;
 
             return (
               <li key={project.projectId}>
@@ -143,7 +147,9 @@ export function ProjectBoard({
                       当前步骤 {currentIndex >= 0 ? currentIndex + 1 : project.steps.length}/
                       {project.steps.length}：{STEP_KIND_LABELS[currentStep.kind]}（
                       {STEP_STATUS_LABELS[currentStep.status]}）
-                      {currentStep.status === "running" && crew > 0 ? ` · 机组 ${crew} 台作业中` : ""}
+                      {currentStep.status === "running" && crew > 0
+            ? frozen ? ` · 机组 ${crew} 台暂停待恢复` : ` · 机组 ${crew} 台作业中`
+            : ""}
                     </span>
                   ) : (
                     <span className="base-project-step">该项目没有施工步骤</span>

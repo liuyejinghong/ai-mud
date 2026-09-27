@@ -14,6 +14,7 @@ import { EconomyBoard } from "./EconomyBoard.js";
 import { ManufacturingBoard } from "./ManufacturingBoard.js";
 import { ObjectPanel } from "./ObjectPanel.js";
 import { ProjectBoard, PROJECT_STATUS_LABELS, STEP_KIND_LABELS, describeBlockedReason } from "./ProjectBoard.js";
+import { resolveRuntimeState } from "./runtimeState.js";
 import "./base.css";
 
 const ROBOT_STATUS_LABELS: Record<RobotStatus, string> = {
@@ -105,6 +106,9 @@ export function BaseShell({
   const mapRef = useRef<HTMLDivElement>(null);
   const detailRef = useRef<HTMLDivElement>(null);
   const isPaused = snapshot.timeMode === "paused";
+  // D010：timeMode=running 但服务端实际冻结（等前台接管）时，界面必须如实显示"已暂停"。
+  const runtime = resolveRuntimeState(snapshot);
+  const frozen = runtime.frozenAwaitingForeground;
   const canControl = hasControl && snapshot.controlLease.heldByThisSession;
   const controlActive = snapshot.controlLease.controlActive;
   const hasSelection = selectedSiteId !== null || selectedProjectId !== null ||
@@ -183,7 +187,7 @@ export function BaseShell({
       aria-pressed={selectedDeviceId === device.deviceId}
       onClick={() => selectAndShow(() => onSelectDevice(device.deviceId))}
     >
-      {device.name} · {ROBOT_STATUS_LABELS[device.status]}
+      {device.name} · {frozen && device.status === "working" ? "已暂停" : ROBOT_STATUS_LABELS[device.status]}
     </button>
   ));
 
@@ -210,7 +214,7 @@ export function BaseShell({
                 ? ` · 当前步骤 ${currentStep.index + 1}/${activeProject.steps.length} ${STEP_KIND_LABELS[currentStep.kind]} ${currentStep.workDone}/${currentStep.workRequired}`
                 : ""}
               {currentStep?.blockedReason ? ` · 受阻：${describeBlockedReason(currentStep.blockedReason)}` : ""}
-              {isPaused ? " · 时间已暂停" : ""}
+              {isPaused || frozen ? " · 时间已暂停" : ""}
             </p>
           </div>
         ) : freeSite && nextProject ? (
@@ -235,11 +239,11 @@ export function BaseShell({
           </div>
         )}
         <div className="base-current-actions">
-          {isPaused && canControl ? (
+          {(isPaused || frozen) && canControl ? (
             <button type="button" className="base-primary-button" disabled={isBusy}
               onClick={() => onClockCommand({ command: "resume" }, "clock")}>恢复基地时间</button>
           ) : null}
-          {!isPaused && canControl && snapshot.speed < 4 ? (
+          {!isPaused && !frozen && canControl && snapshot.speed < 4 ? (
             <button type="button" className="base-primary-button" disabled={isBusy}
               onClick={() => onSetSpeed(4)}>速度 ×4</button>
           ) : null}
@@ -320,7 +324,7 @@ export function BaseShell({
         </details>
 
         <details className="base-summary base-drawer" aria-label="设备">
-          <summary>设备 · {fleetStatus(snapshot)}</summary>
+          <summary>设备 · {fleetStatus(snapshot, frozen)}</summary>
           {snapshot.devices.length === 0 ? (
             <p className="base-copy">还没有设备。</p>
           ) : (
@@ -330,12 +334,16 @@ export function BaseShell({
 
         <section className="base-summary base-clock" aria-label="基地时间">
           <h2 className="base-panel-title">时间</h2>
-          {isPaused ? (
+          {isPaused || frozen ? (
             <>
               <strong className="base-paused-badge" role="status">
-                时间已暂停
+                {frozen ? "已暂停：等待前台接管" : "时间已暂停"}
               </strong>
-              <p className="base-summary-line base-pause-note">暂停期间不消耗物资；恢复后重新检查工程条件。</p>
+              <p className="base-summary-line base-pause-note">
+                {frozen
+                  ? "页面切走后基地时间挂起；点「接管基地」恢复推进，离开期间不补算。"
+                  : "暂停期间不消耗物资；恢复后重新检查工程条件。"}
+              </p>
             </>
           ) : (
             <p className="base-summary-line">
@@ -350,8 +358,8 @@ export function BaseShell({
               <button
                 key={speed}
                 type="button"
-                aria-pressed={!isPaused && snapshot.speed === speed}
-                disabled={isBusy || csrfToken === null || !canControl}
+                aria-pressed={!isPaused && !frozen && snapshot.speed === speed}
+                disabled={isBusy || csrfToken === null || !canControl || frozen}
                 onClick={() => onSetSpeed(speed)}
               >
                 ×{speed}
@@ -367,9 +375,9 @@ export function BaseShell({
               type="button"
               className="base-primary-button"
               disabled={isBusy || csrfToken === null || !canControl}
-              onClick={() => onClockCommand(isPaused ? { command: "resume" } : { command: "pause" })}
+              onClick={() => onClockCommand(isPaused || frozen ? { command: "resume" } : { command: "pause" })}
             >
-              {isPaused ? "恢复计时" : "暂停计时"}
+              {isPaused || frozen ? "恢复计时" : "暂停计时"}
             </button>
             {accountEmail ? (
               <span className="base-account-email" title={accountEmail}>
@@ -426,6 +434,7 @@ export function BaseShell({
             selectedProjectId={selectedProjectId}
             onSelectProject={(projectId) => selectAndShow(() => onSelectProject(projectId))}
             devices={snapshot.devices} timeMode={snapshot.timeMode}
+            frozen={frozen}
           />
         ) : null}
       </section>
@@ -492,13 +501,14 @@ function sortedDevices(devices: BaseDeviceDto[]): BaseDeviceDto[] {
 }
 
 // 工程队状态一句话：作业中/充电中/待命台数——让页面在等待期也有"活着"的反馈。
-function fleetStatus(snapshot: BaseSnapshotDto): string {
+// D010：基地冻结期不出工，"作业中"改为"暂停待恢复"，避免与"已暂停"状态矛盾。
+function fleetStatus(snapshot: BaseSnapshotDto, frozen = false): string {
   if (snapshot.devices.length === 0) return "工程队：暂无设备";
   const working = snapshot.devices.filter((device) => device.status === "working").length;
   const charging = snapshot.devices.filter((device) => device.status === "charging").length;
   const idle = snapshot.devices.filter((device) => device.status === "idle").length;
   const parts: string[] = [];
-  if (working > 0) parts.push(`${working} 台作业中`);
+  if (working > 0) parts.push(frozen ? `${working} 台暂停待恢复` : `${working} 台作业中`);
   if (charging > 0) parts.push(`${charging} 台充电`);
   if (idle > 0) parts.push(`${idle} 台待命`);
   return parts.length > 0 ? `工程队：${parts.join("、")}` : `工程队：${snapshot.devices.length} 台离线`;
