@@ -8,6 +8,7 @@ export default defineConfig({
   testDir: "./e2e",
   use: {
     baseURL,
+    screenshot: "only-on-failure",
     trace: "on-first-retry"
   },
   webServer: {

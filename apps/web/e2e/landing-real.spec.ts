@@ -38,11 +38,17 @@ test("新档玩家：读货单→安装首太阳能→缺料回路→刷新保�
   });
   expect(overflow).toBeLessThanOrEqual(1);
 
-  // 目标条主行动 → 站点面板 → 开工。
+  // 窄屏选择目标后，操作区独占主区，主动作无需滚根页面。
+  await page.setViewportSize({ width: 720, height: 450 });
   await goal.getByRole("button", { name: "前往处理" }).click();
   const panel = page.getByLabel("对象操作");
   await expect(panel).toContainText("太阳能安装位 · 开工");
-  await panel.getByRole("button", { name: "安装首座太阳能" }).click();
+  const install = panel.getByRole("button", { name: "安装首座太阳能", exact: true });
+  await expect(install).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: testInfo.outputPath("01b-narrow-action.png"), fullPage: true });
+  await install.click();
+  await page.setViewportSize({ width: 1280, height: 800 });
   await expect(page.getByRole("status").filter({ hasText: /工程「安装首座太阳能」已开工/ })).toBeVisible();
   const queue = page.getByLabel("进行中的工作");
   await expect(queue).toContainText("安装首座太阳能");

@@ -211,6 +211,7 @@ test("U04+U05 三圈经营：扩建太阳能→自产备件维护→扩建加工
 
   // 720×450 的库存面板必须局部滚动，不能把列表裁在视口外。
   await page.locator(PANEL).getByRole("button", { name: "返回地图", exact: true }).click();
+  await page.getByRole("button", { name: "操作", exact: true }).click();
   const panel = page.locator(PANEL);
   const scrollable = await panel.evaluate((element) => element.scrollHeight > element.clientHeight);
   expect(scrollable).toBe(true);

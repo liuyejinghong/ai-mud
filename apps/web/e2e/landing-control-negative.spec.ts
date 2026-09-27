@@ -17,12 +17,6 @@ interface SnapshotShape {
 
 test("控制租约 HTTP 负例：缺/错 X-Base-Control-Token 拒绝且无副作用，有效租约受理", async ({ page }, testInfo) => {
   test.setTimeout(120_000);
-  await page.addInitScript(() => {
-    // 与 landing-loop 相同披露：只补齐「窗口在前台」事实，让 UI 心跳正常获取租约；
-    // 租约校验本身走服务端真实路径。
-    Object.defineProperty(Document.prototype, "hasFocus", { value: () => true });
-  });
-
   await page.setViewportSize({ width: 1280, height: 800 });
   const registerResponse = page.waitForResponse(
     (response) => response.url().includes("/base/playtest-register") && response.status() >= 200 && response.status() < 300
