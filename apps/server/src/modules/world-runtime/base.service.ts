@@ -743,6 +743,7 @@ export class BaseService {
           )),
           robots: Object.fromEntries(catalog.listTemplates().robots.map((robot) => [robot.ref.stableId, robot.name]))
         } } : {}),
+        ...(isLanding ? { resourceItemIds: [...new Set((seed.resourceNodes ?? []).map((node) => node.itemId))] } : {}),
         sites: siteDtos,
         devices,
         projects,

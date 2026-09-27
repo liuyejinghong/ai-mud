@@ -376,4 +376,18 @@ describe("LandingShell", () => {
     expect(checkboxes[0]!.checked).toBe(false);
     expect(checkboxes[1]!.checked).toBe(true);
   });
+  it("unconfirmed ore points lead to surveying rather than claiming no source exists", () => {
+    const steps=deriveSourceSteps("iron_ore",snapshot({resourceItemIds:["iron_ore","copper_ore"]}));
+    expect(steps).toEqual([expect.objectContaining({kind:"node",targetNodeId:"n-1",label:"勘探北坡磁异常"})]);
+    expect(steps.some(step=>step.label.includes("无获取方式"))).toBe(false);
+  });
+
+  it("opens the material source only for the chosen project card", () => {
+    const base=snapshot();
+    const expansion=base.buildableProjects[1]!;
+    render(<LandingShell {...props({snapshot:snapshot({buildableProjects:[expansion,{...expansion,name:"增建储能",definitionRef:{kind:"project",stableId:"landing-expand-storage",revision:1}}]}),selection:{kind:"site",siteId:"s-solar"}})} />);
+    fireEvent.click(screen.getAllByRole("button",{name:"准备材料"})[0]!);
+    expect(screen.getAllByText(/获取路径/)).toHaveLength(1);
+  });
+
 });

@@ -74,6 +74,18 @@ export function deriveSourceSteps(
       });
       return steps;
     }
+    if (snapshot.resourceItemIds?.includes(current)) {
+      const unknown = (snapshot.resourceNodes ?? []).filter((entry) => !entry.discovered);
+      if (unknown.length > 0) {
+        steps.push(...unknown.map((entry): SourceStep => ({
+          kind: "node",
+          label: "勘探" + entry.name,
+          detail: "确认是否存在" + itemName(snapshot, current) + "，勘探本身不产出物料",
+          targetNodeId: entry.nodeId
+        })));
+        return steps;
+      }
+    }
     const recipe = snapshot.availableRecipes.find((entry) =>
       entry.output.kind === "item" ? entry.output.itemId === current : false
     );
@@ -370,7 +382,7 @@ export function LandingShell(props: LandingShellProps) {
           <span className="landing-dim">负载 {kw(snapshot.power.loadW)} kW</span>
         </div>
         <div className="landing-clock" aria-label="基地时间">
-          <span>{formatSimClock(snapshot.simTime)}</span>
+          <span>{isPaused ? "暂停 · " : ""}{formatSimClock(snapshot.simTime)}</span>
           {isPaused ? (
             <button type="button" className="landing-chip-button" disabled={props.isBusy || !props.canControl}
               onClick={() => props.onClockCommand("resume")}>恢复</button>
@@ -735,7 +747,7 @@ function SitePanel(
   props: LandingShellProps & { site: BaseSiteDto | null; onOpenSource?: ((siteId: string) => void) | undefined }
 ) {
   const { site, snapshot } = props;
-  const [sourceFor, setSourceFor] = useState<string | null>(null);
+  const [sourceFor, setSourceFor] = useState<{ buildKey: string; itemId: string } | null>(null);
   const [builderCounts, setBuilderCounts] = useState<Record<string, 1 | 2>>({});
   if (!site) {
     return <div className="landing-panel-body"><p className="landing-dim">站点不存在。</p></div>;
@@ -836,8 +848,9 @@ function SitePanel(
                         type="button"
                         className="landing-chip-button"
                         onClick={() => {
-                          setSourceFor(sourceFor === input.itemId ? null : input.itemId);
-                          if (sourceFor !== input.itemId) props.onOpenSource?.(site.siteId);
+                          const close = sourceFor?.buildKey === buildKey && sourceFor.itemId === input.itemId;
+                          setSourceFor(close ? null : { buildKey, itemId: input.itemId });
+                          if (!close) props.onOpenSource?.(site.siteId);
                         }}
                       >
                         准备材料
@@ -852,7 +865,7 @@ function SitePanel(
                   <li key={index} className="is-short">{BLOCKER_LABELS[blocker.type]}{blocker.facilityId ? `：${facilityName(snapshot, blocker.facilityId)}` : ""}</li>
                 ))}
             </ul>
-            {sourceFor ? <SourceChain itemId={sourceFor} snapshot={snapshot} onSelect={props.onSelect} /> : null}
+            {sourceFor?.buildKey === buildKey ? <SourceChain itemId={sourceFor.itemId} snapshot={snapshot} onSelect={props.onSelect} /> : null}
           </div>
         );
       })}

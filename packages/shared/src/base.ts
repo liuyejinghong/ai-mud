@@ -254,6 +254,7 @@ export interface BaseSnapshotDto {
   // R1 landing：能力位（新档不含 external_trade）、资源节点、勘探/采矿单、加工槽。
   capabilities?: string[];
   resourceNodes?: BaseResourceNodeDto[];
+  resourceItemIds?: string[];
   extractionJobs?: BaseExtractionJobDto[];
   productionSlots?: BaseProductionSlotDto[];
   cooperationRequests: CooperationRequestDto[];
