@@ -7,6 +7,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, expect, test, type Locator } from "@playwright/test";
+import type { BaseSnapshotDto } from "@ai-mud/shared";
+import { readSnapshot } from "./landing-browser-helpers.js";
 
 const runId = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
 const email = `r1-e2e-${runId}@example.test`;
@@ -264,4 +266,157 @@ test("U09 原生浏览器200%：首太阳能操作完整可见并真实提交", 
       await rm(profileDir, { recursive: true, force: true });
     }
   }
+});
+
+test("U03/U08 缺料来源导航与断网恢复", async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  const offlineEmail = `r1-u03-u08-${runId}@example.test`;
+  const attachEvidence = async (name: string, facts: unknown) => {
+    await testInfo.attach(`${name}.json`, {
+      body: JSON.stringify(facts, null, 2),
+      contentType: "application/json"
+    });
+    await testInfo.attach(`${name}.png`, {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: "image/png"
+    });
+  };
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  await page.getByLabel("邮箱").fill(offlineEmail);
+  await page.getByLabel("密码").fill(password);
+  await page.getByRole("button", { name: "领取试玩基地", exact: true }).click();
+
+  const map = page.getByLabel("基地地图");
+  const panel = page.getByLabel("对象操作");
+  const initial = await readSnapshot(page);
+  const unknownNode = initial.resourceNodes?.find((node) => node.name === "北坡磁异常" && !node.discovered);
+  if (!unknownNode) throw new Error("新档快照中没有未发现的北坡磁异常");
+  const expansionSite = initial.sites.find((site) => site.name === "扩建位 A");
+  if (!expansionSite) throw new Error("新档快照中没有扩建位 A");
+
+  await map.getByRole("button", { name: /扩建位 A/ }).click();
+  await expect(panel).toContainText("扩建位 A · 开工");
+  const expansion = panel.locator(".landing-build-option").filter({ hasText: "增建太阳能" });
+  await expect(expansion).toHaveCount(1);
+  const missingFrame = expansion.locator(".landing-build-details li").filter({
+    hasText: /结构件\s*需要\s*4\s*·\s*可用\s*0/
+  });
+  await expect(missingFrame).toHaveCount(1);
+  await missingFrame.getByRole("button", { name: "准备材料", exact: true }).click();
+
+  const sourceChain = panel.locator("[aria-label='结构件 的获取来源']");
+  await expect(sourceChain).toBeVisible();
+  await expect(sourceChain).toContainText("加工结构件");
+  await expect(sourceChain).toContainText("冶炼铁料");
+  const surveySource = sourceChain.getByRole("button", {
+    name: "勘探北坡磁异常 · 前往采矿",
+    exact: true
+  });
+  await expect(surveySource).toHaveCount(1);
+  await attachEvidence("U03-source-chain", {
+    baseId: initial.baseId,
+    expansionSiteId: expansionSite.siteId,
+    missingItem: "structural_frame",
+    unknownNodeId: unknownNode.nodeId,
+    sourceChain: await sourceChain.ariaSnapshot()
+  });
+  await surveySource.click();
+
+  await expect(panel).toContainText("北坡磁异常 · 勘探");
+  const surveyor = page.getByLabel("望山");
+  const surveyorId = await surveyor.locator("option").evaluateAll((options) => {
+    const option = options.find((entry): entry is HTMLOptionElement =>
+      entry instanceof HTMLOptionElement && entry.value !== "" && !entry.disabled
+    );
+    return option?.value ?? null;
+  });
+  if (!surveyorId) throw new Error("新档没有可派遣的望山");
+  await surveyor.selectOption(surveyorId);
+  const startSurvey = panel.getByRole("button", { name: "开始勘探", exact: true });
+  await expect(startSurvey).toBeEnabled();
+  const surveyResponsePromise = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === `/base/resource-nodes/${unknownNode.nodeId}/survey` &&
+    response.request().method() === "POST"
+  );
+  await startSurvey.click();
+  const surveyResponse = await surveyResponsePromise;
+  expect(surveyResponse.ok()).toBe(true);
+  const surveyResult = await surveyResponse.json() as { jobId?: unknown };
+  if (typeof surveyResult.jobId !== "string") throw new Error("勘探 POST 没有返回 jobId");
+  const surveyJobId = surveyResult.jobId;
+  const surveyReceipt = panel.getByRole("status").filter({ hasText: /勘探单已提交，望山开始勘察/ });
+  await expect(surveyReceipt).toBeVisible();
+  const submitted = await readSnapshot(page);
+  expect(submitted.baseId).toBe(initial.baseId);
+  const surveyJob = submitted.extractionJobs?.find((job) => job.jobId === surveyJobId);
+  expect(surveyJob).toMatchObject({
+    jobId: surveyJobId,
+    kind: "survey",
+    nodeId: unknownNode.nodeId,
+    surveyorOperatorId: surveyorId
+  });
+  await attachEvidence("U03-survey-submitted", {
+    baseId: submitted.baseId,
+    jobId: surveyJobId,
+    job: surveyJob,
+    postStatus: surveyResponse.status(),
+    uiReceipt: await surveyReceipt.innerText()
+  });
+
+  const returnToExpansion = panel.getByRole("button", {
+    name: "返回原工程（扩建位 A）",
+    exact: true
+  });
+  await expect(returnToExpansion).toBeVisible();
+  await returnToExpansion.click();
+  await expect(panel).toContainText("扩建位 A · 开工");
+  await expect(panel).toContainText("增建太阳能");
+  await expect(sourceChain).toBeVisible();
+  const expansionCard = map.getByRole("button", { name: /扩建位 A/ });
+  await expect(expansionCard).toHaveAttribute("aria-pressed", "true");
+
+  const refreshError = page.getByRole("alert").filter({ hasText: "基地状态刷新失败" });
+  await page.context().setOffline(true);
+  try {
+    await expect(refreshError).toBeVisible({ timeout: 25_000 });
+    expect(await page.evaluate(() => navigator.onLine)).toBe(false);
+    await attachEvidence("U08-offline-visible", {
+      baseId: submitted.baseId,
+      online: await page.evaluate(() => navigator.onLine),
+      error: await refreshError.innerText(),
+      expansionSelected: await expansionCard.getAttribute("aria-pressed"),
+      panel: await panel.ariaSnapshot()
+    });
+
+    const recoveryResponsePromise = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === "/base/snapshot" &&
+      response.request().method() === "GET" &&
+      response.ok(),
+    { timeout: 25_000 });
+    await page.context().setOffline(false);
+    const recoveryResponse = await recoveryResponsePromise;
+    const recovered = await recoveryResponse.json() as BaseSnapshotDto;
+    await expect(refreshError).toBeHidden({ timeout: 15_000 });
+    expect(recovered.baseId).toBe(initial.baseId);
+    expect(recovered.extractionJobs?.some((job) => job.jobId === surveyJobId)).toBe(true);
+    await expect(panel).toContainText("扩建位 A · 开工");
+    await expect(sourceChain).toBeVisible();
+    await expect(expansionCard).toHaveAttribute("aria-pressed", "true");
+    await attachEvidence("U08-network-recovered", {
+      snapshotStatus: recoveryResponse.status(),
+      baseId: recovered.baseId,
+      surveyJobId,
+      online: await page.evaluate(() => navigator.onLine),
+      alertVisible: await refreshError.isVisible(),
+      expansionSelected: await expansionCard.getAttribute("aria-pressed"),
+      panel: await panel.ariaSnapshot()
+    });
+  } finally {
+    await page.context().setOffline(false);
+  }
+  expect(pageErrors).toEqual([]);
 });
