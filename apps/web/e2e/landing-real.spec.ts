@@ -6,7 +6,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { chromium, expect, test } from "@playwright/test";
+import { chromium, expect, test, type Locator } from "@playwright/test";
 
 const runId = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
 const email = `r1-e2e-${runId}@example.test`;
@@ -126,6 +126,13 @@ test("U09 原生浏览器200%：首太阳能操作完整可见并真实提交", 
       expect(facts.shellScrollWidth).toBeLessThanOrEqual(facts.innerWidth + 1);
       expect(facts.shellScrollHeight).toBeLessThanOrEqual(facts.innerHeight + 1);
     };
+    const tabTo = async (locator: Locator, description: string) => {
+      for (let presses = 1; presses <= 30; presses += 1) {
+        await page.keyboard.press("Tab");
+        if (await locator.evaluate((element) => element === document.activeElement)) return presses;
+      }
+      throw new Error(`Tab did not focus ${description} within 30 presses`);
+    };
 
     await page.goto(appUrl);
     await page.getByLabel("邮箱").fill(zoomEmail);
@@ -174,27 +181,33 @@ test("U09 原生浏览器200%：首太阳能操作完整可见并真实提交", 
 
     const goalAction = goal.getByRole("button", { name: "前往处理", exact: true });
     await expect(goalAction).toHaveCount(1);
+    const goalTabPresses = await tabTo(goalAction, "the current goal action");
+    await expect(goalAction).toBeFocused();
     const goalBounds = await goalAction.boundingBox();
     await saveJson("U09-goal-action-visibility.json", {
       viewport: afterZoom,
+      tabPresses: goalTabPresses,
       goalBounds,
       goalSnapshot: await goal.ariaSnapshot()
     });
     await saveScreenshot("U09-native-zoom-goal-action.png");
     expect(goalBounds).not.toBeNull();
     await expect(goalAction).toBeInViewport({ ratio: 1 });
-    await goalAction.click();
+    await page.keyboard.press("Enter");
 
     const panel = page.getByLabel("对象操作");
     await expect(panel).toContainText("太阳能安装位 · 开工");
     const install = panel.getByRole("button", { name: "安装首座太阳能", exact: true });
     await expect(install).toHaveCount(1);
     await expect(install).toBeVisible();
+    const installTabPresses = await tabTo(install, "the first-solar install action");
+    await expect(install).toBeFocused();
     const installBounds = await install.boundingBox();
     const panelScrollTop = await panel.evaluate((element) => element.scrollTop);
     const atOperation = await viewportFacts();
     await saveJson("U09-install-action-visibility.json", {
       viewport: atOperation,
+      tabPresses: installTabPresses,
       installBounds,
       panelScrollTop,
       operationSnapshot: await panel.ariaSnapshot()
@@ -208,7 +221,7 @@ test("U09 原生浏览器200%：首太阳能操作完整可见并真实提交", 
     const projectResponsePromise = page.waitForResponse((response) =>
       new URL(response.url()).pathname === "/base/projects" && response.request().method() === "POST"
     );
-    await install.click();
+    await page.keyboard.press("Enter");
     const projectResponse = await projectResponsePromise;
     expect(projectResponse.ok()).toBe(true);
     const result = await projectResponse.json() as { projectId?: unknown };
@@ -226,6 +239,22 @@ test("U09 原生浏览器200%：首太阳能操作完整可见并真实提交", 
       receiptText,
       queueText: await queue.innerText(),
       finalViewport: await viewportFacts()
+    });
+
+    const returnMap = panel.getByRole("button", { name: "返回地图", exact: true });
+    const returnMapTabPresses = await tabTo(returnMap, "the return-to-map action");
+    await expect(returnMap).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("button", { name: "场景", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByLabel("基地地图")).toBeVisible();
+    await expect(panel).toBeHidden();
+    await saveScreenshot("U09-native-zoom-returned-to-scene.png");
+    await saveJson("U09-native-zoom-returned-to-scene.json", {
+      returnMapTabPresses,
+      sceneSelected: await page.getByRole("button", { name: "场景", exact: true }).getAttribute("aria-pressed"),
+      mapVisible: await page.getByLabel("基地地图").isVisible(),
+      panelVisible: await panel.isVisible(),
+      viewport: await viewportFacts()
     });
     expect(pageErrors).toEqual([]);
   } finally {
