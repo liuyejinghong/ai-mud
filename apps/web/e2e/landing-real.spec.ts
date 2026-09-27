@@ -457,6 +457,9 @@ test("U07 独立同档回访：在途工单离开20分钟不补算", async ({ pa
     simTime: snapshot.simTime,
     timeMode: snapshot.timeMode,
     speed: snapshot.speed,
+    storageWh: snapshot.power.storageWh,
+    batteries: snapshot.devices.map(({ operatorId, batteryWh }) => ({ operatorId, batteryWh }))
+      .sort((left, right) => left.operatorId.localeCompare(right.operatorId)),
     resources: snapshot.resources.map((resource) => ({
       itemId: resource.itemId,
       quantity: resource.quantity,
@@ -643,12 +646,21 @@ test("U07 独立同档回访：在途工单离开20分钟不补算", async ({ pa
     });
     throw error;
   }
+  const miningCard = queue.locator(".landing-queue-card").filter({ hasText: "采矿 · 北坡磁异常" });
+  // 正常离开会结清已确认前台时间；先暂停单笔采运保留货物，基地时钟仍运行。
+  expect(await clickForId(page, `/base/extraction-jobs/${miningJobId}/pause`, "jobId", () =>
+    miningCard.getByRole("button", { name: "暂停", exact: true }).click()
+  )).toBe(miningJobId);
+  transitSnapshot = await waitForSnapshot(page, (current) => {
+    const job = current.extractionJobs?.find((candidate) => candidate.jobId === miningJobId);
+    return job?.status === "paused" && job.phase === "hauling" && job.batchesExtracted > job.batchesDelivered;
+  }, "U07 could not hold the in-transit cargo with the normal job pause action", 30_000);
   await page.goto("about:blank", { waitUntil: "commit" });
   const transitJob = transitSnapshot.extractionJobs?.find((job) => job.jobId === miningJobId);
   expect(transitJob).toMatchObject({
     jobId: miningJobId,
     kind: "mine",
-    status: "active",
+    status: "paused",
     nodeId: northernNode.nodeId,
     phase: "hauling"
   });
@@ -696,7 +708,7 @@ test("U07 独立同档回访：在途工单离开20分钟不补算", async ({ pa
   }
   expect(awayBaseline.baseId).toBe(transitSnapshot.baseId);
   const baselineJob = awayBaseline.extractionJobs?.find((job) => job.jobId === miningJobId);
-  if (!baselineJob || baselineJob.status !== "active" || baselineJob.phase !== "hauling" ||
+  if (!baselineJob || baselineJob.status !== "paused" || baselineJob.phase !== "hauling" ||
       baselineJob.batchesExtracted <= baselineJob.batchesDelivered) {
     await attachEvidence("U07-NOT_RUN-transit-ended-before-baseline", {
       status: "NOT_RUN",
@@ -782,6 +794,9 @@ test("U07 独立同档回访：在途工单离开20分钟不补算", async ({ pa
   await ensureControl();
   const resumeAfterReturn = clock.getByRole("button", { name: "恢复", exact: true });
   if (await resumeAfterReturn.isVisible().catch(() => false)) await resumeAfterReturn.click();
+  expect(await clickForId(page, `/base/extraction-jobs/${miningJobId}/resume`, "jobId", () =>
+    miningCard.getByRole("button", { name: "恢复", exact: true }).click()
+  )).toBe(miningJobId);
   await clock.getByRole("button", { name: "×4", exact: true }).click();
   snapshot = await waitForSnapshot(page, (current) =>
     current.timeMode === "running" && current.speed === 4 && current.controlLease.heldByThisSession,
