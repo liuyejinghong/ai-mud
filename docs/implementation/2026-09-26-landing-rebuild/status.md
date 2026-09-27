@@ -39,3 +39,22 @@
 - 全仓 build/typecheck/arch/test 复跑全绿（server 724/web 222 含 4 项主控独立检查）。
 - landing-loop 全循环 e2e 逐轮修复推进（快照透出配方运行参数；勘探显式铁矿；铜先冶炼；
   tick 粒度等待；hasFocus 钉真）：v14 已到达维护窗口截图（04），v15 修复铜料冶炼顺序后运行中。
+
+## 返工轮续作（2026-09-27 晨，宿主重建后恢复）
+
+- loop16 死因为宿主重建杀掉浏览器进程（error-context：`Target page...has been closed` + EPIPE），
+  非测试失败；当时已过 05-expansion-done-8kW（首扩建完成、峰值 8 kW），正等圈2「制造备件」下单按钮。
+- **测试基建根因修复（c7953e3）**：Playwright 每项目 testMatch 正则按含父目录的整路径匹配，
+  本 worktree 目录名 `yudian-landing-r1-glm53` 中的 "landing-" 使 `/landing-.*\.spec\.ts/`
+  命中**全部** spec 文件——此前每轮 "landing-postgres" 实际串行跑了 9 个测试（含 mock 向
+  auth-smoke 2 项，在真服务端环境下必然失败，runner 整体退出码非零）；landing 系测试本体仍真实
+  执行且通过，历史截图/断言有效，但项目归属被污染。已改为文件名锚定 glob
+  （`**/landing-*.spec.ts` 等），在同名 worktree 下验证 --list 仅含 4 个 landing 规格。
+- runner 新增 `REAL_E2E_GREP`（按用例名过滤），供修复后只重跑受影响场景。
+- 新增规格（待跑）：`landing-control-negative.spec.ts`（HTTP 层缺/错 X-Base-Control-Token →
+  409 CONTROL_EXPIRED 且无副作用＋有效租约阳性对照）、`landing-alt-route.real.spec.ts`
+  （U06 先加工间替代路线：应急电全程、24 铁+4 铜→增建第二加工间、两次维护、里程碑记录）。
+- loop17（nohup 脱离宿主）：`DATABASE_URL=<55434 隔离库> REAL_E2E_WORLD_TICK=true
+  REAL_E2E_PROJECT=landing-postgres pnpm --filter @ai-mud/server exec tsx
+  scripts/run-real-player-e2e.ts`，日志 /private/tmp/e2e-loop17.log；运行中，已过 03-ore-delivered。
+- 清理被杀运行遗留的 4 个 runner 临时库（ai_mud_real_e2e_*，loop17 在用库保留）。
