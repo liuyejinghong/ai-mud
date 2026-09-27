@@ -624,6 +624,8 @@ test("U07 独立同档回访：在途工单离开20分钟不补算", async ({ pa
     () => panel.getByRole("button", { name: /^下采矿单/ }).click()
   );
 
+  const savedUrl = page.url();
+  const savedGoal = await goal.innerText();
   let transitSnapshot: BaseSnapshotDto;
   try {
     transitSnapshot = await waitForSnapshot(page, (current) => {
@@ -641,6 +643,7 @@ test("U07 独立同档回访：在途工单离开20分钟不补算", async ({ pa
     });
     throw error;
   }
+  await page.goto("about:blank", { waitUntil: "commit" });
   const transitJob = transitSnapshot.extractionJobs?.find((job) => job.jobId === miningJobId);
   expect(transitJob).toMatchObject({
     jobId: miningJobId,
@@ -650,9 +653,9 @@ test("U07 独立同档回访：在途工单离开20分钟不补算", async ({ pa
     phase: "hauling"
   });
   expect(transitJob?.batchesExtracted).toBeGreaterThan(transitJob?.batchesDelivered ?? 0);
-  const savedUrl = page.url();
-  const savedGoal = await goal.innerText();
-  await attachEvidence("U07-before-leaving-in-transit", {
+  await testInfo.attach("U07-before-leaving-in-transit.json", {
+    contentType: "application/json",
+    body: JSON.stringify({
     baseId: transitSnapshot.baseId,
     savedUrl,
     savedGoal,
@@ -662,9 +665,8 @@ test("U07 独立同档回访：在途工单离开20分钟不补算", async ({ pa
     speed: transitSnapshot.speed,
     controlLease: transitSnapshot.controlLease,
     facts: continuityFacts(transitSnapshot)
+    }, null, 2)
   });
-
-  await page.goto("about:blank");
   await expect(page).toHaveURL("about:blank");
   await expect(page.locator(".landing-shell")).toHaveCount(0);
   await attachEvidence("U07-left-game-page", {
