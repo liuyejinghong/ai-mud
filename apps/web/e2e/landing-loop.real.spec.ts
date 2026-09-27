@@ -205,14 +205,15 @@ test("U04+U05 全循环：安装→勘探采矿→加工维护→扩建→再投
   await page.screenshot({ path: testInfo.outputPath("06-rounds-2-3.png"), fullPage: true });
 
   // U07 离开回访：暂停 → 记录时间 → 刷新 → 时间/队列不变 → 恢复。
-  await page.getByRole("button", { name: "暂停", exact: true }).click();
+  // 队列工单卡也有「暂停/恢复」chip，时钟按钮必须限定在「基地时间」区域内。
+  await page.getByLabel("基地时间").getByRole("button", { name: "暂停", exact: true }).click();
   const clockBefore = await page.locator(".landing-clock").innerText();
   await page.reload();
   await expect(page.locator(GOAL)).toBeVisible({ timeout: 30_000 });
   await expect(page.locator(".landing-clock")).toHaveText(clockBefore, { timeout: 30_000 });
   await expect(page.locator(QUEUE)).toContainText("冶炼铁料");
   await ensureControl(page);
-  await page.getByRole("button", { name: "恢复", exact: true }).click();
+  await page.getByLabel("基地时间").getByRole("button", { name: "恢复", exact: true }).click();
   await page.screenshot({ path: testInfo.outputPath("07-revisit.png"), fullPage: true });
 
   // U09：720×450 与真实 200% 缩放下目标与主动作可见。
