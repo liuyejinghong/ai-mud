@@ -25,6 +25,7 @@ type MiningOrder = {
   batches: number;
   builderOperatorIds: string[];
   haulerOperatorId: string;
+  createdSnapshot: BaseSnapshotDto;
 };
 
 async function ensureControl(page: Page): Promise<void> {
@@ -82,6 +83,8 @@ async function installFacility(
   const before = await readSnapshotFromPublicGet(page);
   const template = before.buildableProjects.find((candidate) => candidate.definitionRef.stableId === stableId);
   if (!template) throw new Error("public snapshot has no facility project " + stableId);
+  const outputFacility = template.outputFacility;
+  if (!outputFacility) throw new Error("public snapshot project " + stableId + " has no output facility");
   for (const required of template.requiresFacilities ?? []) {
     expect(installed.has(required), stableId + " requires installed " + required).toBe(true);
   }
@@ -109,13 +112,15 @@ async function installFacility(
   expect(project?.definitionRef.stableId).toBe(stableId);
   expect(project?.siteId).toBe(site.siteId);
   expect(completed.sites.find((candidate) => candidate.siteId === site.siteId)?.state).toBe("built");
-  for (const capability of template.outputFacility.effects?.capabilities ?? []) {
+  for (const capability of outputFacility.effects?.capabilities ?? []) {
     expect(completed.capabilities).toContain(capability);
   }
-  installed.add(stableId);
+  const installedFacilityId = outputFacility.ref.stableId;
+  installed.add(installedFacilityId);
   return record(page, testInfo, "facility-" + stableId, {
     projectId,
     stableId,
+    installedFacilityId,
     requiredFacilities: template.requiresFacilities ?? [],
     siteId: site.siteId,
     siteKey,
@@ -168,6 +173,9 @@ async function startMining(
   const node = before.resourceNodes?.find((candidate) => candidate.nodeId === nodeId);
   if (!node?.discovered || !node.itemId) throw new Error("node " + nodeId + " is not a discovered resource");
   if (batches < 1 || batches > 10) throw new Error("invalid mining order size " + batches);
+  expect((before.extractionJobs ?? []).filter((job) => job.kind === "mine" &&
+    (job.status === "active" || job.status === "paused" || job.status === "stopping")
+  ), "mining reservation check requires no other unsettled mining order").toEqual([]);
   const itemName = node.itemName ?? before.displayNames?.items[node.itemId] ?? node.itemId;
   const builders = before.devices.filter((device) => device.groupId === "engineering");
   const selectedBuilders = builderOperatorIds.map((operatorId) =>
@@ -190,10 +198,19 @@ async function startMining(
   await expect(panel).toContainText("采矿运输");
   const builderChecks = panel.getByRole("checkbox");
   await expect(builderChecks).toHaveCount(builders.length);
+  for (let index = 0; index < builders.length; index += 1) {
+    const checkbox = builderChecks.nth(index);
+    if (await checkbox.isChecked()) await checkbox.uncheck();
+  }
   for (const operatorId of builderOperatorIds) {
     const index = builders.findIndex((device) => device.operatorId === operatorId);
     if (index < 0) throw new Error("builder " + operatorId + " is not present in the mining panel");
     await builderChecks.nth(index).check();
+  }
+  for (let index = 0; index < builders.length; index += 1) {
+    expect(await builderChecks.nth(index).isChecked()).toBe(
+      builderOperatorIds.includes(builders[index]!.operatorId)
+    );
   }
   await panel.getByLabel("驮运").selectOption(haulerOperatorId);
   await panel.getByLabel(/批数/).fill(String(batches));
@@ -202,18 +219,24 @@ async function startMining(
   await ensureControl(page);
   const jobId = await clickForId(page, "/base/extraction-jobs", "jobId", () => submit.click());
   const created = await readSnapshotFromPublicGet(page);
-  const job = created.extractionJobs?.find((candidate) => candidate.jobId === jobId);
+  const createdJobs = created.extractionJobs ?? [];
+  const job = createdJobs.find((candidate) => candidate.jobId === jobId);
+  if (!job) throw new Error("created mining job " + jobId + " missing from public snapshot");
   expect(job).toMatchObject({
     jobId,
     kind: "mine",
     nodeId,
-    status: "active",
     batchesPlanned: batches,
-    builderOperatorIds: [...builderOperatorIds].sort(),
     haulerOperatorId
   });
-  expect(created.resourceNodes?.find((candidate) => candidate.nodeId === nodeId)?.reservedQuantity)
-    .toBe((node.reservedQuantity ?? 0) + batches * 4);
+  expect([...job.builderOperatorIds].sort()).toEqual([...builderOperatorIds].sort());
+  const createdNode = created.resourceNodes?.find((candidate) => candidate.nodeId === nodeId);
+  expect(createdNode).toBeDefined();
+  expect((createdNode?.reservedQuantity ?? 0) + job.batchesExtracted * 4)
+    .toBe((node.reservedQuantity ?? 0) + job.batchesPlanned * 4);
+  expect(createdJobs.filter((candidate) =>
+    candidate.kind === "mine" && candidate.jobId !== jobId && candidate.status === "active"
+  ), "no other active mining may change the node reservation during this read").toEqual([]);
   return {
     jobId,
     nodeId,
@@ -221,7 +244,8 @@ async function startMining(
     itemId: node.itemId,
     batches,
     builderOperatorIds,
-    haulerOperatorId
+    haulerOperatorId,
+    createdSnapshot: created
   };
 }
 
@@ -414,7 +438,7 @@ test("U08低电与零备件恢复", async ({ page }, testInfo) => {
   expect(lowBuilder.batteryWh, "use the live lowest-charge builder; ten batches require 120Wh of single-builder work")
     .toBeLessThan(tenBatchBuilderNeedWh);
   expect(lowBuilder.batteryWh).toBeGreaterThanOrEqual(BUILDER_DRAIN_WH);
-  await record(page, testInfo, "lowest-builder-before-low-order", {
+  const lowBuilderBeforeOrder = {
     baseId,
     operatorId: lowBuilder.operatorId,
     batteryWh: lowBuilder.batteryWh,
@@ -422,11 +446,32 @@ test("U08低电与零备件恢复", async ({ page }, testInfo) => {
     tenBatchBuilderNeedWh,
     haulerOperatorId: lowHauler.operatorId,
     haulerBatteryWh: lowHauler.batteryWh
-  });
+  };
 
   console.info("[landing-recovery] start low-battery mining with actual minimum " +
     lowBuilder.operatorId + "=" + lowBuilder.batteryWh + "Wh");
   const lowOrder = await startMining(page, ironNodeId, 10, [lowBuilder.operatorId], lowHauler.operatorId);
+  const lowOrderCreated = lowOrder.createdSnapshot;
+  const lowOrderCreatedJob = (lowOrderCreated.extractionJobs ?? []).find((job) => job.jobId === lowOrder.jobId);
+  const lowOrderCreatedBuilder = lowOrderCreated.devices.find((device) =>
+    device.operatorId === lowBuilder.operatorId
+  );
+  if (!lowOrderCreatedJob || !lowOrderCreatedBuilder) {
+    throw new Error("created low-battery order snapshot lacks its exact job or assigned builder");
+  }
+  const remainingMiningBatches = lowOrderCreatedJob.batchesPlanned - lowOrderCreatedJob.batchesExtracted;
+  const remainingMiningWorkPoints = Math.max(
+    0,
+    remainingMiningBatches * MINING_POINTS_PER_BATCH -
+      (lowOrderCreatedJob.phase === "mining" ? lowOrderCreatedJob.phaseWorkDone : 0)
+  );
+  const remainingMiningNeedWh = remainingMiningWorkPoints * BUILDER_DRAIN_WH;
+  const lowBatteryAlreadyVisible = lowOrderCreatedJob.blockedReason === "device_low_battery";
+  expect(
+    lowBatteryAlreadyVisible ||
+      (remainingMiningBatches > 0 && lowOrderCreatedBuilder.batteryWh < remainingMiningNeedWh),
+    "after creating this exact order, its assigned builder must still lack charge for remaining mining work"
+  ).toBe(true);
   snapshot = await waitForSnapshot(page, (current) => current.extractionJobs?.some((job) =>
     job.jobId === lowOrder.jobId && job.status === "active" && job.blockedReason === "device_low_battery"
   ) === true, "ten-batch job " + lowOrder.jobId + " did not stop on low battery", 600_000);
@@ -437,6 +482,14 @@ test("U08低电与零备件恢复", async ({ page }, testInfo) => {
   await record(page, testInfo, "low-battery-stop", {
     baseId,
     jobId: lowOrder.jobId,
+    beforeOrder: lowBuilderBeforeOrder,
+    createdOrder: {
+      job: lowOrderCreatedJob,
+      assignedBuilder: lowOrderCreatedBuilder,
+      remainingMiningBatches,
+      remainingMiningWorkPoints,
+      remainingMiningNeedWh
+    },
     job: lowJob,
     lowBuilder: snapshot.devices.find((device) => device.operatorId === lowBuilder.operatorId)
   });
