@@ -1,0 +1,26 @@
+{
+  "method": "chromium.launchPersistentContext + chrome://settings/appearance #zoomLevel",
+  "headless": false,
+  "channel": "chromium",
+  "settingsValue": "2",
+  "before": {
+    "innerWidth": 1280,
+    "innerHeight": 800,
+    "devicePixelRatio": 1,
+    "documentScrollWidth": 1280,
+    "documentScrollHeight": 800,
+    "shellScrollWidth": 1280,
+    "shellScrollHeight": 800
+  },
+  "after": {
+    "innerWidth": 640,
+    "innerHeight": 400,
+    "devicePixelRatio": 2,
+    "documentScrollWidth": 640,
+    "documentScrollHeight": 400,
+    "shellScrollWidth": 640,
+    "shellScrollHeight": 400
+  },
+  "widthScale": 2,
+  "dprScale": 2
+}
