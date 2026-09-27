@@ -1,0 +1,23 @@
+{
+  "baseId": "3f232c99-2fe5-4853-9437-a963107c7282",
+  "jobId": "617bfe6a-973a-4697-9546-e7e8ea605bd6",
+  "job": {
+    "jobId": "617bfe6a-973a-4697-9546-e7e8ea605bd6",
+    "kind": "survey",
+    "status": "active",
+    "nodeId": "197cc501-b603-410f-befc-668fed504602",
+    "nodeName": "北坡磁异常",
+    "batchesPlanned": 1,
+    "batchesExtracted": 0,
+    "batchesDelivered": 0,
+    "phase": null,
+    "phaseWorkDone": 0,
+    "phaseWorkRequired": 2,
+    "builderOperatorIds": [],
+    "haulerOperatorId": null,
+    "surveyorOperatorId": "063596e6-f205-4738-9be7-8ae90bd3a158",
+    "blockedReason": null
+  },
+  "postStatus": 201,
+  "uiReceipt": "勘探单已提交，望山开始勘察（约 2 个基地分钟）。"
+}

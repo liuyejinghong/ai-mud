@@ -1,0 +1,191 @@
+{
+  "status": "OBSERVED",
+  "awayMilliseconds": 1201006,
+  "timeMode": "running",
+  "speed": 1,
+  "controlLease": {
+    "heldByThisSession": false,
+    "controlActive": false,
+    "leaseUntil": null
+  },
+  "facts": {
+    "baseId": "c78c91c7-3ea3-45bc-a6a3-1808a5964137",
+    "simTime": "2026-09-27T08:18:19.879Z",
+    "timeMode": "running",
+    "speed": 1,
+    "storageWh": 2000,
+    "batteries": [
+      {
+        "operatorId": "0e4bd9a4-743d-4373-8a1a-e4507cb9f6db",
+        "batteryWh": 56
+      },
+      {
+        "operatorId": "1db8f201-2f99-41f0-a0f5-3e14bfc9d272",
+        "batteryWh": 60
+      },
+      {
+        "operatorId": "23bdff94-71b4-45bd-9c4b-12eef0f88eec",
+        "batteryWh": 88
+      },
+      {
+        "operatorId": "48da7b0f-554b-4071-a2dc-23554ca426ca",
+        "batteryWh": 114
+      },
+      {
+        "operatorId": "5dc4d75e-f8c3-4ef1-803a-537000f176a6",
+        "batteryWh": 78
+      },
+      {
+        "operatorId": "6dd5d239-b878-4759-b09a-64265d98ba03",
+        "batteryWh": 126
+      },
+      {
+        "operatorId": "71a1470f-9117-49b2-af2f-2ab79d1cdca9",
+        "batteryWh": 120
+      },
+      {
+        "operatorId": "76241e5e-caea-4bb8-8971-6bcdfdc29366",
+        "batteryWh": 108
+      },
+      {
+        "operatorId": "a82be9fe-255f-4025-be09-2d3191a8233f",
+        "batteryWh": 90
+      },
+      {
+        "operatorId": "ee3f9136-3c2c-43df-9352-da1805e5a51d",
+        "batteryWh": 72
+      },
+      {
+        "operatorId": "f5ae85dd-e90c-41aa-b3b0-6f48fac80388",
+        "batteryWh": 48
+      },
+      {
+        "operatorId": "f6b9c2e7-fede-43c8-8aca-79495f5cfc0c",
+        "batteryWh": 80
+      }
+    ],
+    "resources": [
+      {
+        "itemId": "charging_kit",
+        "quantity": 1,
+        "reservedQuantity": 0,
+        "reservationSources": []
+      },
+      {
+        "itemId": "controller",
+        "quantity": 12,
+        "reservedQuantity": 0,
+        "reservationSources": []
+      },
+      {
+        "itemId": "maintenance_kit",
+        "quantity": 1,
+        "reservedQuantity": 0,
+        "reservationSources": []
+      },
+      {
+        "itemId": "processing_kit",
+        "quantity": 1,
+        "reservedQuantity": 0,
+        "reservationSources": []
+      },
+      {
+        "itemId": "pv_cell",
+        "quantity": 12,
+        "reservedQuantity": 0,
+        "reservationSources": []
+      },
+      {
+        "itemId": "solar_kit",
+        "quantity": 0,
+        "reservedQuantity": 0,
+        "reservationSources": []
+      },
+      {
+        "itemId": "spare_part",
+        "quantity": 6,
+        "reservedQuantity": 0,
+        "reservationSources": []
+      },
+      {
+        "itemId": "storage_kit",
+        "quantity": 1,
+        "reservedQuantity": 0,
+        "reservationSources": []
+      },
+      {
+        "itemId": "warehouse_kit",
+        "quantity": 0,
+        "reservedQuantity": 0,
+        "reservationSources": []
+      }
+    ],
+    "resourceNodes": [
+      {
+        "nodeId": "5795f36a-fee1-4fa4-be1e-c353244b8623",
+        "discovered": true,
+        "remainingQuantity": 196,
+        "reservedQuantity": 8
+      },
+      {
+        "nodeId": "b01937a4-cc46-4d49-b196-f05316efab53",
+        "discovered": false,
+        "remainingQuantity": null,
+        "reservedQuantity": null
+      }
+    ],
+    "projects": [
+      {
+        "projectId": "0b133fbe-1da6-471e-8fd8-823a0d0d0de9",
+        "status": "completed",
+        "steps": [
+          {
+            "index": 0,
+            "status": "completed",
+            "workDone": 2,
+            "blockedReason": null
+          }
+        ]
+      },
+      {
+        "projectId": "cb858384-9bfb-4441-a383-506090d0a05c",
+        "status": "completed",
+        "steps": [
+          {
+            "index": 0,
+            "status": "completed",
+            "workDone": 2,
+            "blockedReason": null
+          }
+        ]
+      }
+    ],
+    "manufacturingJobs": [],
+    "extractionJobs": [
+      {
+        "jobId": "1d0239af-40e2-4b84-8bad-0590adc8e108",
+        "kind": "mine",
+        "status": "paused",
+        "nodeId": "5795f36a-fee1-4fa4-be1e-c353244b8623",
+        "batchesPlanned": 3,
+        "batchesExtracted": 1,
+        "batchesDelivered": 0,
+        "phase": "hauling",
+        "phaseWorkDone": 0,
+        "blockedReason": null
+      },
+      {
+        "jobId": "7b40a48b-af64-44b5-b6c7-85c9e87390ad",
+        "kind": "survey",
+        "status": "completed",
+        "nodeId": "5795f36a-fee1-4fa4-be1e-c353244b8623",
+        "batchesPlanned": 1,
+        "batchesExtracted": 0,
+        "batchesDelivered": 0,
+        "phase": null,
+        "phaseWorkDone": 2,
+        "blockedReason": null
+      }
+    ]
+  }
+}

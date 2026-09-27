@@ -1,0 +1,17 @@
+{
+  "requests": [
+    {
+      "path": "/base/resource-nodes/de41c853-c056-409f-8545-ecc80a2a8ea0/survey",
+      "status": 409
+    },
+    {
+      "path": "/base/resource-nodes/de41c853-c056-409f-8545-ecc80a2a8ea0/survey",
+      "status": 409
+    },
+    {
+      "path": "/base/resource-nodes/de41c853-c056-409f-8545-ecc80a2a8ea0/survey",
+      "status": 201
+    }
+  ],
+  "negativeNoSideEffectsAssertion": "extractionJobs.length === 0 passed before positive control"
+}

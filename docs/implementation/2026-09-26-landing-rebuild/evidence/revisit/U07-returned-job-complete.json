@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "baseId": "c78c91c7-3ea3-45bc-a6a3-1808a5964137",
+  "jobId": "1d0239af-40e2-4b84-8bad-0590adc8e108",
+  "timeMode": "running",
+  "speed": 4,
+  "delivered": 3,
+  "itemId": "iron_ore",
+  "inventory": 12,
+  "expectedInventory": 12,
+  "goal": "第 4 步 · 安装加工间\n\n矿石要冶炼成材料才能扩建；维护工位也一起装上。\n\n前往处理"
+}

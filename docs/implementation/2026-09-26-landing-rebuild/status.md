@@ -1,3 +1,5 @@
+> 历史记录：以下保留外部 worker 当时的自报及续作记录。当前实现、独立验收、失败修正与未测边界见 [主控验收报告](takeover-status.md)。
+
 # R1 着陆重建 · 实施状态（返工轮 1/3 后）
 
 工作树：`/private/tmp/yudian-landing-r1-glm53`，分支 `codex/landing-r1-glm53`。

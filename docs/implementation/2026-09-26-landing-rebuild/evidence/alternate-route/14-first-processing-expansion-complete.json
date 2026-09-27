@@ -1,0 +1,1177 @@
+{
+  "name": "着陆场",
+  "baseId": "fcc56edc-3250-4796-b72a-2778bc22d3bb",
+  "epoch": 1,
+  "baseRevision": 29,
+  "simTime": "2026-09-27T09:32:26.922Z",
+  "timeMode": "running",
+  "speed": 4,
+  "activeContentRelease": "yudian-landing-1",
+  "power": {
+    "generationWPeak": 4000,
+    "availableW": 4000,
+    "storageWh": 6709,
+    "storageCapacityWh": 7000,
+    "loadW": 440,
+    "emergencyGenerationW": 1000,
+    "chargeLimitW": 2000,
+    "powerPolicy": "production",
+    "actualGenerationW": 5000,
+    "actualSolarW": 4000
+  },
+  "resources": [
+    {
+      "itemId": "pv_cell",
+      "name": "光伏片",
+      "description": "随船高级部件，数量有限，用于增建太阳能。",
+      "quantity": 12,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    },
+    {
+      "itemId": "solar_kit",
+      "name": "太阳能套件",
+      "description": "随船运抵的折叠太阳能电站组件，安装并网后 +4 kW 峰值供电。",
+      "quantity": 0,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    },
+    {
+      "itemId": "warehouse_kit",
+      "name": "仓储套件",
+      "description": "仓储棚结构件，建成后矿石才能入库、加工才能开工。",
+      "quantity": 0,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    },
+    {
+      "itemId": "iron_ingot",
+      "name": "铁料",
+      "description": "冶炼铁料：进一步加工成结构件或备件。",
+      "quantity": 0,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    },
+    {
+      "itemId": "storage_kit",
+      "name": "储能套件",
+      "description": "储能间组件，建成后储电容量 +5 kWh（新增容量为空）。",
+      "quantity": 0,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    },
+    {
+      "itemId": "charging_kit",
+      "name": "充电区套件",
+      "description": "充电桩区组件，建成后全基地充电上限从 400 W 提到 2000 W。",
+      "quantity": 0,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    },
+    {
+      "itemId": "spare_part",
+      "name": "备件",
+      "description": "维护加工槽的耗材；初始 6 件，之后可由本地冶炼制造。",
+      "quantity": 4,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    },
+    {
+      "itemId": "processing_kit",
+      "name": "加工间套件",
+      "description": "加工设备组件，建成后提供一条加工槽（每槽额定 2 kW）。",
+      "quantity": 0,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    },
+    {
+      "itemId": "maintenance_kit",
+      "name": "维护工位套件",
+      "description": "维护设备组件，建成后可对加工槽做消耗备件的维护。",
+      "quantity": 0,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    },
+    {
+      "itemId": "copper_ingot",
+      "name": "铜料",
+      "description": "冶炼铜料：拉制线缆或与铁料合成备件。",
+      "quantity": 1,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    },
+    {
+      "itemId": "structural_frame",
+      "name": "结构件",
+      "description": "加工结构件：扩建工程的主要材料。",
+      "quantity": 0,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    },
+    {
+      "itemId": "wire_cable",
+      "name": "线缆",
+      "description": "拉制的输电线缆：扩建与设备组装都要用。",
+      "quantity": 0,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    },
+    {
+      "itemId": "controller",
+      "name": "电子控制器",
+      "description": "随船高级部件，数量有限，用于增建加工间/储能和组装驮运。",
+      "quantity": 11,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    },
+    {
+      "itemId": "iron_ore",
+      "name": "铁矿",
+      "description": "从北坡磁异常采出的铁矿石，冶炼成铁料。",
+      "quantity": 0,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    },
+    {
+      "itemId": "copper_ore",
+      "name": "铜矿",
+      "description": "从脊线氧化带采出的铜矿石，冶炼成铜料。",
+      "quantity": 0,
+      "reservedQuantity": 0,
+      "reservationSources": []
+    }
+  ],
+  "displayNames": {
+    "items": {
+      "solar_kit": "太阳能套件",
+      "warehouse_kit": "仓储套件",
+      "storage_kit": "储能套件",
+      "charging_kit": "充电区套件",
+      "processing_kit": "加工间套件",
+      "maintenance_kit": "维护工位套件",
+      "controller": "电子控制器",
+      "pv_cell": "光伏片",
+      "spare_part": "备件",
+      "iron_ore": "铁矿",
+      "copper_ore": "铜矿",
+      "iron_ingot": "铁料",
+      "copper_ingot": "铜料",
+      "structural_frame": "结构件",
+      "wire_cable": "线缆"
+    },
+    "facilities": {
+      "landing-solar": "太阳能电站",
+      "landing-warehouse": "仓储棚",
+      "landing-storage": "储能间",
+      "landing-charging": "充电区",
+      "landing-processing": "加工间",
+      "landing-maintenance": "维护工位"
+    },
+    "robots": {
+      "landing-hauler": "驮运",
+      "landing-builder": "筑垒",
+      "landing-surveyor": "望山"
+    }
+  },
+  "resourceItemIds": [
+    "iron_ore",
+    "copper_ore"
+  ],
+  "sites": [
+    {
+      "siteId": "337350ca-60e8-4ede-9baf-2a3f5003b160",
+      "siteKey": "expand_a",
+      "name": "扩建位 A",
+      "state": "built",
+      "note": "冶炼与材料制造",
+      "description": "加工间提供加工槽（每槽额定 2 kW），完成 10 批后需要维护才能继续。",
+      "attributes": [
+        {
+          "label": "加工槽",
+          "value": "1 条（可扩建）"
+        },
+        {
+          "label": "额定负载",
+          "value": "2.0 kW / 槽"
+        },
+        {
+          "label": "维护",
+          "value": "每 10 批消耗 1 备件"
+        }
+      ]
+    },
+    {
+      "siteId": "db1c56e1-3085-4e64-9445-c5abe57b8e76",
+      "siteKey": "expand_b",
+      "name": "扩建位 B",
+      "state": "free",
+      "note": null,
+      "description": null,
+      "attributes": []
+    },
+    {
+      "siteId": "b8f16595-d814-42f7-98dd-e909d06294ef",
+      "siteKey": "expand_c",
+      "name": "扩建位 C",
+      "state": "free",
+      "note": null,
+      "description": null,
+      "attributes": []
+    },
+    {
+      "siteId": "9f92d49e-0cbc-4c10-a255-1cd71416f02e",
+      "siteKey": "expand_d",
+      "name": "扩建位 D",
+      "state": "free",
+      "note": null,
+      "description": null,
+      "attributes": []
+    },
+    {
+      "siteId": "9a8d90ec-2e4f-432e-aa05-0487f90476c9",
+      "siteKey": "install_charging",
+      "name": "充电区安装位",
+      "state": "built",
+      "note": "提高充电上限",
+      "description": "充电桩区把全基地充电总上限从 400 W 提到 2000 W，不发电。",
+      "attributes": [
+        {
+          "label": "充电上限",
+          "value": "400 W → 2.0 kW"
+        }
+      ]
+    },
+    {
+      "siteId": "e021330d-8853-4341-b894-46d48cb4e370",
+      "siteKey": "install_maintenance",
+      "name": "维护工位安装位",
+      "state": "built",
+      "note": "维护加工槽",
+      "description": "对加工槽做消耗备件的维护，恢复其继续生产的能力。",
+      "attributes": [
+        {
+          "label": "消耗",
+          "value": "备件 1 件 / 次"
+        },
+        {
+          "label": "维护窗口",
+          "value": "第 8–10 批起可提前维护"
+        }
+      ]
+    },
+    {
+      "siteId": "80c6fc85-27ad-4c17-8ec3-b054cef6d973",
+      "siteKey": "install_processing",
+      "name": "加工间安装位",
+      "state": "built",
+      "note": "冶炼与材料制造",
+      "description": "加工间提供加工槽（每槽额定 2 kW），完成 10 批后需要维护才能继续。",
+      "attributes": [
+        {
+          "label": "加工槽",
+          "value": "1 条（可扩建）"
+        },
+        {
+          "label": "额定负载",
+          "value": "2.0 kW / 槽"
+        },
+        {
+          "label": "维护",
+          "value": "每 10 批消耗 1 备件"
+        }
+      ]
+    },
+    {
+      "siteId": "16736a28-5ff5-47aa-a829-6e7fa35b8723",
+      "siteKey": "install_solar",
+      "name": "太阳能安装位",
+      "state": "built",
+      "note": "昼间为基地供电",
+      "description": "安装并网的太阳能电站，昼间按日照与积尘系数出力。",
+      "attributes": [
+        {
+          "label": "峰值发电",
+          "value": "4.0 kW"
+        },
+        {
+          "label": "供电时段",
+          "value": "昼间（基地时间 06:00–18:00）"
+        }
+      ]
+    },
+    {
+      "siteId": "bc894ec4-3879-489c-b5be-4a26317a7983",
+      "siteKey": "install_storage",
+      "name": "储能间安装位",
+      "state": "built",
+      "note": "扩大储电容量",
+      "description": "储能间只增加容量：新增的 5 kWh 是空的，需要真实发电充入。",
+      "attributes": [
+        {
+          "label": "容量增量",
+          "value": "+5.0 kWh（初始为空）"
+        }
+      ]
+    },
+    {
+      "siteId": "8f7b29b0-10bf-4d03-a458-569a4d55a9ad",
+      "siteKey": "install_warehouse",
+      "name": "仓储棚安装位",
+      "state": "built",
+      "note": "矿石入库与加工前置",
+      "description": "仓储棚建成前采出的矿石无法入库；它同时是加工间与维护工位的前置。",
+      "attributes": [
+        {
+          "label": "解锁",
+          "value": "矿石入库、本地加工"
+        }
+      ]
+    },
+    {
+      "siteId": "776ff260-4670-495c-976c-138dafa36762",
+      "siteKey": "lander",
+      "name": "着陆器",
+      "state": "built",
+      "note": "应急供电与手工恢复",
+      "description": "运抵设备与套件的着陆器：应急发电 1 kW 持续供电（基础负载 200 W、充电上限 400 W），并为手工备件提供工位。它不是永久工厂，不授予仓库、加工或正式维护能力。",
+      "attributes": [
+        {
+          "label": "应急发电",
+          "value": "1.0 kW（不受日照影响）"
+        },
+        {
+          "label": "随船储电",
+          "value": "1.0 / 2.0 kWh"
+        },
+        {
+          "label": "充电上限",
+          "value": "400 W（建充电区后 2 kW）"
+        }
+      ]
+    }
+  ],
+  "devices": [
+    {
+      "deviceId": "35c17c0c-febd-498b-9e65-ce2838557846",
+      "operatorId": "b5e4dffd-0c4c-4b84-9671-704ab8d56eae",
+      "name": "驮运",
+      "groupId": "transport",
+      "description": "随船运抵的驮运机器人，负责把采出的矿石送回仓库。",
+      "status": "idle",
+      "batteryWh": 120,
+      "batteryCapacityWh": 120,
+      "currentAssignment": null,
+      "currentExtractionJobId": null
+    },
+    {
+      "deviceId": "63b92ece-406c-4e15-8cc0-67ac0e66ed08",
+      "operatorId": "ff83731a-e58b-4454-904a-76dbe0221f6a",
+      "name": "驮运",
+      "groupId": "transport",
+      "description": "随船运抵的驮运机器人，负责把采出的矿石送回仓库。",
+      "status": "idle",
+      "batteryWh": 120,
+      "batteryCapacityWh": 120,
+      "currentAssignment": null,
+      "currentExtractionJobId": null
+    },
+    {
+      "deviceId": "ddd5c85d-9d10-4654-9046-b5fc26615b5c",
+      "operatorId": "25a3834d-8680-4b27-bea8-301747ed28b5",
+      "name": "驮运",
+      "groupId": "transport",
+      "description": "随船运抵的驮运机器人，负责把采出的矿石送回仓库。",
+      "status": "idle",
+      "batteryWh": 120,
+      "batteryCapacityWh": 120,
+      "currentAssignment": null,
+      "currentExtractionJobId": null
+    },
+    {
+      "deviceId": "8f7f609e-521a-48ca-b678-fa7c485cad0a",
+      "operatorId": "16d7b3a1-c01b-4ed5-999c-918ab3b0cccf",
+      "name": "驮运",
+      "groupId": "transport",
+      "description": "随船运抵的驮运机器人，负责把采出的矿石送回仓库。",
+      "status": "idle",
+      "batteryWh": 120,
+      "batteryCapacityWh": 120,
+      "currentAssignment": null,
+      "currentExtractionJobId": null
+    },
+    {
+      "deviceId": "bdcd201d-5adc-4636-bd04-e17d0d9031b8",
+      "operatorId": "7ed7775f-9f71-4094-a731-992a9dbd62b9",
+      "name": "筑垒",
+      "groupId": "engineering",
+      "description": "随船运抵的工程机器人，自带基础采掘附件，可在施工与采矿之间选择。",
+      "status": "idle",
+      "batteryWh": 180,
+      "batteryCapacityWh": 180,
+      "currentAssignment": null,
+      "currentExtractionJobId": null
+    },
+    {
+      "deviceId": "da797b49-a7a0-482d-a971-b5fd867e3c0a",
+      "operatorId": "7624aec3-0f3c-470d-bfa4-953debbb2fbd",
+      "name": "筑垒",
+      "groupId": "engineering",
+      "description": "随船运抵的工程机器人，自带基础采掘附件，可在施工与采矿之间选择。",
+      "status": "idle",
+      "batteryWh": 180,
+      "batteryCapacityWh": 180,
+      "currentAssignment": null,
+      "currentExtractionJobId": null
+    },
+    {
+      "deviceId": "69bc78ec-5369-4067-8f5e-26f55157e57a",
+      "operatorId": "605f7470-6239-4b56-82f4-b9250f8dcdf7",
+      "name": "筑垒",
+      "groupId": "engineering",
+      "description": "随船运抵的工程机器人，自带基础采掘附件，可在施工与采矿之间选择。",
+      "status": "idle",
+      "batteryWh": 180,
+      "batteryCapacityWh": 180,
+      "currentAssignment": null,
+      "currentExtractionJobId": null
+    },
+    {
+      "deviceId": "2b2e3636-8491-46ee-8f72-f61fc6e1bbba",
+      "operatorId": "0fbc9798-9aed-4c6c-a4ff-3d3347d9a194",
+      "name": "筑垒",
+      "groupId": "engineering",
+      "description": "随船运抵的工程机器人，自带基础采掘附件，可在施工与采矿之间选择。",
+      "status": "idle",
+      "batteryWh": 180,
+      "batteryCapacityWh": 180,
+      "currentAssignment": null,
+      "currentExtractionJobId": null
+    },
+    {
+      "deviceId": "d3c63453-c56a-4591-b452-62adbc683eba",
+      "operatorId": "f3bf7d33-d2c4-4223-bb33-5f50b03988e6",
+      "name": "筑垒",
+      "groupId": "engineering",
+      "description": "随船运抵的工程机器人，自带基础采掘附件，可在施工与采矿之间选择。",
+      "status": "idle",
+      "batteryWh": 180,
+      "batteryCapacityWh": 180,
+      "currentAssignment": null,
+      "currentExtractionJobId": null
+    },
+    {
+      "deviceId": "53b31bbc-5954-4476-bbb0-28bd4ad40e5c",
+      "operatorId": "db2ce27e-77cc-4f05-a49e-748cd3f5f2bc",
+      "name": "望山",
+      "groupId": "survey",
+      "description": "随船运抵的勘测机器人，负责勘探矿点和工程验收。",
+      "status": "idle",
+      "batteryWh": 76,
+      "batteryCapacityWh": 80,
+      "currentAssignment": null,
+      "currentExtractionJobId": null
+    },
+    {
+      "deviceId": "f05e799d-7e92-4048-a2c9-da75f2489907",
+      "operatorId": "331c17d4-ebcd-4df4-b57d-939668f67cce",
+      "name": "望山",
+      "groupId": "survey",
+      "description": "随船运抵的勘测机器人，负责勘探矿点和工程验收。",
+      "status": "idle",
+      "batteryWh": 80,
+      "batteryCapacityWh": 80,
+      "currentAssignment": null,
+      "currentExtractionJobId": null
+    },
+    {
+      "deviceId": "25ada874-f019-449d-8ea9-31bd1ff1b734",
+      "operatorId": "d945c36f-ee26-4aa1-9f77-47b6e3ff5af1",
+      "name": "望山",
+      "groupId": "survey",
+      "description": "随船运抵的勘测机器人，负责勘探矿点和工程验收。",
+      "status": "idle",
+      "batteryWh": 80,
+      "batteryCapacityWh": 80,
+      "currentAssignment": null,
+      "currentExtractionJobId": null
+    }
+  ],
+  "projects": [
+    {
+      "projectId": "8eb94a59-4319-4cc1-93a9-e98b2dc79d41",
+      "definitionRef": {
+        "kind": "project",
+        "stableId": "landing-install-solar",
+        "revision": 1
+      },
+      "name": "安装首座太阳能",
+      "status": "completed",
+      "siteId": "16736a28-5ff5-47aa-a829-6e7fa35b8723",
+      "builderCount": 2,
+      "steps": [
+        {
+          "index": 0,
+          "kind": "installation",
+          "groupId": "engineering",
+          "status": "completed",
+          "workRequired": 2,
+          "workDone": 2,
+          "blockedReason": null
+        }
+      ]
+    },
+    {
+      "projectId": "6baa70b1-466b-465b-af80-99ffb7d42da7",
+      "definitionRef": {
+        "kind": "project",
+        "stableId": "landing-install-warehouse",
+        "revision": 1
+      },
+      "name": "安装仓储棚",
+      "status": "completed",
+      "siteId": "8f7b29b0-10bf-4d03-a458-569a4d55a9ad",
+      "builderCount": 2,
+      "steps": [
+        {
+          "index": 0,
+          "kind": "installation",
+          "groupId": "engineering",
+          "status": "completed",
+          "workRequired": 2,
+          "workDone": 2,
+          "blockedReason": null
+        }
+      ]
+    },
+    {
+      "projectId": "866b2221-4bcd-4c48-baa7-d90ec8d13b4d",
+      "definitionRef": {
+        "kind": "project",
+        "stableId": "landing-install-maintenance",
+        "revision": 1
+      },
+      "name": "安装维护工位",
+      "status": "completed",
+      "siteId": "e021330d-8853-4341-b894-46d48cb4e370",
+      "builderCount": 2,
+      "steps": [
+        {
+          "index": 0,
+          "kind": "installation",
+          "groupId": "engineering",
+          "status": "completed",
+          "workRequired": 2,
+          "workDone": 2,
+          "blockedReason": null
+        }
+      ]
+    },
+    {
+      "projectId": "8cbd258d-7bf7-488d-ae9a-52c9229bfde5",
+      "definitionRef": {
+        "kind": "project",
+        "stableId": "landing-expand-processing",
+        "revision": 1
+      },
+      "name": "增建加工间",
+      "status": "completed",
+      "siteId": "337350ca-60e8-4ede-9baf-2a3f5003b160",
+      "builderCount": 2,
+      "steps": [
+        {
+          "index": 0,
+          "kind": "installation",
+          "groupId": "engineering",
+          "status": "completed",
+          "workRequired": 4,
+          "workDone": 4,
+          "blockedReason": null
+        },
+        {
+          "index": 1,
+          "kind": "commissioning",
+          "groupId": "survey",
+          "status": "completed",
+          "workRequired": 2,
+          "workDone": 2,
+          "blockedReason": null
+        }
+      ]
+    },
+    {
+      "projectId": "d7d3dd26-fda4-47fd-80c8-d2f7b128ada3",
+      "definitionRef": {
+        "kind": "project",
+        "stableId": "landing-install-storage",
+        "revision": 1
+      },
+      "name": "安装储能间",
+      "status": "completed",
+      "siteId": "bc894ec4-3879-489c-b5be-4a26317a7983",
+      "builderCount": 2,
+      "steps": [
+        {
+          "index": 0,
+          "kind": "installation",
+          "groupId": "engineering",
+          "status": "completed",
+          "workRequired": 2,
+          "workDone": 2,
+          "blockedReason": null
+        }
+      ]
+    },
+    {
+      "projectId": "624cbe3d-ce6f-4783-ac39-4f761a379b71",
+      "definitionRef": {
+        "kind": "project",
+        "stableId": "landing-install-processing",
+        "revision": 1
+      },
+      "name": "安装加工间",
+      "status": "completed",
+      "siteId": "80c6fc85-27ad-4c17-8ec3-b054cef6d973",
+      "builderCount": 2,
+      "steps": [
+        {
+          "index": 0,
+          "kind": "installation",
+          "groupId": "engineering",
+          "status": "completed",
+          "workRequired": 2,
+          "workDone": 2,
+          "blockedReason": null
+        }
+      ]
+    },
+    {
+      "projectId": "d763011a-d53d-485b-8bc3-56453e7223ef",
+      "definitionRef": {
+        "kind": "project",
+        "stableId": "landing-install-charging",
+        "revision": 1
+      },
+      "name": "安装充电区",
+      "status": "completed",
+      "siteId": "9a8d90ec-2e4f-432e-aa05-0487f90476c9",
+      "builderCount": 2,
+      "steps": [
+        {
+          "index": 0,
+          "kind": "installation",
+          "groupId": "engineering",
+          "status": "completed",
+          "workRequired": 2,
+          "workDone": 2,
+          "blockedReason": null
+        }
+      ]
+    }
+  ],
+  "buildableProjects": [
+    {
+      "definitionRef": {
+        "kind": "project",
+        "stableId": "landing-expand-solar",
+        "revision": 1
+      },
+      "name": "增建太阳能",
+      "description": "用自产结构件与线缆扩建一座太阳能电站，峰值供电再 +4 kW。",
+      "inputs": [
+        {
+          "itemId": "structural_frame",
+          "quantity": 4
+        },
+        {
+          "itemId": "wire_cable",
+          "quantity": 2
+        },
+        {
+          "itemId": "pv_cell",
+          "quantity": 6
+        }
+      ],
+      "outputFacility": {
+        "ref": {
+          "kind": "facility",
+          "stableId": "landing-solar",
+          "revision": 1
+        },
+        "name": "太阳能电站",
+        "generationWPeak": 4000
+      },
+      "expansionSlot": true,
+      "allowedSiteKeys": [
+        "expand_a",
+        "expand_b",
+        "expand_c",
+        "expand_d"
+      ],
+      "canStart": false,
+      "blockers": [
+        {
+          "type": "material",
+          "itemId": "structural_frame",
+          "required": 4,
+          "available": 0,
+          "inTransit": 0
+        },
+        {
+          "type": "material",
+          "itemId": "wire_cable",
+          "required": 2,
+          "available": 0,
+          "inTransit": 0
+        }
+      ]
+    },
+    {
+      "definitionRef": {
+        "kind": "project",
+        "stableId": "landing-expand-storage",
+        "revision": 1
+      },
+      "name": "增建储能",
+      "description": "扩建 5 kWh 空储电容量用于储备夜间生产，不提高瞬时发电。",
+      "inputs": [
+        {
+          "itemId": "structural_frame",
+          "quantity": 4
+        },
+        {
+          "itemId": "wire_cable",
+          "quantity": 2
+        },
+        {
+          "itemId": "controller",
+          "quantity": 1
+        }
+      ],
+      "outputFacility": {
+        "ref": {
+          "kind": "facility",
+          "stableId": "landing-storage",
+          "revision": 1
+        },
+        "name": "储能间",
+        "effects": {
+          "storageCapacityWh": 5000
+        }
+      },
+      "expansionSlot": true,
+      "allowedSiteKeys": [
+        "expand_a",
+        "expand_b",
+        "expand_c",
+        "expand_d"
+      ],
+      "canStart": false,
+      "blockers": [
+        {
+          "type": "material",
+          "itemId": "structural_frame",
+          "required": 4,
+          "available": 0,
+          "inTransit": 0
+        },
+        {
+          "type": "material",
+          "itemId": "wire_cable",
+          "required": 2,
+          "available": 0,
+          "inTransit": 0
+        }
+      ]
+    }
+  ],
+  "availableRecipes": [
+    {
+      "ref": {
+        "kind": "recipe",
+        "stableId": "landing-smelt-iron",
+        "revision": 1
+      },
+      "name": "冶炼铁料",
+      "description": "把 2 铁矿熔炼成 1 铁料。",
+      "inputs": [
+        {
+          "itemId": "iron_ore",
+          "quantity": 2
+        }
+      ],
+      "workPerUnit": 1,
+      "output": {
+        "kind": "item",
+        "itemId": "iron_ingot",
+        "quantity": 1
+      },
+      "ratedW": 2000,
+      "workMinutesPerBatch": 1,
+      "requiredCapability": "processing"
+    },
+    {
+      "ref": {
+        "kind": "recipe",
+        "stableId": "landing-smelt-copper",
+        "revision": 1
+      },
+      "name": "冶炼铜料",
+      "description": "把 2 铜矿熔炼成 1 铜料。",
+      "inputs": [
+        {
+          "itemId": "copper_ore",
+          "quantity": 2
+        }
+      ],
+      "workPerUnit": 1,
+      "output": {
+        "kind": "item",
+        "itemId": "copper_ingot",
+        "quantity": 1
+      },
+      "ratedW": 2000,
+      "workMinutesPerBatch": 1,
+      "requiredCapability": "processing"
+    },
+    {
+      "ref": {
+        "kind": "recipe",
+        "stableId": "landing-make-structural",
+        "revision": 1
+      },
+      "name": "加工结构件",
+      "description": "把 2 铁料轧成 1 结构件。",
+      "inputs": [
+        {
+          "itemId": "iron_ingot",
+          "quantity": 2
+        }
+      ],
+      "workPerUnit": 1,
+      "output": {
+        "kind": "item",
+        "itemId": "structural_frame",
+        "quantity": 1
+      },
+      "ratedW": 2000,
+      "workMinutesPerBatch": 1,
+      "requiredCapability": "processing"
+    },
+    {
+      "ref": {
+        "kind": "recipe",
+        "stableId": "landing-make-cable",
+        "revision": 1
+      },
+      "name": "制造线缆",
+      "description": "把 1 铜料拉制成 2 线缆。",
+      "inputs": [
+        {
+          "itemId": "copper_ingot",
+          "quantity": 1
+        }
+      ],
+      "workPerUnit": 1,
+      "output": {
+        "kind": "item",
+        "itemId": "wire_cable",
+        "quantity": 2
+      },
+      "ratedW": 2000,
+      "workMinutesPerBatch": 1,
+      "requiredCapability": "processing"
+    },
+    {
+      "ref": {
+        "kind": "recipe",
+        "stableId": "landing-make-spares",
+        "revision": 1
+      },
+      "name": "制造备件",
+      "description": "用 1 铁料和 1 铜料造 2 备件。",
+      "inputs": [
+        {
+          "itemId": "iron_ingot",
+          "quantity": 1
+        },
+        {
+          "itemId": "copper_ingot",
+          "quantity": 1
+        }
+      ],
+      "workPerUnit": 1,
+      "output": {
+        "kind": "item",
+        "itemId": "spare_part",
+        "quantity": 2
+      },
+      "ratedW": 2000,
+      "workMinutesPerBatch": 1,
+      "requiredCapability": "processing"
+    },
+    {
+      "ref": {
+        "kind": "recipe",
+        "stableId": "landing-assemble-hauler",
+        "revision": 1
+      },
+      "name": "组装驮运",
+      "description": "用 4 结构件、2 线缆、1 控制器和 2 备件组装一台驮运（出厂电量 0，需充电后使用）。",
+      "inputs": [
+        {
+          "itemId": "structural_frame",
+          "quantity": 4
+        },
+        {
+          "itemId": "wire_cable",
+          "quantity": 2
+        },
+        {
+          "itemId": "controller",
+          "quantity": 1
+        },
+        {
+          "itemId": "spare_part",
+          "quantity": 2
+        }
+      ],
+      "workPerUnit": 3,
+      "output": {
+        "kind": "robot",
+        "templateStableId": "landing-hauler",
+        "initialBatteryWh": 0
+      },
+      "ratedW": 2000,
+      "workMinutesPerBatch": 3,
+      "requiredCapability": "processing"
+    },
+    {
+      "ref": {
+        "kind": "recipe",
+        "stableId": "landing-handcraft-spares",
+        "revision": 1
+      },
+      "name": "手工备件",
+      "description": "在着陆器用 2 铁矿和 2 铜矿手工拼装 1 备件：耗时长、功率低，是维护停机且无备件时的恢复路径。",
+      "inputs": [
+        {
+          "itemId": "iron_ore",
+          "quantity": 2
+        },
+        {
+          "itemId": "copper_ore",
+          "quantity": 2
+        }
+      ],
+      "workPerUnit": 4,
+      "output": {
+        "kind": "item",
+        "itemId": "spare_part",
+        "quantity": 1
+      },
+      "ratedW": 200,
+      "workMinutesPerBatch": 4,
+      "requiredCapability": "lander_manual",
+      "countsSlotMaintenance": false
+    }
+  ],
+  "weather": {
+    "current": "clear",
+    "lightFactor": 1,
+    "nextChangeAt": "2026-09-27T09:32:26.922Z",
+    "nextWeather": "clear",
+    "dustLevel": 0
+  },
+  "credits": 0,
+  "orders": [],
+  "purchases": [],
+  "cooperationRequests": [],
+  "manufacturingJobs": [
+    {
+      "jobId": "18e315d6-6a21-4427-ba3d-df97c313a2d9",
+      "recipeRef": {
+        "kind": "recipe",
+        "stableId": "landing-make-cable",
+        "revision": 1
+      },
+      "recipeName": "制造线缆",
+      "status": "completed",
+      "outputsPlanned": 1,
+      "outputsDone": 1,
+      "currentUnitWorkDone": 0,
+      "blockedReason": null,
+      "productionSiteId": "80c6fc85-27ad-4c17-8ec3-b054cef6d973"
+    },
+    {
+      "jobId": "37bf29d7-d6c9-4875-87e9-fd1c3777ff23",
+      "recipeRef": {
+        "kind": "recipe",
+        "stableId": "landing-make-structural",
+        "revision": 1
+      },
+      "recipeName": "加工结构件",
+      "status": "completed",
+      "outputsPlanned": 6,
+      "outputsDone": 6,
+      "currentUnitWorkDone": 0,
+      "blockedReason": null,
+      "productionSiteId": "80c6fc85-27ad-4c17-8ec3-b054cef6d973"
+    },
+    {
+      "jobId": "743b8344-a4f3-4e32-b9e5-c328ea31920d",
+      "recipeRef": {
+        "kind": "recipe",
+        "stableId": "landing-smelt-copper",
+        "revision": 1
+      },
+      "recipeName": "冶炼铜料",
+      "status": "completed",
+      "outputsPlanned": 2,
+      "outputsDone": 2,
+      "currentUnitWorkDone": 0,
+      "blockedReason": null,
+      "productionSiteId": "80c6fc85-27ad-4c17-8ec3-b054cef6d973"
+    },
+    {
+      "jobId": "a4879a21-b9d7-4a3e-afe4-e8d5cfcce9d3",
+      "recipeRef": {
+        "kind": "recipe",
+        "stableId": "landing-smelt-iron",
+        "revision": 1
+      },
+      "recipeName": "冶炼铁料",
+      "status": "completed",
+      "outputsPlanned": 12,
+      "outputsDone": 12,
+      "currentUnitWorkDone": 0,
+      "blockedReason": null,
+      "productionSiteId": "80c6fc85-27ad-4c17-8ec3-b054cef6d973"
+    }
+  ],
+  "controlLease": {
+    "heldByThisSession": true,
+    "controlActive": true,
+    "leaseUntil": "2026-09-27T05:09:43.113Z"
+  },
+  "capabilities": [
+    "warehouse",
+    "processing",
+    "maintenance"
+  ],
+  "resourceNodes": [
+    {
+      "nodeId": "8cddab64-a91c-4d03-be1b-398af22bc0e7",
+      "nodeKey": "copper_ridge",
+      "name": "脊线蓝绿氧化带",
+      "discovered": true,
+      "itemId": "copper_ore",
+      "itemName": "铜矿",
+      "remainingQuantity": 196,
+      "reservedQuantity": 0
+    },
+    {
+      "nodeId": "6160896d-f97a-4395-bc68-cfcd296b51eb",
+      "nodeKey": "iron_north",
+      "name": "北坡磁异常",
+      "discovered": true,
+      "itemId": "iron_ore",
+      "itemName": "铁矿",
+      "remainingQuantity": 176,
+      "reservedQuantity": 0
+    }
+  ],
+  "extractionJobs": [
+    {
+      "jobId": "db0ea191-2848-45c3-9c81-2b24a4f96949",
+      "kind": "survey",
+      "status": "completed",
+      "nodeId": "6160896d-f97a-4395-bc68-cfcd296b51eb",
+      "nodeName": "北坡磁异常",
+      "batchesPlanned": 1,
+      "batchesExtracted": 0,
+      "batchesDelivered": 0,
+      "phase": null,
+      "phaseWorkDone": 2,
+      "phaseWorkRequired": 2,
+      "builderOperatorIds": [],
+      "haulerOperatorId": null,
+      "surveyorOperatorId": "db2ce27e-77cc-4f05-a49e-748cd3f5f2bc",
+      "blockedReason": null
+    },
+    {
+      "jobId": "6dc752a6-d900-49f8-b73a-3fa85271ddcc",
+      "kind": "mine",
+      "status": "completed",
+      "nodeId": "6160896d-f97a-4395-bc68-cfcd296b51eb",
+      "nodeName": "北坡磁异常",
+      "batchesPlanned": 6,
+      "batchesExtracted": 6,
+      "batchesDelivered": 6,
+      "phase": "mining",
+      "phaseWorkDone": 0,
+      "phaseWorkRequired": 2,
+      "builderOperatorIds": [
+        "7ed7775f-9f71-4094-a731-992a9dbd62b9"
+      ],
+      "haulerOperatorId": "b5e4dffd-0c4c-4b84-9671-704ab8d56eae",
+      "surveyorOperatorId": null,
+      "blockedReason": null
+    },
+    {
+      "jobId": "c9d6ce11-1103-4adb-b4b8-eb1d573aacde",
+      "kind": "survey",
+      "status": "completed",
+      "nodeId": "8cddab64-a91c-4d03-be1b-398af22bc0e7",
+      "nodeName": "脊线蓝绿氧化带",
+      "batchesPlanned": 1,
+      "batchesExtracted": 0,
+      "batchesDelivered": 0,
+      "phase": null,
+      "phaseWorkDone": 2,
+      "phaseWorkRequired": 2,
+      "builderOperatorIds": [],
+      "haulerOperatorId": null,
+      "surveyorOperatorId": "db2ce27e-77cc-4f05-a49e-748cd3f5f2bc",
+      "blockedReason": null
+    },
+    {
+      "jobId": "5b70faea-f635-4339-ae86-d5dbfd34cfcb",
+      "kind": "mine",
+      "status": "completed",
+      "nodeId": "8cddab64-a91c-4d03-be1b-398af22bc0e7",
+      "nodeName": "脊线蓝绿氧化带",
+      "batchesPlanned": 1,
+      "batchesExtracted": 1,
+      "batchesDelivered": 1,
+      "phase": "mining",
+      "phaseWorkDone": 0,
+      "phaseWorkRequired": 2,
+      "builderOperatorIds": [
+        "7ed7775f-9f71-4094-a731-992a9dbd62b9"
+      ],
+      "haulerOperatorId": "b5e4dffd-0c4c-4b84-9671-704ab8d56eae",
+      "surveyorOperatorId": null,
+      "blockedReason": null
+    }
+  ],
+  "productionSlots": [
+    {
+      "slotId": "536333fc-8b87-4296-84cc-2c98348f62f4",
+      "siteId": "337350ca-60e8-4ede-9baf-2a3f5003b160",
+      "siteName": "扩建位 A",
+      "slotIndex": 0,
+      "batchesSinceMaintenance": 0,
+      "maintenanceBlocked": false,
+      "activeJobId": null
+    },
+    {
+      "slotId": "0d966753-8ba2-4230-a82a-c5edee1593c1",
+      "siteId": "80c6fc85-27ad-4c17-8ec3-b054cef6d973",
+      "siteName": "加工间安装位",
+      "slotIndex": 0,
+      "batchesSinceMaintenance": 1,
+      "maintenanceBlocked": false,
+      "activeJobId": null
+    }
+  ]
+}

@@ -1,0 +1,183 @@
+{
+  "recordedAt": "2026-09-27T07:01:36.288347+00:00",
+  "codeCandidate": "ccf44874b2f8fa55b4495a327c90149cf830eb6c",
+  "runtimeBaseline": "b65281d77c812a25728988a5beae92b04b978a88",
+  "onlyTestsOrDocsChangedSinceRuntimeBaseline": true,
+  "changedFilesSinceRuntimeBaseline": [
+    "apps/server/src/tests/base-operations/landing/landing-upgrade.integration.test.ts",
+    "apps/web/e2e/landing-alt-route.real.spec.ts",
+    "apps/web/e2e/landing-browser-helpers.ts",
+    "apps/web/e2e/landing-loop.real.spec.ts",
+    "apps/web/e2e/landing-real.spec.ts",
+    "apps/web/e2e/landing-recovery.real.spec.ts",
+    "docs/architecture/module-boundaries.json",
+    "docs/implementation/2026-09-26-landing-rebuild/evidence/native-zoom/README.md",
+    "docs/implementation/2026-09-26-landing-rebuild/evidence/native-zoom/U09-native-zoom-install-action.png",
+    "docs/implementation/2026-09-26-landing-rebuild/evidence/native-zoom/U09-native-zoom-measurements.json",
+    "docs/implementation/2026-09-26-landing-rebuild/evidence/native-zoom/U09-native-zoom-project-submit.json",
+    "docs/implementation/2026-09-26-landing-rebuild/evidence/native-zoom/U09-native-zoom-returned-to-scene.json",
+    "docs/implementation/2026-09-26-landing-rebuild/evidence/native-zoom/U09-native-zoom-returned-to-scene.png"
+  ],
+  "gates": {
+    "build": {
+      "commit": "f1c64d260cb77661702aef33c0dff3bb982e119d",
+      "command": "pnpm -r build",
+      "result": "PASS"
+    },
+    "typecheck": {
+      "commit": "f1c64d260cb77661702aef33c0dff3bb982e119d",
+      "command": "pnpm -r typecheck",
+      "result": "PASS"
+    },
+    "architecture": {
+      "commit": "ccf44874b2f8fa55b4495a327c90149cf830eb6c",
+      "uncovered": 0,
+      "selfTestFixtures": 12,
+      "result": "PASS"
+    },
+    "tests": {
+      "commit": "ccf44874b2f8fa55b4495a327c90149cf830eb6c",
+      "command": "CI=true DATABASE_URL=<isolated local PG> pnpm -r run test --maxWorkers=2 --minWorkers=1",
+      "counts": {
+        "packages/shared": 22,
+        "packages/ai-prompts": 41,
+        "packages/content": 54,
+        "apps/web": 229,
+        "packages/game-rules": 61,
+        "apps/server": 773
+      },
+      "total": 1180,
+      "result": "PASS",
+      "host": "127.0.0.1",
+      "port": 55434,
+      "database": "ai_mud_ci"
+    },
+    "explicitE2eTypes": {
+      "commit": "f1c64d260cb77661702aef33c0dff3bb982e119d",
+      "files": 6,
+      "strict": true,
+      "result": "PASS"
+    },
+    "e2eList": {
+      "cases": 8,
+      "files": 5,
+      "result": "PASS"
+    }
+  },
+  "unboundedRegressionAttempt": {
+    "commit": "ccf44874b2f8fa55b4495a327c90149cf830eb6c",
+    "result": "FAIL",
+    "serverFailed": 26,
+    "observation": "Multiple 5000ms timeouts followed by fixture-state errors. Same complete suite passed with two file workers; no assertions or timeout limits changed.",
+    "localLog": "/private/tmp/yudian-r1-review/delivery-full-tests.log"
+  },
+  "browserRuns": [
+    {
+      "name": "三圈经营",
+      "runCommit": "9852919532630b273c94ede52d1d85da46a5581c",
+      "stats": {
+        "startTime": "2026-09-27T03:58:34.060Z",
+        "duration": 2524868.929,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "fullLocalArchive": "/private/tmp/yudian-r1-review/three-loops-6-pass"
+    },
+    {
+      "name": "替代路线",
+      "runCommit": "f96ab2b06aaa73cd18605266ffc4162ba175e416",
+      "stats": {
+        "startTime": "2026-09-27T04:43:37.553Z",
+        "duration": 1450871.511,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "fullLocalArchive": "/private/tmp/yudian-r1-review/alternate-route-pass"
+    },
+    {
+      "name": "桌面/窄屏/刷新",
+      "runCommit": "f7313cf84704eba141799d673a2012fa75e920c7",
+      "stats": {
+        "startTime": "2026-09-27T06:00:17.800Z",
+        "duration": 6208.044,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "fullLocalArchive": "/private/tmp/yudian-r1-review/desktop-sizes-pass"
+    },
+    {
+      "name": "缺料导航/断网",
+      "runCommit": "f96ab2b06aaa73cd18605266ffc4162ba175e416",
+      "stats": {
+        "startTime": "2026-09-27T04:42:55.253Z",
+        "duration": 15389.847,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "fullLocalArchive": "/private/tmp/yudian-r1-review/source-network-pass"
+    },
+    {
+      "name": "同档回访",
+      "runCommit": "0dce6108412b954de91709d34dff1de59e37735a",
+      "stats": {
+        "startTime": "2026-09-27T05:28:43.903Z",
+        "duration": 1802009.483,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "fullLocalArchive": "/private/tmp/yudian-r1-review/revisit-pass"
+    },
+    {
+      "name": "低电/零备件恢复",
+      "runCommit": "f7313cf84704eba141799d673a2012fa75e920c7",
+      "stats": {
+        "startTime": "2026-09-27T06:01:33.560Z",
+        "duration": 2700547.9430000004,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "fullLocalArchive": "/private/tmp/yudian-r1-review/recovery-pass"
+    },
+    {
+      "name": "原生200%/键盘",
+      "runCommit": "7662a298592db9822a505079d765ca246251e77f",
+      "stats": {
+        "startTime": "2026-09-27T03:57:33.835Z",
+        "duration": 7308.352,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "fullLocalArchive": "/private/tmp/yudian-r1-review/native-zoom-keyboard-real-window"
+    },
+    {
+      "name": "控制租约HTTP",
+      "runCommit": "f1c64d260cb77661702aef33c0dff3bb982e119d",
+      "stats": {
+        "startTime": "2026-09-27T06:49:25.291Z",
+        "duration": 40659.356,
+        "expected": 1,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "fullLocalArchive": "/private/tmp/yudian-r1-review/control-delivery-pass"
+    }
+  ],
+  "humanPlaytest": "NOT_RUN",
+  "merged": false,
+  "deployed": false
+}

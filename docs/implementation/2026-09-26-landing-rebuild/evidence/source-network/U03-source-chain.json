@@ -1,0 +1,7 @@
+{
+  "baseId": "3f232c99-2fe5-4853-9437-a963107c7282",
+  "expansionSiteId": "7efd1574-0881-410a-8cd5-c51981dc71ff",
+  "missingItem": "structural_frame",
+  "unknownNodeId": "197cc501-b603-410f-befc-668fed504602",
+  "sourceChain": "- paragraph: 获取路径（可进入对应生产，返回原工程不丢上下文）：\n- list:\n  - listitem:\n    - button \"加工结构件：1 结构件 · 前往加工\"\n    - text: （铁料 0/2）\n  - listitem:\n    - button \"冶炼铁料：1 铁料 · 前往加工\"\n    - text: （铁矿 0/2）\n  - listitem:\n    - button \"勘探脊线蓝绿氧化带 · 前往采矿\"\n    - text: （确认是否存在铁矿，勘探本身不产出物料）\n  - listitem:\n    - button \"勘探北坡磁异常 · 前往采矿\"\n    - text: （确认是否存在铁矿，勘探本身不产出物料）"
+}

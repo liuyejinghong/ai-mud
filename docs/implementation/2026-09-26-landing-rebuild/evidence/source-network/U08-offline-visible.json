@@ -1,0 +1,7 @@
+{
+  "baseId": "3f232c99-2fe5-4853-9437-a963107c7282",
+  "online": false,
+  "error": "基地状态刷新失败：操作失败，请稍后再试。（将自动重试）",
+  "expansionSelected": "true",
+  "panel": "- complementary \"对象操作\":\n  - button \"返回地图\"\n  - status: 勘探单已提交，望山开始勘察（约 2 个基地分钟）。\n  - heading \"扩建位 A · 开工\" [level=3]\n  - text: 施工筑垒数量\n  - combobox \"增建太阳能施工筑垒数量\":\n    - option \"1 台\"\n    - option \"2 台\" [selected]\n  - button \"增建太阳能\" [disabled]\n  - paragraph: 投产收益：发电 +4.0 kW\n  - list:\n    - listitem:\n      - text: 结构件 需要 4 · 可用 0\n      - button \"准备材料\"\n    - listitem:\n      - text: 线缆 需要 2 · 可用 0\n      - button \"准备材料\"\n    - listitem: 光伏片 需要 6 · 可用 12\n  - text: 施工筑垒数量\n  - combobox \"增建加工间施工筑垒数量\":\n    - option \"1 台\"\n    - option \"2 台\" [selected]\n  - button \"增建加工间\" [disabled]\n  - paragraph: 投产收益：加工槽 +1\n  - list:\n    - listitem:\n      - text: 结构件 需要 6 · 可用 0\n      - button \"准备材料\"\n    - listitem:\n      - text: 线缆 需要 2 · 可用 0\n      - button \"准备材料\"\n    - listitem: 电子控制器 需要 1 · 可用 12\n  - text: 施工筑垒数量\n  - combobox \"增建储能施工筑垒数量\":\n    - option \"1 台\"\n    - option \"2 台\" [selected]\n  - button \"增建储能\" [disabled]\n  - paragraph: 投产收益：储能容量 +5.0 kWh（新增容量为空）\n  - list:\n    - listitem:\n      - text: 结构件 需要 4 · 可用 0\n      - button \"准备材料\"\n    - listitem:\n      - text: 线缆 需要 2 · 可用 0\n      - button \"准备材料\"\n    - listitem: 电子控制器 需要 1 · 可用 12"
+}
