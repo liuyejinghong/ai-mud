@@ -5,14 +5,10 @@ import { useEffect, useState } from "react";
 import { getBaseEvents, type BaseEventDto } from "./baseApi.js";
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
-  project_started: "开工",
-  project_completed: "完工",
-  project_cancelled: "取消",
-  manufacturing_started: "开工",
-  manufacturing_completed: "制造",
-  survey_completed: "勘探",
-  extraction_delivered: "采矿",
-  order_delivered: "订单"
+  "project.completed": "工程完工",
+  "manufacturing.completed": "制造完工",
+  "extraction.delivered": "采矿送达",
+  "order.delivered": "订单交付"
 };
 
 function eventTag(type: string): string {

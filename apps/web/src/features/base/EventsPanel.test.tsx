@@ -20,7 +20,7 @@ vi.mock("./baseApi.js", () => ({
 function event(overrides: Partial<{ id: string; type: string; title: string; detail: string; simTime: string; createdAt: string }> = {}) {
   return {
     id: overrides.id ?? "e-1",
-    type: overrides.type ?? "project_completed",
+    type: overrides.type ?? "project.completed",
     title: overrides.title ?? "安装首座太阳能已完工",
     detail: overrides.detail ?? "发电 +4.0 kW",
     simTime: overrides.simTime ?? "2026-09-26T08:14:00.000Z",
@@ -38,15 +38,15 @@ describe("EventsPanel", () => {
   it("展示事件列表：类型标签、标题、明细与基地时间（契约 1）", async () => {
     vi.mocked(getBaseEvents).mockResolvedValue({
       events: [
-        event({ id: "e-2", type: "extraction_delivered", title: "采矿送达", detail: "铜矿 4 已入仓", simTime: "2026-09-26T09:02:00.000Z" }),
-        event({ id: "e-1", type: "project_completed", title: "安装首座太阳能已完工" })
+        event({ id: "e-2", type: "extraction.delivered", title: "采矿送达", detail: "铜矿 4 已入仓", simTime: "2026-09-26T09:02:00.000Z" }),
+        event({ id: "e-1", type: "project.completed", title: "安装首座太阳能已完工" })
       ]
     });
     render(<EventsPanel csrfToken="csrf-1" refreshKey={7} />);
     const panel = await screen.findByText(/事件记录（2）/);
     expect(panel).toBeTruthy();
     expect(getBaseEvents).toHaveBeenCalledWith("csrf-1", 100);
-    expect(screen.getByText("完工")).toBeTruthy();
+    expect(screen.getByText("工程完工")).toBeTruthy();
     expect(screen.getByText("安装首座太阳能已完工")).toBeTruthy();
     expect(screen.getByText("发电 +4.0 kW")).toBeTruthy();
     expect(screen.getByText("09-26 09:02")).toBeTruthy(); // simTime 基地时间
