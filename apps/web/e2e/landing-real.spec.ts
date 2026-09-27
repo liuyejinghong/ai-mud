@@ -63,6 +63,19 @@ test("新档玩家：读货单→安装首太阳能→缺料回路→刷新保�
   await expect(page.getByRole("status").filter({ hasText: /工程「安装首座太阳能」已开工/ })).toBeVisible();
   const queue = page.getByLabel("进行中的工作");
   await expect(queue).toContainText("安装首座太阳能");
+  for (const viewport of [{ width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    for (const region of [goal, panel, queue]) await expect(region).toBeInViewport({ ratio: 1 });
+    await expect(panel.getByRole("status")).toBeInViewport({ ratio: 1 });
+    const overflow = await page.evaluate(() => ({
+      x: document.documentElement.scrollWidth - window.innerWidth,
+      y: document.documentElement.scrollHeight - window.innerHeight
+    }));
+    expect(overflow.x).toBeLessThanOrEqual(1);
+    expect(overflow.y).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath(`U02-${viewport.width}x${viewport.height}.png`), fullPage: true });
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
   await page.screenshot({ path: testInfo.outputPath("02-project-started.png"), fullPage: true });
 
   // U03：缺料回路——选扩建位，净缺口 + 来源链 + 返回原对象不丢上下文。
