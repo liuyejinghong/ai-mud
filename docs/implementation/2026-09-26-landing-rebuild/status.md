@@ -58,3 +58,18 @@
   REAL_E2E_PROJECT=landing-postgres pnpm --filter @ai-mud/server exec tsx
   scripts/run-real-player-e2e.ts`，日志 /private/tmp/e2e-loop17.log；运行中，已过 03-ore-delivered。
 - 清理被杀运行遗留的 4 个 runner 临时库（ai_mud_real_e2e_*，loop17 在用库保留）。
+
+## 返工轮续作进展（2026-09-27 上午）
+
+- **HTTP 层租约负例：通过（neg4）**。`REAL_E2E_GREP=控制租约` 运行 1 passed (37.7s)，runner 退出码 0。
+  服务端日志铁证：POST /base/resource-nodes/:id/survey 三连 **409（缺头）/409（错头）/201（有效租约）**，
+  两次被拒后快照 extractionJobs 为空（无副作用），阳性对照后队列出现「勘探」。
+  证据：/private/tmp/yudian-r1-evidence/control-negative-neg4.md ＋ neg4-server.log。
+  迭代记录：注册响应实返 201（谓词改 2xx）；注册后需先「恢复」让心跳取得租约；快照只透出
+  controlActive 不透出 token（token 从 UI 心跳响应读取）。
+- loop17 主动终止：预审发现圈2 缺陷——制造单创建即全额预留，圈1 末铁料为 0，直接下「制造备件」
+  必被 409 RESOURCE_INSUFFICIENT 拒绝（此前 16 轮从未跑到圈2）。已修：圈2 先冶炼 2 批铁料
+  再下备件单（e26f249）。
+- loop18（主循环全链）运行中：REAL_E2E_GREP=全循环，日志 /private/tmp/e2e-loop18.log。
+  修复后的项目过滤生效：本次 "Running 1 test"（此前因 testMatch 缺陷每轮混入 9 个测试）。
+- 教训已记录：Playwright 每轮启动清空 apps/web/test-results，证据须跑完立即归档。
