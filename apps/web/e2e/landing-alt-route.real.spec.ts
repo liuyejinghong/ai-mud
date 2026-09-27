@@ -51,20 +51,20 @@ async function orderRecipe(page: import("@playwright/test").Page, recipeName: st
   await block.getByRole("button", { name: "下单", exact: true }).click();
 }
 
-// 等某配方全部产出；期间维护窗口（第 10/20 批）出现即点，恢复产出。
+// 等某配方下单后从队列出现、加工完毕从队列消失（完成态不渲染，LandingShell 只列
+// active/blocked/paused）；期间维护窗口（第 8–10 批）出现即点，恢复产出。
 async function drainRecipe(
   page: import("@playwright/test").Page,
   recipeName: string,
-  batches: number,
   timeoutMs = 900_000
 ) {
-  const done = `产出 ${batches}/${batches}`;
+  await waitForText(page, page.locator(QUEUE), recipeName, 60_000);
   const deadline = Date.now() + timeoutMs;
   let maintenances = 0;
   while (Date.now() < deadline) {
     await page.evaluate(() => { window.focus(); }).catch(() => undefined);
     const queueText = await page.locator(QUEUE).textContent({ timeout: 5_000 }).catch(() => "");
-    if (queueText?.includes(done)) return maintenances;
+    if (!queueText?.includes(recipeName)) return maintenances;
     const maintainButton = page.getByRole("button", { name: "维护（1 备件）" }).first();
     if (await maintainButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
       await ensureControl(page);
@@ -75,7 +75,24 @@ async function drainRecipe(
     }
     await page.waitForTimeout(5_000);
   }
-  throw new Error(`drainRecipe 超时：${recipeName} 未达到 ${done}`);
+  throw new Error(`drainRecipe 超时：${recipeName} 未完成（未从队列消失）`);
+}
+
+// 采矿单：出现（已送 0/N）→ 完成即从队列消失（空态文案含“采矿”字样，需匹配卡片标题“采矿 · ”）。
+async function drainMining(
+  page: import("@playwright/test").Page,
+  batches: number,
+  timeoutMs = 600_000
+) {
+  await waitForText(page, page.locator(QUEUE), `已送 0/${batches}`, 60_000);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await page.evaluate(() => { window.focus(); }).catch(() => undefined);
+    const queueText = await page.locator(QUEUE).textContent({ timeout: 5_000 }).catch(() => "");
+    if (!queueText?.includes("采矿 · ")) return;
+    await page.waitForTimeout(5_000);
+  }
+  throw new Error(`drainMining 超时：${batches} 批采矿未完成（未从队列消失）`);
 }
 
 test("U06 替代路线：先加工间（应急电）→采冶→自产材料增建第二加工间", async ({ page }, testInfo) => {
@@ -126,8 +143,8 @@ test("U06 替代路线：先加工间（应急电）→采冶→自产材料增�
   await page.screenshot({ path: testInfo.outputPath("01-kits-installed-no-solar.png"), fullPage: true });
 
   // 全程应急供电的对照事实：太阳能 0，应急 1 kW。
-  await expect(page.getByLabel("电力概览")).toContainText("太阳能 0 kW");
-  await expect(page.getByLabel("电力概览")).toContainText("应急 1 kW");
+  await expect(page.getByLabel("电力概览")).toContainText("太阳能 0.0 kW");
+  await expect(page.getByLabel("电力概览")).toContainText("应急 1.0 kW");
 
   // 勘探铁矿 → 采 6 批（24 矿）。
   await page.locator(MAP).getByRole("button", { name: /北坡磁异常/ }).click();
@@ -137,12 +154,13 @@ test("U06 替代路线：先加工间（应急电）→采冶→自产材料增�
   await page.getByRole("button", { name: "开始勘探" }).click();
   await waitForText(page, page.locator(PANEL), "采矿运输", 300_000);
   const checkboxes = page.getByRole("checkbox");
+  await page.getByLabel(/批数/).fill("6"); // 6 批 × 4 矿 = 24 铁矿
   await checkboxes.nth(0).check();
   await checkboxes.nth(1).check();
   await page.getByLabel("驮运").selectOption({ index: 1 });
   await ensureControl(page);
   await page.getByRole("button", { name: /下采矿单/ }).click();
-  await waitForText(page, page.locator(QUEUE), "已送 6/6", 400_000);
+  await drainMining(page, 6);
   await mark("铁 24 矿入仓");
 
   // 勘探铜矿 → 采 1 批（4 矿）。
@@ -152,11 +170,12 @@ test("U06 替代路线：先加工间（应急电）→采冶→自产材料增�
   await page.getByLabel("望山").selectOption({ index: 1 });
   await page.getByRole("button", { name: "开始勘探" }).click();
   await waitForText(page, page.locator(PANEL), "采矿运输", 300_000);
+  await page.getByLabel(/批数/).fill("1"); // 4 铜矿 → 2 铜料
   await checkboxes.nth(0).check();
   await checkboxes.nth(1).check();
   await page.getByLabel("驮运").selectOption({ index: 1 });
   await page.getByRole("button", { name: /下采矿单/ }).click();
-  await waitForText(page, page.locator(QUEUE), "已送 1/1", 300_000);
+  await drainMining(page, 1);
   await mark("铜 4 矿入仓");
 
   // 加工（应急电 ~0.4 批/分；21 批两次维护）：铁 12 → 铜 2 → 结构件 6 → 线缆 1。
@@ -164,14 +183,14 @@ test("U06 替代路线：先加工间（应急电）→采冶→自产材料增�
   await page.locator(PANEL).getByRole("button", { name: "加工间", exact: true }).click();
   await waitForText(page, page.locator(PANEL), "冶炼铁料", 120_000);
   await orderRecipe(page, "冶炼铁料", 12);
-  const maintenances1 = await drainRecipe(page, "冶炼铁料", 12);
+  const maintenances1 = await drainRecipe(page, "冶炼铁料");
   await mark("铁料 12 完成");
   await orderRecipe(page, "冶炼铜料", 2);
-  await drainRecipe(page, "冶炼铜料", 2);
+  await drainRecipe(page, "冶炼铜料");
   await orderRecipe(page, "加工结构件", 6);
-  const maintenances2 = await drainRecipe(page, "加工结构件", 6);
+  const maintenances2 = await drainRecipe(page, "加工结构件");
   await orderRecipe(page, "制造线缆", 1);
-  await drainRecipe(page, "制造线缆", 1);
+  await drainRecipe(page, "制造线缆");
   expect(maintenances1 + maintenances2).toBe(2); // 21 批 = 两次维护（与账本一致）
   await mark("自产材料齐备（6 结构件 + 2 线缆）");
   await page.screenshot({ path: testInfo.outputPath("02-materials-ready.png"), fullPage: true });
@@ -187,7 +206,7 @@ test("U06 替代路线：先加工间（应急电）→采冶→自产材料增�
   await mark("第二加工间建成");
 
   // 路线终态：电力概览仍是太阳能 0/应急 1 kW；地图出现第二座加工间。
-  await expect(page.getByLabel("电力概览")).toContainText("太阳能 0 kW");
+  await expect(page.getByLabel("电力概览")).toContainText("太阳能 0.0 kW");
   await page.screenshot({ path: testInfo.outputPath("03-second-processing-built.png"), fullPage: true });
 
   await testInfo.attach("route-summary", {
