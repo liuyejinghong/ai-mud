@@ -304,6 +304,7 @@ test("U04+U05 三圈经营：扩建太阳能→自产备件维护→扩建加工
   snapshot = await readSnapshot(page);
   expect(quantity(snapshot, "structural_frame")).toBe(4);
   expect(quantity(snapshot, "wire_cable")).toBe(2);
+  expect(quantity(snapshot, "copper_ingot")).toBe(1);
   await checkpoint(page, testInfo, "12-self-made-cable-ready");
 
   // 圈1只有在确切扩建工单完成、站点建成且发电能力增加后才通过。
@@ -346,7 +347,7 @@ test("U04+U05 三圈经营：扩建太阳能→自产备件维护→扩建加工
   const lostFocus = await page.waitForFunction(
     () => document.visibilityState === "hidden" && !document.hasFocus(),
     undefined,
-    { timeout: 10_000 }
+    { polling: 100, timeout: 10_000 }
   ).then(() => true).catch(() => false);
   if (!lostFocus) {
     await testInfo.attach("U07-real-revisit", {
@@ -429,7 +430,7 @@ test("U04+U05 三圈经营：扩建太阳能→自产备件维护→扩建加工
   const circle2Copper = await orderRecipe(page, "冶炼铜料", 2);
   await finishManufacturingJob(page, circle2Copper);
   snapshot = await readSnapshot(page);
-  expect(quantity(snapshot, "copper_ingot")).toBe(2);
+  expect(quantity(snapshot, "copper_ingot")).toBe(3);
   expect(snapshot.productionSlots?.find((slot) => slot.siteId === processingSiteId)?.batchesSinceMaintenance).toBe(8);
   expect(quantity(snapshot, "spare_part")).toBe(5);
   const spareJob = await orderRecipe(page, "制造备件", 1);
@@ -437,6 +438,7 @@ test("U04+U05 三圈经营：扩建太阳能→自产备件维护→扩建加工
   snapshot = await readSnapshot(page);
   expect(snapshot.manufacturingJobs.find((job) => job.jobId === spareJob)?.outputsDone).toBe(1);
   expect(quantity(snapshot, "spare_part")).toBe(7);
+  expect(quantity(snapshot, "copper_ingot")).toBe(2);
   expect(snapshot.productionSlots?.find((slot) => slot.siteId === processingSiteId)?.batchesSinceMaintenance).toBe(9);
   await checkpoint(page, testInfo, "16-circle-2-spares-self-made");
 
@@ -460,8 +462,12 @@ test("U04+U05 三圈经营：扩建太阳能→自产备件维护→扩建加工
   expect(snapshot.productionSlots?.find((slot) => slot.siteId === processingSiteId)?.batchesSinceMaintenance).toBeLessThan(10);
   snapshot = await finishManufacturingJob(page, resumedIronJob).then(() => readSnapshot(page));
   expect(snapshot.manufacturingJobs.find((job) => job.jobId === resumedIronJob)?.outputsDone).toBe(2);
-  expect(quantity(snapshot, "iron_ingot")).toBe(3);
+  expect(quantity(snapshot, "iron_ingot")).toBe(2);
+  expect(quantity(snapshot, "iron_ore")).toBe(6);
+  expect(quantity(snapshot, "copper_ore")).toBe(0);
+  expect(quantity(snapshot, "copper_ingot")).toBe(2);
   expect(quantity(snapshot, "spare_part")).toBe(6);
+  expect(snapshot.productionSlots?.find((slot) => slot.siteId === processingSiteId)?.batchesSinceMaintenance).toBe(1);
   await checkpoint(page, testInfo, "18-circle-2-same-job-resumed");
 
   // 圈3：新采 20 铁矿并完成另一种扩建，不以排队或“已开工”作为通过。
@@ -472,13 +478,17 @@ test("U04+U05 三圈经营：扩建太阳能→自产备件维护→扩建加工
   await openProcessing(page);
   const circle3Iron = await orderRecipe(page, "冶炼铁料", 10);
   expect(await finishManufacturingJob(page, circle3Iron)).toBe(1);
+  snapshot = await readSnapshot(page);
+  expect(quantity(snapshot, "iron_ingot")).toBe(12);
   const circle3Frames = await orderRecipe(page, "加工结构件", 6);
   expect(await finishManufacturingJob(page, circle3Frames)).toBe(0);
+  expect(quantity(await readSnapshot(page), "iron_ingot")).toBe(0);
   const circle3Cable = await orderRecipe(page, "制造线缆", 1);
   await finishManufacturingJob(page, circle3Cable);
   snapshot = await readSnapshot(page);
   expect(quantity(snapshot, "structural_frame")).toBe(6);
   expect(quantity(snapshot, "wire_cable")).toBe(2);
+  expect(quantity(snapshot, "copper_ingot")).toBe(1);
   expect(quantity(snapshot, "controller")).toBe(12);
   await checkpoint(page, testInfo, "20-circle-3-self-made-expansion-inputs");
   const processingExpansionId = await startProjectAt(page, "扩建位 B", "增建加工间");
@@ -491,6 +501,7 @@ test("U04+U05 三圈经营：扩建太阳能→自产备件维护→扩建加工
   expect(snapshot.productionSlots).toHaveLength(2);
   expect(quantity(snapshot, "structural_frame")).toBe(0);
   expect(quantity(snapshot, "wire_cable")).toBe(0);
+  expect(quantity(snapshot, "copper_ingot")).toBe(1);
   expect(quantity(snapshot, "controller")).toBe(11);
   await checkpoint(page, testInfo, "21-circle-3-processing-expansion-complete");
 
