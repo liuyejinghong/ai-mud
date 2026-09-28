@@ -603,6 +603,66 @@
   color: #29d7b1;
 }
 
+/* ── 重开基地（删档重开）两步确认对话框 ── */
+.base-reset-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(4, 14, 20, 0.72);
+}
+.base-reset-dialog {
+  width: min(480px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+  border: 1px solid rgba(255, 122, 107, 0.5);
+  border-radius: 10px;
+  background: #0d1f2b;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+.base-reset-title {
+  margin: 0;
+  font-size: 20px;
+  color: #ff9d90;
+}
+.base-reset-copy {
+  margin: 0;
+  color: #d6e6f2;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.base-reset-list {
+  margin: 0;
+  padding-left: 20px;
+  color: #9fc9d6;
+  font-size: 13px;
+  line-height: 1.9;
+}
+.base-reset-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+.base-secondary-button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  border: 1px solid #24556b;
+  background: transparent;
+  color: #b7cbda;
+  padding: 6px 14px;
+}
+.base-secondary-button:disabled,
+.base-danger-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ── 完工横幅 ── */
 .base-completion-banner {
   grid-column: 1 / -1;

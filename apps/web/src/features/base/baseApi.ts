@@ -158,6 +158,17 @@ export function provision(csrfToken: string, commandId?: string): Promise<Provis
   });
 }
 
+// ---------- 账号重开（删档重开） ----------
+// POST /base/reset：删除自己的旧基地并在服务端同一事务内按注册同款开局重建。
+// 命令幂等：同一 commandId 重放返回收据结果（duplicate=true），不会删两次档。
+export function resetBase(csrfToken: string, commandId: string): Promise<ProvisionResultDto> {
+  return request<ProvisionResultDto>("/base/reset", {
+    method: "POST",
+    csrfToken,
+    body: { commandId }
+  });
+}
+
 export function playtestRegister(
   input: PlaytestRegisterInputDto
 ): Promise<PlaytestRegisterResultDto> {

@@ -2973,6 +2973,61 @@
       "layer": "test",
       "scope": "test",
       "note": "D013 事件面板契约/降级测试（mock 端点）"
+    },
+    {
+      "path": "apps/server/src/modules/world-reset/base-reset.repository.ts",
+      "module": "application",
+      "layer": "persistence",
+      "scope": "production",
+      "flags": [
+        "infra_exception"
+      ],
+      "note": "账号重开（删档重开）：按 baseId 删除单个基地 FK 闭包 21 表与基地命令收据——与全服重置脚本同一闭包清单的精确基础设施例外（PC-02），非模块任意写库豁免"
+    },
+    {
+      "path": "apps/server/src/modules/world-reset/base-reset.service.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "flags": [
+        "infra_exception"
+      ],
+      "note": "账号重开用例：单事务内 删旧档→按注册同款 provision 重建（seedProvisionedBase）→审计→收据；失败整体回滚"
+    },
+    {
+      "path": "apps/server/src/modules/world-reset/base-reset.service.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "重开编排单测：收据幂等/先删后建/失败不落审计与收据"
+    },
+    {
+      "path": "apps/server/src/application/base/reset-base.ts",
+      "module": "application",
+      "layer": "application",
+      "scope": "production",
+      "note": "重开用例薄壳（transport 只消费端口；服务实现在 world-reset）"
+    },
+    {
+      "path": "apps/server/src/tests/ops/reset-account-base.integration.test.ts",
+      "module": "application",
+      "layer": "test",
+      "scope": "test",
+      "note": "账号重开真 PG 集成：闭包全空/新档开局形态/另一账号隔离/失败回滚零残留/同 commandId 幂等与再次重开"
+    },
+    {
+      "path": "apps/web/src/features/base/BaseResetControl.tsx",
+      "module": "client_text",
+      "layer": "client_view",
+      "scope": "production",
+      "note": "账号重开入口 + 两步确认对话框（确认前不触发删除；重试复用同一 commandId）"
+    },
+    {
+      "path": "apps/web/src/features/base/BaseResetControl.test.tsx",
+      "module": "client_text",
+      "layer": "test",
+      "scope": "test",
+      "note": "两步确认流程回归：确认前不可触发/失败重试同 id/进行中禁用"
     }
   ],
   "freezeBasis": "项目所有者 2026-09-18 确认 R1/R2 归类与登记裁决；配套债务清单已冻结（见 legacy-boundary-debt.json）。",
@@ -3006,6 +3061,11 @@
       "date": "2026-09-26",
       "kind": "phase 0 test ownership",
       "detail": "登记第 0 阶段六个新增集成测试文件的精确归属；world-reset 测试沿用维护用例例外，未新增允许边。"
+    },
+    {
+      "date": "2026-09-28",
+      "kind": "account base reset (fix/reset-base-20260928)",
+      "detail": "登记账号重开（删档重开）7 个新增文件：world-reset 下 per-base FK 闭包删除仓储（沿用世界重置的 infra_exception 口径）与单事务编排服务、application 用例薄壳、真 PG 集成测试、web 两步确认组件及测试；未新增模块允许边。"
     }
   ]
 }

@@ -9,6 +9,7 @@ import type {
   RobotStatus
 } from "@ai-mud/shared";
 import { BaseMap } from "./BaseMap.js";
+import { BaseResetControl } from "./BaseResetControl.js";
 import { CooperationPanel } from "./CooperationPanel.js";
 import { EconomyBoard } from "./EconomyBoard.js";
 import { ManufacturingBoard } from "./ManufacturingBoard.js";
@@ -65,6 +66,8 @@ export interface BaseShellProps {
   onPurchase: (itemId: string, quantity: number) => void;
   onCooperationDecision?: (requestId: string, action: "support" | "wait", expectedHelperOperatorId?: string) => void;
   onAcquireControl?: () => void;
+  // 账号重开（删档重开）：确认对话框挂在账户区入口旁；缺省不渲染入口（既有测试不受扰）。
+  onResetBase?: (commandId: string) => Promise<void>;
   hasControl?: boolean;
   accountEmail?: string | null;
   actionFeedback?: BaseActionFeedback | null;
@@ -96,6 +99,7 @@ export function BaseShell({
   onPurchase,
   onCooperationDecision,
   onAcquireControl,
+  onResetBase,
   hasControl = true,
   accountEmail = null,
   actionFeedback = null,
@@ -384,6 +388,7 @@ export function BaseShell({
                 {accountEmail}
               </span>
             ) : null}
+            {onResetBase ? <BaseResetControl onReset={onResetBase} disabled={isBusy} /> : null}
             <button type="button" className="base-logout-button" onClick={onLogout}>
               退出登录
             </button>

@@ -16,6 +16,7 @@ import type {
 } from "@ai-mud/shared";
 import { resolveRuntimeState } from "./runtimeState.js";
 import { formatSimClock, useSimClock } from "./useSimClock.js";
+import { BaseResetControl } from "./BaseResetControl.js";
 import { EventsPanel } from "./EventsPanel.js";
 import "./base.css";
 
@@ -407,6 +408,8 @@ export interface LandingShellProps {
   onClockCommand: (command: "pause" | "resume" | "set_speed", speed?: number) => void;
   onAcquireControl: () => void;
   onLogout: () => void;
+  // 账号重开（删档重开）：账户区入口旁；缺省不渲染入口（既有测试不受扰）。
+  onResetBase?: (commandId: string) => Promise<void>;
   accountEmail: string | null;
   feedback: string | null;
   // D013 事件记录：会话 CSRF（null 时面板不挂载）；快照事实变化时刷新。
@@ -493,6 +496,9 @@ export function LandingShell(props: LandingShellProps) {
         </div>
         <div className="landing-account">
           {props.accountEmail ? <span className="landing-dim">{props.accountEmail}</span> : null}
+          {props.onResetBase ? (
+            <BaseResetControl onReset={props.onResetBase} disabled={props.isBusy} variant="landing" />
+          ) : null}
           <button type="button" className="landing-chip-button" onClick={props.onLogout}>退出</button>
         </div>
       </header>

@@ -26,6 +26,7 @@ import {
   pauseManufacturingJob,
   playtestRegister,
   provision,
+  resetBase,
   resumeManufacturingJob,
   setClock,
   setPowerPolicy,
@@ -41,6 +42,9 @@ const SNAPSHOT_POLL_MS = 5_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 // D011-low：acquire 长时间无响应时不再阻塞快照轮询（轮询只读已提交事实，带 token 亦然）。
 const ACQUIRE_POLL_GUARD_MS = 8_000;
+// F2 自愈：续租 409（幽灵租约被清扫）后前台自动重接管的退避节奏。
+const REACQUIRE_BACKOFF_START_MS = 2_000;
+const REACQUIRE_BACKOFF_MAX_MS = 30_000;
 // D018：完工 toast ≥8s 自动消隐；悬停暂停计时。
 const COMPLETION_BANNER_DISMISS_MS = 10_000;
 
@@ -207,6 +211,8 @@ export function BaseApp({
   const controlTokenRef = useRef<string | null>(null);
   const controlGenerationRef = useRef(0);
   const acquiringRef = useRef<Promise<string | null> | null>(null);
+  const reacquireTimerRef = useRef<number | null>(null);
+  const reacquireBackoffRef = useRef(REACQUIRE_BACKOFF_START_MS);
   const acquireStartedAtRef = useRef(0);
   const foregroundRef = useRef(false);
   // D010：接管失败的可见原因（成功即清空）；重试入口是顶栏"接管"按钮。
@@ -361,6 +367,47 @@ export function BaseApp({
     };
   }, [refreshSnapshot, acquireControl, initialCsrfToken]);
 
+  // F2 自愈：续租 409（租约 TTL 到期被世界 tick 清扫）后，前台态自动重新接管；
+  // 指数退避防多标签风暴，401/403（会话层）即停。修复前"冻结直到手动刷新"的表型由此消失。
+  const scheduleControlReacquire = useCallback((csrf: string) => {
+    if (reacquireTimerRef.current !== null) return;
+    const bumpBackoff = () => {
+      reacquireBackoffRef.current = Math.min(reacquireBackoffRef.current * 2, REACQUIRE_BACKOFF_MAX_MS);
+    };
+    const scheduleNext = () => {
+      if (reacquireTimerRef.current !== null) return;
+      reacquireTimerRef.current = window.setTimeout(() => {
+        reacquireTimerRef.current = null;
+        void runAttempt();
+      }, reacquireBackoffRef.current);
+    };
+    const runAttempt = () => {
+      if (!isForeground() || controlTokenRef.current) {
+        reacquireBackoffRef.current = REACQUIRE_BACKOFF_START_MS;
+        return;
+      }
+      void acquireControl(csrf)
+        .then((token) => {
+          if (token !== null) {
+            reacquireBackoffRef.current = REACQUIRE_BACKOFF_START_MS;
+            void refreshSnapshot();
+            return;
+          }
+          bumpBackoff();
+          scheduleNext();
+        })
+        .catch((error: unknown) => {
+          if (error instanceof BaseApiError && (error.status === 401 || error.status === 403)) {
+            reacquireBackoffRef.current = REACQUIRE_BACKOFF_START_MS;
+            return;
+          }
+          bumpBackoff();
+          scheduleNext();
+        });
+    };
+    scheduleNext();
+  }, [acquireControl, refreshSnapshot]);
+
   // 只有可见且获焦的标签续租；离开时尽力结清并交出控制权。
   useEffect(() => {
     if (csrfToken === null) return;
@@ -391,18 +438,24 @@ export function BaseApp({
           controlTokenRef.current = null;
           setControlToken(null);
           void refreshSnapshot();
+          scheduleControlReacquire(csrfToken);
         }
       });
     }, HEARTBEAT_INTERVAL_MS);
     return () => {
       window.clearInterval(timer);
+      if (reacquireTimerRef.current !== null) {
+        window.clearTimeout(reacquireTimerRef.current);
+        reacquireTimerRef.current = null;
+      }
+      reacquireBackoffRef.current = REACQUIRE_BACKOFF_START_MS;
       window.removeEventListener("focus", enter);
       window.removeEventListener("blur", leave);
       document.removeEventListener("visibilitychange", onVisibility);
       foregroundRef.current = false;
       void releaseControl(csrfToken);
     };
-  }, [csrfToken, acquireControl, refreshSnapshot, releaseControl]);
+  }, [csrfToken, acquireControl, refreshSnapshot, releaseControl, scheduleControlReacquire]);
 
   // D018：完工 toast 不再永驻——10s（≥8s）自动消隐，鼠标悬停时暂停计时。
   useEffect(() => {
@@ -904,6 +957,27 @@ export function BaseApp({
     });
   }, [csrfToken, acquireControl, refreshSnapshot]);
 
+  // 账号重开（删档重开）：服务端同一事务内删旧档、按注册同款开局重建（新 baseId）。
+  // 成功后丢弃本地控制态并立刻刷新快照——refreshSnapshot 侦测到 baseId 变化会清空
+  // 选区/横幅等旧档状态，界面随即落到新基地首屏。commandId 由确认对话框持有
+  // （失败重试复用同一 id，重放命中服务端收据，不会删两次档）。
+  const handleResetBase = useCallback(
+    async (commandId: string) => {
+      if (csrfToken === null) return;
+      await resetBase(csrfToken, commandId);
+      controlGenerationRef.current += 1;
+      acquiringRef.current = null;
+      controlTokenRef.current = null;
+      setControlToken(null);
+      setControlNotice(null);
+      setActionFeedback(null);
+      setLandingFeedback(null);
+      setIntroDismissed(false);
+      await refreshSnapshot();
+    },
+    [csrfToken, refreshSnapshot]
+  );
+
   if (phase !== "ready" || snapshot === null) {
     if (phase === "unauthenticated") {
       return (
@@ -1021,6 +1095,7 @@ export function BaseApp({
           }
           onAcquireControl={handleAcquireControl}
           onLogout={() => void handleLogout()}
+          onResetBase={handleResetBase}
           accountEmail={accountEmail}
           feedback={landingFeedback}
           csrfToken={csrfToken}
@@ -1057,6 +1132,7 @@ export function BaseApp({
         onCooperationDecision={handleCooperationDecision}
         accountEmail={accountEmail}
         onLogout={() => void handleLogout()}
+        onResetBase={handleResetBase}
         isBusy={isActionBusy}
       />
       )}

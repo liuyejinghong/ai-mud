@@ -182,6 +182,17 @@ export interface ProvisionUseCase {
   }>;
 }
 
+// 账号重开（删档重开）：会话作用域，只能重开自己的基地。
+// duplicate=true 表示该 commandId 的重开已完成（幂等重放），返回当时的新 baseId。
+export interface ResetBaseResultDto {
+  baseId: string;
+  duplicate: boolean;
+}
+
+export interface ResetUseCase {
+  execute(principal: BasePrincipal, input: { commandId?: string }): Promise<ResetBaseResultDto>;
+}
+
 export interface SnapshotUseCase {
   execute(principal: BasePrincipal, controlToken?: string): Promise<BaseSnapshotDto>;
 }
@@ -393,6 +404,7 @@ export interface BaseSessionRouteDeps {
   auth: BaseAuthFacade;
   registration: PlaytestRegistrationFacade;
   provision: ProvisionUseCase;
+  reset: ResetUseCase;
   snapshot: SnapshotUseCase;
   clock: ClockUseCase;
   events: EventsUseCase;
