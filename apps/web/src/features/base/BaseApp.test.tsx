@@ -464,6 +464,36 @@ describe("BaseApp", () => {
     expect(screen.getByTestId("has-control").textContent).toBe("true");
     focus.mockRestore();
   });
+
+  it("F2 自愈：续租 409（幽灵租约被清扫）后前台自动重接管，无需手动刷新", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    let acquireCount = 0;
+    vi.mocked(heartbeat).mockImplementation((input) => {
+      if (input.action === "renew") {
+        return Promise.reject(new BaseApiError(409, "CONTROL_EXPIRED", "租约已被清扫"));
+      }
+      acquireCount += 1;
+      return Promise.resolve({
+        controlToken: `control-${acquireCount}`,
+        leaseUntil: "2126-01-01T08:02:00.000Z", timeMode: "running"
+      });
+    });
+    vi.mocked(getSnapshot).mockResolvedValue(buildSnapshot());
+    render(<BaseApp initialCsrfToken="csrf-1" />);
+    await act(async () => {});
+    expect(acquireCount).toBe(1);
+
+    // 心跳周期到：续租 409 → 当拍只丢令牌不重试 → 2s 退避后自动重接管成功
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(acquireCount).toBe(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(acquireCount).toBe(2);
+    expect(getSnapshot).toHaveBeenCalledWith("control-2");
+    expect(screen.getByTestId("has-control").textContent).toBe("true");
+    focus.mockRestore();
+  });
 });
 
 describe("BaseApp > design-review B 线（D011/D018/D020/D024）", () => {

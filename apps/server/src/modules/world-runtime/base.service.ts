@@ -415,7 +415,19 @@ export class BaseService {
     principal: { accountId: string },
     input: { commandId: string }
   ): Promise<{ baseId: string; duplicate: boolean }> {
-    return this.transact(async (tx, repo) => {
+    return this.transact((tx, repo) => this.seedProvisionedBase(tx, repo, principal, input));
+  }
+
+  // 注册同款 provision 的事务内主体：provision（自管事务）与账号重开（重开用例持有
+  // 外部事务）共用同一写者，保证"开局种子装配"只有一条实现路径（一事实一写者）。
+  // 调用方必须已持有事务；本方法自身绝不开事务。
+  async seedProvisionedBase(
+    tx: BaseRepoTx,
+    repo: BaseRepository,
+    principal: { accountId: string },
+    input: { commandId: string }
+  ): Promise<{ baseId: string; duplicate: boolean }> {
+    {
       const actorScope = `account:${principal.accountId}`;
       const requestHash = hashRequestPayload({});
 
@@ -544,7 +556,7 @@ export class BaseService {
         result
       });
       return result;
-    });
+    }
   }
 
   // ---------- snapshot：观察投影（纯读） ----------

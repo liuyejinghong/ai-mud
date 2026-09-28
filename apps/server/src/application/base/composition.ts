@@ -59,12 +59,15 @@ import { BaseRepository, scopeTickTransactionToBase } from "../../modules/world-
 import { BaseEventRepository, type BaseEventTx } from "../../modules/world-runtime/base-event.repository.js";
 import { BaseService } from "../../modules/world-runtime/base.service.js";
 import { systemWorldClock } from "../../modules/world-runtime/world-clock.js";
+import { BaseResetRepository } from "../../modules/world-reset/base-reset.repository.js";
+import { BaseResetService } from "../../modules/world-reset/base-reset.service.js";
 import { BaseClockUseCase } from "./base-clock.js";
 import { BaseEventsUseCase } from "./base-events.js";
 import { BaseSnapshotUseCase } from "./base-snapshot.js";
 import { CooperationDecisionCase } from "./cooperation-decision.js";
 import { CancelProjectCase } from "./cancel-project.js";
 import { CreateProjectCase } from "./create-project.js";
+import { ResetBaseUseCase } from "./reset-base.js";
 import type {
   BaseAuthFacade,
   BaseProjectsRouteDeps,
@@ -316,10 +319,23 @@ export function createBaseOperations(input: {
     }
   };
 
+  // 账号重开（删档重开）：删除+重建在同一事务；provision 种子装配复用 world.base
+  // 的唯一写者（seedProvisionedBase），横切删除走精确登记的 BaseResetRepository
+  // （按事务构造，删除绝不游离到重开事务之外）。
+  const baseReset = new BaseResetService({
+    db,
+    repo: baseRepo,
+    openDeleter: (tx) => new BaseResetRepository(tx),
+    provisionInTx: (tx, repo, input) =>
+      baseService.seedProvisionedBase(tx, repo, { accountId: input.accountId }, { commandId: input.commandId }),
+    openAudit: (tx) => new DrizzleAuditWriter(tx)
+  });
+
   const session: BaseSessionRouteDeps = {
     auth: authFacade,
     registration,
     provision: new ProvisionBaseUseCase(baseService),
+    reset: new ResetBaseUseCase(baseReset),
     snapshot: new BaseSnapshotUseCase(baseService),
     clock: new BaseClockUseCase(baseService),
     // D013 事件历史（GET /api/base/events）。

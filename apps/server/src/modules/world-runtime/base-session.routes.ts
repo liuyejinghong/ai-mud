@@ -21,6 +21,10 @@ const PROVISION_SCHEMA = z.object({
   commandId: z.string().min(1).optional()
 });
 
+const RESET_SCHEMA = z.object({
+  commandId: z.string().min(1).max(128).optional()
+});
+
 const CLOCK_COMMAND_SCHEMA = z.object({
   command: z.enum(["pause", "resume", "set_speed"]),
   speed: z.number().int().optional()
@@ -193,6 +197,30 @@ export async function registerBaseSessionRoutes(app: FastifyInstance, deps: Base
 
     try {
       return await deps.provision.execute(session.principal, { commandId });
+    } catch (error) {
+      return sendOperationError(reply, error);
+    }
+  });
+
+  // 账号重开（删档重开）：删除自己的旧基地并在同一事务内按注册同款开局重建。
+  // 鉴权/CSRF 与其他写命令同面；不需要控制租约（重开是账号作用域维护操作，
+  // 服务端以基地行锁与 tick/命令互斥）。前端负责两步确认。
+  app.post("/base/reset", async (request, reply) => {
+    const session = await authenticate(app, request, reply, deps);
+    if (!session) return reply;
+
+    if (!authorizeWrite(request, reply, deps, session)) return reply;
+
+    const parsed = RESET_SCHEMA.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return sendError(reply, 400, "VALIDATION_ERROR", "重开命令格式不正确。");
+    }
+
+    // exactOptionalPropertyTypes：显式区分缺省 commandId 与显式 undefined。
+    const resetInput = parsed.data.commandId === undefined ? {} : { commandId: parsed.data.commandId };
+
+    try {
+      return await deps.reset.execute(session.principal, resetInput);
     } catch (error) {
       return sendOperationError(reply, error);
     }
