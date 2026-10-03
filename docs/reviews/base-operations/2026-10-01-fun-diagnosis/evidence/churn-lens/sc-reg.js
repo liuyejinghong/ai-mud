@@ -1,0 +1,10 @@
+const { email, pass } = cred();
+await goto('http://107.175.209.173:8088/');
+const before = await ev(`document.querySelector('#base-auth-email') ? 'form-present' : 'no-form'`);
+if (before === 'no-form') return { error: 'no auth form', body: (await text()).slice(0, 300) };
+await fill('#base-auth-email', email);
+await fill('#base-auth-password', pass);
+await click('领取试玩基地');
+await sleep(3000);
+const header = await ev(`(() => { const m = document.body.innerText.match(/review-diag-[^\s@]+@[^\s]+/); return m ? m[0] : 'no-email-found'; })()`);
+return { header, mine: header === email };
