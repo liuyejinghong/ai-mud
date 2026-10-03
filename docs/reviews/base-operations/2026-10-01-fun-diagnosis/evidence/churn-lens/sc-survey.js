@@ -1,0 +1,14 @@
+await click('望山 · 待命 · 48Wh');
+await sleep(500);
+await click('开始勘探');
+await sleep(800);
+await click('返回地图');
+await sleep(400);
+await click('恢复');
+await sleep(500);
+await click('×4');
+await sleep(45000);
+const t = await text();
+await shot('/tmp/yudian-cdp/E-after-survey.png');
+const i = t.indexOf('脊线蓝绿氧化带', 200);
+return t.slice(i >= 0 ? i : 0, (i >= 0 ? i : 0) + 500);
