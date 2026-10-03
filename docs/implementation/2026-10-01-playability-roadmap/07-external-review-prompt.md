@@ -1,6 +1,6 @@
 # 外部审查提示词：GPT-6 Pro ×《余电》诊断与路线审查
 
-> **使用说明（给项目所有者，不用发给模型）**：把本文件全文作为第一条消息（或 system prompt）发给 GPT-6 Pro。文件已自包含全部所需背景；如接口支持附件，可另附 `docs/reviews/base-operations/2026-10-01-fun-diagnosis/report.md`（35KB 完整诊断报告）供其深读，非必需。收回答复后交回本项目主控代理处理。
+> **使用说明（给项目所有者，不用发给模型）**：把本文件全文发给 GPT-6 Pro，并按下文「审查材料清单」把文件作为附件一并提供（或授予仓库访问）。正文自带摘要可作导读与无附件时的兜底；有原文时以原文为准。收回答复后交回本项目主控代理处理。
 
 ---
 
@@ -9,6 +9,31 @@
 ---
 
 你是一位资深游戏设计审查人，受《余电》项目所有者委托，对一份游戏性诊断和一份重建路线图做独立外部审查。你没有参与此前任何工作，这正是你的价值：不被我们的框架锚定。请以挑剔、直接、不客套的方式工作——我们的内部评审已经互相强化过一轮，被外部打脸是我们请你的目的。
+
+## 审查材料清单（随本提示词提供的原文，按优先级）
+
+**必读**（判断的主要依据）：
+
+| # | 文件路径 | 是什么 |
+|---|---|---|
+| 1 | `docs/reviews/base-operations/2026-10-01-fun-diagnosis/report.md` | 完整游戏性诊断报告（七节：一句话诊断/评审落差/身份对照表/根因清单/保护清单/三方向/未覆盖项；正文摘要是它的压缩版，冲突时以原文为准） |
+| 2 | `docs/implementation/2026-10-01-playability-roadmap/README.md` | 重建路线图总纲（三方向合并逻辑、里程碑一览、纪律与非目标） |
+| 3 | `docs/implementation/2026-10-01-playability-roadmap/01-playability-design.md` | R1–R8 逐条设计决策（机制/合同影响/开放数值） |
+| 4 | `docs/implementation/2026-10-01-playability-roadmap/02-milestones-and-acceptance.md` | 批次流程、可玩性验收标准与签字规则、风险止损 |
+| 5 | `docs/implementation/2026-10-01-playability-roadmap/03-M1-first-game-day.md` | M1 产品需求（分钟级玩家旅程、M1a/M1b 功能清单、数值草案、验收）——**首批候选，任务二的重点对象** |
+| 6 | `docs/implementation/2026-10-01-playability-roadmap/04-M2-self-running-base.md` | M2 产品需求（自动化与可视化） |
+| 7 | `docs/implementation/2026-10-01-playability-roadmap/05-M3-text-and-revelation.md` | M3 产品需求（探索回报与叙事化） |
+| 8 | `docs/implementation/2026-10-01-playability-roadmap/06-M4-world-and-presence.md` | M4 产品需求（AI 共在，可选后置） |
+
+**可选背景**（时间充裕再读）：
+
+| 文件路径 | 是什么 |
+|---|---|
+| `docs/reviews/base-operations/2026-09-26-human-playtest-feedback/report.md` | 所有者上一轮真人试玩反馈（H01–H06 六大问题与验收五条，v1.0.2 已大半修复——审查"问题是否真正解决"时可对照） |
+| `AGENTS.md` | 项目宪法（开发纪律与范围授权约束——发散建议须落在其内） |
+| `docs/implementation/2026-09-26-landing-rebuild/README.md` | 当前玩法（R1 落地重构）的设计意图与六项反馈复核——判断"设计意图 vs 实际体验"落差时有用 |
+
+**不在提供范围内的材料**（已在正文摘要中给出结论）：2026-09-27 的 v1.0.2 AI 系统评审十节报告存于评审机本地与未合并分支（PR #28），如需可另行索取。
 
 ## 项目背景（事实，非宣传）
 
