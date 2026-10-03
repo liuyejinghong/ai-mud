@@ -20,6 +20,8 @@
 
 ## 历史排期入口（领域合同继续有效，不自动实施旧顺序）
 
+2026-10-03 起：旧 M1–M4 已停止默认实施（历史文档保留，不作自动授权）；当前规划入口见 `docs/implementation/2026-10-03-2d-transition/README.md`。
+
 1. `docs/implementation/2026-09-19-base-operations/README.md`
 2. 同目录 `00-scope-and-a0.md`、`01-domain-contracts.md`、`02-parallel-development.md`
 3. 用户指定的一个版本包及 `templates/` 内提示词/单线合同/证据模板。
